@@ -1,69 +1,136 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
-import "../icons"
 import "../../config" as Config
+import "../../services" as Services
+import "../common"
+import "../icons"
 
-// The floating dock: Start (launcher) + task view, pinned apps (real
-// running/active state from the compositor's toplevel list), unpinned but
-// currently-running apps, then Settings + show-desktop. Bottom or left,
-// matching Config.Appearance.dockPosition, with optional auto-hide.
-PanelWindow {
-    id: dock
+// The floating dock: Start (launcher) and overview, pinned apps with real
+// running/focused state from the compositor, any unpinned app that happens
+// to be running, then Settings and show-desktop.
+//
+// Bottom or left per Settings → Dock, with optional auto-hide. One per
+// monitor, like the bar.
+Variants {
+    model: Quickshell.screens
 
-    readonly property bool isLeft: Config.Appearance.dockPosition === "left"
-    readonly property real tileSize: Config.Appearance.dockTileSize
-    readonly property real iconSize: Config.Appearance.dockIconSize
-    readonly property real glyphSize: Config.Appearance.dockGlyphSize
-    readonly property real padH: Config.Appearance.dockPadH
-    readonly property real padV: Config.Appearance.dockPadV
-    readonly property real tileSpacing: Config.Appearance.dockTileSpacing
-    readonly property real edgeGap: Config.Appearance.dockEdgeGap
-    readonly property real tooltipRoom: Config.Appearance.dockTooltipRoom // headroom reserved for tiles' hover tooltips
+    PanelWindow {
+        id: dock
+        required property var modelData
 
-    readonly property real panelBreadth: Config.Appearance.dockPanelBreadth // thickness of the pill on the short axis
+        screen: modelData
+        color: "transparent"
+        exclusiveZone: 0
+        visible: !Config.UiState.locked
 
-    readonly property bool revealed: !Config.Appearance.dockAutoHide || windowHover.hovered || Config.UiState.launcherOpen
+        readonly property bool isLeft: Config.Appearance.dockLeft
+        readonly property real tileSize: Config.Appearance.dockTileSize
+        readonly property real iconSize: Config.Appearance.dockIconSize
+        readonly property real glyphSize: Config.Appearance.dockGlyphSize
+        readonly property real padH: Config.Appearance.dockPadH
+        readonly property real padV: Config.Appearance.dockPadV
+        readonly property real tileSpacing: Config.Appearance.dockTileSpacing
+        readonly property real edgeGap: Config.Appearance.dockEdgeGap
+        // Headroom reserved above the pill for tiles' hover tooltips.
+        readonly property real tooltipRoom: Config.Appearance.dockTooltipRoom
+        readonly property real panelBreadth: Config.Appearance.dockPanelBreadth
 
-    // The window's short-axis size only needs to fit the *revealed* pill
-    // (tooltip headroom + pill + edge gap) — the hidden position is meant
-    // to fall outside these bounds entirely, which is what makes it
-    // disappear (nothing renders past the wayland surface's own edge).
-    // Sizing the window to also contain the hidden position was the bug:
-    // it left a big gap between the revealed pill and the real screen
-    // edge, so the dock sat far above the bottom instead of hugging it.
-    readonly property real windowBreadth: tooltipRoom + panelBreadth + edgeGap
+        readonly property bool revealed: !Config.Appearance.dockAutoHide
+                                         || windowHover.hovered
+                                         || Config.UiState.launcherOpen
 
-    // slide position of the pill along the main axis, within that window.
-    readonly property real pillShownPos: tooltipRoom
-    readonly property real pillHiddenPos: tooltipRoom + panelBreadth + 20
-    property real pillPos: revealed ? pillShownPos : pillHiddenPos
-    Behavior on pillPos { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        // The window's short-axis size only needs to fit the *revealed* pill
+        // (tooltip headroom + pill + edge gap). The hidden position falls
+        // outside those bounds on purpose — nothing renders past the Wayland
+        // surface's own edge, and that's what makes it disappear.
+        readonly property real windowBreadth: tooltipRoom + panelBreadth + edgeGap
+        readonly property real pillShownPos: tooltipRoom
+        readonly property real pillHiddenPos: tooltipRoom + panelBreadth + 20
 
-    color: "transparent"
-    exclusiveZone: 0
+        property real pillPos: revealed ? pillShownPos : pillHiddenPos
+        Behavior on pillPos { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
 
-    anchors.bottom: !isLeft
-    anchors.left: isLeft
-    anchors.top: false
-    anchors.right: false
+        anchors.bottom: !isLeft
+        anchors.left: isLeft
+        anchors.top: false
+        anchors.right: false
 
-    margins.bottom: 0
-    margins.left: 0
+        implicitWidth: isLeft ? windowBreadth : pill.implicitWidth
+        implicitHeight: isLeft ? pill.implicitHeight : windowBreadth
 
-    implicitWidth: isLeft ? windowBreadth : pill.implicitWidth
-    implicitHeight: isLeft ? pill.implicitHeight : windowBreadth
+        WlrLayershell.namespace: "quickshell:dock"
+        WlrLayershell.layer: WlrLayer.Top
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-    WlrLayershell.namespace: "quickshell:dock"
-    WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+        // Only the pill itself takes clicks; the tooltip headroom and edge
+        // gap around it stay click-through so the desktop underneath is
+        // still reachable.
+        mask: Region {
+            item: pill
+            // While auto-hidden, a thin strip along the edge is what the
+            // pointer needs to hit to bring the dock back.
+            Region {
+                x: dock.isLeft ? 0 : 0
+                y: dock.isLeft ? 0 : dock.height - 2
+                width: dock.isLeft ? 2 : dock.width
+                height: dock.isLeft ? dock.height : 2
+            }
+        }
 
-    HoverHandler { id: windowHover }
+        HoverHandler { id: windowHover }
 
-    Item {
-        id: content
-        anchors.fill: parent
+        // ── window/app state ──────────────────────────────────────────────
+        readonly property var clients: Services.Compositor.clients
+        readonly property string activeClass: Services.Compositor.activeClass
 
+        function windowsFor(app) {
+            return clients.filter(c => app.match.test(c.cls || ""));
+        }
+
+        function isActiveApp(app) {
+            return activeClass !== "" && app.match.test(activeClass);
+        }
+
+        // Apps with windows open that aren't pinned, so they still show up
+        // in the dock while they're running.
+        readonly property var unpinnedApps: {
+            const seen = ({});
+            const out = [];
+            for (const c of clients) {
+                const cls = c.cls || "";
+                if (!cls || seen[cls]) continue;
+                if (Config.Apps.pinnedFor(cls)) continue;
+                seen[cls] = true;
+                out.push({
+                    cls: cls,
+                    label: Config.Apps.labelFor(cls),
+                    icon: Config.Apps.iconFor(cls),
+                    windows: clients.filter(x => x.cls === cls)
+                });
+            }
+            return out;
+        }
+
+        function launchOrFocus(app) {
+            const wins = windowsFor(app);
+            if (wins.length > 0) {
+                // Already focused with more than one window: cycle.
+                const at = wins.findIndex(c => c.address === Services.Compositor.activeAddress);
+                const next = at >= 0 ? wins[(at + 1) % wins.length] : wins[0];
+                Services.Compositor.focusClient(next.address);
+                return;
+            }
+            if (app.key === "appSettings") { Config.UiState.openSettings(); return; }
+            if (app.exec && app.exec.length > 0) Quickshell.execDetached(app.exec);
+        }
+
+        function launchNew(app) {
+            if (app.key === "appSettings") { Config.UiState.openSettings(); return; }
+            if (app.exec && app.exec.length > 0) Quickshell.execDetached(app.exec);
+        }
+
+        // ── pill ──────────────────────────────────────────────────────────
         Rectangle {
             id: pill
             radius: Config.Appearance.rDock
@@ -71,11 +138,21 @@ PanelWindow {
             border.width: 1
             border.color: Config.Appearance.edge
 
-            x: dock.isLeft ? dock.pillPos : Math.round((content.width - width) / 2)
-            y: dock.isLeft ? Math.round((content.height - height) / 2) : dock.pillPos
+            x: dock.isLeft ? dock.pillPos : Math.round((dock.width - width) / 2)
+            y: dock.isLeft ? Math.round((dock.height - height) / 2) : dock.pillPos
 
-            implicitWidth: tiles.implicitWidth + dock.padH * 2
+            implicitWidth: (dock.isLeft ? tiles.implicitWidth : tiles.implicitWidth) + dock.padH * 2
             implicitHeight: tiles.implicitHeight + dock.padV * 2
+
+            // Inner gloss line along the top edge, as in the mockup.
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 1
+                height: 1
+                color: Config.Appearance.gloss
+            }
 
             Flow {
                 id: tiles
@@ -83,97 +160,50 @@ PanelWindow {
                 flow: dock.isLeft ? Flow.TopToBottom : Flow.LeftToRight
                 spacing: dock.tileSpacing
 
-                // --- Start / launcher ------------------------------------------------
-                Item {
-                    id: startTile
+                // ── Start / launcher ──────────────────────────────────────
+                DockTile {
                     width: dock.tileSize
                     height: dock.tileSize
-
-                    readonly property bool open: Config.UiState.launcherOpen
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: Config.Appearance.rTile
-                        color: startTile.open ? Config.Appearance.accent : Config.Appearance.sel
-                        Behavior on color { ColorAnimation { duration: 120 } }
-                    }
-
-                    MonoIcon {
-                        anchors.centerIn: parent
-                        name: "grid"
-                        size: dock.iconSize
-                        inkColor: startTile.open ? Config.Appearance.onAccent : Config.Appearance.ink
-                        accentColor: startTile.open ? Config.Appearance.onAccent : Config.Appearance.accent
-                    }
-
-                    Rectangle {
-                        visible: startHover.hovered && !startTile.open
-                        opacity: visible ? 1 : 0
-                        anchors.bottom: parent.top
-                        anchors.bottomMargin: 12
-                        // Left-aligned, not centered: Start is always the
-                        // dock's leftmost tile, and the dock window is
-                        // sized tight to the pill's content — a centered
-                        // tooltip here would extend past the window's own
-                        // left edge and get clipped (nothing renders
-                        // outside the wayland surface bounds).
-                        anchors.left: parent.left
-                        radius: Config.Appearance.rSm
-                        color: Config.Appearance.sheet
-                        border.width: 1
-                        border.color: Config.Appearance.edge
-                        height: 28
-                        width: startLabel.implicitWidth + 20
-                        Text {
-                            id: startLabel
-                            anchors.centerIn: parent
-                            text: "Start — super"
-                            color: Config.Appearance.ink
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.family: "Inter"
-                        }
-                    }
-
-                    HoverHandler { id: startHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Config.UiState.toggleLauncher() }
+                    tileSize: dock.tileSize
+                    iconSize: dock.iconSize
+                    iconName: "grid"
+                    label: "Start"
+                    subtitle: "super"
+                    highlight: true
+                    active: Config.UiState.launcherOpen
+                    tooltipEdge: dock.isLeft ? Qt.RightEdge : Qt.TopEdge
+                    // Start is always the dock's first tile and the pill is
+                    // sized tight to its content, so a centered tooltip here
+                    // would be clipped by the surface's own edge.
+                    tooltipAlign: dock.isLeft ? Qt.AlignVCenter : Qt.AlignLeft
+                    onActivated: Config.UiState.toggleLauncher()
                 }
 
-                // --- Task view / overview --------------------------------------------
+                // ── Overview ──────────────────────────────────────────────
                 DockTile {
                     width: dock.tileSize
                     height: dock.tileSize
                     tileSize: dock.tileSize
                     iconSize: dock.glyphSize
                     iconName: "panelsTopLeft"
-                    label: "Task view"
-                    showTooltip: false
+                    label: "Overview"
+                    subtitle: "super tab"
                     active: Config.UiState.overviewOpen
+                    tooltipEdge: dock.isLeft ? Qt.RightEdge : Qt.TopEdge
                     onActivated: Config.UiState.toggleOverview()
                 }
 
-                // Flow top-aligns children of unequal height, so give the
-                // divider a tile-sized box and center the actual line in it.
-                Item {
-                    width: dock.isLeft ? dock.tileSize : 1
-                    height: dock.isLeft ? 1 : dock.tileSize
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: dock.isLeft ? 26 : 1
-                        height: dock.isLeft ? 1 : 26
-                        color: Config.Appearance.div
-                    }
-                }
+                DockDivider { isLeft: dock.isLeft; tileSize: dock.tileSize }
 
-                // --- Pinned apps -------------------------------------------------------
+                // ── Pinned apps ───────────────────────────────────────────
                 Repeater {
                     model: Config.Apps.pinned
 
                     DockTile {
+                        id: pinnedTile
                         required property var modelData
 
-                        readonly property var matches: dock.toplevelsFor(modelData)
-                        readonly property bool isRunning: matches.length > 0
+                        readonly property var wins: dock.windowsFor(modelData)
                         readonly property bool isActive: dock.isActiveApp(modelData)
 
                         width: implicitWidth
@@ -182,71 +212,68 @@ PanelWindow {
                         iconSize: dock.iconSize
                         iconName: modelData.icon
                         label: modelData.label
-                        running: isRunning
-                        windowCount: matches.length
+                        running: wins.length > 0
+                        windowCount: wins.length
                         active: isActive
                         showLabel: isActive && Config.Appearance.dockLabels && !dock.isLeft
-                        subtitle: isRunning ? (matches.length > 1 ? matches.length + " windows" : "1 window") : "not running"
+                        tooltipEdge: dock.isLeft ? Qt.RightEdge : Qt.TopEdge
+                        subtitle: wins.length === 0 ? "not running"
+                                : (wins.length === 1 ? "1 window" : wins.length + " windows")
+
                         onActivated: dock.launchOrFocus(modelData)
+                        // Right click always opens a fresh instance, the way
+                        // a dock is expected to behave.
+                        onSecondaryActivated: dock.launchNew(modelData)
+                        onMiddleActivated: {
+                            if (wins.length > 0) Services.Compositor.closeClient(wins[0].address);
+                        }
                     }
                 }
 
-                // --- Unpinned but running ------------------------------------------------
-                Item {
-                    visible: dock.unpinnedRunning.length > 0
-                    width: dock.isLeft ? dock.tileSize : 1
-                    height: dock.isLeft ? 1 : dock.tileSize
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: dock.isLeft ? 26 : 1
-                        height: dock.isLeft ? 1 : 26
-                        color: Config.Appearance.div
-                    }
+                // ── Unpinned but running ──────────────────────────────────
+                DockDivider {
+                    isLeft: dock.isLeft
+                    tileSize: dock.tileSize
+                    visible: dock.unpinnedApps.length > 0
                 }
 
                 Repeater {
-                    model: dock.unpinnedRunning
+                    model: dock.unpinnedApps
 
                     DockTile {
+                        id: unpinnedTile
                         required property var modelData
+
+                        readonly property bool isActive:
+                            Services.Compositor.activeClass === modelData.cls
 
                         width: dock.tileSize
                         height: dock.tileSize
                         tileSize: dock.tileSize
                         iconSize: dock.iconSize
-                        iconName: "cpu" // generic fallback glyph — see IconPaths.js
-                        label: modelData.appId || "Unknown"
+                        iconName: modelData.icon
+                        label: modelData.label
                         subtitle: "not pinned"
                         running: true
-                        windowCount: 1
-                        showPips: false
-                        active: modelData.activated
-                        onActivated: modelData.activate()
+                        windowCount: modelData.windows.length
+                        active: isActive
+                        tooltipEdge: dock.isLeft ? Qt.RightEdge : Qt.TopEdge
 
-                        Rectangle {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 3
-                            width: 9
-                            height: 2.5
-                            radius: 1.25
-                            color: Config.Appearance.ink3
+                        onActivated: {
+                            const wins = modelData.windows;
+                            const at = wins.findIndex(
+                                c => c.address === Services.Compositor.activeAddress);
+                            const next = at >= 0 ? wins[(at + 1) % wins.length] : wins[0];
+                            Services.Compositor.focusClient(next.address);
                         }
+                        onMiddleActivated:
+                            Services.Compositor.closeClient(modelData.windows[0].address)
                     }
                 }
 
-                Item {
-                    width: dock.isLeft ? dock.tileSize : 1
-                    height: dock.isLeft ? 1 : dock.tileSize
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: dock.isLeft ? 26 : 1
-                        height: dock.isLeft ? 1 : 26
-                        color: Config.Appearance.div
-                    }
-                }
+                DockDivider { isLeft: dock.isLeft; tileSize: dock.tileSize }
 
-                // --- Settings shortcut + show desktop --------------------------------
+                // ── Settings + show desktop ───────────────────────────────
                 DockTile {
                     width: dock.tileSize
                     height: dock.tileSize
@@ -254,8 +281,9 @@ PanelWindow {
                     iconSize: dock.glyphSize
                     iconName: "settings"
                     label: "Settings"
-                    showTooltip: false
-                    onActivated: Config.UiState.settingsOpen = !Config.UiState.settingsOpen
+                    active: Config.UiState.settingsOpen
+                    tooltipEdge: dock.isLeft ? Qt.RightEdge : Qt.TopEdge
+                    onActivated: Config.UiState.openSettings()
                 }
 
                 DockTile {
@@ -265,43 +293,13 @@ PanelWindow {
                     iconSize: dock.glyphSize
                     iconName: "minus"
                     label: "Show desktop"
-                    showTooltip: false
-                    // TODO: Hyprland has no native "minimize all" dispatcher;
-                    // wire this up once there's a helper script/IPC target for it.
-                    onActivated: console.log("[dock] show desktop — not implemented yet")
+                    subtitle: "toggle"
+                    tooltipEdge: dock.isLeft ? Qt.RightEdge : Qt.TopEdge
+                    // Hyprland has no minimise-all dispatcher; switching to a
+                    // scratch workspace and back is the working equivalent.
+                    onActivated: Services.Compositor.toggleShowDesktop()
                 }
             }
-        }
-    }
-
-    // --- app <-> toplevel matching -------------------------------------------
-
-    function toplevelsFor(app) {
-        return ToplevelManager.toplevels.values.filter(t => app.match.test(t.appId || ""));
-    }
-
-    function isActiveApp(app) {
-        const a = ToplevelManager.activeToplevel;
-        return !!a && app.match.test(a.appId || "");
-    }
-
-    readonly property var unpinnedRunning: ToplevelManager.toplevels.values.filter(
-        t => !Config.Apps.pinned.some(app => app.match.test(t.appId || ""))
-    )
-
-    function launchOrFocus(app) {
-        const matches = toplevelsFor(app);
-        if (matches.length > 0) {
-            const target = matches.find(t => t.activated) || matches[0];
-            target.activate();
-            return;
-        }
-        if (app.key === "appSettings") {
-            Config.UiState.settingsOpen = !Config.UiState.settingsOpen;
-            return;
-        }
-        if (app.exec.length > 0) {
-            Quickshell.execDetached(app.exec);
         }
     }
 }

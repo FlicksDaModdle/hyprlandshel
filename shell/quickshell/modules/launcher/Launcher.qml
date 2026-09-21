@@ -2,21 +2,24 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
-import "../icons"
+import Quickshell.Widgets
 import "../../config" as Config
+import "../../services" as Services
+import "../common"
+import "../icons"
 
-// Start menu / Launchpad hybrid. A full-screen transparent layer (so
-// clicking anywhere else closes it) with the actual menu positioned next
-// to the dock — no background blur/dim, matching the mockup's "Windows
-// Start menu, not macOS Spotlight" direction.
+// Start menu / Launchpad hybrid, anchored beside the dock's Start tile — the
+// mockup's direction is a Windows Start menu, not a full-screen Spotlight,
+// so there's no scrim and the desktop stays sharp behind it.
 //
-// Pinned row = Config.Apps.pinned + Config.Commands.items (bespoke icons,
-// matching the dock). Search / "All apps" = real installed apps from
-// Quickshell.DesktopEntries, not mockup demo data.
+// Pinned grid  = Apps.pinned + Commands.items, drawn with the bespoke pack.
+// Search / all = real installed applications from DesktopEntries, plus the
+//                shell's own commands, plus a run-as-command fallback.
+// Recommended  = real recently-used files from recently-used.xbel.
 PanelWindow {
     id: launcher
 
-    visible: Config.UiState.launcherOpen
+    visible: Config.UiState.launcherOpen && !Config.UiState.locked
 
     anchors.top: true
     anchors.bottom: true
@@ -27,63 +30,102 @@ PanelWindow {
 
     WlrLayershell.namespace: "quickshell:panel"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-    readonly property bool isLeft: Config.Appearance.dockPosition === "left"
+    readonly property bool isLeft: Config.Appearance.dockLeft
     readonly property real panelWidth: 452
-    readonly property real contentHeight: 360
-    readonly property real dockOffset: Config.Appearance.dockEdgeGap + Config.Appearance.dockPanelBreadth + 12
+    readonly property real dockOffset: Config.Appearance.dockEdgeGap
+                                       + Config.Appearance.dockPanelBreadth + 12
 
     property string query: ""
     property bool showAll: false
-    readonly property bool showingList: query.length > 0 || showAll
-
-    readonly property var pinnedItems: Config.Apps.pinned.map(a => ({
-        type: "app", key: a.key, label: a.label, icon: a.icon, exec: a.exec
-    })).concat(Config.Commands.items.map(c => ({
-        type: "command", key: c.key, label: c.label, icon: c.icon, exec: []
-    })))
+    property int selectedIndex: 0
 
     readonly property string queryLower: query.trim().toLowerCase()
-    readonly property var searchPool: queryLower.length === 0
-        ? DesktopEntries.applications.values
-        : DesktopEntries.applications.values.filter(
-            e => ((e.name || "") + " " + (e.comment || "")).toLowerCase().includes(queryLower)
-          )
+    readonly property bool searching: queryLower.length > 0
+    readonly property bool showingList: searching || showAll
 
-    function runItem(item) {
-        if (item.type === "command") {
-            runCommand(item.key);
-        } else if (item.exec && item.exec.length > 0) {
-            Quickshell.execDetached(item.exec);
+    // ── pinned grid ───────────────────────────────────────────────────────
+    readonly property var pinnedItems: Config.Apps.pinned
+        .filter(a => a.key !== "appSettings")
+        .map(a => ({ kind: "app", key: a.key, label: a.label, icon: a.icon,
+                     cat: a.match.source, exec: a.exec }))
+        .concat(Config.Commands.items.map(c => ({
+            kind: "command", key: c.key, label: c.label, icon: c.icon, cat: c.cat, exec: []
+        })))
+
+    readonly property int perPage: 12
+    readonly property int pageCount: Math.max(1, Math.ceil(pinnedItems.length / perPage))
+    property int page: 0
+    readonly property var pageItems: pinnedItems.slice(page * perPage, (page + 1) * perPage)
+
+    // ── search ────────────────────────────────────────────────────────────
+    readonly property var appResults: {
+        const apps = DesktopEntries.applications.values.filter(e => e && !e.noDisplay);
+        const pool = apps.map(e => ({
+            kind: "desktop", entry: e, label: e.name || "",
+            icon: "", appIcon: e.icon || "",
+            cat: e.genericName || e.comment || (e.categories && e.categories.length > 0
+                 ? e.categories[0] : "Application")
+        }));
+        const cmds = Config.Commands.items.map(c => ({
+            kind: "command", key: c.key, label: c.label, icon: c.icon, appIcon: "", cat: c.cat
+        }));
+        const all = pool.concat(cmds);
+        if (!searching) {
+            all.sort((a, b) => a.label.localeCompare(b.label));
+            return all;
         }
-        close();
+        // Rank: prefix match beats word-start beats substring, and the
+        // label beats the description.
+        const q = queryLower;
+        const scored = [];
+        for (const item of all) {
+            const label = item.label.toLowerCase();
+            const cat = (item.cat || "").toLowerCase();
+            let score = -1;
+            if (label.startsWith(q)) score = 0;
+            else if (label.indexOf(" " + q) >= 0) score = 1;
+            else if (label.indexOf(q) >= 0) score = 2;
+            else if (cat.indexOf(q) >= 0) score = 3;
+            if (score >= 0) scored.push({ item: item, score: score });
+        }
+        scored.sort((a, b) => (a.score - b.score) || a.item.label.localeCompare(b.item.label));
+        return scored.map(s => s.item);
     }
 
-    function runCommand(key) {
-        if (key === "toggleTheme") Config.Appearance.dark = !Config.Appearance.dark;
-        else if (key === "lock") Quickshell.execDetached(["hyprlock"]);
-        else if (key === "reload") Quickshell.execDetached(["sh", "-c", "qs -c hyprshell kill; qs -c hyprshell &"]);
+    readonly property string listTitle: searching
+        ? (appResults.length + (appResults.length === 1 ? " result" : " results"))
+        : "All apps"
+
+    // ── recently used ─────────────────────────────────────────────────────
+    FileView {
+        id: recentFile
+        path: (Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") + "/.local/share"))
+              + "/recently-used.xbel"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
     }
 
-    // --- Recommended row: real recently-used files, from the same
-    // ~/.local/share/recently-used.xbel GTK/Qt apps already write to —
-    // not the mockup's fabricated Bar.qml/theme.json demo entries.
-    property string homeDir: ""
-    readonly property var recentItems: parseRecentXbel(recentFile.text())
+    readonly property var recentItems: parseRecent(recentFile.text())
 
-    function parseRecentXbel(xml) {
+    function parseRecent(xml) {
         if (!xml) return [];
         const out = [];
-        const bookmarkRe = /<bookmark\s+([^>]*)>/g;
+        const re = /<bookmark\s+([^>]*)>/g;
         let m;
-        while ((m = bookmarkRe.exec(xml)) !== null) {
+        while ((m = re.exec(xml)) !== null) {
             const attrs = m[1];
-            const hrefM = /href="([^"]*)"/.exec(attrs);
-            const modM = /modified="([^"]*)"/.exec(attrs);
-            if (!hrefM || hrefM[1].indexOf("file://") !== 0) continue;
-            const path = decodeURIComponent(hrefM[1].slice("file://".length));
-            out.push({ name: path.split("/").pop(), path: path, modified: modM ? modM[1] : "" });
+            const href = /href="([^"]*)"/.exec(attrs);
+            const mod = /modified="([^"]*)"/.exec(attrs);
+            if (!href || href[1].indexOf("file://") !== 0) continue;
+            const path = decodeURIComponent(href[1].slice(7));
+            out.push({
+                name: path.split("/").pop(),
+                path: path,
+                modified: mod ? mod[1] : ""
+            });
         }
         out.sort((a, b) => (a.modified < b.modified ? 1 : -1));
         return out.slice(0, 4);
@@ -92,404 +134,520 @@ PanelWindow {
     function relativeTime(iso) {
         const then = Date.parse(iso);
         if (isNaN(then)) return "";
-        const minutes = Math.round((Date.now() - then) / 60000);
-        if (minutes < 1) return "just now";
-        if (minutes < 60) return minutes + " min ago";
-        const hours = Math.round(minutes / 60);
-        if (hours < 24) return hours + (hours === 1 ? " hour ago" : " hours ago");
+        const mins = Math.round((Date.now() - then) / 60000);
+        if (mins < 1) return "just now";
+        if (mins < 60) return mins + " min ago";
+        const hours = Math.round(mins / 60);
+        if (hours < 24) return hours === 1 ? "1 hour ago" : hours + " hours ago";
         const days = Math.round(hours / 24);
         if (days === 1) return "yesterday";
         if (days < 7) return days + " days ago";
-        return new Date(then).toLocaleDateString();
+        return Qt.formatDate(new Date(then), "d MMM");
     }
 
     function iconForFile(name) {
         const ext = (name.split(".").pop() || "").toLowerCase();
-        return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].indexOf(ext) >= 0 ? "image" : "file";
+        if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"].indexOf(ext) >= 0) return "image";
+        if (["json", "toml", "yaml", "yml", "conf", "ini"].indexOf(ext) >= 0) return "palette";
+        if (["zip", "tar", "gz", "xz", "zst", "7z"].indexOf(ext) >= 0) return "pkg";
+        return "file";
     }
 
-    function runTop() {
+    // ── running ───────────────────────────────────────────────────────────
+    function run(item) {
+        if (!item) return;
+        if (item.kind === "command") runCommand(item.key);
+        else if (item.kind === "desktop" && item.entry) item.entry.execute();
+        else if (item.exec && item.exec.length > 0) Quickshell.execDetached(item.exec);
+        close();
+    }
+
+    function runCommand(key) {
+        switch (key) {
+        case "theme":     Config.Appearance.toggleTheme(); break;
+        case "overview":  Config.UiState.toggleOverview(); return;   // keep it open
+        case "settings":  Config.UiState.openSettings(); return;
+        case "displays":  Config.UiState.openSettings("Display"); return;
+        case "sound":     Config.UiState.openSettings("Sound"); return;
+        case "network":   Config.UiState.openSettings("Network"); return;
+        case "bluetooth": Config.UiState.openSettings("Bluetooth"); return;
+        case "keybinds":  Config.UiState.openSettings("Keybinds"); return;
+        case "wallpaper": Config.UiState.openSettings("Appearance"); return;
+        case "lock":      Config.UiState.lock(); return;
+        case "reload":    Services.Session.reloadShell(); break;
+        case "logout":    Services.Session.logout(); break;
+        case "suspend":   Services.Session.suspend(); break;
+        case "poweroff":  Services.Session.powerOff(); break;
+        case "capture":
+            Quickshell.execDetached(["sh", "-c",
+                "sleep 0.2; f=\"$HOME/Pictures/$(date +%Y-%m-%d-%H%M%S).png\"; "
+                + "mkdir -p \"$HOME/Pictures\"; grim -g \"$(slurp)\" \"$f\" && "
+                + "(wl-copy < \"$f\" 2>/dev/null; notify-send -a Screenshot 'Region saved' \"$f\")"]);
+            break;
+        }
+    }
+
+    function runSelection() {
         if (showingList) {
-            if (searchPool.length > 0) {
-                searchPool[0].execute();
-                close();
+            if (appResults.length > 0) {
+                run(appResults[Math.max(0, Math.min(appResults.length - 1, selectedIndex))]);
             } else if (query.trim().length > 0) {
-                Quickshell.execDetached(["sh", "-c", query]);
+                // No match: treat what was typed as a command line, which is
+                // what the mockup's empty state promises.
+                Quickshell.execDetached(["sh", "-c", query.trim()]);
                 close();
             }
-        } else if (pinnedItems.length > 0) {
-            runItem(pinnedItems[0]);
+        } else if (pageItems.length > 0) {
+            run(pageItems[Math.max(0, Math.min(pageItems.length - 1, selectedIndex))]);
         }
     }
 
     function close() {
         Config.UiState.launcherOpen = false;
-        query = "";
-        showAll = false;
     }
 
-    onVisibleChanged: if (visible) searchInput.forceActiveFocus()
+    onVisibleChanged: {
+        if (visible) {
+            query = "";
+            showAll = false;
+            page = 0;
+            selectedIndex = 0;
+            searchInput.forceActiveFocus();
+        }
+    }
 
-    // Full-screen click-away catcher — no scrim/blur, the desktop stays sharp.
+    onQueryChanged: selectedIndex = 0;
+    onShowAllChanged: selectedIndex = 0;
+
+    // Click-away catcher — no scrim, so the desktop behind stays sharp.
     MouseArea {
         anchors.fill: parent
         onClicked: launcher.close()
     }
 
-    Rectangle {
+    // ── panel ─────────────────────────────────────────────────────────────
+    PanelSurface {
         id: panel
+
         width: launcher.panelWidth
-        implicitHeight: column.implicitHeight
-        radius: Config.Appearance.rPanel
-        color: Config.Appearance.panel
-        border.width: 1
-        border.color: Config.Appearance.edge
-        clip: true
+        height: body.implicitHeight
 
-        anchors.bottom: launcher.isLeft ? undefined : parent.bottom
-        anchors.bottomMargin: launcher.isLeft ? 0 : launcher.dockOffset
-        anchors.horizontalCenter: launcher.isLeft ? undefined : parent.horizontalCenter
-        anchors.left: launcher.isLeft ? parent.left : undefined
-        anchors.leftMargin: launcher.isLeft ? launcher.dockOffset : 0
-        anchors.verticalCenter: launcher.isLeft ? parent.verticalCenter : undefined
+        // Anchored to the dock's Start tile: above it when the dock is at
+        // the bottom, beside it when the dock is on the left. Clamped so it
+        // can't run off the screen on a narrow monitor.
+        x: launcher.isLeft
+           ? launcher.dockOffset
+           : Math.max(12, Math.min(launcher.width - width - 12,
+                Math.round(launcher.width / 2 - width / 2)))
+        y: launcher.isLeft
+           ? Math.max(Config.Appearance.barHeight + 12,
+                Math.min(launcher.height - height - 12,
+                         Math.round(launcher.height / 2 - height / 2)))
+           : launcher.height - height - launcher.dockOffset
 
-        // Absorbs clicks on the panel itself so they don't fall through
-        // to the full-screen close-catcher behind it.
-        MouseArea { anchors.fill: parent; onClicked: {} }
+        // Swallow clicks so they don't reach the catcher behind.
+        MouseArea { anchors.fill: parent }
 
         Column {
-            id: column
-            width: parent.width
+            id: body
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
 
-            // Signature index bar, shared across the shell's popovers.
-            // Inset by the panel's own corner radius: `clip: true` on the
-            // panel only clips to its rectangular bounds, not the rounded
-            // shape, so anything flush against a corner (like this, full
-            // width at y:0) would render past where the panel visually
-            // curves away instead of following the curve.
-            Row {
-                x: Config.Appearance.rPanel
-                width: parent.width - Config.Appearance.rPanel * 2
-                height: 2
-                Rectangle { width: 40; height: 2; color: Config.Appearance.accent }
-                Rectangle { width: parent.width - 40; height: 2; color: Config.Appearance.seam }
-            }
-
+            // ── search ────────────────────────────────────────────────────
             Item {
                 width: parent.width
                 height: 50
 
-                Row {
-                    anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 8
+                Rectangle {
+                    id: searchBox
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    anchors.right: escChip.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 32
+                    radius: Config.Appearance.rSm
+                    color: Config.Appearance.hover
+                    border.width: searchInput.activeFocus ? 2 : 1
+                    border.color: searchInput.activeFocus
+                                  ? Config.Appearance.accent : Config.Appearance.edge
+                    Behavior on border.color { ColorAnimation { duration: 140 } }
 
-                    Rectangle {
-                        id: searchField
-                        width: parent.width - escChip.width - parent.spacing
-                        height: 32
-                        radius: Config.Appearance.rSm
-                        color: Config.Appearance.hover
-                        border.width: searchInput.activeFocus ? 2 : 1
-                        border.color: searchInput.activeFocus ? Config.Appearance.accent : Config.Appearance.edge
-                        Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                        Row {
-                            anchors.fill: parent
-                            anchors.leftMargin: 11
-                            anchors.rightMargin: 11
-                            spacing: 8
-
-                            MonoIcon {
-                                name: "search"
-                                size: 15
-                                inkColor: searchInput.activeFocus ? Config.Appearance.accent : Config.Appearance.ink3
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            Item {
-                                width: parent.width - 15 - 8
-                                height: parent.height
-
-                                TextInput {
-                                    id: searchInput
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width
-                                    color: Config.Appearance.ink
-                                    font.pixelSize: 13
-                                    font.family: "Inter"
-                                    clip: true
-                                    onTextChanged: { launcher.query = text; launcher.showAll = false; }
-                                    Keys.onEscapePressed: launcher.close()
-                                    Keys.onReturnPressed: launcher.runTop()
-                                }
-                                Text {
-                                    visible: searchInput.text.length === 0
-                                    text: "Search apps and commands"
-                                    color: Config.Appearance.ink3
-                                    font.pixelSize: 13
-                                    font.family: "Inter"
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                            }
-                        }
+                    MonoIcon {
+                        id: searchIcon
+                        anchors.left: parent.left
+                        anchors.leftMargin: 11
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "search"
+                        size: 15
+                        inkColor: searchInput.activeFocus
+                                  ? Config.Appearance.accent : Config.Appearance.ink3
+                        monochrome: true
                     }
 
-                    Rectangle {
-                        id: escChip
-                        width: escLabel.implicitWidth + 16
-                        height: 24
-                        radius: Config.Appearance.rSm
-                        color: Config.Appearance.hover
+                    TextInput {
+                        id: searchInput
+                        anchors.left: searchIcon.right
+                        anchors.leftMargin: 8
+                        anchors.right: parent.right
+                        anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
-                        Text {
-                            id: escLabel
-                            anchors.centerIn: parent
-                            text: "ESC"
+                        clip: true
+
+                        text: launcher.query
+                        onTextChanged: launcher.query = text
+                        color: Config.Appearance.ink
+                        font.family: Config.Appearance.fontFamily
+                        font.pixelSize: 12.5
+                        selectByMouse: true
+                        selectionColor: Config.Appearance.accent
+                        selectedTextColor: Config.Appearance.onAccent
+
+                        Keys.onEscapePressed: {
+                            if (launcher.query !== "") { launcher.query = ""; text = ""; }
+                            else if (launcher.showAll) launcher.showAll = false;
+                            else launcher.close();
+                        }
+                        Keys.onReturnPressed: launcher.runSelection()
+                        Keys.onEnterPressed: launcher.runSelection()
+                        Keys.onDownPressed: launcher.moveSelection(launcher.showingList ? 1 : 4)
+                        Keys.onUpPressed: launcher.moveSelection(launcher.showingList ? -1 : -4)
+                        Keys.onLeftPressed: event => {
+                            if (launcher.showingList) { event.accepted = false; return; }
+                            launcher.moveSelection(-1);
+                        }
+                        Keys.onRightPressed: event => {
+                            if (launcher.showingList) { event.accepted = false; return; }
+                            launcher.moveSelection(1);
+                        }
+                        Keys.onTabPressed: launcher.moveSelection(1)
+
+                        StyledText {
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: searchInput.text === ""
+                            text: "Search apps and commands"
+                            font.pixelSize: 12.5
+                            font.weight: Font.Normal
                             color: Config.Appearance.ink3
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                            font.family: "Inter"
                         }
                     }
                 }
+
+                Rectangle {
+                    id: escChip
+                    anchors.right: parent.right
+                    anchors.rightMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: escLabel.implicitWidth + 16
+                    height: 26
+                    radius: Config.Appearance.rSm
+                    color: escHover.hovered ? Config.Appearance.sel : Config.Appearance.hover
+
+                    StyledText {
+                        id: escLabel
+                        anchors.centerIn: parent
+                        text: "ESC"
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                        color: Config.Appearance.ink3
+                    }
+
+                    HoverHandler { id: escHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: launcher.close() }
+                }
             }
 
-            // --- Pinned grid ---------------------------------------------------
-            Item {
+            // ── pinned grid ───────────────────────────────────────────────
+            Column {
                 width: parent.width
-                height: launcher.contentHeight
                 visible: !launcher.showingList
 
+                // Section header
+                Item {
+                    width: parent.width
+                    height: 32
+
+                    Row {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 14
+                            height: 2
+                            color: Config.Appearance.accent
+                        }
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Pinned"
+                            font.pixelSize: 10.5
+                            font.weight: Font.DemiBold
+                            font.capitalization: Font.AllUppercase
+                            font.letterSpacing: 0.85
+                            color: Config.Appearance.ink2
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: allRow.implicitWidth + 20
+                        height: 25
+                        radius: Config.Appearance.rSm
+                        color: allHover.hovered ? Config.Appearance.accent : Config.Appearance.hover
+                        Behavior on color { ColorAnimation { duration: 140 } }
+
+                        Row {
+                            id: allRow
+                            anchors.centerIn: parent
+                            spacing: 6
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "All apps"
+                                font.pixelSize: 10.5
+                                font.weight: Font.DemiBold
+                                color: allHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
+                            }
+                            MonoIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: "chevronRight"
+                                size: 12
+                                inkColor: allHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
+                                monochrome: true
+                            }
+                        }
+
+                        HoverHandler { id: allHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: launcher.showAll = true }
+                    }
+                }
+
+                Grid {
+                    x: 10
+                    width: parent.width - 20
+                    columns: 4
+                    spacing: 2
+
+                    Repeater {
+                        model: launcher.pageItems
+
+                        Item {
+                            id: gridItem
+                            required property var modelData
+                            required property int index
+
+                            readonly property bool selected: launcher.selectedIndex === index
+
+                            width: (parent.width - parent.spacing * 3) / 4
+                            height: 70
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Config.Appearance.rSm
+                                color: gridItem.selected || gridHover.hovered
+                                       ? Config.Appearance.sel : "transparent"
+                                border.width: gridItem.selected ? 1 : 0
+                                border.color: Config.Appearance.seam
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                            }
+
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 6
+
+                                Rectangle {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: 30
+                                    height: 30
+                                    radius: Config.Appearance.rSm
+                                    color: Config.Appearance.hover
+
+                                    MonoIcon {
+                                        anchors.centerIn: parent
+                                        name: gridItem.modelData.icon
+                                        size: 16
+                                        inkColor: Config.Appearance.ink
+                                        accentColor: Config.Appearance.accent
+                                    }
+                                }
+
+                                StyledText {
+                                    width: gridItem.width - 8
+                                    horizontalAlignment: Text.AlignHCenter
+                                    elide: Text.ElideRight
+                                    text: gridItem.modelData.label
+                                    font.pixelSize: 10.5
+                                }
+                            }
+
+                            HoverHandler {
+                                id: gridHover
+                                cursorShape: Qt.PointingHandCursor
+                                onHoveredChanged: if (hovered) launcher.selectedIndex = gridItem.index;
+                            }
+                            TapHandler { onTapped: launcher.run(gridItem.modelData) }
+                        }
+                    }
+                }
+
+                // Page dots
+                Item {
+                    width: parent.width
+                    height: launcher.pageCount > 1 ? 20 : 8
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 6
+                        visible: launcher.pageCount > 1
+
+                        Repeater {
+                            model: launcher.pageCount
+
+                            Rectangle {
+                                required property int index
+                                width: launcher.page === index ? 16 : 5
+                                height: 5
+                                radius: 3
+                                color: launcher.page === index
+                                       ? Config.Appearance.accent : Config.Appearance.div
+                                Behavior on width { NumberAnimation { duration: 160 } }
+
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler {
+                                    onTapped: { launcher.page = index; launcher.selectedIndex = 0; }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
+
+                // Recommended
                 Column {
                     width: parent.width
-                    anchors.top: parent.top
+                    visible: launcher.recentItems.length > 0
 
                     Item {
-                        width: parent.width - 20
-                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: parent.width
                         height: 32
 
                         Row {
                             anchors.left: parent.left
+                            anchors.leftMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 8
-                            Rectangle { width: 14; height: 2; color: Config.Appearance.accent; anchors.verticalCenter: parent.verticalCenter }
-                            Text {
-                                text: "PINNED"
-                                color: Config.Appearance.ink2
-                                font.pixelSize: 11
+
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 14
+                                height: 2
+                                color: Config.Appearance.accent
+                            }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Recommended"
+                                font.pixelSize: 10.5
                                 font.weight: Font.DemiBold
-                                font.letterSpacing: 1
-                                font.family: "Inter"
+                                font.capitalization: Font.AllUppercase
+                                font.letterSpacing: 0.85
+                                color: Config.Appearance.ink2
                             }
                         }
 
-                        Rectangle {
+                        StyledText {
                             anchors.right: parent.right
+                            anchors.rightMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
-                            width: allAppsRow.implicitWidth + 20
-                            height: 25
-                            radius: Config.Appearance.rSm
-                            color: allAppsHover.hovered ? Config.Appearance.accent : Config.Appearance.hover
-                            Behavior on color { ColorAnimation { duration: 120 } }
-
-                            Row {
-                                id: allAppsRow
-                                anchors.centerIn: parent
-                                spacing: 6
-                                Text {
-                                    text: "All apps"
-                                    color: allAppsHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
-                                    font.pixelSize: 11
-                                    font.weight: Font.DemiBold
-                                    font.family: "Inter"
-                                }
-                                MonoIcon {
-                                    name: "chevronRight"
-                                    size: 12
-                                    inkColor: allAppsHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                            }
-
-                            HoverHandler { id: allAppsHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: { launcher.showAll = true; launcher.query = ""; } }
+                            text: "recent"
+                            font.pixelSize: 10.5
+                            color: Config.Appearance.ink3
                         }
                     }
 
                     Grid {
+                        x: 10
                         width: parent.width - 20
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        columns: 4
-                        topPadding: 4
+                        columns: 2
+                        spacing: 1
+                        bottomPadding: 6
 
                         Repeater {
-                            model: launcher.pinnedItems
+                            model: launcher.recentItems
 
                             Item {
-                                id: pinTile
+                                id: recentItem
                                 required property var modelData
-                                width: (parent.width) / 4
-                                height: 64
+
+                                width: (parent.width - parent.spacing) / 2
+                                height: 36
 
                                 Rectangle {
                                     anchors.fill: parent
-                                    anchors.margins: 1
                                     radius: Config.Appearance.rSm
-                                    color: pinHover.hovered ? Config.Appearance.sel : "transparent"
-                                    border.width: pinHover.hovered ? 1 : 0
-                                    border.color: Config.Appearance.seam
+                                    color: recentHover.hovered ? Config.Appearance.sel : "transparent"
+                                    Behavior on color { ColorAnimation { duration: 120 } }
                                 }
 
-                                Column {
-                                    anchors.centerIn: parent
-                                    spacing: 6
+                                Row {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 7
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 7
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 8
 
                                     Rectangle {
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        width: 30
-                                        height: 30
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 22
+                                        height: 22
                                         radius: Config.Appearance.rSm
                                         color: Config.Appearance.hover
+                                        border.width: 1
+                                        border.color: Config.Appearance.rule
+
                                         MonoIcon {
                                             anchors.centerIn: parent
-                                            name: pinTile.modelData.icon
-                                            size: 16
-                                            inkColor: Config.Appearance.ink
+                                            name: launcher.iconForFile(recentItem.modelData.name)
+                                            size: 12
+                                            inkColor: Config.Appearance.ink2
                                             accentColor: Config.Appearance.accent
                                         }
                                     }
-                                    Text {
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        width: pinTile.width - 4
-                                        horizontalAlignment: Text.AlignHCenter
-                                        elide: Text.ElideRight
-                                        text: pinTile.modelData.label
-                                        color: Config.Appearance.ink
-                                        font.pixelSize: 11
-                                        font.family: "Inter"
+
+                                    Column {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: parent.width - 30
+                                        spacing: 1
+
+                                        StyledText {
+                                            width: parent.width
+                                            elide: Text.ElideRight
+                                            text: recentItem.modelData.name
+                                            font.pixelSize: 11
+                                        }
+                                        StyledText {
+                                            width: parent.width
+                                            elide: Text.ElideRight
+                                            text: launcher.relativeTime(recentItem.modelData.modified)
+                                            font.pixelSize: 9.5
+                                            font.weight: Font.Normal
+                                            color: Config.Appearance.ink3
+                                        }
                                     }
                                 }
 
-                                HoverHandler { id: pinHover; cursorShape: Qt.PointingHandCursor }
-                                TapHandler { onTapped: launcher.runItem(pinTile.modelData) }
-                            }
-                        }
-                    }
-
-                    // Real recently-used files (~/.local/share/recently-used.xbel),
-                    // not the mockup's fabricated demo entries. Hidden entirely
-                    // when there's nothing real to show.
-                    Item {
-                        width: parent.width - 20
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        visible: launcher.recentItems.length > 0
-                        height: visible ? (11 + 30 + Math.ceil(launcher.recentItems.length / 2) * 40) : 0
-
-                        Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
-
-                        Item {
-                            y: 11
-                            width: parent.width
-                            height: 26
-
-                            Row {
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 8
-                                Rectangle { width: 14; height: 2; color: Config.Appearance.accent; anchors.verticalCenter: parent.verticalCenter }
-                                Text {
-                                    text: "RECOMMENDED"
-                                    color: Config.Appearance.ink2
-                                    font.pixelSize: 11
-                                    font.weight: Font.DemiBold
-                                    font.letterSpacing: 1
-                                    font.family: "Inter"
-                                }
-                            }
-                            Text {
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "recent"
-                                color: Config.Appearance.ink3
-                                font.pixelSize: 11
-                                font.family: "Inter"
-                            }
-                        }
-
-                        Grid {
-                            y: 41
-                            width: parent.width
-                            columns: 2
-                            columnSpacing: 4
-                            rowSpacing: 1
-
-                            Repeater {
-                                model: launcher.recentItems
-
-                                Item {
-                                    id: recentTile
-                                    required property var modelData
-                                    width: (parent.width - 4) / 2
-                                    height: 39
-
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: Config.Appearance.rSm
-                                        color: recentHover.hovered ? Config.Appearance.sel : "transparent"
-                                    }
-
-                                    Row {
-                                        anchors.fill: parent
-                                        anchors.margins: 7
-                                        spacing: 8
-
-                                        Rectangle {
-                                            width: 22
-                                            height: 22
-                                            radius: Config.Appearance.rSm
-                                            color: Config.Appearance.hover
-                                            border.width: 1
-                                            border.color: Config.Appearance.rule
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            MonoIcon {
-                                                anchors.centerIn: parent
-                                                name: recentTile.modelData.icon
-                                                size: 12
-                                                inkColor: Config.Appearance.ink2
-                                                accentColor: Config.Appearance.accent
-                                            }
-                                        }
-
-                                        Column {
-                                            width: parent.width - 22 - 8
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            Text {
-                                                text: recentTile.modelData.name
-                                                color: Config.Appearance.ink
-                                                font.pixelSize: 11
-                                                font.family: "Inter"
-                                                elide: Text.ElideRight
-                                                width: parent.width
-                                            }
-                                            Text {
-                                                text: launcher.relativeTime(recentTile.modelData.modified)
-                                                color: Config.Appearance.ink3
-                                                font.pixelSize: 10
-                                                font.family: "Inter"
-                                                elide: Text.ElideRight
-                                                width: parent.width
-                                            }
-                                        }
-                                    }
-
-                                    HoverHandler { id: recentHover; cursorShape: Qt.PointingHandCursor }
-                                    TapHandler {
-                                        onTapped: {
-                                            Quickshell.execDetached(["xdg-open", recentTile.modelData.path]);
-                                            launcher.close();
-                                        }
+                                HoverHandler { id: recentHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler {
+                                    onTapped: {
+                                        Quickshell.execDetached(
+                                            ["xdg-open", recentItem.modelData.path]);
+                                        launcher.close();
                                     }
                                 }
                             }
@@ -498,32 +656,30 @@ PanelWindow {
                 }
             }
 
-            // --- Search results / all apps -------------------------------------
-            Item {
+            // ── results list ──────────────────────────────────────────────
+            Column {
                 width: parent.width
-                height: launcher.contentHeight
                 visible: launcher.showingList
 
                 Item {
-                    width: parent.width - 16
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    height: 30
+                    width: parent.width
+                    height: 40
 
-                    Text {
+                    StyledText {
                         anchors.left: parent.left
-                        text: launcher.query.length > 0 ? "Results" : "All apps"
-                        color: Config.Appearance.ink
-                        font.pixelSize: 13
-                        font.weight: Font.DemiBold
-                        font.family: "Inter"
+                        anchors.leftMargin: 16
                         anchors.verticalCenter: parent.verticalCenter
+                        text: launcher.listTitle
+                        font.pixelSize: 12.5
+                        font.weight: Font.DemiBold
                     }
 
                     Rectangle {
-                        visible: launcher.showAll && launcher.query.length === 0
                         anchors.right: parent.right
+                        anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
-                        width: backRow.implicitWidth + 20
+                        visible: launcher.showAll && !launcher.searching
+                        width: backRow.implicitWidth + 22
                         height: 28
                         radius: Config.Appearance.rSm
                         color: backHover.hovered ? Config.Appearance.sel : Config.Appearance.hover
@@ -532,199 +688,264 @@ PanelWindow {
                             id: backRow
                             anchors.centerIn: parent
                             spacing: 7
-                            MonoIcon { name: "chevronLeft"; size: 13; inkColor: Config.Appearance.ink2; anchors.verticalCenter: parent.verticalCenter }
-                            Text { text: "Back to pinned"; color: Config.Appearance.ink2; font.pixelSize: 11; font.weight: Font.DemiBold; font.family: "Inter" }
+                            MonoIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: "chevronLeft"
+                                size: 13
+                                inkColor: Config.Appearance.ink2
+                                monochrome: true
+                            }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Back to pinned"
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                color: Config.Appearance.ink2
+                            }
                         }
 
                         HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: { launcher.showAll = false; launcher.query = ""; } }
+                        TapHandler { onTapped: launcher.showAll = false }
                     }
                 }
 
                 ListView {
-                    id: resultsList
-                    anchors.top: parent.top
-                    anchors.topMargin: 30
-                    anchors.bottom: parent.bottom
+                    id: results
+                    x: 8
                     width: parent.width - 16
-                    anchors.horizontalCenter: parent.horizontalCenter
+                    height: Math.min(356, Math.max(64, contentHeight))
                     clip: true
                     spacing: 1
-                    model: launcher.searchPool
-                    visible: launcher.searchPool.length > 0
+                    boundsBehavior: Flickable.StopAtBounds
+                    model: launcher.appResults
+                    currentIndex: launcher.selectedIndex
+                    highlightMoveDuration: 120
+                    // Keep the keyboard selection in view as it moves.
+                    highlightRangeMode: ListView.ApplyRange
+                    preferredHighlightBegin: 40
+                    preferredHighlightEnd: height - 40
 
                     delegate: Item {
                         id: resultRow
                         required property var modelData
                         required property int index
-                        width: resultsList.width
-                        height: 43
 
-                        readonly property bool isTopResult: index === 0
+                        readonly property bool selected: launcher.selectedIndex === index
+
+                        width: results.width
+                        height: 43
 
                         Rectangle {
                             anchors.fill: parent
                             radius: Config.Appearance.rSm
-                            color: resultRow.isTopResult ? Config.Appearance.accent : (rowHover.hovered ? Config.Appearance.hover : "transparent")
+                            color: resultRow.selected ? Config.Appearance.accent
+                                 : (resultHover.hovered ? Config.Appearance.hover : "transparent")
+                            Behavior on color { ColorAnimation { duration: 100 } }
                         }
 
                         Row {
-                            anchors.fill: parent
+                            anchors.left: parent.left
                             anchors.leftMargin: 10
-                            anchors.rightMargin: 10
+                            anchors.right: hint.left
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
                             spacing: 11
 
                             Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
                                 width: 27
                                 height: 27
                                 radius: Config.Appearance.rSm
-                                color: resultRow.isTopResult ? Qt.rgba(1, 1, 1, 0.22) : Config.Appearance.hover
-                                anchors.verticalCenter: parent.verticalCenter
+                                color: resultRow.selected
+                                       ? Qt.rgba(1, 1, 1, 0.22) : Config.Appearance.hover
 
-                                Image {
-                                    id: appIcon
+                                // Real theme icon for installed apps, pack
+                                // glyph for the shell's own commands.
+                                IconImage {
                                     anchors.centerIn: parent
-                                    width: 16
-                                    height: 16
-                                    source: resultRow.modelData.icon ? Quickshell.iconPath(resultRow.modelData.icon, "") : ""
-                                    visible: status === Image.Ready
+                                    width: 15
+                                    height: 15
+                                    visible: (resultRow.modelData.appIcon || "") !== ""
+                                    source: resultRow.modelData.appIcon || ""
                                 }
-                                Text {
-                                    visible: appIcon.status !== Image.Ready
+
+                                MonoIcon {
                                     anchors.centerIn: parent
-                                    text: (resultRow.modelData.name || "?").charAt(0).toUpperCase()
-                                    color: resultRow.isTopResult ? Config.Appearance.onAccent : Config.Appearance.ink2
-                                    font.pixelSize: 12
-                                    font.weight: Font.Bold
-                                    font.family: "Inter"
+                                    visible: (resultRow.modelData.appIcon || "") === ""
+                                    name: resultRow.modelData.icon || "square"
+                                    size: 14
+                                    inkColor: resultRow.selected
+                                              ? Config.Appearance.onAccent : Config.Appearance.ink
+                                    accentColor: resultRow.selected
+                                                 ? Config.Appearance.onAccent : Config.Appearance.accent
                                 }
                             }
 
                             Column {
-                                width: parent.width - 27 - 11 - 40
                                 anchors.verticalCenter: parent.verticalCenter
-                                Text {
-                                    text: resultRow.modelData.name || ""
-                                    color: resultRow.isTopResult ? Config.Appearance.onAccent : Config.Appearance.ink
+                                width: parent.width - 38
+                                spacing: 2
+
+                                StyledText {
+                                    width: parent.width
+                                    elide: Text.ElideRight
+                                    text: resultRow.modelData.label
                                     font.pixelSize: 12
                                     font.weight: Font.DemiBold
-                                    font.family: "Inter"
-                                    elide: Text.ElideRight
-                                    width: parent.width
+                                    color: resultRow.selected
+                                           ? Config.Appearance.onAccent : Config.Appearance.ink
                                 }
-                                Text {
-                                    text: resultRow.modelData.comment || ""
-                                    color: resultRow.isTopResult ? Config.Appearance.onAccent : Config.Appearance.ink3
+                                StyledText {
+                                    width: parent.width
+                                    elide: Text.ElideRight
+                                    text: resultRow.modelData.cat || ""
                                     font.pixelSize: 10
-                                    font.family: "Inter"
-                                    elide: Text.ElideRight
-                                    width: parent.width
-                                    visible: text.length > 0
+                                    font.weight: Font.Normal
+                                    opacity: resultRow.selected ? 0.8 : 1
+                                    color: resultRow.selected
+                                           ? Config.Appearance.onAccent : Config.Appearance.ink3
                                 }
                             }
-
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                visible: resultRow.isTopResult
-                                text: "return"
-                                color: Config.Appearance.onAccent
-                                font.pixelSize: 11
-                                font.weight: Font.DemiBold
-                                font.family: "Inter"
-                            }
                         }
 
-                        HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler {
-                            onTapped: {
-                                resultRow.modelData.execute();
-                                launcher.close();
-                            }
+                        StyledText {
+                            id: hint
+                            anchors.right: parent.right
+                            anchors.rightMargin: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: resultRow.selected ? "return" : ""
+                            font.pixelSize: 10.5
+                            font.weight: Font.DemiBold
+                            color: Config.Appearance.onAccent
                         }
+
+                        HoverHandler {
+                            id: resultHover
+                            cursorShape: Qt.PointingHandCursor
+                            onHoveredChanged: if (hovered) launcher.selectedIndex = resultRow.index;
+                        }
+                        TapHandler { onTapped: launcher.run(resultRow.modelData) }
                     }
                 }
 
-                Text {
-                    visible: launcher.searchPool.length === 0
-                    anchors.top: parent.top
-                    anchors.topMargin: 60
-                    width: parent.width - 28
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                // Empty state — what the mockup promises when nothing matches.
+                StyledText {
+                    visible: launcher.appResults.length === 0
+                    width: parent.width
+                    leftPadding: 16
+                    rightPadding: 16
+                    topPadding: 14
+                    bottomPadding: 22
                     wrapMode: Text.WordWrap
-                    text: "No matches — press enter to run as a command"
+                    text: "No matches — press enter to run \u201C" + launcher.query.trim()
+                          + "\u201D as a command"
+                    font.pixelSize: 12.5
                     color: Config.Appearance.ink3
-                    font.pixelSize: 13
-                    font.family: "Inter"
                 }
             }
 
-            // --- Footer ----------------------------------------------------------
-            Item {
+            // ── footer ────────────────────────────────────────────────────
+            Rectangle {
                 width: parent.width
                 height: 40
+                color: Config.Appearance.hover
 
-                Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Config.Appearance.rule }
+                Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
 
-                Row {
+                Rectangle {
                     anchors.left: parent.left
-                    anchors.leftMargin: 10
+                    anchors.leftMargin: 7
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 9
+                    width: userRow.implicitWidth + 14
+                    height: 30
+                    radius: Config.Appearance.rSm
+                    color: userHover.hovered ? Config.Appearance.sel : "transparent"
 
-                    Rectangle {
-                        width: 21
-                        height: 21
-                        radius: 10.5
-                        color: Config.Appearance.accent
-                        Text {
-                            anchors.centerIn: parent
-                            text: (launcher.userName || "?").charAt(0).toUpperCase()
-                            color: Config.Appearance.onAccent
-                            font.pixelSize: 11
-                            font.weight: Font.Bold
-                            font.family: "Inter"
-                        }
-                    }
-
-                    Column {
-                        spacing: 3
+                    Row {
+                        id: userRow
+                        anchors.left: parent.left
+                        anchors.leftMargin: 3
                         anchors.verticalCenter: parent.verticalCenter
-                        Text {
-                            text: launcher.userName || ""
-                            color: Config.Appearance.ink
-                            font.pixelSize: 12
-                            font.weight: Font.DemiBold
-                            font.family: "Inter"
+                        spacing: 9
+
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 21
+                            height: 21
+                            radius: 11
+                            color: Config.Appearance.accent
+
+                            MonoIcon {
+                                anchors.centerIn: parent
+                                name: "user"
+                                size: 11
+                                inkColor: Config.Appearance.onAccent
+                                monochrome: true
+                            }
                         }
-                        Rectangle { width: 30; height: 2; color: Config.Appearance.accent }
+
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 3
+                            StyledText {
+                                text: Services.SysInfo.user
+                                font.pixelSize: 11.5
+                                font.weight: Font.DemiBold
+                            }
+                            Rectangle {
+                                width: parent.width
+                                height: 2
+                                color: Config.Appearance.accent
+                            }
+                        }
                     }
+
+                    HoverHandler { id: userHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { launcher.close(); Config.UiState.togglePower(); } }
+                }
+
+                // Power shortcut, mirroring the bar's own.
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 28
+                    height: 28
+                    radius: Config.Appearance.rSm
+                    color: powerHover.hovered ? Config.Appearance.accent : "transparent"
+
+                    MonoIcon {
+                        anchors.centerIn: parent
+                        name: "power"
+                        size: 15
+                        inkColor: powerHover.hovered
+                                  ? Config.Appearance.onAccent : Config.Appearance.ink2
+                        monochrome: true
+                    }
+
+                    HoverHandler { id: powerHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { launcher.close(); Config.UiState.togglePower(); } }
                 }
             }
         }
     }
 
-    property string userName: ""
-    Process {
-        command: ["whoami"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: launcher.userName = this.text.trim()
-        }
-    }
+    // ── keyboard navigation ───────────────────────────────────────────────
+    function moveSelection(delta) {
+        const count = showingList ? appResults.length : pageItems.length;
+        if (count === 0) return;
+        let next = selectedIndex + delta;
 
-    Process {
-        command: ["sh", "-c", "echo $HOME"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: launcher.homeDir = this.text.trim()
+        if (!showingList) {
+            // Stepping off the end of a page turns to the next one.
+            if (next < 0 && page > 0) {
+                page--;
+                next = Math.max(0, pageItems.length + next);
+            } else if (next >= count && page < pageCount - 1) {
+                page++;
+                next = Math.min(pageItems.length - 1, next - count);
+            }
         }
-    }
-
-    FileView {
-        id: recentFile
-        path: launcher.homeDir ? launcher.homeDir + "/.local/share/recently-used.xbel" : ""
-        watchChanges: true
-        onFileChanged: reload()
+        selectedIndex = Math.max(0, Math.min(count - 1, next));
     }
 }

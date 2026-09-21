@@ -1,32 +1,53 @@
 # Hyprshell
 
-A QML/Quickshell implementation of the "Hyprshell" desktop mocked up in
-Claude Design (see `../chats/` and `../project/Hyprshell Live.dc.html` for
-the source design and its history). Built step by step per module, wired to
-real system state rather than mock data.
+A QML/Quickshell implementation of the "Hyprshell" desktop designed in
+Claude Design. Every module is wired to real system state rather than the
+mockup's demo data — the workspace pills are your workspaces, the bell badge
+counts your notifications, and the Wi-Fi tile turns your radio off.
 
 ## Layout
 
 ```
 shell/
   hypr/
-    hyprland.lua        Hyprland 0.55+ Lua config (window manager)
+    hyprland.lua           Hyprland 0.55+ Lua config (compositor + keybinds)
   quickshell/
-    shell.qml            Entry point
+    shell.qml              Entry point: every surface, plus the IPC handler
+                           Hyprland's keybinds call into
     config/
-      Appearance.qml      Design tokens (colors, radii, dock/launcher geometry) — pragma Singleton
-      Apps.qml             Pinned dock/launcher apps: icon, exec, appId match regex
-      Commands.qml          Shell-level shortcuts shown in the launcher (theme, lock, reload)
-      UiState.qml            Cross-module runtime toggles (launcher/overview/settings open)
+      Appearance.qml       Design tokens + every persisted preference
+                           (theme.json, written live via JsonAdapter)
+      Apps.qml             Pinned apps, and the window-class → glyph map the
+                           dock, task buttons and overview share
+      Commands.qml         Shell commands the launcher can run
+      UiState.qml          Which panel is open, OSD state, lock state
+    services/
+      Audio.qml            PipeWire sink/source volume, mute, device list
+      Bluetooth.qml        bluetoothctl: radio, paired devices, scanning
+      Brightness.qml       brightnessctl backlight, debounced
+      Compositor.qml       Hyprland workspaces, windows and their geometry
+      Network.qml          nmcli: Wi-Fi, access points, VPN, IP
+      NightLight.qml       hyprsunset / wlsunset colour temperature
+      Notifications.qml    The org.freedesktop.Notifications server
+      Session.qml          Lock / suspend / reboot / log out / reload
+      SysInfo.qml          Host, CPU, memory, disk, uptime, compositor
     modules/
-      dock/
-        Dock.qml            The floating dock
-        DockTile.qml         Reusable pinned/unpinned/utility tile
-      launcher/
-        Launcher.qml         Start menu / Launchpad hybrid
-      icons/
-        IconPaths.js          Bespoke 24x24 monoline icon pack (path data)
-        MonoIcon.qml           Renders one icon from IconPaths.js as a themed Qt Quick Shape
+      background/          The desktop ground + its right-click menu
+      bar/                 Top bar: workspaces, window menu, tasks, tray,
+                           bell, status capsule, clock, power
+      common/              Shared primitives (panel chrome, slider, toggle,
+                           segmented control, bar button, styled text)
+      dock/                The floating dock and its tiles
+      icons/               The bespoke 24×24 monoline pack + its renderer
+      launcher/            Start menu / Launchpad hybrid
+      lock/                Session lock with PAM authentication
+      notifications/       Banner toasts
+      osd/                 Volume / mic / brightness readout
+      overview/            Workspace grid with real window thumbnails
+      panels/              Control center, notification center, calendar,
+                           power menu, desktop context menu, and the overlay
+                           surface that hosts them
+      settings/            The Settings window and its row renderer
 ```
 
 ## Install
@@ -37,58 +58,108 @@ cp shell/hypr/hyprland.lua ~/.config/hypr/hyprland.lua
 cp -r shell/quickshell ~/.config/quickshell/hyprshell
 ```
 
-Requires Hyprland ≥ 0.55 (Lua config) and Quickshell. `hyprland.lua`
-autostarts the shell (`qs -c hyprshell`) and routes a few keybinds into it
-over Quickshell's IPC (`qs ipc call shell <fn>`) — see the "KEYBINDINGS"
-section for the full list.
+`hyprland.lua` autostarts the shell (`qs -c hyprshell`) and routes its
+keybinds into it over Quickshell's IPC socket, so the directory name matters.
 
-The dock/launcher's pinned apps (`quickshell/config/Apps.qml`) assume
-`foot`, `nautilus`, `firefox`, `neovide`, `obsidian`, and `ncmpcpp`. Edit
-`exec` / `match` there to whatever you actually run — `match` is tested
-against each window's Wayland `appId`.
+### Requirements
 
-Text uses Inter; install an `inter-font` / `fonts-inter` package (Quickshell
-can't pull it from Google Fonts like the original browser mockup did).
+Hard requirements: **Hyprland ≥ 0.55** (Lua config) and **Quickshell** built
+with the PipeWire, UPower, PAM and StatusNotifier features — the defaults in
+every packaged build.
 
-## Status
+Everything else degrades rather than breaking. A machine with no backlight
+hides the brightness controls; with no `hyprsunset` the Night light tile says
+so; with no `nmcli` the Wi-Fi readout goes quiet.
 
-Built so far:
-- **Dock** — Start/launcher toggle, task-view toggle, pinned apps with live
-  running/active state and window-count indicators from
-  `Quickshell.Wayland.ToplevelManager`, unpinned-but-running apps, Settings
-  shortcut, bottom/left positioning, auto-hide.
-- **Launcher** — Start menu / Launchpad hybrid, no background blur/dim
-  (click anywhere else to close). Pinned row uses the same bespoke icons as
-  the dock (`Apps.pinned` + `Commands.items`: toggle theme, lock, reload
-  shell — all real, in-process or `execDetached` actions). Search / "All
-  apps" reads genuine installed applications from
-  `Quickshell.DesktopEntries`, not mockup demo data — icons resolve via
-  `Quickshell.iconPath()` with a monogram fallback. Enter launches the top
-  result, or runs the typed text as a raw command if nothing matches.
+| Used for | Needs |
+| --- | --- |
+| Wi-Fi tile, network pane | `nmcli` (NetworkManager) |
+| Bluetooth tile and pane | `bluetoothctl` (BlueZ) |
+| Brightness slider and keys | `brightnessctl` |
+| Night light | `hyprsunset` or `wlsunset` |
+| Screenshots | `grim`, `slurp`, `wl-clipboard` |
+| Power profiles, Game mode | `power-profiles-daemon` |
+| Suspend / reboot / power off | `systemd` (`loginctl`) |
+| Idle → lock | `hypridle` |
+| Media keys | `playerctl` |
+| Wallpaper picker | `zenity` or `kdialog` |
 
-Everything else the mockup shows — top bar, control center, notifications,
-calendar, power menu, settings, lock screen — is still just the design, not
-yet built.
+Text is Inter throughout; install an `inter-font` / `fonts-inter` package.
 
-Known gaps in what's built:
-- "Show desktop" is a stub — Hyprland has no built-in minimize-all
-  dispatcher, needs a helper script.
-- The mockup's launcher also has a "Recommended / recent files" section and
-  a paginated 24-item pinned grid — both were mockup demo data with no real
-  backend (recent-files tracking, a broader "shortcuts" system), so they're
-  left out rather than faked. Pinned is just `Apps.pinned` + `Commands.items`
-  (10 real items, single page).
-- Launcher clicks always launch a new instance rather than focusing an
-  existing window — the dock's toplevel-matching logic (running/active
-  state per pinned app) wasn't duplicated here.
-- Settings/Overview toggles in `UiState.qml` have nothing to open yet —
-  they'll be consumed once those modules exist.
-- `Appearance.qml` isn't persisted (no `theme.json` read/write yet) —
-  that lands with the Settings module, which is what actually edits it in
-  the mockup.
-- Untested: there's no Hyprland/Quickshell runtime available to compile
-  this against here, so it's grounded in the current Quickshell/Hyprland
-  docs rather than a build (the dock *has* been runtime-tested by the user
-  and a few real bugs fixed from actual error output — the launcher hasn't
-  been yet). Flag anything that doesn't load and it can be fixed against
-  the real error.
+The pinned apps in `config/Apps.qml` assume `foot`, `nautilus`, `firefox`,
+`neovide`, `obsidian` and `ncmpcpp`, with `match` patterns covering the
+common alternatives. Edit `exec` and `match` to what you actually run —
+`match` is tested against each window's Hyprland class.
+
+## What each part does
+
+**Top bar.** Workspace pills that expand to their number when focused or
+hovered and collapse to a bead otherwise — filled when the workspace has
+windows, hollow when it's empty. The focused app's name with an accent
+underline, a Window menu of real compositor actions (fullscreen, float, pin,
+move, snap layouts) and the live window title. Optionally a task list.
+On the right: the StatusNotifier tray, the notification bell with its count,
+a status capsule showing SSID / volume / battery that opens the control
+center, a clock that opens the calendar, and the power button.
+
+**Dock.** Start and overview, pinned apps, then any unpinned app that
+happens to be running, then Settings and show-desktop. Pips under each tile
+count that app's windows and the focused app's first pip stretches into a
+bar. Left click focuses or launches and cycles through an app's windows,
+right click always opens a new instance, middle click closes one. Bottom or
+left edge, with optional auto-hide.
+
+**Launcher.** Opens on a bare Super tap. The pinned grid is paginated; typing
+searches every installed `.desktop` entry plus the shell's own commands, with
+prefix matches ranked first; arrow keys and Return drive it from the
+keyboard; anything with no match runs as a shell command. "Recommended" is
+your real recently-used files.
+
+**Control center.** Account header with the theme cycler, six live tiles
+(Wi-Fi, Bluetooth, Night light, Airplane, Capture, Game mode) and volume,
+brightness and microphone sliders. Wi-Fi and Bluetooth drill down into a real
+list — pick a network or a paired device from the panel.
+
+**Notifications.** A full notification server: banners under the bar, a
+center behind the bell, the sender's own action buttons, do-not-disturb that
+silences banners while still filing everything, and grouping by app or time.
+
+**Overview.** Workspace cards drawn from real window geometry, so a card is a
+recognisable picture of that workspace. Click a window to focus it, middle
+click to close it, number keys to jump, Escape to dismiss.
+
+**Settings.** A real toplevel window Hyprland manages like any other client.
+Shell panes write `theme.json` as you drag; device panes act on the system
+through PipeWire, UPower, `nmcli`, `bluetoothctl` and `hyprctl keyword`.
+
+**Lock screen.** A Wayland session-lock surface authenticating against PAM.
+The compositor guarantees nothing behind it is visible and nothing else takes
+input while it's up.
+
+## Preferences
+
+Everything the Settings window changes is persisted to
+`~/.config/quickshell/hyprshell/theme.json`, written the moment you change it
+and watched for external edits — editing the file by hand repaints the shell
+without a reload.
+
+## Two things the mockup has that this doesn't
+
+**Per-app menu bars.** The mockup's bar carries File / Edit / View / Window
+menus for the focused app. That needs a global menu protocol, and Wayland has
+none — no client on Hyprland exports its menus, so those would be buttons
+that can't do anything. The bar keeps the affordance and fills it with the
+compositor's own window actions, which is the part that can actually run.
+
+**Interface scale.** The mockup has a master scale slider for the whole
+shell. Doing that properly means a scale transform on every layer surface
+plus recomputing each surface's size, which fights layer-shell's own sizing;
+a slider that moved some numbers and not the text would be worse than not
+having one. Bar height, dock size and corner rounding each scale on their
+own, which covers most of what it was for.
+
+## If the lock screen ever traps you
+
+It's a session lock, so by design nothing dismisses it but a successful
+password. If it does misbehave, switch to a TTY (`Ctrl+Alt+F2`), log in, and
+`pkill qs` — Hyprland drops the lock when the client holding it exits.

@@ -2,17 +2,29 @@ pragma Singleton
 import QtQuick
 import Quickshell
 
-// Shell-level shortcuts shown alongside Apps.pinned in the launcher's
-// Pinned row. Only things that are actually wired up today — the mockup's
-// PINNED list also had Wallpaper/Trash/Packages/etc. shortcuts, but those
-// point at features that don't exist yet in this build, so they're left
-// out rather than faked. Launcher.qml switches on `key` to run each one.
+// Shell-level commands shown in the launcher alongside real applications —
+// the mockup's EXTRA list and the non-app half of its pinned grid.
+//
+// Only things that are actually wired up appear here. Launcher.qml switches
+// on `key` to run each one.
 Singleton {
     id: root
 
     readonly property var items: [
-        { key: "toggleTheme", label: "Toggle theme", icon: "moon" },
-        { key: "lock", label: "Lock", icon: "lock" },
-        { key: "reload", label: "Reload shell", icon: "refresh" }
+        { key: "overview",   label: "Overview",     icon: "panelsTopLeft", cat: "Command · workspaces" },
+        { key: "settings",   label: "Settings",     icon: "settings",      cat: "System · shell and device" },
+        { key: "theme",      label: "Theme",        icon: "palette",       cat: "Command · switch light / dark" },
+        { key: "capture",    label: "Screenshot",   icon: "camera",        cat: "Command · grab a region" },
+        { key: "displays",   label: "Displays",     icon: "monitor",       cat: "System · monitors and scaling" },
+        { key: "sound",      label: "Sound",        icon: "volume",        cat: "System · output and input" },
+        { key: "network",    label: "Network",      icon: "wifi",          cat: "System · wireless" },
+        { key: "bluetooth",  label: "Bluetooth",    icon: "bluetooth",     cat: "System · paired devices" },
+        { key: "keybinds",   label: "Keybinds",     icon: "keyboard",      cat: "Command · cheatsheet" },
+        { key: "wallpaper",  label: "Wallpaper",    icon: "image",         cat: "Command · change the ground" },
+        { key: "reload",     label: "Reload shell", icon: "refresh",       cat: "Command · re-read the QML tree" },
+        { key: "lock",       label: "Lock",         icon: "lock",          cat: "Session · lock the screen" },
+        { key: "logout",     label: "Log out",      icon: "logOut",        cat: "Session · end this session" },
+        { key: "suspend",    label: "Suspend",      icon: "moon",          cat: "Session · sleep" },
+        { key: "poweroff",   label: "Power off",    icon: "power",         cat: "Session · shut down" }
     ]
 }
