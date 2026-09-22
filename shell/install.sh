@@ -11,8 +11,28 @@
 #   ./install.sh --shell-only   install only the Quickshell tree, and print
 #                               the lines to add to an existing Hyprland config
 #   ./install.sh --force        don't prompt
+#   ./install.sh --debug        trace every command (for reporting a bug here)
 #
-set -euo pipefail
+# Deliberately NOT `set -e`. Most of this script probes for things that are
+# expected to be missing, and under `set -e` a probe that comes back negative
+# can take the whole script down mid-report with no output — which is exactly
+# what an earlier version of this file did. Failures that actually matter (the
+# copies and backups at the end) are checked explicitly instead.
+
+set -u
+
+usage() {
+    cat <<'EOF'
+Hyprshell installer.
+
+  ./install.sh --check        report only, change nothing
+  ./install.sh                install (prompts before touching anything)
+  ./install.sh --shell-only   install only the Quickshell tree, and print
+                              the lines to add to an existing Hyprland config
+  ./install.sh --force        don't prompt
+  ./install.sh --debug        trace every command
+EOF
+}
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -28,10 +48,13 @@ for arg in "$@"; do
         --check)      MODE=check ;;
         --shell-only) MODE=shell-only ;;
         --force)      FORCE=1 ;;
-        -h|--help)    sed -n '3,16p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; exit 0 ;;
+        --debug)      set -x ;;
+        -h|--help)    usage; exit 0 ;;
         *)            echo "unknown option: $arg (try --help)" >&2; exit 2 ;;
     esac
 done
+
+die() { printf '\n%serror:%s %s\n' "${RED-}" "${RST-}" "$1" >&2; exit 1; }
 
 # ── output helpers ───────────────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -47,31 +70,44 @@ fail()  { printf '  %s✗%s %-22s %s%s%s\n' "$RED" "$RST" "$1" "$DIM" "${2-}" "$
 head1() { printf '\n%s%s%s\n' "$BOLD" "$1" "$RST"; }
 
 MISSING_REQUIRED=0
-declare -a MISSING_PKGS=()
+MISSING_PKGS=""
+
+add_pkg() {
+    [ -n "${1:-}" ] || return 0
+    case " $MISSING_PKGS " in
+        *" $1 "*) ;;
+        *) MISSING_PKGS="$MISSING_PKGS $1" ;;
+    esac
+    return 0
+}
 
 # ── distro package names ─────────────────────────────────────────────────────
 distro_id() {
-    [ -r /etc/os-release ] || { echo unknown; return; }
-    # shellcheck disable=SC1091
-    . /etc/os-release
-    case "${ID:-}${ID_LIKE:-}" in
-        *arch*)             echo arch ;;
-        *debian*|*ubuntu*)  echo debian ;;
-        *fedora*|*rhel*)    echo fedora ;;
-        *suse*)             echo suse ;;
-        *)                  echo unknown ;;
-    esac
+    if [ -r /etc/os-release ]; then
+        # Read it in a subshell so its variables don't leak into ours.
+        ( . /etc/os-release 2>/dev/null
+          case "${ID:-}${ID_LIKE:-}" in
+              *arch*)            echo arch ;;
+              *debian*|*ubuntu*) echo debian ;;
+              *fedora*|*rhel*)   echo fedora ;;
+              *suse*)            echo suse ;;
+              *)                 echo unknown ;;
+          esac )
+    else
+        echo unknown
+    fi
 }
 DISTRO="$(distro_id)"
+[ -n "$DISTRO" ] || DISTRO=unknown
 
 # pkg <arch> <debian> <fedora> <suse>
 pkg() {
     case "$DISTRO" in
-        arch)   echo "$1" ;;
-        debian) echo "$2" ;;
-        fedora) echo "$3" ;;
-        suse)   echo "$4" ;;
-        *)      echo "$1" ;;
+        arch)   printf '%s' "$1" ;;
+        debian) printf '%s' "$2" ;;
+        fedora) printf '%s' "$3" ;;
+        suse)   printf '%s' "$4" ;;
+        *)      printf '%s' "$1" ;;
     esac
 }
 
@@ -85,116 +121,148 @@ install_hint() {
     esac
 }
 
-# need <command> <required|optional> <what it's for> <arch> <deb> <fedora> <suse>
+# need <command> <required|optional> <purpose> <arch> <deb> <fedora> <suse>
 need() {
-    local cmd="$1" level="$2" purpose="$3"
-    if command -v "$cmd" >/dev/null 2>&1; then
-        ok "$cmd" "$purpose"
-        return
+    if command -v "$1" >/dev/null 2>&1; then
+        ok "$1" "$3"
+        return 0
     fi
-    local p; p="$(pkg "$4" "$5" "$6" "$7")"
-    if [ "$level" = required ]; then
-        fail "$cmd" "$purpose"
+    if [ "$2" = required ]; then
+        fail "$1" "$3"
         MISSING_REQUIRED=$((MISSING_REQUIRED + 1))
     else
-        warn "$cmd" "$purpose"
+        warn "$1" "$3"
     fi
-    # Not every tool is packaged on every distro, so an empty name here is
-    # normal. It must not become this function's exit status, or `set -e`
-    # takes the whole script down on the first such entry.
-    if [ -n "$p" ]; then MISSING_PKGS+=("$p"); fi
+    add_pkg "$(pkg "${4-}" "${5-}" "${6-}" "${7-}")"
     return 0
+}
+
+# ── version helpers ──────────────────────────────────────────────────────────
+# `hyprctl version` has had two shapes over the years:
+#     Hyprland 0.51.1 built from branch ...
+#     Hyprland, built from branch main at commit ...      <- version is in Tag:
+#     Tag: v0.41.2, commits: 5821
+# so both are tried. Every pipeline here uses `sed -n 1p` rather than `head`,
+# because `head` closes the pipe early and the writer upstream dies on SIGPIPE.
+hypr_version() {
+    local raw tag
+    raw="$(hyprctl version 2>/dev/null)"
+    [ -n "$raw" ] || raw="$(Hyprland --version 2>/dev/null)"
+    [ -n "$raw" ] || raw="$(hyprland --version 2>/dev/null)"
+    [ -n "$raw" ] || return 0
+
+    tag="$(printf '%s\n' "$raw" | sed -n 's/^Hyprland v\{0,1\}\([0-9][0-9.]*\).*/\1/p' | sed -n 1p)"
+    [ -n "$tag" ] || tag="$(printf '%s\n' "$raw" | sed -n 's/^Tag: v\{0,1\}\([0-9][0-9.]*\).*/\1/p' | sed -n 1p)"
+    printf '%s' "$tag"
+}
+
+# ver_lt <have> <want> -> 0 when have < want. An unparseable version returns
+# 1 (not less than), so a version we can't read never blocks the install.
+ver_lt() {
+    local h="${1:-}" w="${2:-}" h1 h2 w1 w2 rest
+    [ -n "$h" ] || return 1
+    h1="${h%%.*}"; rest="${h#*.}"; [ "$rest" = "$h" ] && rest=0; h2="${rest%%.*}"
+    w1="${w%%.*}"; rest="${w#*.}"; [ "$rest" = "$w" ] && rest=0; w2="${rest%%.*}"
+    case "${h1}${h2}${w1}${w2}" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$h1" -lt "$w1" ] && return 0
+    [ "$h1" -gt "$w1" ] && return 1
+    [ "$h2" -lt "$w2" ]
 }
 
 # ── checks ───────────────────────────────────────────────────────────────────
 head1 "Required"
 
-if command -v Hyprland >/dev/null 2>&1 || command -v hyprctl >/dev/null 2>&1; then
-    HVER="$(hyprctl version 2>/dev/null | sed -n 's/^Hyprland \([^ ]*\).*/\1/p' | head -1)"
-    [ -z "$HVER" ] && HVER="$(Hyprland --version 2>/dev/null | sed -n 's/^Hyprland \([^ ]*\).*/\1/p' | head -1)"
-    HNUM="$(printf '%s' "${HVER:-0}" | sed 's/^v//' | cut -d- -f1)"
-    HMAJ="${HNUM%%.*}"; HREST="${HNUM#*.}"; HMIN="${HREST%%.*}"
-    if [ "${HMAJ:-0}" -eq 0 ] 2>/dev/null && [ "${HMIN:-0}" -lt 55 ] 2>/dev/null; then
-        fail "Hyprland" "found ${HVER:-?} — the Lua config needs 0.55 or newer"
+if command -v hyprctl >/dev/null 2>&1 || command -v Hyprland >/dev/null 2>&1 \
+   || command -v hyprland >/dev/null 2>&1; then
+    HVER="$(hypr_version)"
+    if [ -z "$HVER" ]; then
+        # Installed, but the version could not be read — commonly because
+        # hyprctl needs a running session. Not a reason to refuse.
+        warn "Hyprland" "installed; version unreadable (needs 0.55+ for the Lua config)"
+    elif ver_lt "$HVER" 0.55; then
+        fail "Hyprland" "found $HVER — the Lua config needs 0.55 or newer"
         MISSING_REQUIRED=$((MISSING_REQUIRED + 1))
     else
-        ok "Hyprland" "${HVER:-version unknown}"
+        ok "Hyprland" "$HVER"
     fi
 else
     fail "Hyprland" "not installed"
     MISSING_REQUIRED=$((MISSING_REQUIRED + 1))
-    MISSING_PKGS+=("$(pkg hyprland hyprland hyprland hyprland)")
+    add_pkg "$(pkg hyprland hyprland hyprland hyprland)"
 fi
 
 if command -v qs >/dev/null 2>&1; then
-    ok "quickshell (qs)" "$(qs --version 2>/dev/null | head -1)"
+    QSVER="$(qs --version 2>/dev/null | sed -n 1p)"
+    ok "quickshell (qs)" "${QSVER:-installed}"
 else
     fail "quickshell (qs)" "not installed — see https://quickshell.org/docs/guide/install"
     MISSING_REQUIRED=$((MISSING_REQUIRED + 1))
 fi
 
-if fc-list 2>/dev/null | grep -qi 'inter'; then
+if command -v fc-list >/dev/null 2>&1 && fc-list 2>/dev/null | grep -qi inter; then
     ok "Inter font" "text renders as designed"
 else
     warn "Inter font" "the shell falls back to the system sans"
-    MISSING_PKGS+=("$(pkg inter-font fonts-inter rsms-inter-fonts inter-fonts)")
+    add_pkg "$(pkg inter-font fonts-inter rsms-inter-fonts inter-fonts)"
 fi
 
 head1 "Optional — each one only affects the feature named"
-need nmcli         optional "Wi-Fi tile, Network pane"  networkmanager network-manager NetworkManager NetworkManager
-need bluetoothctl  optional "Bluetooth tile and pane"   bluez-utils bluez bluez bluez
+need nmcli         optional "Wi-Fi tile, Network pane"   networkmanager network-manager NetworkManager NetworkManager
+need bluetoothctl  optional "Bluetooth tile and pane"    bluez-utils bluez bluez bluez
 need brightnessctl optional "brightness slider and keys" brightnessctl brightnessctl brightnessctl brightnessctl
-need grim          optional "screenshots"               grim grim grim grim
-need slurp         optional "screenshot region picker"  slurp slurp slurp slurp
-need wl-copy       optional "screenshot to clipboard"   wl-clipboard wl-clipboard wl-clipboard wl-clipboard
-need notify-send   optional "screenshot confirmations"  libnotify libnotify-bin libnotify libnotify-tools
-need playerctl     optional "media transport keys"      playerctl playerctl playerctl playerctl
-need hypridle      optional "idle timeout to lock"      hypridle "" "" ""
+need grim          optional "screenshots"                grim grim grim grim
+need slurp         optional "screenshot region picker"   slurp slurp slurp slurp
+need wl-copy       optional "screenshot to clipboard"    wl-clipboard wl-clipboard wl-clipboard wl-clipboard
+need notify-send   optional "screenshot confirmations"   libnotify libnotify-bin libnotify libnotify-tools
+need playerctl     optional "media transport keys"       playerctl playerctl playerctl playerctl
+need hypridle      optional "idle timeout to lock"       hypridle "" "" ""
 need loginctl      optional "suspend, reboot, power off" systemd systemd systemd systemd
 
 if command -v hyprsunset >/dev/null 2>&1 || command -v wlsunset >/dev/null 2>&1; then
     ok "hyprsunset/wlsunset" "Night light"
 else
     warn "hyprsunset/wlsunset" "Night light tile reports 'not installed'"
-    MISSING_PKGS+=("$(pkg hyprsunset wlsunset wlsunset wlsunset)")
+    add_pkg "$(pkg hyprsunset wlsunset wlsunset wlsunset)"
 fi
 
-if command -v powerprofilesctl >/dev/null 2>&1 || systemctl is-active --quiet power-profiles-daemon 2>/dev/null; then
+if command -v powerprofilesctl >/dev/null 2>&1; then
     ok "power-profiles-daemon" "power profiles, Game mode"
 else
     warn "power-profiles-daemon" "power profile row is inert"
-    MISSING_PKGS+=("power-profiles-daemon")
+    add_pkg power-profiles-daemon
 fi
 
 if command -v zenity >/dev/null 2>&1 || command -v kdialog >/dev/null 2>&1; then
     ok "zenity/kdialog" "wallpaper file picker"
 else
     warn "zenity/kdialog" "set the wallpaper path in theme.json by hand instead"
-    MISSING_PKGS+=("$(pkg zenity zenity zenity zenity)")
+    add_pkg "$(pkg zenity zenity zenity zenity)"
 fi
 
 head1 "Lock screen"
 if [ -r /etc/pam.d/login ]; then
     ok "/etc/pam.d/login" "PAM stack the lock authenticates against"
 else
-    fail "/etc/pam.d/login" "missing — the lock screen will not be able to authenticate"
+    fail "/etc/pam.d/login" "missing — the lock screen cannot authenticate"
 fi
 
 # ── suggested install line ───────────────────────────────────────────────────
-if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
-    mapfile -t UNIQ < <(printf '%s\n' "${MISSING_PKGS[@]}" | grep -v '^$' | sort -u)
-    if [ ${#UNIQ[@]} -gt 0 ]; then
-        head1 "To install what's missing"
-        printf '  %s %s\n' "$(install_hint)" "${UNIQ[*]}"
-        [ "$DISTRO" = unknown ] && printf '  %s(package names are Arch\x27s — adjust for your distro)%s\n' "$DIM" "$RST"
-    fi
+if [ -n "${MISSING_PKGS# }" ]; then
+    head1 "To install what's missing"
+    # shellcheck disable=SC2086
+    printf '  %s %s\n' "$(install_hint)" "$(printf '%s\n' $MISSING_PKGS | sort -u | tr '\n' ' ')"
+    [ "$DISTRO" = unknown ] && \
+        printf '  %s(package names are Arch'\''s — adjust for your distro)%s\n' "$DIM" "$RST"
 fi
 
 # ── existing config ──────────────────────────────────────────────────────────
 head1 "Current config"
-[ -e "$HYPR_DIR/hyprland.lua" ]  && warn "hyprland.lua"  "exists — would be backed up" || ok "hyprland.lua" "not present"
-[ -e "$HYPR_DIR/hyprland.conf" ] && warn "hyprland.conf" "exists — see the note below"  || ok "hyprland.conf" "not present"
-[ -e "$QS_DIR" ]                 && warn "$QS_DIR" "exists — would be backed up"        || ok "quickshell/hyprshell" "not present"
+if [ -e "$HYPR_DIR/hyprland.lua" ]; then warn "hyprland.lua" "exists — would be backed up"
+                                    else ok   "hyprland.lua" "not present"; fi
+if [ -e "$HYPR_DIR/hyprland.conf" ]; then warn "hyprland.conf" "exists — see the note below"
+                                     else ok   "hyprland.conf" "not present"; fi
+if [ -e "$QS_DIR" ]; then warn "quickshell/hyprshell" "exists — would be backed up"
+                     else ok   "quickshell/hyprshell" "not present"; fi
 
 if [ "$MODE" = check ]; then
     head1 "Check only — nothing was changed."
@@ -203,52 +271,54 @@ if [ "$MODE" = check ]; then
 fi
 
 if [ "$MISSING_REQUIRED" -gt 0 ]; then
-    printf '\n%s%d required item(s) missing.%s Install them first, then re-run.\n' \
+    printf '\n%s%d required item(s) missing.%s Install them, then re-run.\n' \
         "$RED" "$MISSING_REQUIRED" "$RST"
     exit 1
 fi
 
 # ── confirm ──────────────────────────────────────────────────────────────────
 head1 "About to install"
+printf '  %s  <- the Quickshell tree\n' "$QS_DIR"
 if [ "$MODE" = shell-only ]; then
-    printf '  %s  <- the Quickshell tree\n' "$QS_DIR"
     printf '  %s(your Hyprland config is left alone)%s\n' "$DIM" "$RST"
 else
-    printf '  %s  <- the Quickshell tree\n' "$QS_DIR"
     printf '  %s/hyprland.lua  <- the compositor config\n' "$HYPR_DIR"
 fi
-printf '  %sAnything already there is moved to <name>.bak.%s, not deleted.%s\n' "$DIM" "$STAMP" "$RST"
+printf '  %sAnything already there is moved to <name>.bak.%s, not deleted.%s\n' \
+    "$DIM" "$STAMP" "$RST"
 
 if [ "$FORCE" -ne 1 ]; then
     printf '\nProceed? [y/N] '
-    read -r reply
+    if ! read -r reply; then reply=""; fi
     case "$reply" in [yY]*) ;; *) echo "Cancelled."; exit 0 ;; esac
 fi
 
 backup() {
     [ -e "$1" ] || return 0
-    mv -- "$1" "$1.bak.$STAMP"
+    mv -- "$1" "$1.bak.$STAMP" || die "could not back up $1"
     printf '  backed up %s -> %s.bak.%s\n' "$1" "$1" "$STAMP"
 }
 
 head1 "Installing"
 
-mkdir -p "$(dirname "$QS_DIR")"
+mkdir -p "$(dirname "$QS_DIR")" || die "could not create $(dirname "$QS_DIR")"
 backup "$QS_DIR"
-cp -r -- "$SRC/quickshell" "$QS_DIR"
+cp -r -- "$SRC/quickshell" "$QS_DIR" || die "could not copy the Quickshell tree to $QS_DIR"
 printf '  installed %s\n' "$QS_DIR"
 
 if [ "$MODE" != shell-only ]; then
-    mkdir -p "$HYPR_DIR"
+    mkdir -p "$HYPR_DIR" || die "could not create $HYPR_DIR"
     backup "$HYPR_DIR/hyprland.lua"
-    cp -- "$SRC/hypr/hyprland.lua" "$HYPR_DIR/hyprland.lua"
+    cp -- "$SRC/hypr/hyprland.lua" "$HYPR_DIR/hyprland.lua" \
+        || die "could not copy hyprland.lua to $HYPR_DIR"
     printf '  installed %s/hyprland.lua\n' "$HYPR_DIR"
 
     if [ -e "$HYPR_DIR/hyprland.conf" ]; then
         printf '\n  %sNote:%s hyprland.conf is still there alongside hyprland.lua.\n' "$YEL" "$RST"
         printf '  Hyprland loads one config, and which one wins with both present is\n'
         printf '  not something to leave to chance. Move it aside when you are ready:\n'
-        printf '      mv %s/hyprland.conf %s/hyprland.conf.bak.%s\n' "$HYPR_DIR" "$HYPR_DIR" "$STAMP"
+        printf '      mv %s/hyprland.conf %s/hyprland.conf.bak.%s\n' \
+            "$HYPR_DIR" "$HYPR_DIR" "$STAMP"
     fi
 fi
 
@@ -268,8 +338,8 @@ cat <<EOF
 
          $QS_DIR/theme.json
 
-     It is written the moment you change something in Settings (super + ,)
-     and re-read if you edit it by hand.
+     Written the moment you change something in Settings (super + ,), and
+     re-read if you edit it by hand.
 
   4. Edit the pinned apps to what you actually run:
 
@@ -279,8 +349,8 @@ EOF
 if [ "$MODE" = shell-only ]; then
     cat <<EOF
 
-  Since your Hyprland config was left alone, add these to it to reach the
-  shell. The full set of bindings is in $SRC/hypr/hyprland.lua.
+  Your Hyprland config was left alone, so add these to it to reach the shell.
+  The full set of bindings is in $SRC/hypr/hyprland.lua.
 
       exec-once = qs -c hyprshell
 
