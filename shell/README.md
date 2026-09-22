@@ -273,6 +273,11 @@ your choice — `install.sh` backs up an existing `kitty.conf` but leaves
 the shell owns; click one and press the keys you want. Escape cancels,
 Backspace restores the default.
 
+Only shortcuts you have *changed* end up in the generated file, so it can
+never shadow a default with a worse version of itself — everything untouched
+keeps using `hyprland.lua`'s own definition. Window actions there use native
+dispatchers rather than shelling out to `hyprctl`.
+
 The shell never rewrites `hyprland.lua` — that file is hand-written, carries
 comments and logic, and regenerating it would throw all of that away the
 first time you changed a shortcut. Instead the shell owns
