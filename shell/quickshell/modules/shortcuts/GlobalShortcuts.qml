@@ -6,30 +6,31 @@ import "../../services" as Services
 
 // Every shell shortcut, registered with the compositor directly.
 //
-// This replaces the old chain — keybind spawns a process, process finds the
-// running shell, process opens an IPC socket, shell acts — of which every
-// link could fail silently, because nobody watches a keybind's stderr. It
-// was failing: the IPC call worked by hand and did nothing from a bind.
+// hyprland-global-shortcuts-v1: the shell tells Hyprland "I have a shortcut
+// called hyprshell:launcher", and anything on the session can then dispatch
+// `global, hyprshell:launcher` to it, over the Wayland connection the shell
+// already has open. `hyprctl globalshortcuts` lists what registered.
 //
-// hyprland-global-shortcuts-v1 removes all of it. The shell tells Hyprland
-// "I have a shortcut called hyprshell:launcher"; hyprland.lua binds a key to
-// `global, hyprshell:launcher`; the event arrives here over the Wayland
-// connection the shell already has open. No qs binary to find on PATH, no
-// socket to match, no config selector to get right.
+// The config's own keybinds used to come this way and no longer do. The
+// protocol is behind a Quickshell build flag; on a build without it nothing
+// here registers, and a bind pointing at an unregistered shortcut does
+// nothing and reports nothing — which is exactly what happened. Those binds
+// call shell.qml's IpcHandler through hyprshellctl instead, which works on
+// every build. This file stays for everything else that might want to reach
+// the shell: other compositor binds, scripts, a remote, a stream deck.
 //
-// `hyprctl globalshortcuts` lists what registered, which makes this the
-// first part of the chain that can be inspected from outside.
+// Each shortcut therefore has to do the same thing as the IpcHandler
+// function of the same purpose. Keep the two in step.
 //
 // Loaded through a Loader with a URL rather than imported directly:
-// GlobalShortcut is behind a build flag, and on a Quickshell without it a
-// direct import would stop the whole shell from starting.
+// GlobalShortcut is behind that build flag, and a direct import would stop
+// the whole shell from starting on a Quickshell without it.
 //
 // Scope rather than a bare QtObject: it is Quickshell's own
 // reload-propagating container, and GlobalShortcut registers itself from a
 // post-reload hook, so this is the container built for holding them.
 //
-// The names are API — hyprland.lua binds to them, so changing one breaks
-// that binding until the config is regenerated.
+// The names are API — anything dispatching to them breaks if one changes.
 Scope {
     id: root
 

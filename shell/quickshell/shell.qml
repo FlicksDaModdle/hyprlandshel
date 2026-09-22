@@ -37,21 +37,27 @@ ShellRoot {
     readonly property int shortcutCount: Services.Keybinds.actions.length
 
     // Shell shortcuts, registered with the compositor over
-    // hyprland-global-shortcuts-v1 instead of arriving as an IPC call from a
-    // process a keybind spawned. See the file for why that changed.
+    // hyprland-global-shortcuts-v1, so anything on the session can dispatch
+    // `global, hyprshell:<name>` to the shell.
     //
-    // Through a Loader with a URL, not an import: GlobalShortcut is behind a
-    // Quickshell build flag, and importing it directly on a build without it
-    // would stop the shell from starting rather than just leaving the
-    // shortcuts unregistered.
+    // The config's own keybinds do not use them: this protocol is behind a
+    // Quickshell build flag, and on a build without it the registrations
+    // never happen and every bind pointing at one is a silent no-op. They
+    // call the IpcHandler below through hyprshellctl instead, which works on
+    // every build. These stay for everything else that might want them.
+    //
+    // Through a Loader with a URL, not an import: importing a module this
+    // build may not have would stop the shell from starting rather than
+    // leaving the shortcuts unregistered.
     Loader {
         id: shortcuts
         source: "modules/shortcuts/GlobalShortcuts.qml"
         onStatusChanged: {
             if (status === Loader.Error) {
-                console.warn("Shell: global shortcuts unavailable — this Quickshell "
-                             + "was built without HYPRLAND_GLOBAL_SHORTCUTS. "
-                             + "Keybinds will need the hyprshellctl fallback.");
+                console.info("Shell: global shortcuts not registered — this "
+                             + "Quickshell was built without "
+                             + "HYPRLAND_GLOBAL_SHORTCUTS. Keybinds are "
+                             + "unaffected; they go through hyprshellctl.");
             }
         }
     }

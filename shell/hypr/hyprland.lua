@@ -36,35 +36,29 @@ local function dispatch(cmd)
     return "hyprctl dispatch " .. cmd
 end
 
--- Shell shortcuts are delivered by the compositor, not by spawning anything.
+-- Shell shortcuts call the shell's own IPC function, because that is the
+-- route that actually works here.
 --
--- The old route was: keybind runs a command, the command finds the running
--- shell, opens its IPC socket and calls a function. Four links, each able to
--- fail without a word — a keybind's stderr goes nowhere — and it was failing
--- here: the same IPC call worked by hand and did nothing from a bind.
+-- They went through hyprland-global-shortcuts-v1 for a while: the shell
+-- registers "hyprshell:<name>", and `global` dispatches straight to it over
+-- the Wayland connection it already holds. Fewer moving parts on paper. But
+-- the protocol sits behind a Quickshell build flag, and on a build without
+-- it `hyprctl globalshortcuts` lists nothing and every bind pointing at one
+-- is a no-op that says nothing. That is this machine. The same actions
+-- answer instantly over IPC from a terminal.
 --
--- hyprland-global-shortcuts-v1 removes the lot. The shell registers
--- "hyprshell:<name>" with Hyprland; `global` dispatches straight to it over
--- the Wayland connection it already holds. No binary to find on PATH, no
--- socket to match, no CLI flags to get right.
+-- So the binds go where the working call goes. They still register as global
+-- shortcuts — other clients can dispatch to them, and `hyprctl
+-- globalshortcuts` is still worth a look — but nothing here depends on it.
 --
--- `hyprctl globalshortcuts` lists what the shell registered, so for the
--- first time the far end of a shortcut can be inspected from outside.
---
--- exec_cmd + hyprctl rather than a native hl.dsp entry for `global`: this is
--- the form upstream's own config uses and the form already proven to work
--- here, and I would rather this be dull than clever.
-
-local function shell(name)
-    return "hyprctl dispatch global hyprshell:" .. name
-end
-
--- Still here for anything the shell exposes over IPC but has no global
--- shortcut for, and as the fallback on a Quickshell built without global
--- shortcut support. `hyprshellctl doctor` reports which applies.
+-- hyprshellctl is the one place that knows how to make the call: Quickshell
+-- has moved its config selector between releases, so it tries each form
+-- until one answers and remembers which. Called by absolute path, because
+-- Hyprland runs binds through /bin/sh with the session's PATH, which need
+-- not have ~/.local/bin on it.
 local ctl = (os.getenv("HOME") or "") .. "/.config/quickshell/hyprshell/hyprshellctl"
 
-local function shellIpc(fn, arg)
+local function shell(fn, arg)
     if arg then
         return ctl .. " " .. fn .. " " .. arg
     end
@@ -298,18 +292,18 @@ hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
 -- when it turned out not to work, it did not break the tap, it broke all of
 -- them at once. Tap-to-open is not worth that; if Hyprland grows a real tap
 -- bind it can come back.
-hl.bind("SUPER + SPACE", hl.dsp.exec_cmd(shell("launcher")))
+hl.bind("SUPER + SPACE", hl.dsp.exec_cmd(shell("toggleLauncher")))
 
 -- Shell surfaces — routed into Quickshell over its IPC socket.
-hl.bind(mainMod .. " + Tab",         hl.dsp.exec_cmd(shell("overview")))
-hl.bind(mainMod .. " + C",           hl.dsp.exec_cmd(shell("control")))
-hl.bind(mainMod .. " + N",           hl.dsp.exec_cmd(shell("notifications")))
-hl.bind(mainMod .. " + SHIFT + N",   hl.dsp.exec_cmd(shell("dnd")))
-hl.bind(mainMod .. " + comma",       hl.dsp.exec_cmd(shell("settings")))
-hl.bind(mainMod .. " + SHIFT + T",   hl.dsp.exec_cmd(shell("theme")))
-hl.bind(mainMod .. " + SHIFT + R",   hl.dsp.exec_cmd(shell("reload")))
+hl.bind(mainMod .. " + Tab",         hl.dsp.exec_cmd(shell("toggleOverview")))
+hl.bind(mainMod .. " + C",           hl.dsp.exec_cmd(shell("toggleControlCenter")))
+hl.bind(mainMod .. " + N",           hl.dsp.exec_cmd(shell("toggleNotifications")))
+hl.bind(mainMod .. " + SHIFT + N",   hl.dsp.exec_cmd(shell("toggleDnd")))
+hl.bind(mainMod .. " + comma",       hl.dsp.exec_cmd(shell("openSettings", "Appearance")))
+hl.bind(mainMod .. " + SHIFT + T",   hl.dsp.exec_cmd(shell("toggleTheme")))
+hl.bind(mainMod .. " + SHIFT + R",   hl.dsp.exec_cmd(shell("reloadShell")))
 hl.bind(mainMod .. " + L",           hl.dsp.exec_cmd(shell("lock")))
-hl.bind(mainMod .. " + D",           hl.dsp.exec_cmd(shell("showdesktop")))
+hl.bind(mainMod .. " + D",           hl.dsp.exec_cmd(shell("showDesktop")))
 
 -- Screenshots: region to ~/Pictures and the clipboard, matching what the
 -- control center's Capture tile and the launcher's Screenshot command do.
@@ -344,12 +338,12 @@ hl.bind(mainMod .. " + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
 -- Media and backlight keys go through the shell so its OSD is what appears,
 -- rather than each key silently poking wpctl with nothing on screen.
-hl.bind("XF86AudioRaiseVolume",  hl.dsp.exec_cmd(shell("volumeup")),       { locked = true, repeating = true })
-hl.bind("XF86AudioLowerVolume",  hl.dsp.exec_cmd(shell("volumedown")),     { locked = true, repeating = true })
-hl.bind("XF86AudioMute",         hl.dsp.exec_cmd(shell("volumemute")),     { locked = true })
-hl.bind("XF86AudioMicMute",      hl.dsp.exec_cmd(shell("micmute")),        { locked = true })
-hl.bind("XF86MonBrightnessUp",   hl.dsp.exec_cmd(shell("brightnessup")),   { locked = true, repeating = true })
-hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd(shell("brightnessdown")), { locked = true, repeating = true })
+hl.bind("XF86AudioRaiseVolume",  hl.dsp.exec_cmd(shell("volumeUp")),       { locked = true, repeating = true })
+hl.bind("XF86AudioLowerVolume",  hl.dsp.exec_cmd(shell("volumeDown")),     { locked = true, repeating = true })
+hl.bind("XF86AudioMute",         hl.dsp.exec_cmd(shell("volumeMute")),     { locked = true })
+hl.bind("XF86AudioMicMute",      hl.dsp.exec_cmd(shell("micMute")),        { locked = true })
+hl.bind("XF86MonBrightnessUp",   hl.dsp.exec_cmd(shell("brightnessUp")),   { locked = true, repeating = true })
+hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd(shell("brightnessDown")), { locked = true, repeating = true })
 
 -- Transport keys are the player's business, not the shell's.
 hl.bind("XF86AudioPlay", hl.dsp.exec_cmd("playerctl play-pause"), { locked = true })

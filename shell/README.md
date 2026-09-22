@@ -325,44 +325,59 @@ own, which covers most of what it was for.
 
 ## How shell shortcuts reach the shell
 
-The compositor delivers them directly. The shell registers each one over
-`hyprland-global-shortcuts-v1` as `hyprshell:<name>`, and `hyprland.lua`
-binds a key to `global, hyprshell:<name>`.
+Every shell keybind in `hyprland.lua` runs one command:
 
-That replaced a chain — keybind spawns a command, command finds the running
-shell, command opens its IPC socket, shell acts — where every link could
-fail without saying anything, because nobody watches a keybind's stderr.
-Now there is no binary to find on PATH, no socket to match, and no CLI flags
-to get right.
+```
+~/.config/quickshell/hyprshell/hyprshellctl <function>
+```
 
-It is also inspectable from outside, which the old route never was:
+which calls the matching function on the `IpcHandler` in `shell.qml`. So
+`hyprshellctl toggleLauncher` typed in a terminal and SUPER+SPACE are the
+same call — if one works, the other does.
+
+It is called by absolute path on purpose: Hyprland runs binds through
+`/bin/sh` with the session's PATH, which need not include `~/.local/bin`.
+`hyprshellctl` is also the one place that knows how to make the call —
+Quickshell has moved its config selector between releases, so it tries each
+form until one answers, then remembers which for the rest of the session.
+
+The shell *also* registers each shortcut over `hyprland-global-shortcuts-v1`
+as `hyprshell:<name>`, so anything else on the session can reach it:
 
 ```sh
+hyprctl dispatch global hyprshell:launcher
 hyprctl globalshortcuts      # what the shell registered
 hyprshellctl shortcuts       # the same, filtered
 ```
 
-A Quickshell built without `HYPRLAND_GLOBAL_SHORTCUTS` registers nothing;
-the shell says so in its log and the IPC route below still works.
+The keybinds went that way for a while, because on paper it is the shorter
+path. It is behind a Quickshell build flag, though, and on a build without
+it nothing registers and every bind pointing at a shortcut is a no-op that
+reports nothing. The IPC call works on every build, so that is where the
+binds go; the registrations stay for everyone else.
 
 ## When a shortcut does nothing
 
-The IPC route is still there for anything without a global shortcut. When that call
-fails the keybind does nothing and says nothing — the compositor ran a
-command, the command failed, and nobody is watching a keybind's stderr.
+When the call fails the keybind does nothing and says nothing — the
+compositor ran a command, the command failed, and nobody is watching a
+keybind's stderr. Run the same command yourself and the output is right
+there:
 
 ```sh
-hyprshellctl doctor
+hyprshellctl toggleLauncher   # or whatever the shortcut does
+hyprshellctl doctor           # or check the whole chain at once
 ```
 
 `install.sh` links it into `~/.local/bin`, which is on PATH on most
 distributions; if yours isn't, the installer says so and the copy at
-`~/.config/quickshell/hyprshell/hyprshellctl` works the same.
+`~/.config/quickshell/hyprshell/hyprshellctl` works the same — that is the
+one the keybinds use anyway.
 
-walks the chain: `qs` on PATH (Hyprland runs binds through `/bin/sh`, so a
-`qs` that only exists in a shell rc is not found), a shell instance running,
-its IPC target registered, and then every command individually. It names the
-link that is broken.
+`doctor` walks the chain: `qs` on PATH (Hyprland runs binds through
+`/bin/sh`, so a `qs` that only exists in a shell rc is not found), a shell
+instance running, its IPC target registered, `hyprshellctl` itself installed
+where the binds look for it, and then every command individually. It names
+the link that is broken.
 
 The same tool runs any of them:
 
