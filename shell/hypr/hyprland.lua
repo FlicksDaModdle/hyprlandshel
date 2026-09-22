@@ -141,7 +141,14 @@ hl.config({
 })
 
 hl.curve("easeOutQuint", { type = "bezier", points = { {0.23, 1}, {0.32, 1} } })
-hl.curve("easy",         { type = "spring", mass = 1, stiffness = 238.1191, damping = 24.21279333 })
+-- The spring's third field is `dampening` on Hyprland 0.55, which is this
+-- config's minimum. Upstream's own example currently spells it `damping`,
+-- so it was renamed at some point: if your Hyprland reports
+--   hl.curve("easy"): unknown field 'dampening'
+-- change it to `damping` and nothing else. Getting it wrong is quiet but
+-- not harmless — Hyprland reads nil, rejects the curve, and then the
+-- windows animation below fails too with `no such spring "easy"`.
+hl.curve("easy",         { type = "spring", mass = 1, stiffness = 238.1191, dampening = 24.21279333 })
 
 hl.animation({ leaf = "windows",    enabled = true, speed = 4.5, spring = "easy" })
 hl.animation({ leaf = "border",     enabled = true, speed = 5,   bezier = "easeOutQuint" })
@@ -285,14 +292,12 @@ hl.window_rule({
     suppress_event = "maximize",
 })
 
--- kitty's background_opacity only reads as the mockup's translucent sheet if
--- there is a blurred desktop behind it. shell/kitty/colors-*.conf set the
--- alpha; this makes it mean something.
-hl.window_rule({
-    name  = "blur-kitty",
-    match = { class = "^(kitty)$" },
-    blur  = true,
-})
+-- No blur rule for kitty. Windows are not layer surfaces: decoration.blur
+-- above already blurs behind any window with transparency, so kitty's
+-- background_opacity reads as the mockup's translucent sheet on its own.
+-- Window rules only have the opt-*out* (no_blur) — there is no positive
+-- `blur` field for them, unlike the layer rules above, where the opt-in is
+-- required.
 
 hl.window_rule({
     name  = "float-pavucontrol",
