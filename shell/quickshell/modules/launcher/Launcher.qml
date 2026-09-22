@@ -61,8 +61,7 @@ Variants {
         // Scaling only the panel and the tiles was the obvious half of the
         // job and looked wrong: a bigger box with the same small search
         // field, the same small type and more empty space between them. The
-        // shape is right at 100%; what it needed was to be the same shape,
-        // larger.
+        // shape is right; what it needed was to be the same shape, larger.
         readonly property real zoom: Math.max(40, Config.Appearance.launcherSize) / 100
         function z(px) { return Math.round(px * zoom); }
         readonly property real dockOffset: Config.Appearance.dockEdgeGap
@@ -310,8 +309,8 @@ Variants {
             // Clamped to the screen so a large value can't push it off the top.
             // The footer is anchored to the bottom rather than carried at the
             // end of the column, so the user row is grounded there whatever
-            // the content does and the slack falls between the two — which
-            // is what a Start menu looks like. Its height is added back here
+            // the content does and the slack falls between the two — which is
+            // what a Start menu looks like. Its height is added back here
             // because it is no longer part of body.implicitHeight.
             height: Math.max(body.implicitHeight + footer.height,
                              Math.min(launcher.panelHeight,
@@ -961,33 +960,16 @@ Variants {
                     }
                 }
 
-        }
-
-        // ── keyboard navigation ───────────────────────────────────────────────
-        function moveSelection(delta) {
-            const count = showingList ? appResults.length : pageItems.length;
-            if (count === 0) return;
-            let next = selectedIndex + delta;
-
-            if (!showingList) {
-                // Stepping off the end of a page turns to the next one.
-                if (next < 0 && page > 0) {
-                    page--;
-                    next = Math.max(0, pageItems.length + next);
-                } else if (next >= count && page < pageCount - 1) {
-                    page++;
-                    next = Math.min(pageItems.length - 1, next - count);
-                }
             }
 
             // ── footer ────────────────────────────────────────────────────
-        Rectangle {
-            id: footer
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: launcher.z(40)
-            color: Config.Appearance.hover
+            Rectangle {
+                id: footer
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: launcher.z(40)
+                color: Config.Appearance.hover
 
                 Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
 
@@ -1067,6 +1049,23 @@ Variants {
                 }
             }
         }
+
+        // ── keyboard navigation ───────────────────────────────────────────────
+        function moveSelection(delta) {
+            const count = showingList ? appResults.length : pageItems.length;
+            if (count === 0) return;
+            let next = selectedIndex + delta;
+
+            if (!showingList) {
+                // Stepping off the end of a page turns to the next one.
+                if (next < 0 && page > 0) {
+                    page--;
+                    next = Math.max(0, pageItems.length + next);
+                } else if (next >= count && page < pageCount - 1) {
+                    page++;
+                    next = Math.min(pageItems.length - 1, next - count);
+                }
+            }
             selectedIndex = Math.max(0, Math.min(count - 1, next));
         }
     }
