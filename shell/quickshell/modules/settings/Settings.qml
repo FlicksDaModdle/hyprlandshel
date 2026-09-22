@@ -54,23 +54,28 @@ PanelWindow {
         - (Config.Appearance.dockLeft ? 0 : Config.Appearance.dockPanelBreadth + Config.Appearance.dockEdgeGap)
 
     readonly property var paneMeta: ({
+        "Display":       { icon: "monitor",   group: "System", note: "Every connected display, with its own resolution, refresh rate and scale." },
+        "Keyboard":      { icon: "keyboard",  group: "System", note: "Layout, key repeat and the modifier behaviour libinput exposes." },
+        "Mouse":         { icon: "mouse",     group: "System", note: "Pointer speed, acceleration profile, buttons and wheel." },
+        "Touchpad":      { icon: "touchpad",  group: "System", note: "Tapping, scrolling, palm rejection and click behaviour." },
+        "Network":       { icon: "wifi",      group: "System", note: "Wireless and connection policy." },
+        "Bluetooth":     { icon: "bluetooth", group: "System", note: "Radio state, paired devices and discovery." },
+        "Sound":         { icon: "volume",    group: "System", note: "Output and input levels and the active device." },
+        "Power":         { icon: "battery",   group: "System", note: "Power profile, idle timing and battery care." },
+        "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
         "Appearance":    { icon: "palette",   group: "Shell",  note: "Theme, accent, translucency and geometry. Every change repaints the shell live." },
         "Bar":           { icon: "layout",    group: "Shell",  note: "The top bar: height, clock, tray and the task list." },
         "Dock":          { icon: "dock",      group: "Shell",  note: "The dock: position, size, labels and auto-hide." },
         "Notifications": { icon: "bell",      group: "Shell",  note: "Banner behaviour, badge counts and how the center stacks items." },
-        "Keybinds":      { icon: "keyboard",  group: "Shell",  note: "Hyprland bindings this shell listens for." },
-        "Display":       { icon: "monitor",   group: "Device", note: "Resolution, refresh rate and scaling, applied through Hyprland." },
-        "Network":       { icon: "wifi",      group: "Device", note: "Wireless and connection policy." },
-        "Bluetooth":     { icon: "bluetooth", group: "Device", note: "Radio state, paired devices and discovery." },
-        "Sound":         { icon: "volume",    group: "Device", note: "Output and input levels and the active device." },
-        "Power":         { icon: "battery",   group: "Device", note: "Power profile, idle timing and battery care." },
-        "Input":         { icon: "keyboard",  group: "Device", note: "Touchpad behaviour and key repeat." },
-        "About":         { icon: "cpu",       group: "Device", note: "This machine and the shell running on it." }
+        "Keybinds":      { icon: "keyboard",  group: "Shell",  note: "Hyprland bindings this shell listens for." }
     })
 
+    // System first, then Shell. The device panes are the ones people open
+    // Settings *for*; the shell's own appearance is the thing you set once.
     readonly property var paneGroups: [
-        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Notifications", "Keybinds"] },
-        { label: "Device", items: ["Display", "Network", "Bluetooth", "Sound", "Power", "Input", "About"] }
+        { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
+                                   "Network", "Bluetooth", "Sound", "Power", "About"] },
+        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Notifications", "Keybinds"] }
     ]
 
     // ══ the window ═══════════════════════════════════════════════════════
@@ -232,95 +237,107 @@ PanelWindow {
                 color: Config.Appearance.rule
             }
 
-            Column {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 8
-                spacing: 0
+            // Scrollable. With fourteen panes the list is taller than the
+            // window at its default height, and a fixed Column would simply
+            // clip the last entry with nothing to say so.
+            Flickable {
+                id: sidebarFlick
+                anchors.fill: parent
+                anchors.rightMargin: 1
+                contentHeight: sidebarColumn.implicitHeight + 16
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
 
-                Repeater {
-                    model: settings.paneGroups
+                Column {
+                    id: sidebarColumn
+                    x: 8
+                    y: 8
+                    width: sidebarFlick.width - 16
+                    spacing: 0
 
-                    Column {
-                        id: group
-                        required property var modelData
-                        width: parent.width
-                        spacing: 1
-                        bottomPadding: 6
+                    Repeater {
+                        model: settings.paneGroups
 
-                        StyledText {
-                            text: group.modelData.label
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.capitalization: Font.AllUppercase
-                            font.letterSpacing: 1.2
-                            color: Config.Appearance.ink3
-                            leftPadding: 10
-                            topPadding: 8
-                            bottomPadding: 8
-                        }
+                        Column {
+                            id: group
+                            required property var modelData
+                            width: parent.width
+                            spacing: 1
+                            bottomPadding: 6
 
-                        Repeater {
-                            model: group.modelData.items
+                            StyledText {
+                                text: group.modelData.label
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                font.capitalization: Font.AllUppercase
+                                font.letterSpacing: 1.2
+                                color: Config.Appearance.ink3
+                                leftPadding: 10
+                                topPadding: 8
+                                bottomPadding: 8
+                            }
 
-                            Item {
-                                id: entry
-                                required property var modelData
-                                readonly property bool active: settings.pane === modelData
+                            Repeater {
+                                model: group.modelData.items
 
-                                width: group.width
-                                height: 34
+                                Item {
+                                    id: entry
+                                    required property var modelData
+                                    readonly property bool active: settings.pane === modelData
 
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: Config.Appearance.rSm
-                                    color: entry.active ? Config.Appearance.sel
-                                         : (entryArea.containsMouse ? Config.Appearance.hover : "transparent")
-                                    Behavior on color { ColorAnimation { duration: 120 } }
-                                }
+                                    width: group.width
+                                    height: 34
 
-                                Rectangle {
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.bottom: parent.bottom
-                                    anchors.leftMargin: 10
-                                    anchors.rightMargin: 10
-                                    anchors.bottomMargin: 3
-                                    height: 2
-                                    radius: 1
-                                    color: Config.Appearance.accent
-                                    opacity: entry.active ? 1 : 0
-                                    Behavior on opacity { NumberAnimation { duration: 180 } }
-                                }
-
-                                Row {
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: 10
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.verticalCenterOffset: -1
-                                    spacing: 10
-
-                                    MonoIcon {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        name: settings.paneMeta[entry.modelData].icon
-                                        size: 15
-                                        inkColor: entry.active ? Config.Appearance.accent : Config.Appearance.ink2
-                                        monochrome: true
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: Config.Appearance.rSm
+                                        color: entry.active ? Config.Appearance.sel
+                                             : (entryArea.containsMouse ? Config.Appearance.hover : "transparent")
+                                        Behavior on color { ColorAnimation { duration: 120 } }
                                     }
-                                    StyledText {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: entry.modelData
-                                        font.pixelSize: 13
-                                    }
-                                }
 
-                                MouseArea {
-                                    id: entryArea
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: Config.UiState.settingsPane = entry.modelData
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.bottom: parent.bottom
+                                        anchors.leftMargin: 10
+                                        anchors.rightMargin: 10
+                                        anchors.bottomMargin: 3
+                                        height: 2
+                                        radius: 1
+                                        color: Config.Appearance.accent
+                                        opacity: entry.active ? 1 : 0
+                                        Behavior on opacity { NumberAnimation { duration: 180 } }
+                                    }
+
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 10
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.verticalCenterOffset: -1
+                                        spacing: 10
+
+                                        MonoIcon {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            name: settings.paneMeta[entry.modelData].icon
+                                            size: 15
+                                            inkColor: entry.active ? Config.Appearance.accent : Config.Appearance.ink2
+                                            monochrome: true
+                                        }
+                                        StyledText {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: entry.modelData
+                                            font.pixelSize: 13
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: entryArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Config.UiState.settingsPane = entry.modelData
+                                    }
                                 }
                             }
                         }
@@ -513,37 +530,123 @@ PanelWindow {
         ];
 
         case "Display": {
-            const m = Services.Compositor.monitors.find(x => x.focused)
-                      || Services.Compositor.monitors[0];
-            if (!m) return [{ n: "No display", s: "Hyprland reported no monitors", type: "info", value: "—" }];
-            const ipc = m.lastIpcObject || ({});
-            const modes = (ipc.availableModes || []).slice(0, 12);
-            return [
-                { n: "Output", s: m.description || "Active monitor", type: "info", value: m.name },
-                { n: "Mode", s: "Resolution and refresh rate on " + m.name,
-                  type: modes.length > 0 ? "menu" : "info",
-                  options: modes,
-                  value: m.width + "x" + m.height + "@" + Math.round(ipc.refreshRate || 0) + "Hz",
-                  set: v => settings.applyMode(m.name, v) },
-                { n: "Scale", s: "Fractional scaling for HiDPI panels", type: "slider",
-                  min: 100, max: 200, unit: "%", value: Math.round((m.scale || 1) * 100),
-                  set: v => settings.applyScale(m.name, v / 100) },
-                { n: "Adaptive sync", s: "VRR while a fullscreen client is focused", type: "toggle",
-                  value: (ipc.vrr || 0) !== 0,
-                  set: v => Services.Compositor.dispatch("keyword misc:vrr " + (v ? "2" : "0")) },
-                { n: "Night shift", s: Services.NightLight.available
+            const mons = Services.Compositor.monitors;
+            if (!mons || mons.length === 0)
+                return [{ n: "No display", s: "Hyprland reported no monitors", type: "info", value: "—" }];
+
+            const rows = [];
+
+            // One block per output rather than only the focused one. Hyprland
+            // configures monitors by name, so everything here is addressed to
+            // a specific output and a second screen is a first-class thing
+            // rather than something you have to focus first to touch.
+            for (let i = 0; i < mons.length; i++) {
+                const m = mons[i];
+                const ipc = m.lastIpcObject || ({});
+                const pxW = ipc.width || m.width || 0;
+                const pxH = ipc.height || m.height || 0;
+                const rate = ipc.refreshRate || 0;
+                const curRes = pxW + "x" + pxH;
+                const scale = m.scale || ipc.scale || 1;
+
+                // availableModes comes through as "2560x1440@165.00Hz"
+                // strings. Splitting resolution from refresh rate lets each
+                // be its own control, as every other settings panel does it —
+                // picking a resolution shouldn't mean hunting for the row
+                // that also has the rate you wanted.
+                const byRes = ({});
+                for (let k = 0; k < (ipc.availableModes || []).length; k++) {
+                    const parsed = /^(\d+)x(\d+)@([\d.]+)/.exec(ipc.availableModes[k]);
+                    if (!parsed) continue;
+                    const res = parsed[1] + "x" + parsed[2];
+                    if (!byRes[res]) byRes[res] = [];
+                    const hz = parseFloat(parsed[3]);
+                    // Deduped on the rounded value: 59.997 and 60.000 are one
+                    // rate to a person, and two rows both labelled "60 Hz"
+                    // would make the menu's lookup ambiguous.
+                    let seen = false;
+                    for (let q = 0; q < byRes[res].length; q++) {
+                        if (Math.round(byRes[res][q]) === Math.round(hz)) { seen = true; break; }
+                    }
+                    if (!seen) byRes[res].push(hz);
+                }
+                const resList = Object.keys(byRes).sort((a, b) => {
+                    const A = a.split("x"), B = b.split("x");
+                    return (B[0] * B[1]) - (A[0] * A[1]);
+                });
+                const rateList = (byRes[curRes] || []).slice().sort((a, b) => b - a);
+
+                rows.push({ type: "header", n: m.name,
+                    s: (m.description || "Display") + (m.focused ? "  ·  focused" : "") });
+
+                rows.push({ n: "Resolution", s: resList.length > 1
+                        ? resList.length + " modes reported by this output"
+                        : "Only one mode reported",
+                    type: resList.length > 1 ? "menu" : "info",
+                    options: resList,
+                    value: curRes,
+                    // Keep the closest refresh rate the new resolution can
+                    // actually do, instead of silently dropping to its lowest.
+                    set: v => settings.applyMode(m.name, v, settings.nearestRate(byRes[v] || [], rate)) });
+
+                // Labels go out, labels come back — the menu hands back the
+                // string it displayed. So the label is looked up in the list
+                // it came from rather than parsed: a rate is really 164.836 Hz
+                // and a scale really 1.333333, and re-reading "165 Hz" or
+                // "133%" would send a value the panel does not have and
+                // Hyprland quietly refuses.
+                const rateLabels = rateList.map(r => settings.formatHz(r));
+                rows.push({ n: "Refresh rate", s: rateList.length > 1
+                        ? "Rates available at " + curRes
+                        : "Only one rate at this resolution",
+                    type: rateList.length > 1 ? "menu" : "info",
+                    options: rateLabels,
+                    value: settings.formatHz(rate),
+                    set: v => { const k = rateLabels.indexOf(v);
+                                if (k >= 0) settings.applyMode(m.name, curRes, rateList[k]); } });
+
+                // A menu, not a slider. Hyprland rejects any scale that
+                // doesn't divide the mode into whole logical pixels, and says
+                // so only in its log — so a slider spends most of its travel
+                // on values that quietly don't apply. This offers the ones
+                // that work on this panel and nothing else.
+                const scales = Services.Compositor.validScales(pxW, pxH);
+                const scaleLabels = scales.map(x => Math.round(x * 100) + "%");
+                rows.push({ n: "Scale", s: scales.length > 1
+                        ? "Whole-pixel scales available at " + curRes
+                        : "No fractional scale divides " + curRes + " cleanly",
+                    type: scales.length > 1 ? "menu" : "info",
+                    options: scaleLabels,
+                    value: Math.round(scale * 100) + "%",
+                    set: v => { const k = scaleLabels.indexOf(v);
+                                if (k >= 0) settings.applyScale(m.name, scales[k]); } });
+
+                rows.push({ n: "Adaptive sync", s: "VRR while a fullscreen client is focused",
+                    type: "toggle", value: (ipc.vrr || 0) !== 0,
+                    set: v => Services.Compositor.setConfig(
+                        { misc: { vrr: v ? 2 : 0 } }) });
+
+                if (mons.length > 1) {
+                    rows.push({ n: "Position", s: "Top-left corner in the layout, in logical pixels",
+                        type: "info", value: m.x + ", " + m.y });
+                }
+            }
+
+            rows.push({ type: "header", n: "All displays",
+                s: Services.Compositor.monitorCount
+                   + (Services.Compositor.monitorCount === 1 ? " output" : " outputs")
+                   + " · " + mons.map(x => x.name).join(" · ") });
+
+            rows.push({ n: "Night shift", s: Services.NightLight.available
                     ? "Warm the panel — " + Services.NightLight.temperature + " K"
                     : "Install hyprsunset or wlsunset to enable", type: "toggle",
-                  value: Services.NightLight.active,
-                  set: v => Services.NightLight.setActive(v) },
-                { n: "Colour temperature", s: "Warmth applied while night shift is on", type: "slider",
-                  min: 2500, max: 6000, unit: "K", value: Services.NightLight.temperature,
-                  set: v => Services.NightLight.setTemperature(v) },
-                { n: "Arrangement", s: Services.Compositor.monitors.map(x => x.name).join(" · "),
-                  type: "info",
-                  value: Services.Compositor.monitorCount
-                         + (Services.Compositor.monitorCount === 1 ? " display" : " displays") }
-            ];
+                value: Services.NightLight.active,
+                set: v => Services.NightLight.setActive(v) });
+            rows.push({ n: "Colour temperature", s: "Warmth applied while night shift is on",
+                type: "slider", min: 2500, max: 6000, unit: "K",
+                value: Services.NightLight.temperature,
+                set: v => Services.NightLight.setTemperature(v) });
+            return rows;
         }
 
         case "Network": return [
@@ -647,25 +750,123 @@ PanelWindow {
             return rows;
         }
 
-        case "Input": return [
-            { n: "Tap to click", s: "Touchpad tap gestures", type: "toggle",
-              value: settings.tapToClick,
-              set: v => { settings.tapToClick = v;
-                          Services.Compositor.dispatch("keyword input:touchpad:tap-to-click " + (v ? "1" : "0")); } },
-            { n: "Natural scrolling", s: "Content follows finger direction", type: "toggle",
-              value: settings.naturalScroll,
-              set: v => { settings.naturalScroll = v;
-                          Services.Compositor.dispatch("keyword input:touchpad:natural_scroll " + (v ? "1" : "0")); } },
-            { n: "Key repeat rate", s: "Repeats per second while a key is held", type: "slider",
-              min: 10, max: 60, unit: "/s", value: settings.repeatRate,
+        case "Keyboard": return [
+            { n: "Layout", s: "xkb layout list, comma-separated — e.g. us,de",
+              type: "info", value: Services.SysInfo.keymap || "—" },
+            { n: "Repeat rate", s: "Repeats per second while a key is held",
+              type: "slider", min: 10, max: 60, unit: "/s", value: settings.repeatRate,
               set: v => { settings.repeatRate = v;
-                          Services.Compositor.dispatch("keyword input:repeat_rate " + v); } },
-            { n: "Repeat delay", s: "Milliseconds before a held key starts repeating", type: "slider",
-              min: 150, max: 900, unit: "ms", value: settings.repeatDelay,
+                          Services.Compositor.setConfig({ input: { repeat_rate: v } }); } },
+            { n: "Repeat delay", s: "Milliseconds before a held key starts repeating",
+              type: "slider", min: 150, max: 900, unit: "ms", value: settings.repeatDelay,
               set: v => { settings.repeatDelay = v;
-                          Services.Compositor.dispatch("keyword input:repeat_delay " + v); } },
-            { n: "Keyboard layout", s: "Active xkb keymap", type: "info",
-              value: Services.SysInfo.keymap || "—" }
+                          Services.Compositor.setConfig({ input: { repeat_delay: v } }); } },
+            { n: "Num Lock at start-up", s: "Turn the numeric keypad on when Hyprland starts",
+              type: "toggle", value: settings.numlock,
+              set: v => { settings.numlock = v;
+                          Services.Compositor.setConfig({ input: { numlock_by_default: v } }); } },
+            // Segmented deals in strings — its `value` is a string property and
+            // its signal carries one — so the numeric option is carried as text
+            // and converted here. Sent as a number, or Hyprland gets "1".
+            { n: "Focus follows mouse", s: "Whether moving the pointer over a window focuses it",
+              type: "seg",
+              options: [{ label: "Off", value: "0" }, { label: "Loose", value: "2" },
+                        { label: "Full", value: "1" }],
+              value: String(settings.followMouse),
+              set: v => { settings.followMouse = parseInt(v, 10);
+                          Services.Compositor.setConfig(
+                              { input: { follow_mouse: parseInt(v, 10) } }); } },
+            { n: "Keymap", s: "What the compositor currently has loaded",
+              type: "info", value: Services.SysInfo.keymap || "—" }
+        ];
+
+        case "Mouse": return [
+            { n: "Pointer speed", s: "libinput sensitivity, -1 slowest to +1 fastest",
+              type: "slider", min: -100, max: 100, unit: "",
+              value: Math.round(settings.sensitivity * 100),
+              set: v => { settings.sensitivity = v / 100;
+                          Services.Compositor.setConfig({ input: { sensitivity: v / 100 } }); } },
+            { n: "Acceleration", s: "Adaptive speeds up with fast movement; flat is 1:1",
+              type: "seg",
+              options: [{ label: "Adaptive", value: "adaptive" }, { label: "Flat", value: "flat" }],
+              value: settings.accelProfile,
+              set: v => { settings.accelProfile = v;
+                          Services.Compositor.setConfig({ input: { accel_profile: v } }); } },
+            { n: "Left-handed", s: "Swap the primary and secondary buttons",
+              type: "toggle", value: settings.leftHanded,
+              set: v => { settings.leftHanded = v;
+                          Services.Compositor.setConfig({ input: { left_handed: v } }); } },
+            { n: "Natural scrolling", s: "Content follows the wheel rather than the view",
+              type: "toggle", value: settings.mouseNaturalScroll,
+              set: v => { settings.mouseNaturalScroll = v;
+                          Services.Compositor.setConfig({ input: { natural_scroll: v } }); } },
+            { n: "Scroll speed", s: "Multiplier applied to every wheel step",
+              type: "slider", min: 25, max: 300, unit: "%",
+              value: Math.round(settings.mouseScrollFactor * 100),
+              set: v => { settings.mouseScrollFactor = v / 100;
+                          Services.Compositor.setConfig({ input: { scroll_factor: v / 100 } }); } },
+            { n: "Pointer hides while typing", s: "Hide the cursor on the next key press",
+              type: "toggle", value: settings.hideCursorOnKey,
+              set: v => { settings.hideCursorOnKey = v;
+                          Services.Compositor.setConfig({ cursor: { hide_on_key_press: v } }); } },
+            { n: "Hide when idle", s: "Seconds of stillness before the pointer disappears — 0 never",
+              type: "slider", min: 0, max: 30, unit: "s", value: settings.cursorTimeout,
+              set: v => { settings.cursorTimeout = v;
+                          Services.Compositor.setConfig({ cursor: { inactive_timeout: v } }); } }
+        ];
+
+        case "Touchpad": return [
+            { n: "Tap to click", s: "A tap counts as a click without pressing down",
+              type: "toggle", value: settings.tapToClick,
+              set: v => { settings.tapToClick = v;
+                          Services.Compositor.setConfig(
+                              { input: { touchpad: { tap_to_click: v } } }); } },
+            { n: "Tap and drag", s: "Tap then hold to drag, without a physical click",
+              type: "toggle", value: settings.tapAndDrag,
+              set: v => { settings.tapAndDrag = v;
+                          Services.Compositor.setConfig(
+                              { input: { touchpad: { tap_and_drag: v } } }); } },
+            { n: "Drag lock", s: "Keep dragging through a brief lift of the finger",
+              type: "toggle", value: settings.dragLock,
+              set: v => { settings.dragLock = v;
+                          Services.Compositor.setConfig(
+                              { input: { touchpad: { drag_lock: v } } }); } },
+            { n: "Natural scrolling", s: "Content follows finger direction",
+              type: "toggle", value: settings.naturalScroll,
+              set: v => { settings.naturalScroll = v;
+                          Services.Compositor.setConfig(
+                              { input: { touchpad: { natural_scroll: v } } }); } },
+            { n: "Scroll speed", s: "Multiplier applied to two-finger scrolling",
+              type: "slider", min: 25, max: 300, unit: "%",
+              value: Math.round(settings.padScrollFactor * 100),
+              set: v => { settings.padScrollFactor = v / 100;
+                          Services.Compositor.setConfig(
+                              { input: { touchpad: { scroll_factor: v / 100 } } }); } },
+            { n: "Disable while typing", s: "Ignore the pad briefly after a key press",
+              type: "toggle", value: settings.disableWhileTyping,
+              set: v => { settings.disableWhileTyping = v;
+                          Services.Compositor.setConfig(
+                              { input: { touchpad: { disable_while_typing: v } } }); } },
+            { n: "Right click", s: "Two-finger click, or a press in the bottom-right corner",
+              type: "seg",
+              options: [{ label: "Two fingers", value: "finger" },
+                        { label: "Corner", value: "corner" }],
+              value: settings.clickfinger ? "finger" : "corner",
+              set: v => { settings.clickfinger = v === "finger";
+                          Services.Compositor.setConfig(
+                              { input: { touchpad: { clickfinger_behavior: v === "finger" } } }); } },
+            { n: "Tap button map", s: "Which button two- and three-finger taps send",
+              type: "seg",
+              options: [{ label: "L R M", value: "lrm" }, { label: "L M R", value: "lmr" }],
+              value: settings.tapButtonMap,
+              set: v => { settings.tapButtonMap = v;
+                          Services.Compositor.setConfig(
+                              { input: { touchpad: { tap_button_map: v } } }); } },
+            { n: "Middle-click emulation", s: "Left and right together counts as a middle click",
+              type: "toggle", value: settings.middleEmulation,
+              set: v => { settings.middleEmulation = v;
+                          Services.Compositor.setConfig(
+                              { input: { touchpad: { middle_button_emulation: v } } }); } }
         ];
 
         case "About": return [
@@ -697,12 +898,36 @@ PanelWindow {
     }
 
     // ── input state ───────────────────────────────────────────────────────
-    // Hyprland's `keyword` dispatcher is write-only, so these mirror what
-    // the shell has set this session. They start from hyprland.lua's values.
-    property bool tapToClick: true
-    property bool naturalScroll: true
+    // Hyprland's config is write-only over IPC — there is no "read this
+    // option back" call — so these mirror what the shell has set this
+    // session. They start from the values hyprland.lua ships, so a control
+    // reads correctly until something outside the shell changes it.
+    //
+    // Keyboard
     property int repeatRate: 25
     property int repeatDelay: 600
+    property bool numlock: false
+    property int followMouse: 1
+
+    // Mouse
+    property real sensitivity: 0
+    property string accelProfile: "adaptive"
+    property bool leftHanded: false
+    property bool mouseNaturalScroll: false
+    property real mouseScrollFactor: 1
+    property bool hideCursorOnKey: true
+    property int cursorTimeout: 0
+
+    // Touchpad
+    property bool tapToClick: true
+    property bool tapAndDrag: true
+    property bool dragLock: false
+    property bool naturalScroll: true
+    property real padScrollFactor: 1
+    property bool disableWhileTyping: true
+    property bool clickfinger: false
+    property string tapButtonMap: "lrm"
+    property bool middleEmulation: false
 
     // ── helpers ───────────────────────────────────────────────────────────
     function batteryDetail(bat) {
@@ -728,11 +953,20 @@ PanelWindow {
         return m + " m";
     }
 
-    // Hyprland's monitor keyword takes `<name>,<mode>,<position>,<scale>`;
-    // `auto` keeps whatever the compositor already decided for the fields
-    // this row isn't changing.
-    function applyMode(name, mode) {
-        Services.Compositor.dispatch("keyword monitor " + name + "," + mode + ",auto,auto");
+    // ── display helpers ───────────────────────────────────────────────────
+    // hl.monitor takes the output by name, so a change is addressed to one
+    // screen and the rest are left alone. `position` is deliberately not
+    // sent: passing "auto" would re-run Hyprland's placement and shuffle a
+    // multi-monitor layout the user arranged themselves.
+    function applyMode(name, res, hz) {
+        const m = Services.Compositor.monitors.find(x => x.name === name);
+        if (!m) return;
+        const rate = hz > 0 ? hz : Math.round((m.lastIpcObject || {}).refreshRate || 60);
+        Services.Compositor.setMonitor({
+            output: name,
+            mode: res + "@" + formatHzPlain(rate),
+            scale: m.scale || 1
+        });
         Services.Compositor.refresh();
     }
 
@@ -740,10 +974,32 @@ PanelWindow {
         const m = Services.Compositor.monitors.find(x => x.name === name);
         if (!m) return;
         const ipc = m.lastIpcObject || ({});
-        const mode = m.width + "x" + m.height + "@" + Math.round(ipc.refreshRate || 60);
-        Services.Compositor.dispatch(
-            "keyword monitor " + name + "," + mode + ",auto," + scale.toFixed(6));
+        const pxW = ipc.width || m.width, pxH = ipc.height || m.height;
+        Services.Compositor.setMonitor({
+            output: name,
+            mode: pxW + "x" + pxH + "@" + formatHzPlain(ipc.refreshRate || 60),
+            scale: scale
+        });
         Services.Compositor.refresh();
+    }
+
+    // Panels report fractional rates — 59.997 and 164.836 are real numbers a
+    // monitor returns — but nobody wants to read "164.80 Hz" in a menu. Shown
+    // as a whole number, and sent back at the precision it arrived with, so
+    // Hyprland matches the mode the value actually came from.
+    function formatHz(hz) { return Math.round(hz) + " Hz"; }
+    function formatHzPlain(hz) { return String(Math.round(hz * 1000) / 1000); }
+
+    // Changing resolution should keep the rate you were on if the new mode
+    // supports it, and otherwise land on its highest — never silently on its
+    // lowest, which is what taking the list head would do.
+    function nearestRate(rates, want) {
+        if (!rates || rates.length === 0) return want;
+        let best = rates[0];
+        for (let i = 1; i < rates.length; i++) {
+            if (Math.abs(rates[i] - want) < Math.abs(best - want)) best = rates[i];
+        }
+        return best;
     }
 
     // No portal file chooser is available to a shell process, so the

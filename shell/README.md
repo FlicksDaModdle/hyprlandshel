@@ -188,8 +188,28 @@ it floats above the desktop instead of tiling with real windows; move it by
 its title bar. Minimise hides it with its place and pane kept, so reopening
 from the dock or `super + ,` restores exactly where you were.
 
-Shell panes write `theme.json` as you drag; device panes act on the system
-through PipeWire, UPower, `nmcli`, `bluetoothctl` and `hyprctl keyword`.
+System panes come first, since those are what you open Settings for. Display
+lists every connected output separately, each with its own resolution,
+refresh rate and scale. Scale is a menu rather than a slider on purpose:
+Hyprland refuses any scale that doesn't divide the mode into whole logical
+pixels and says so only in its log, so a slider would spend most of its
+travel on values that quietly don't apply. Only the ones that work on that
+panel are offered — a 2560x1600 laptop screen gets 100/125/133/167/200/250%,
+and no 150%, because 1600 ÷ 1.5 isn't a whole number.
+
+Keyboard, Mouse and Touchpad cover what a desktop settings panel is expected
+to: layout and key repeat, Num Lock, focus-follows-mouse; pointer speed,
+acceleration profile, left-handed buttons, scroll speed, cursor hiding;
+tap-to-click, tap-and-drag, drag lock, natural scrolling, disable-while-typing,
+two-finger versus corner right-click, tap button map and middle-click
+emulation.
+
+Shell panes write `theme.json` as you drag. System panes act on the machine
+through PipeWire, UPower, `nmcli`, `bluetoothctl` and — for anything that is
+Hyprland's own — `hyprctl eval` against the `hl.*` Lua API. Not `hyprctl
+keyword`: a Lua-config Hyprland rejects that outright ("keyword can't work
+with non-legacy parsers") *and still exits 0*, so every control built on it
+looked like it worked and changed nothing.
 
 **Terminal.** kitty, configured to match the mockup's terminal window: its
 16/18/20 padding, its airy 1.62 line height, no client decoration (Hyprland

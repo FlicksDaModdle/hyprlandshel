@@ -686,8 +686,10 @@ PanelSurface {
     function setGameMode(on) {
         Config.Appearance.gameMode = on;
         // Adaptive sync while a fullscreen client is focused — the mockup's
-        // "vrr on" subtitle. This part always works; it is Hyprland's own.
-        Services.Compositor.dispatch("keyword misc:vrr " + (on ? "2" : "0"));
+        // "vrr on" subtitle. Via hl.config, not the keyword dispatcher: a
+        // Lua-config Hyprland rejects keyword outright and still exits 0, so
+        // that spelling looked like it worked and never did.
+        Services.Compositor.setConfig({ misc: { vrr: on ? 2 : 0 } });
         // The power profile is best-effort: without power-profiles-daemon the
         // write goes nowhere, which is why the tile does not read back from it.
         if (canSetProfile) {

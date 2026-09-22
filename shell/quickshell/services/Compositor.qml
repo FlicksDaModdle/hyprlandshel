@@ -215,4 +215,133 @@ Singleton {
             dispatchProc.running = true;
         }
     }
+
+    // ── runtime configuration ─────────────────────────────────────────────
+    // Everything below used to go through `hyprctl keyword`. On a Lua-config
+    // Hyprland — which is 0.55+, i.e. every version this shell supports —
+    // that is rejected outright:
+    //
+    //     keyword can't work with non-legacy parsers. Use eval.
+    //
+    // and it still exits 0. So a settings window built on `keyword` changes
+    // nothing, reports success, and leaves the control sitting at the value
+    // you picked. The replacement is `hyprctl eval`, which runs Lua against
+    // the live config, exactly as hyprland.lua does at startup.
+    //
+    // Changes last until the next `hyprctl reload`, which is the same
+    // lifetime `keyword` had. Anything meant to survive a reload belongs in
+    // hyprland.lua.
+
+    // Lua has no JSON, so values are serialised by hand. Only the shapes the
+    // hl.* API actually takes are handled: booleans, numbers, strings,
+    // arrays and nested tables.
+    function luaValue(v) {
+        if (v === true) return "true";
+        if (v === false) return "false";
+        if (v === null || v === undefined) return "nil";
+        if (typeof v === "number") {
+            if (!isFinite(v)) return "nil";
+            // Integers must not pick up a decimal point (a mode of
+            // 1920.000000 is not a mode), and fractions must not be printed
+            // in exponent form.
+            return Number.isInteger(v) ? String(v) : v.toFixed(6);
+        }
+        if (Array.isArray(v)) return "{" + v.map(x => luaValue(x)).join(",") + "}";
+        if (typeof v === "object") return luaTable(v);
+        return luaString(String(v));
+    }
+
+    function luaString(str) {
+        return '"' + str.replace(/\\/g, "\\\\")
+                       .replace(/"/g, '\\"')
+                       .replace(/\n/g, "\\n") + '"';
+    }
+
+    function luaTable(obj) {
+        const parts = [];
+        for (const k in obj) {
+            if (obj[k] === undefined) continue;
+            // Bare keys only where Lua allows them; the rest are bracketed,
+            // which is what any option still spelled with a hyphen needs.
+            const key = /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) ? k : "[" + luaString(k) + "]";
+            parts.push(key + "=" + luaValue(obj[k]));
+        }
+        return "{" + parts.join(",") + "}";
+    }
+
+    // hyprctl exits 0 whether the Lua ran or not, so success is judged by
+    // what it printed. This is the only way a bad option surfaces at all.
+    signal configFailed(string code, string reply)
+
+    property var evalQueue: []
+    property bool evalBusy: false
+
+    Process {
+        id: evalProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const reply = text.trim();
+                // "ok" is success. Anything else is Lua or Hyprland
+                // complaining, and is worth seeing.
+                if (reply && reply.toLowerCase() !== "ok") {
+                    console.warn("Compositor: hyprctl eval rejected",
+                                 JSON.stringify(root.evalLast), "->", reply);
+                    root.configFailed(root.evalLast, reply);
+                }
+            }
+        }
+        onExited: {
+            root.evalBusy = false;
+            root.pumpEval();
+        }
+    }
+
+    property string evalLast: ""
+
+    // One hyprctl at a time: a Process is a single slot, and overwriting
+    // `command` mid-run would drop whichever call got there first. Settings
+    // rows fire in bursts (a slider release, a pane switch), so they queue.
+    function pumpEval() {
+        if (evalBusy || evalQueue.length === 0) return;
+        const code = evalQueue.shift();
+        evalLast = code;
+        evalBusy = true;
+        evalProc.command = ["hyprctl", "eval", code];
+        evalProc.running = true;
+    }
+
+    function evalLua(code) {
+        evalQueue.push(code);
+        pumpEval();
+    }
+
+    // hl.config takes a partial tree and merges it, so a single option can be
+    // set without restating the rest of the category.
+    function setConfig(tree) { evalLua("hl.config(" + luaTable(tree) + ")"); }
+
+    // hl.monitor({ output=, mode=, position=, scale= }). Fields left out keep
+    // whatever the monitor already has.
+    function setMonitor(spec) { evalLua("hl.monitor(" + luaTable(spec) + ")"); }
+
+    // ── monitor modes ─────────────────────────────────────────────────────
+    // Hyprland refuses a scale that doesn't divide the mode into a whole
+    // number of logical pixels ("failed to find a clean divisor"), and since
+    // the rejection is just a log line, a slider offering every value in a
+    // range mostly produces settings that silently don't apply. So only the
+    // scales that actually work for this monitor's current mode are offered.
+    function scaleIsClean(pxW, pxH, scale) {
+        if (!(pxW > 0) || !(pxH > 0) || !(scale > 0)) return false;
+        const w = pxW / scale, h = pxH / scale;
+        return Math.abs(w - Math.round(w)) < 0.001
+            && Math.abs(h - Math.round(h)) < 0.001;
+    }
+
+    // The steps a person actually reaches for, filtered to the ones this
+    // panel can take. 100% is always valid, so the list is never empty.
+    readonly property var scaleSteps: [1, 1.25, 1.333333, 1.5, 1.666667,
+                                       1.75, 2, 2.25, 2.5, 3]
+
+    function validScales(pxW, pxH) {
+        return scaleSteps.filter(s => scaleIsClean(pxW, pxH, s));
+    }
 }

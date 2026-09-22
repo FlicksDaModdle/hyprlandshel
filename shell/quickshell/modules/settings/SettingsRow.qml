@@ -11,17 +11,25 @@ import "../icons"
 //   toggle  pill switch            menu    dropdown
 //   swatch  accent picker          info    read-only value
 //   meter   labelled bar           action  accent button
+//   header  a group caption, no control — used to break a pane into
+//           sections, one per display or per device
 Item {
     id: root
 
     required property var spec
     property bool showRule: true
 
+    readonly property bool isHeader: root.spec.type === "header"
+
     implicitWidth: parent ? parent.width : 560
-    implicitHeight: Math.max(labels.implicitHeight, control.implicitHeight) + 26
+    implicitHeight: root.isHeader
+        ? labels.implicitHeight + 34
+        : Math.max(labels.implicitHeight, control.implicitHeight) + 26
 
     Rectangle {
-        visible: root.showRule
+        // A header draws its own separator above itself and owns the space,
+        // so the row rule would double it.
+        visible: root.showRule && !root.isHeader
         anchors.top: parent.top
         width: parent.width
         height: 1
@@ -31,16 +39,21 @@ Item {
     Column {
         id: labels
         anchors.left: parent.left
-        anchors.right: control.left
-        anchors.rightMargin: 24
+        anchors.right: root.isHeader ? parent.right : control.left
+        anchors.rightMargin: root.isHeader ? 0 : 24
         anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenterOffset: root.isHeader ? 6 : 0
         spacing: 3
 
         StyledText {
             width: parent.width
             elide: Text.ElideRight
             text: root.spec.n || ""
-            font.pixelSize: 13
+            font.pixelSize: root.isHeader ? 12 : 13
+            font.weight: root.isHeader ? Font.DemiBold : Font.Medium
+            font.capitalization: root.isHeader ? Font.AllUppercase : Font.MixedCase
+            font.letterSpacing: root.isHeader ? 0.6 : 0
+            color: root.isHeader ? Config.Appearance.ink3 : Config.Appearance.ink
         }
         StyledText {
             width: parent.width
@@ -54,15 +67,17 @@ Item {
 
     Item {
         id: control
+        visible: !root.isHeader
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        implicitWidth: loader.implicitWidth
-        implicitHeight: loader.implicitHeight
+        implicitWidth: root.isHeader ? 0 : loader.implicitWidth
+        implicitHeight: root.isHeader ? 0 : loader.implicitHeight
         width: implicitWidth
         height: implicitHeight
 
         Loader {
             id: loader
+            active: !root.isHeader
             sourceComponent: {
                 switch (root.spec.type) {
                 case "seg":    return segComponent;

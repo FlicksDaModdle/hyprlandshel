@@ -110,6 +110,20 @@ var icons = {
         ink: "M12 3.5L20 8V16L12 20.5L4 16V8L12 3.5Z M12 12.5V20.5",
         acc: "M4 8L12 12.5L20 8"
     },
+
+    // ── pointing devices ──────────────────────────────────────────────────
+    // A mouse is the body capsule with the wheel marked in accent; a touchpad
+    // is the slab with its click strip along the bottom edge. Same 2px
+    // monoline weight and 24x24 box as everything else here.
+    mouse: {
+        ink: rrect(7, 2.5, 10, 19, 5),
+        acc: "M12 6.5V9.5"
+    },
+    touchpad: {
+        ink: rrect(3, 4.5, 18, 15, 2),
+        acc: "M3 14.5H21"
+    },
+
     cpu: {
         ink: "M4 19.5H20",
         inkW: "M7.5 17V12.5 M16.5 17V10.5",
