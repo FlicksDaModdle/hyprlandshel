@@ -275,6 +275,13 @@ Singleton {
     readonly property real fontFactor: Math.max(75, Math.min(150, fontScale)) / 100
     function fs(px) { return Math.round(px * fontFactor); }
 
+    // The bar's own sizes, derived from one setting so they keep the
+    // design's relative proportions instead of each needing its own slider.
+    // barFontSize is the body size; the focused app's name is four steps
+    // larger and the notification badge one smaller, which is the 16/12/11
+    // the mockup specifies at the default of 12.
+    function barFs(delta) { return fs(Math.max(6, barFontSize + (delta || 0))); }
+
     readonly property string fontFamily: "Inter"
     readonly property string monoFamily: "JetBrains Mono"
 

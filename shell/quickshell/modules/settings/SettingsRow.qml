@@ -213,6 +213,14 @@ Item {
         Item {
             id: menuRoot
             property bool open: false
+
+            // A pane switch rebuilds the rows underneath an open menu, so
+            // close it rather than leave one pointing at a row that is gone.
+            Connections {
+                target: root.overlay
+                enabled: root.overlay !== null
+                function onPaneChanged() { menuRoot.open = false; }
+            }
             implicitWidth: 168
             implicitHeight: 32
 
@@ -258,9 +266,22 @@ Item {
                 visible: menuRoot.open
                 z: 100
 
-                readonly property point anchorPoint: root.overlay
-                    ? menuRoot.mapToItem(root.overlay, 0, menuRoot.height)
-                    : Qt.point(0, menuRoot.height)
+                // mapToItem is a plain function call, so this binding has
+                // to be told what to watch: reading the overlay's scroll
+                // offset and this row's own geometry is what makes it
+                // re-run when the row moves. Without that it evaluated once
+                // — before layout, when everything was still at 0 — and the
+                // popup stayed there.
+                readonly property point anchorPoint: {
+                    if (!root.overlay) return Qt.point(0, menuRoot.height);
+                    void root.overlay.scrollY;
+                    void root.overlay.pane;
+                    void root.overlay.width;
+                    void root.overlay.height;
+                    void root.y;
+                    void root.width;
+                    return menuRoot.mapToItem(root.overlay, 0, menuRoot.height);
+                }
 
                 x: anchorPoint.x
                 // Flips above the button when there isn't room below, which
@@ -424,11 +445,21 @@ Item {
                     parent: root.overlay || customSwatch
                     z: 200
 
-                    readonly property point anchorPoint: root.overlay
-                        ? customSwatch.mapToItem(root.overlay,
-                                                 customSwatch.width / 2,
-                                                 customSwatch.height)
-                        : Qt.point(customSwatch.width / 2, customSwatch.height)
+                    // Same as the dropdown: mapToItem can't be tracked, so
+                    // the dependencies are read explicitly.
+                    readonly property point anchorPoint: {
+                        if (!root.overlay)
+                            return Qt.point(customSwatch.width / 2, customSwatch.height);
+                        void root.overlay.scrollY;
+                        void root.overlay.pane;
+                        void root.overlay.width;
+                        void root.overlay.height;
+                        void root.y;
+                        void root.width;
+                        return customSwatch.mapToItem(root.overlay,
+                                                      customSwatch.width / 2,
+                                                      customSwatch.height);
+                    }
 
                     // Kept inside the window on both axes, and flipped above
                     // the swatch when there isn't room beneath it.

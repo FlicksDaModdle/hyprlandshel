@@ -235,6 +235,15 @@ PanelWindow {
             // Click-through except where a popup actually is; the popups add
             // their own input handling.
             enabled: children.length > 0
+
+            // A popup positions itself with mapToItem, which is a function
+            // call — QML cannot know when its answer changes, so a binding
+            // using it evaluates once, before layout has happened, and then
+            // never again. That is how they ended up drawn nowhere near
+            // their control. Reading these makes those bindings re-evaluate
+            // whenever anything that moves a row has moved.
+            readonly property real scrollY: paneFlick.contentY
+            readonly property string pane: settings.pane
         }
 
         // ── sidebar ───────────────────────────────────────────────────────
@@ -365,6 +374,7 @@ PanelWindow {
 
         // ── pane ──────────────────────────────────────────────────────────
         Flickable {
+            id: paneFlick
             anchors.left: sidebar.right
             anchors.right: parent.right
             anchors.top: titleBar.bottom
@@ -515,8 +525,10 @@ PanelWindow {
         case "Bar": return [
             { n: "Bar height", s: "Top bar thickness", type: "slider",
               min: 32, max: 56, unit: "px", value: A.barHeight, set: v => A.barHeight = v },
-            { n: "Text size", s: "Point size of the bar's own labels — the clock, "
-                 + "app name and status capsule", type: "slider",
+            { n: "Text size", s: "Sets every label in the bar at once — the focused "
+                 + "app's name, the window title, the clock and the status capsule "
+                 + "all move together, keeping the design's proportions",
+              type: "slider",
               min: 10, max: 18, unit: "px", value: A.barFontSize,
               set: v => A.barFontSize = v },
             { n: "Clock format", s: "24-hour, or 12-hour with meridiem", type: "seg",
