@@ -1,0 +1,4 @@
+# The delivery artifact: a bundle of this repository's own history, made by
+# `git bundle create` because pushing to the remote is blocked. It is a copy
+# of what is already in .git, so it does not belong in a commit.
+*.bundle
