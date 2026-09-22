@@ -19,6 +19,9 @@ Rectangle {
     readonly property var actions: notification ? Services.Notifications.buttonActions(notification) : []
     readonly property bool urgent: notification && notification.urgency === NotificationUrgency.Critical
     readonly property bool hasImage: notification && notification.image !== ""
+    // The spec's app_icon is an icon-theme name, not a path.
+    readonly property string appIconSource:
+        notification ? Config.Apps.themeIcon(notification.appIcon) : ""
 
     radius: Config.Appearance.rCard
     color: hover.hovered ? Config.Appearance.sel : Config.Appearance.hover
@@ -66,13 +69,13 @@ Rectangle {
                 anchors.centerIn: parent
                 width: 16
                 height: 16
-                visible: !root.hasImage && root.notification && root.notification.appIcon !== ""
-                source: root.notification && root.notification.appIcon !== "" ? root.notification.appIcon : ""
+                visible: !root.hasImage && root.appIconSource !== ""
+                source: root.appIconSource
             }
 
             MonoIcon {
                 anchors.centerIn: parent
-                visible: !root.hasImage && (!root.notification || root.notification.appIcon === "")
+                visible: !root.hasImage && root.appIconSource === ""
                 name: Services.Notifications.iconFor(root.notification)
                 size: 15
                 inkColor: Config.Appearance.ink

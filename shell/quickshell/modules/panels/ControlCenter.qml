@@ -561,7 +561,13 @@ PanelSurface {
     readonly property bool airplane: !Services.Network.wifiEnabled
                                      && (!Services.Bluetooth.available || !Services.Bluetooth.powered)
 
-    readonly property bool gameMode: PowerProfiles.profile === PowerProfile.Performance
+    // Whether the shell has game mode on. Deliberately shell state rather than
+    // a reading of PowerProfiles.profile: power-profiles-daemon is absent or
+    // masked on plenty of systems, and a tile that never lights up because the
+    // daemon silently refused the write is worse than one that tells you what
+    // it managed to do.
+    readonly property bool gameMode: Config.Appearance.gameMode
+    readonly property bool canSetProfile: PowerProfiles.hasPerformanceProfile
 
     readonly property var tiles: [
         {
@@ -601,7 +607,8 @@ PanelSurface {
         {
             n: "Game mode", icon: "gamepad",
             on: gameMode,
-            s: gameMode ? "performance · vrr" : "balanced",
+            s: gameMode ? (canSetProfile ? "performance · vrr" : "vrr")
+                        : (canSetProfile ? "balanced" : "vrr off"),
             go: () => root.setGameMode(!gameMode)
         }
     ]
@@ -663,9 +670,14 @@ PanelSurface {
     }
 
     function setGameMode(on) {
-        PowerProfiles.profile = on ? PowerProfile.Performance : PowerProfile.Balanced;
+        Config.Appearance.gameMode = on;
         // Adaptive sync while a fullscreen client is focused — the mockup's
-        // "vrr on" subtitle.
+        // "vrr on" subtitle. This part always works; it is Hyprland's own.
         Services.Compositor.dispatch("keyword misc:vrr " + (on ? "2" : "0"));
+        // The power profile is best-effort: without power-profiles-daemon the
+        // write goes nowhere, which is why the tile does not read back from it.
+        if (canSetProfile) {
+            PowerProfiles.profile = on ? PowerProfile.Performance : PowerProfile.Balanced;
+        }
     }
 }

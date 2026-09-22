@@ -446,10 +446,12 @@ FloatingWindow {
             const bat = UPower.displayDevice;
             const hasBat = !!bat && bat.isLaptopBattery && bat.isPresent;
             const rows = [];
-            // Offered unconditionally: without power-profiles-daemon the
-            // write is a no-op and the control simply springs back.
+            const ppd = PowerProfiles.hasPerformanceProfile;
             rows.push({
-                n: "Power profile", s: "Platform profile via power-profiles-daemon", type: "seg",
+                n: "Power profile",
+                s: ppd ? "Platform profile via power-profiles-daemon"
+                       : "power-profiles-daemon is not running — this has no effect",
+                type: "seg",
                 options: [{ label: "Saver", value: "saver" },
                           { label: "Balanced", value: "balanced" },
                           { label: "Performance", value: "performance" }],

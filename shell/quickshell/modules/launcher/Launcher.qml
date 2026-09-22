@@ -61,10 +61,13 @@ PanelWindow {
 
     // ── search ────────────────────────────────────────────────────────────
     readonly property var appResults: {
+        // Nothing to search while the launcher is shut, and building it anyway
+        // means instantiating a delegate per installed application at startup.
+        if (!visible) return [];
         const apps = DesktopEntries.applications.values.filter(e => e && !e.noDisplay);
         const pool = apps.map(e => ({
             kind: "desktop", entry: e, label: e.name || "",
-            icon: "", appIcon: e.icon || "",
+            icon: "", appIcon: Config.Apps.themeIcon(e.icon),
             cat: e.genericName || e.comment || (e.categories && e.categories.length > 0
                  ? e.categories[0] : "Application")
         }));
@@ -765,7 +768,7 @@ PanelWindow {
                                     anchors.centerIn: parent
                                     width: 15
                                     height: 15
-                                    visible: (resultRow.modelData.appIcon || "") !== ""
+                                    visible: source !== ""
                                     source: resultRow.modelData.appIcon || ""
                                 }
 

@@ -75,7 +75,7 @@ Item {
                     anchors.centerIn: parent
                     width: 15
                     height: 15
-                    source: entry.modelData.icon
+                    source: Config.Apps.themeIcon(entry.modelData.icon)
                     // Items that go passive shouldn't read as active.
                     opacity: entry.modelData.status === Status.Passive ? 0.55 : 1
                 }

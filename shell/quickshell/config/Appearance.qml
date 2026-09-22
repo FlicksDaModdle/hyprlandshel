@@ -61,6 +61,9 @@ Singleton {
             property bool badges: true
             property string grouping: "App"           // "App" | "Time"
             property int popupTimeout: 5              // seconds a banner stays up
+
+            // Shell state, not a device reading: see ControlCenter's tile.
+            property bool gameMode: false
         }
     }
 
@@ -87,6 +90,7 @@ Singleton {
     property alias badges: prefs.badges
     property alias grouping: prefs.grouping
     property alias popupTimeout: prefs.popupTimeout
+    property alias gameMode: prefs.gameMode
 
     // ── theme resolution ──────────────────────────────────────────────────
     // "auto" follows the clock: dark from 19:00 to 07:00. The mockup calls

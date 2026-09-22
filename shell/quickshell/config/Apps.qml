@@ -44,6 +44,20 @@ Singleton {
         { re: /monitor|htop|btop|system|resources|task/i,               icon: "cpu" }
     ]
 
+    // Resolves an icon name from a .desktop entry, a tray item or a
+    // notification into something IconImage can actually load. Returns "" when
+    // the icon theme has no such icon, so callers can fall back to the
+    // bespoke pack rather than showing a broken image.
+    function themeIcon(name) {
+        if (!name) return "";
+        // Already a usable source: absolute path, or a URL scheme Quickshell
+        // hands out (tray items come through as image:// providers).
+        if (name.charAt(0) === "/" || name.indexOf("file:") === 0
+            || name.indexOf("image:") === 0 || name.indexOf("qrc:") === 0
+            || name.indexOf("http") === 0) return name;
+        return Quickshell.iconPath(name, true);
+    }
+
     function pinnedFor(cls) {
         if (!cls) return null;
         return pinned.find(a => a.match.test(cls)) || null;

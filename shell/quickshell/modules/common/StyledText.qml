@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell
 import "../../config" as Config
 
 // Every string in the shell is Inter with a tuned weight and size, so this
@@ -12,11 +11,18 @@ Text {
     color: Config.Appearance.ink
     textFormat: Text.PlainText
 
-    // The mockup puts font-variant-numeric: tabular-nums on every readout
-    // (clock, percentages, counts) so digits don't shuffle width as they
-    // change. font.features arrived in Qt 6.7; assigning it at runtime
-    // behind a version check keeps the shell loading on 6.6.
     Component.onCompleted: {
-        if (Quickshell.hasQtVersion(6, 7)) font.features = ({ "tnum": 1 });
+        // Tabular numerals stop the clock, percentages and counts shuffling
+        // width as their digits change.
+        //
+        // font.features arrived in Qt 6.7, so this feature-tests the property
+        // itself rather than probing a version: Quickshell.hasQtVersion only
+        // exists on recent Quickshell builds, and calling it on an older one
+        // throws once per Text object in the shell.
+        try {
+            if (font.features !== undefined) font.features = ({ tnum: 1 });
+        } catch (e) {
+            // Older Qt — proportional digits, a purely cosmetic loss.
+        }
     }
 }
