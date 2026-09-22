@@ -27,6 +27,26 @@ Singleton {
     property bool settingsOpen: false
     property string settingsPane: "Appearance"
 
+    // The Settings window draws its own chrome on a shell surface, so its
+    // geometry lives here rather than with the compositor. -1 means "centre
+    // me"; kept across a minimise so reopening restores it where you left it.
+    property real settingsX: -1
+    property real settingsY: -1
+    property bool settingsMaximized: false
+
+    // Minimise: hide, keep everything. The dock's Settings tile stays lit, and
+    // reopening from there or super+, restores this exact state.
+    function minimiseSettings() { settingsOpen = false; }
+
+    // Close: hide and forget, so it comes back at its default size and pane.
+    function closeSettings() {
+        settingsOpen = false;
+        settingsMaximized = false;
+        settingsX = -1;
+        settingsY = -1;
+        settingsPane = "Appearance";
+    }
+
     // Where the desktop context menu was summoned, in screen coordinates.
     property real desktopMenuX: 0
     property real desktopMenuY: 0

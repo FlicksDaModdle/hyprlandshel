@@ -133,13 +133,21 @@ PanelSurface {
                         width: (tileGrid.width - tileGrid.spacing * 2) / 3
                         height: 88
 
+                        MouseArea {
+                            id: tileArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: tile.modelData.go()
+                        }
+
                         Rectangle {
                             id: tileBg
                             anchors.fill: parent
                             radius: Config.Appearance.rCard
                             clip: true
                             color: tile.modelData.on ? Config.Appearance.accent
-                                 : (tileHover.hovered ? Config.Appearance.sel : Config.Appearance.hover)
+                                 : (tileArea.containsMouse ? Config.Appearance.sel : Config.Appearance.hover)
                             Behavior on color { ColorAnimation { duration: 140 } }
 
                             // Bottom rail, brighter when the tile is on.
@@ -172,7 +180,7 @@ PanelSurface {
                             width: 22
                             height: 22
                             radius: Config.Appearance.rSm
-                            color: moreHover.hovered
+                            color: moreArea.containsMouse
                                    ? (tile.modelData.on ? Qt.rgba(0, 0, 0, 0.16) : Config.Appearance.sel)
                                    : "transparent"
 
@@ -184,11 +192,19 @@ PanelSurface {
                                 monochrome: true
                             }
 
-                            HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler {
-                                onTapped: {
+                            MouseArea {
+                                id: moreArea
+                                anchors.fill: parent
+                                // A 22px chevron is a small target for the one
+                                // control on the tile that is not destructive,
+                                // so the hit area is grown past its edges.
+                                anchors.margins: -6
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
                                     Config.UiState.ccExpanded = tile.modelData.n;
                                     if (tile.modelData.n === "Wi-Fi") Services.Network.scan();
+                                    else Services.Bluetooth.refresh();
                                 }
                             }
                         }
@@ -219,8 +235,6 @@ PanelSurface {
                             }
                         }
 
-                        HoverHandler { id: tileHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: tile.modelData.go() }
                     }
                 }
             }

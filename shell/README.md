@@ -156,7 +156,15 @@ silences banners while still filing everything, and grouping by app or time.
 recognisable picture of that workspace. Click a window to focus it, middle
 click to close it, number keys to jump, Escape to dismiss.
 
-**Settings.** A real toplevel window Hyprland manages like any other client.
+**Settings.** Draws its own title bar — bead, icon, title, and the mockup's
+three window buttons — on a shell surface rather than taking a toplevel's.
+As a real toplevel it got whatever decoration Qt drew, which on Wayland is a
+client-side title bar that looks nothing like the design and is only
+suppressed by an environment variable set before Qt starts. The trade is that
+it floats above the desktop instead of tiling with real windows; move it by
+its title bar. Minimise hides it with its place and pane kept, so reopening
+from the dock or `super + ,` restores exactly where you were.
+
 Shell panes write `theme.json` as you drag; device panes act on the system
 through PipeWire, UPower, `nmcli`, `bluetoothctl` and `hyprctl keyword`.
 

@@ -83,12 +83,19 @@ Item {
                     Behavior on width { NumberAnimation { duration: 160 } }
                 }
 
-                HoverHandler {
+                // MouseArea rather than Hover/Tap handlers: it grabs the
+                // press outright, so a click can't be lost to the width
+                // animation running underneath the pointer.
+                MouseArea {
+                    anchors.fill: parent
+                    // The pills are small and separated by 3px of dead space;
+                    // widening the hit area makes them practical to hit.
+                    anchors.margins: -2
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onHoveredChanged: root.hoveredId = hovered ? pill.modelData.id : -1
-                }
-                TapHandler {
-                    onTapped: Services.Compositor.focusWorkspace(pill.modelData.id)
+                    onEntered: root.hoveredId = pill.modelData.id
+                    onExited: if (root.hoveredId === pill.modelData.id) root.hoveredId = -1
+                    onClicked: Services.Compositor.focusWorkspace(pill.modelData.id)
                 }
             }
         }

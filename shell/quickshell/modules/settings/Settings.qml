@@ -1,5 +1,7 @@
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
+import Quickshell.Widgets
 import Quickshell.Services.UPower
 import Quickshell.Services.Pipewire
 import "../../config" as Config
@@ -7,28 +9,50 @@ import "../../services" as Services
 import "../common"
 import "../icons"
 
-// The Settings app. A real toplevel window rather than a layer surface, so
-// Hyprland manages it like any other client — it can be moved, tiled,
-// floated and put on another workspace, which is what the mockup's draggable
-// window is standing in for.
+// The Settings app.
+//
+// It draws its own title bar rather than taking a toplevel's. As a real
+// FloatingWindow it got whatever decoration Qt felt like drawing — on Wayland
+// that is a client-side title bar that looks nothing like the mockup and is
+// only suppressed by an environment variable set before Qt starts. Owning the
+// whole surface is the only way the chrome is reliably the designed one.
+//
+// The trade for that is it floats above the desktop rather than tiling with
+// real windows. Move it by its title bar; the three buttons are the mockup's
+// and each does what it says.
 //
 // Every row acts on the live system and, where it's a shell preference,
-// persists to theme.json immediately. There's no Apply button because
-// there's nothing to apply: the shell repaints as you drag.
-FloatingWindow {
+// persists to theme.json immediately. There's no Apply button because there's
+// nothing to apply: the shell repaints as you drag.
+PanelWindow {
     id: settings
 
     visible: Config.UiState.settingsOpen
-    onVisibleChanged: if (!visible) Config.UiState.settingsOpen = false;
+    color: "transparent"
+    exclusiveZone: 0
 
-    title: "Settings"
-    color: Config.Appearance.ground
+    anchors.top: true
+    anchors.bottom: true
+    anchors.left: true
+    anchors.right: true
 
-    implicitWidth: 900
-    implicitHeight: 596
-    minimumSize: Qt.size(660, 440)
+    WlrLayershell.namespace: "quickshell:panel"
+    WlrLayershell.layer: WlrLayer.Top
+    // Needs real keyboard focus: the sliders have type-in numeric fields.
+    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+
+    // Only the window itself takes input; the rest of the desktop stays live.
+    mask: Region { item: frame }
 
     readonly property string pane: Config.UiState.settingsPane
+    readonly property bool maximised: Config.UiState.settingsMaximized
+
+    readonly property real normalWidth: 900
+    readonly property real normalHeight: 596
+    // Maximised fills the work area, leaving the bar and dock reachable.
+    readonly property real workTop: Config.Appearance.barHeight + 8
+    readonly property real workBottom: settings.height - 8
+        - (Config.Appearance.dockLeft ? 0 : Config.Appearance.dockPanelBreadth + Config.Appearance.dockEdgeGap)
 
     readonly property var paneMeta: ({
         "Appearance":    { icon: "palette",   group: "Shell",  note: "Theme, accent, translucency and geometry. Every change repaints the shell live." },
@@ -50,207 +74,355 @@ FloatingWindow {
         { label: "Device", items: ["Display", "Network", "Bluetooth", "Sound", "Power", "Input", "About"] }
     ]
 
-    // ── sidebar ───────────────────────────────────────────────────────────
-    Rectangle {
-        id: sidebar
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        width: 212
-        color: "transparent"
+    // ══ the window ═══════════════════════════════════════════════════════
+    PanelSurface {
+        id: frame
+        showSeam: false
+        color: Config.Appearance.sheet
+        radius: Config.Appearance.rWin
 
-        Rectangle {
-            anchors.right: parent.right
-            width: 1
-            height: parent.height
-            color: Config.Appearance.rule
-        }
+        width: settings.maximised ? settings.width - 16 : settings.normalWidth
+        height: settings.maximised
+                ? Math.max(320, settings.workBottom - settings.workTop)
+                : settings.normalHeight
 
-        Column {
+        // -1 means "not placed yet", so it opens centred.
+        x: settings.maximised ? 8
+           : (Config.UiState.settingsX >= 0
+              ? Math.max(0, Math.min(settings.width - width, Config.UiState.settingsX))
+              : Math.round((settings.width - width) / 2))
+        y: settings.maximised ? settings.workTop
+           : (Config.UiState.settingsY >= 0
+              ? Math.max(Config.Appearance.barHeight,
+                         Math.min(settings.height - height, Config.UiState.settingsY))
+              : Math.round((settings.height - height) / 2))
+
+        Behavior on width  { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+        Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+        // ── title bar ─────────────────────────────────────────────────────
+        Item {
+            id: titleBar
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.margins: 8
-            spacing: 0
+            height: 40
 
-            Repeater {
-                model: settings.paneGroups
+            // Drag to move, double click to maximise — the mockup's own
+            // `cursor: grab` title bar.
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: settings.maximised ? Qt.ArrowCursor : Qt.OpenHandCursor
+                property real pressX: 0
+                property real pressY: 0
 
-                Column {
-                    id: group
-                    required property var modelData
-                    width: parent.width
-                    spacing: 1
-                    bottomPadding: 6
+                onPressed: mouse => { pressX = mouse.x; pressY = mouse.y; }
+                onPositionChanged: mouse => {
+                    if (!pressed || settings.maximised) return;
+                    const p = mapToItem(null, mouse.x, mouse.y);
+                    Config.UiState.settingsX = Math.round(p.x - pressX);
+                    Config.UiState.settingsY = Math.round(p.y - pressY);
+                }
+                onDoubleClicked: Config.UiState.settingsMaximized = !settings.maximised
+            }
 
-                    StyledText {
-                        text: group.modelData.label
-                        font.pixelSize: 11
-                        font.weight: Font.DemiBold
-                        font.capitalization: Font.AllUppercase
-                        font.letterSpacing: 1.2
-                        color: Config.Appearance.ink3
-                        leftPadding: 10
-                        topPadding: 8
-                        bottomPadding: 8
+            Row {
+                anchors.left: parent.left
+                anchors.leftMargin: 14
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 11
+
+                // Focus bead, accent because this window is the focused one
+                // whenever it is up.
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 3
+                    height: 16
+                    radius: 2
+                    color: Config.Appearance.accent
+                }
+
+                MonoIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "settings"
+                    size: 15
+                    inkColor: Config.Appearance.ink2
+                    accentColor: Config.Appearance.accent
+                }
+
+                StyledText {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Settings"
+                    font.pixelSize: 13
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 0.13
+                }
+
+                StyledText {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "quickshell · live"
+                    font.pixelSize: 12
+                    font.weight: Font.Normal
+                    color: Config.Appearance.ink3
+                }
+            }
+
+            Row {
+                anchors.right: parent.right
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 2
+
+                Repeater {
+                    model: [
+                        { glyph: "minus",  danger: false, act: () => Config.UiState.minimiseSettings() },
+                        { glyph: "square", danger: false, act: () => Config.UiState.settingsMaximized = !settings.maximised },
+                        { glyph: "x",      danger: true,  act: () => Config.UiState.closeSettings() }
+                    ]
+
+                    Rectangle {
+                        id: winBtn
+                        required property var modelData
+                        width: 28
+                        height: 28
+                        radius: Config.Appearance.rSm
+                        color: !btnArea.containsMouse ? "transparent"
+                             : (modelData.danger ? Config.Appearance.accent : Config.Appearance.hover)
+
+                        MonoIcon {
+                            anchors.centerIn: parent
+                            name: winBtn.modelData.glyph
+                            size: 13
+                            inkColor: btnArea.containsMouse && winBtn.modelData.danger
+                                      ? Config.Appearance.onAccent : Config.Appearance.ink2
+                            monochrome: true
+                        }
+
+                        MouseArea {
+                            id: btnArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: winBtn.modelData.act()
+                        }
                     }
+                }
+            }
 
-                    Repeater {
-                        model: group.modelData.items
+            Rectangle {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: 1
+                color: Config.Appearance.rule
+            }
+        }
 
-                        Item {
-                            id: entry
-                            required property var modelData
-                            readonly property bool active: settings.pane === modelData
+        // ── sidebar ───────────────────────────────────────────────────────
+        Rectangle {
+            id: sidebar
+            anchors.left: parent.left
+            anchors.top: titleBar.bottom
+            anchors.bottom: parent.bottom
+            width: 212
+            color: "transparent"
 
-                            width: group.width
-                            height: 34
+            Rectangle {
+                anchors.right: parent.right
+                width: 1
+                height: parent.height
+                color: Config.Appearance.rule
+            }
 
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: Config.Appearance.rSm
-                                color: entry.active ? Config.Appearance.sel
-                                     : (entryHover.hovered ? Config.Appearance.hover : "transparent")
-                                Behavior on color { ColorAnimation { duration: 120 } }
-                            }
+            Column {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 8
+                spacing: 0
 
-                            // Active rail, as in the mockup.
-                            Rectangle {
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.bottom: parent.bottom
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 10
-                                anchors.bottomMargin: 3
-                                height: 2
-                                radius: 1
-                                color: Config.Appearance.accent
-                                opacity: entry.active ? 1 : 0
-                                Behavior on opacity { NumberAnimation { duration: 180 } }
-                            }
+                Repeater {
+                    model: settings.paneGroups
 
-                            Row {
-                                anchors.left: parent.left
-                                anchors.leftMargin: 10
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.verticalCenterOffset: -1
-                                spacing: 10
+                    Column {
+                        id: group
+                        required property var modelData
+                        width: parent.width
+                        spacing: 1
+                        bottomPadding: 6
 
-                                MonoIcon {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    name: settings.paneMeta[entry.modelData].icon
-                                    size: 15
-                                    inkColor: entry.active ? Config.Appearance.accent : Config.Appearance.ink2
-                                    monochrome: true
+                        StyledText {
+                            text: group.modelData.label
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                            font.capitalization: Font.AllUppercase
+                            font.letterSpacing: 1.2
+                            color: Config.Appearance.ink3
+                            leftPadding: 10
+                            topPadding: 8
+                            bottomPadding: 8
+                        }
+
+                        Repeater {
+                            model: group.modelData.items
+
+                            Item {
+                                id: entry
+                                required property var modelData
+                                readonly property bool active: settings.pane === modelData
+
+                                width: group.width
+                                height: 34
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: Config.Appearance.rSm
+                                    color: entry.active ? Config.Appearance.sel
+                                         : (entryArea.containsMouse ? Config.Appearance.hover : "transparent")
+                                    Behavior on color { ColorAnimation { duration: 120 } }
                                 }
-                                StyledText {
+
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    anchors.leftMargin: 10
+                                    anchors.rightMargin: 10
+                                    anchors.bottomMargin: 3
+                                    height: 2
+                                    radius: 1
+                                    color: Config.Appearance.accent
+                                    opacity: entry.active ? 1 : 0
+                                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                                }
+
+                                Row {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 10
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: entry.modelData
-                                    font.pixelSize: 13
+                                    anchors.verticalCenterOffset: -1
+                                    spacing: 10
+
+                                    MonoIcon {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        name: settings.paneMeta[entry.modelData].icon
+                                        size: 15
+                                        inkColor: entry.active ? Config.Appearance.accent : Config.Appearance.ink2
+                                        monochrome: true
+                                    }
+                                    StyledText {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: entry.modelData
+                                        font.pixelSize: 13
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: entryArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: Config.UiState.settingsPane = entry.modelData
                                 }
                             }
-
-                            HoverHandler { id: entryHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: Config.UiState.settingsPane = entry.modelData }
                         }
                     }
                 }
             }
         }
-    }
 
-    // ── pane ──────────────────────────────────────────────────────────────
-    Flickable {
-        anchors.left: sidebar.right
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        contentHeight: paneColumn.implicitHeight + 40
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
+        // ── pane ──────────────────────────────────────────────────────────
+        Flickable {
+            anchors.left: sidebar.right
+            anchors.right: parent.right
+            anchors.top: titleBar.bottom
+            anchors.bottom: parent.bottom
+            contentHeight: paneColumn.implicitHeight + 40
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
 
-        Column {
-            id: paneColumn
-            x: 24
-            y: 20
-            width: parent.width - 48
-            spacing: 0
-
-            StyledText {
-                text: settings.pane
-                font.pixelSize: 17
-                font.weight: Font.Bold
-            }
-
-            StyledText {
-                width: parent.width
-                wrapMode: Text.WordWrap
-                text: settings.paneMeta[settings.pane].note
-                font.pixelSize: 13
-                font.weight: Font.Normal
-                color: Config.Appearance.ink3
-                topPadding: 4
-                bottomPadding: 12
-            }
-
-            // Keybinds is a reference table rather than a list of controls.
             Column {
-                visible: settings.pane === "Keybinds"
-                width: parent.width
-                spacing: 1
+                id: paneColumn
+                x: 24
+                y: 20
+                width: parent.width - 48
+                spacing: 0
 
-                Repeater {
-                    model: settings.keybinds
+                StyledText {
+                    text: settings.pane
+                    font.pixelSize: 17
+                    font.weight: Font.Bold
+                }
 
-                    Item {
-                        id: bind
-                        required property var modelData
-                        width: paneColumn.width
-                        height: 42
+                StyledText {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: settings.paneMeta[settings.pane].note
+                    font.pixelSize: 13
+                    font.weight: Font.Normal
+                    color: Config.Appearance.ink3
+                    topPadding: 4
+                    bottomPadding: 12
+                }
 
-                        Rectangle {
-                            anchors.top: parent.top
-                            width: parent.width
-                            height: 1
-                            color: Config.Appearance.rule
-                        }
+                // Keybinds is a reference table rather than a list of controls.
+                Column {
+                    visible: settings.pane === "Keybinds"
+                    width: parent.width
+                    spacing: 1
 
-                        StyledText {
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: bind.modelData.n
-                            font.pixelSize: 13
-                        }
+                    Repeater {
+                        model: settings.keybinds
 
-                        Rectangle {
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: keyLabel.implicitWidth + 20
-                            height: 26
-                            radius: Config.Appearance.rSm
-                            color: Config.Appearance.hover
-                            border.width: 1
-                            border.color: Config.Appearance.rule
+                        Item {
+                            id: bind
+                            required property var modelData
+                            width: paneColumn.width
+                            height: 42
+
+                            Rectangle {
+                                anchors.top: parent.top
+                                width: parent.width
+                                height: 1
+                                color: Config.Appearance.rule
+                            }
 
                             StyledText {
-                                id: keyLabel
-                                anchors.centerIn: parent
-                                text: bind.modelData.k
-                                font.pixelSize: 12
-                                font.weight: Font.DemiBold
-                                color: Config.Appearance.ink2
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: bind.modelData.n
+                                font.pixelSize: 13
+                            }
+
+                            Rectangle {
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: keyLabel.implicitWidth + 20
+                                height: 26
+                                radius: Config.Appearance.rSm
+                                color: Config.Appearance.hover
+                                border.width: 1
+                                border.color: Config.Appearance.rule
+
+                                StyledText {
+                                    id: keyLabel
+                                    anchors.centerIn: parent
+                                    text: bind.modelData.k
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                    color: Config.Appearance.ink2
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            Repeater {
-                model: settings.pane === "Keybinds" ? [] : settings.rows
-                SettingsRow {
-                    required property var modelData
-                    width: paneColumn.width
-                    spec: modelData
+                Repeater {
+                    model: settings.pane === "Keybinds" ? [] : settings.rows
+                    SettingsRow {
+                        required property var modelData
+                        width: paneColumn.width
+                        spec: modelData
+                    }
                 }
             }
         }

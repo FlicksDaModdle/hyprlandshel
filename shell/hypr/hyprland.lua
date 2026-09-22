@@ -282,13 +282,3 @@ hl.window_rule({
     match = { class = "^(org.pulseaudio.pavucontrol|pavucontrol)$" },
     float = true,
 })
-
--- The shell's Settings window is a real toplevel, so it gets window rules
--- like any other client: floating and centred, at the size it asks for.
-hl.window_rule({
-    name   = "float-shell-settings",
-    match  = { class = "^(quickshell)$", title = "^(Settings)$" },
-    float  = true,
-    center = true,
-    size   = { 900, 600 },
-})

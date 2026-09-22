@@ -144,15 +144,10 @@ Variants {
             implicitWidth: (dock.isLeft ? tiles.implicitWidth : tiles.implicitWidth) + dock.padH * 2
             implicitHeight: tiles.implicitHeight + dock.padV * 2
 
-            // Inner gloss line along the top edge, as in the mockup.
-            Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: 1
-                height: 1
-                color: Config.Appearance.gloss
-            }
+            // The mockup's `inset 0 1px 0 var(--gloss)` reads as a soft
+            // highlight on a translucent panel over a darker backdrop. Drawn
+            // as a literal 1px line on a light dock it is just a white stripe
+            // along the top edge, so it is left out.
 
             Flow {
                 id: tiles

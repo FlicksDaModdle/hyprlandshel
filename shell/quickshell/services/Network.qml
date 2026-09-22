@@ -54,7 +54,14 @@ Singleton {
         id: radioProc
         command: ["nmcli", "-t", "radio", "wifi"]
         stdout: StdioCollector {
-            onStreamFinished: root.wifiEnabled = text.trim() === "enabled"
+            onStreamFinished: {
+                root.wifiEnabled = text.trim() === "enabled";
+                // Scan whenever the radio is on. Doing this only while already
+                // connected meant the network picker stayed empty after you
+                // turned Wi-Fi back on — there was nothing to connect *to*.
+                if (root.wifiEnabled) apProc.running = true;
+                else { root.networks = []; root.ssid = ""; root.signalStrength = 0; }
+            }
         }
         onExited: code => { if (code !== 0) root.available = false; else root.available = true; }
     }
@@ -83,8 +90,7 @@ Singleton {
                 root.ifname = dev;
                 root.vpnActive = vpn;
                 root.vpnName = vpnLabel;
-                if (wifi) apProc.running = true;
-                else { root.ssid = ""; root.signalStrength = 0; }
+                if (!wifi) { root.ssid = ""; root.signalStrength = 0; }
                 if (dev) { ipProc.command = ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show", dev]; ipProc.running = true; }
             }
         }
@@ -156,6 +162,15 @@ Singleton {
         wifiEnabled = on;               // optimistic, corrected by next poll
         action.command = ["nmcli", "radio", "wifi", on ? "on" : "off"];
         action.running = true;
+        // The radio needs a moment to come up before it can see anything, so
+        // the first useful scan is a beat after the switch.
+        if (on) settle.restart();
+    }
+
+    Timer {
+        id: settle
+        interval: 2000
+        onTriggered: root.scan()
     }
 
     function toggleWifi() { setWifiEnabled(!wifiEnabled); }

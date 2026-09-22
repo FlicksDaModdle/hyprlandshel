@@ -24,7 +24,29 @@ Singleton {
     readonly property var monitors: Hyprland.monitors.values
     readonly property int monitorCount: monitors.length
     readonly property var focusedWorkspace: Hyprland.focusedWorkspace
-    readonly property int focusedId: focusedWorkspace ? focusedWorkspace.id : 1
+
+    // Whether Quickshell's own Hyprland IPC connection came up. When it
+    // didn't, workspaces and dispatches fall back to hyprctl, which this
+    // service already shells out to for window geometry — so the bar keeps
+    // working either way instead of going inert.
+    readonly property bool ipcReady: Hyprland.focusedWorkspace !== null
+    property int activeWorkspaceId: 1
+    readonly property int focusedId: focusedWorkspace ? focusedWorkspace.id : activeWorkspaceId
+
+    Process {
+        id: activeWsProc
+        command: ["hyprctl", "-j", "activeworkspace"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const o = JSON.parse(text);
+                    if (o && o.id > 0) root.activeWorkspaceId = o.id;
+                } catch (e) { /* leave the last known value */ }
+            }
+        }
+    }
+
+    Process { id: dispatchProc }
 
     // The mockup's bar always shows at least five workspace pills, filling in
     // empty ones — otherwise the pill group jitters in width as you open and
@@ -113,6 +135,7 @@ Singleton {
         onTriggered: {
             clientsProc.running = true;
             activeProc.running = true;
+            if (!root.ipcReady) activeWsProc.running = true;
         }
     }
 
@@ -155,31 +178,41 @@ Singleton {
     // ── actions ───────────────────────────────────────────────────────────
 
     function focusWorkspace(id) {
-        Hyprland.dispatch("workspace " + id);
+        dispatch("workspace " + id);
+        refresh();
     }
 
     function focusClient(address) {
         if (!address) return;
-        Hyprland.dispatch("focuswindow address:" + address);
+        dispatch("focuswindow address:" + address);
     }
 
     function closeClient(address) {
         if (!address) return;
-        Hyprland.dispatch("closewindow address:" + address);
+        dispatch("closewindow address:" + address);
     }
 
     function moveClientToWorkspace(address, workspaceId) {
         if (!address) return;
-        Hyprland.dispatch("movetoworkspacesilent " + workspaceId + ",address:" + address);
+        dispatch("movetoworkspacesilent " + workspaceId + ",address:" + address);
     }
 
     // Hyprland has no "minimise everything" dispatcher; the equivalent is a
     // scratch workspace nothing else uses, toggled in and out of.
     property int stashWorkspace: 99
     function toggleShowDesktop() {
-        if (focusedId === stashWorkspace) Hyprland.dispatch("workspace previous");
-        else Hyprland.dispatch("workspace " + stashWorkspace);
+        if (focusedId === stashWorkspace) dispatch("workspace previous");
+        else dispatch("workspace " + stashWorkspace);
     }
 
-    function dispatch(cmd) { Hyprland.dispatch(cmd); }
+    function dispatch(cmd) {
+        if (ipcReady) {
+            Hyprland.dispatch(cmd);
+        } else {
+            // hyprctl takes the dispatcher and its arguments as separate argv
+            // entries, so the request is split rather than passed as one blob.
+            dispatchProc.command = ["hyprctl", "dispatch"].concat(cmd.split(" "));
+            dispatchProc.running = true;
+        }
+    }
 }
