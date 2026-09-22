@@ -33,7 +33,12 @@ PanelWindow {
     WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     readonly property bool isLeft: Config.Appearance.dockLeft
-    readonly property real panelWidth: 452
+    // Geometry is a preference now — Settings → Shell → Launcher. The grid
+    // reflows to the column count rather than assuming four across.
+    readonly property real panelWidth: Config.Appearance.launcherWidth
+    readonly property real panelHeight: Config.Appearance.launcherHeight
+    readonly property int gridColumns: Math.max(3, Config.Appearance.launcherColumns)
+    readonly property real gridTile: Config.Appearance.launcherTileSize
     readonly property real dockOffset: Config.Appearance.dockEdgeGap
                                        + Config.Appearance.dockPanelBreadth + 12
 
@@ -54,7 +59,7 @@ PanelWindow {
             kind: "command", key: c.key, label: c.label, icon: c.icon, cat: c.cat, exec: []
         })))
 
-    readonly property int perPage: 12
+    readonly property int perPage: gridColumns * 3
     readonly property int pageCount: Math.max(1, Math.ceil(pinnedItems.length / perPage))
     property int page: 0
     readonly property var pageItems: pinnedItems.slice(page * perPage, (page + 1) * perPage)
@@ -269,7 +274,8 @@ PanelWindow {
         id: panel
 
         width: launcher.panelWidth
-        height: body.implicitHeight
+        // Tall enough for its content, but never past the height you set.
+        height: Math.min(launcher.panelHeight, body.implicitHeight)
 
         // Anchored to the dock's Start tile: above it when the dock is at
         // the bottom, beside it when the dock is on the left. Clamped so it
@@ -338,7 +344,7 @@ PanelWindow {
                         onTextChanged: launcher.query = text
                         color: Config.Appearance.ink
                         font.family: Config.Appearance.fontFamily
-                        font.pixelSize: Config.Appearance.fs(13)
+                        font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize)
                         selectByMouse: true
                         selectionColor: Config.Appearance.accent
                         selectedTextColor: Config.Appearance.onAccent
@@ -372,7 +378,7 @@ PanelWindow {
                             text: Config.UiState.appPickerFor !== ""
                                   ? "Choose an application for this dock slot"
                                   : "Search apps and commands"
-                            font.pixelSize: Config.Appearance.fs(13)
+                            font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize)
                             font.weight: Font.Normal
                             color: Config.Appearance.ink3
                         }
@@ -393,7 +399,7 @@ PanelWindow {
                         id: escLabel
                         anchors.centerIn: parent
                         text: "ESC"
-                        font.pixelSize: Config.Appearance.fs(10)
+                        font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize - 1)
                         font.weight: Font.DemiBold
                         color: Config.Appearance.ink3
                     }
@@ -428,7 +434,7 @@ PanelWindow {
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "Pinned"
-                            font.pixelSize: Config.Appearance.fs(11)
+                            font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
                             font.weight: Font.DemiBold
                             font.capitalization: Font.AllUppercase
                             font.letterSpacing: 0.85
@@ -453,7 +459,7 @@ PanelWindow {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "All apps"
-                                font.pixelSize: Config.Appearance.fs(11)
+                                font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
                                 font.weight: Font.DemiBold
                                 color: allHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
                             }
@@ -474,7 +480,7 @@ PanelWindow {
                 Grid {
                     x: 10
                     width: parent.width - 20
-                    columns: 4
+                    columns: launcher.gridColumns
                     spacing: 2
 
                     Repeater {
@@ -487,8 +493,10 @@ PanelWindow {
 
                             readonly property bool selected: launcher.selectedIndex === index
 
-                            width: (parent.width - parent.spacing * 3) / 4
-                            height: 70
+                            width: (parent.width
+                                    - parent.spacing * (launcher.gridColumns - 1))
+                                   / launcher.gridColumns
+                            height: launcher.gridTile
 
                             Rectangle {
                                 anchors.fill: parent
@@ -525,7 +533,7 @@ PanelWindow {
                                     horizontalAlignment: Text.AlignHCenter
                                     elide: Text.ElideRight
                                     text: gridItem.modelData.label
-                                    font.pixelSize: Config.Appearance.fs(11)
+                                    font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
                                 }
                             }
 
@@ -612,7 +620,7 @@ PanelWindow {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "Recommended"
-                                font.pixelSize: Config.Appearance.fs(11)
+                                font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
                                 font.weight: Font.DemiBold
                                 font.capitalization: Font.AllUppercase
                                 font.letterSpacing: 0.85
@@ -625,7 +633,7 @@ PanelWindow {
                             anchors.rightMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
                             text: "recent"
-                            font.pixelSize: Config.Appearance.fs(11)
+                            font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
                             color: Config.Appearance.ink3
                         }
                     }
@@ -689,13 +697,13 @@ PanelWindow {
                                             width: parent.width
                                             elide: Text.ElideRight
                                             text: recentItem.modelData.name
-                                            font.pixelSize: Config.Appearance.fs(11)
+                                            font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
                                         }
                                         StyledText {
                                             width: parent.width
                                             elide: Text.ElideRight
                                             text: launcher.relativeTime(recentItem.modelData.modified)
-                                            font.pixelSize: Config.Appearance.fs(10)
+                                            font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize - 1)
                                             font.weight: Font.Normal
                                             color: Config.Appearance.ink3
                                         }
@@ -730,7 +738,7 @@ PanelWindow {
                         anchors.leftMargin: 16
                         anchors.verticalCenter: parent.verticalCenter
                         text: launcher.listTitle
-                        font.pixelSize: Config.Appearance.fs(13)
+                        font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize)
                         font.weight: Font.DemiBold
                     }
 
@@ -758,7 +766,7 @@ PanelWindow {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "Back to pinned"
-                                font.pixelSize: Config.Appearance.fs(11)
+                                font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
                                 font.weight: Font.DemiBold
                                 color: Config.Appearance.ink2
                             }
@@ -850,7 +858,7 @@ PanelWindow {
                                     width: parent.width
                                     elide: Text.ElideRight
                                     text: resultRow.modelData.label
-                                    font.pixelSize: Config.Appearance.fs(12)
+                                    font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize - 1)
                                     font.weight: Font.DemiBold
                                     color: resultRow.selected
                                            ? Config.Appearance.onAccent : Config.Appearance.ink
@@ -859,7 +867,7 @@ PanelWindow {
                                     width: parent.width
                                     elide: Text.ElideRight
                                     text: resultRow.modelData.cat || ""
-                                    font.pixelSize: Config.Appearance.fs(10)
+                                    font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize - 1)
                                     font.weight: Font.Normal
                                     opacity: resultRow.selected ? 0.8 : 1
                                     color: resultRow.selected
@@ -874,7 +882,7 @@ PanelWindow {
                             anchors.rightMargin: 12
                             anchors.verticalCenter: parent.verticalCenter
                             text: resultRow.selected ? "return" : ""
-                            font.pixelSize: Config.Appearance.fs(11)
+                            font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
                             font.weight: Font.DemiBold
                             color: Config.Appearance.onAccent
                         }
@@ -899,7 +907,7 @@ PanelWindow {
                     wrapMode: Text.WordWrap
                     text: "No matches — press enter to run \u201C" + launcher.query.trim()
                           + "\u201D as a command"
-                    font.pixelSize: Config.Appearance.fs(13)
+                    font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize)
                     color: Config.Appearance.ink3
                 }
             }
@@ -949,7 +957,7 @@ PanelWindow {
                             spacing: 3
                             StyledText {
                                 text: Services.SysInfo.user
-                                font.pixelSize: Config.Appearance.fs(12)
+                                font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize - 1)
                                 font.weight: Font.DemiBold
                             }
                             Rectangle {

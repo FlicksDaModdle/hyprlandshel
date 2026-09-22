@@ -57,6 +57,31 @@ Singleton {
 
     function applyInput() { Services.Compositor.setConfig(inputTree()); }
 
+    // ── window frame ──────────────────────────────────────────────────────
+    // Gaps, border thickness and the focused window's border colour. The
+    // accent drives the border by default, so the compositor's idea of
+    // "focused" matches the shell's everywhere else.
+    function frameTree() {
+        const col = ({ inactive_border: prefs.hyprColor(prefs.div, "aa") });
+        if (prefs.borderFollowsAccent)
+            col.active_border = prefs.hyprColor(prefs.accent, "ee");
+        return {
+            general: {
+                gaps_in: prefs.gapsIn,
+                gaps_out: prefs.gapsOut,
+                border_size: prefs.borderSize,
+                col: col
+            }
+        };
+    }
+
+    function applyFrame() { Services.Compositor.setConfig(frameTree()); }
+
+    // The border should follow a theme flip or a new accent without waiting
+    // for the next login.
+    readonly property color accentNow: prefs.accent
+    onAccentNowChanged: if (applied && prefs.borderFollowsAccent) applyFrame();
+
     // ── displays ──────────────────────────────────────────────────────────
     function displayMap() {
         if (!prefs.displays) return ({});
@@ -108,6 +133,7 @@ Singleton {
                 && (Services.Compositor.monitors || []).length === 0) return;
             root.applied = true;
             root.applyInput();
+            root.applyFrame();
             root.applyDisplays();
             running = false;
         }

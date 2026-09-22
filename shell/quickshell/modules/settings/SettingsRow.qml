@@ -284,19 +284,29 @@ Item {
                 }
 
                 x: anchorPoint.x
-                // Flips above the button when there isn't room below, which
-                // is what a menu on the last row of the pane needs.
-                y: (root.overlay && anchorPoint.y + height + 8 > root.overlay.height)
-                   ? anchorPoint.y - menuRoot.height - height - 4
-                   : anchorPoint.y + 4
+                // Opens downward unless there genuinely isn't room. The
+                // previous test flipped whenever the overlay's height read
+                // as 0 — which it does before layout — so menus near the top
+                // of the pane opened upwards for no reason.
+                readonly property bool flipUp: {
+                    if (!root.overlay) return false;
+                    const avail = root.overlay.height;
+                    if (avail <= 0 || height <= 0) return false;
+                    const below = avail - (anchorPoint.y + 4);
+                    if (below >= height) return false;
+                    // Only flip if there is actually more space above.
+                    return (anchorPoint.y - menuRoot.height - 4) > below;
+                }
+                y: flipUp ? anchorPoint.y - menuRoot.height - height - 4
+                          : anchorPoint.y + 4
                 width: menuRoot.width
                 height: optionColumn.implicitHeight + 8
                 radius: Config.Appearance.rSm
-                // Opaque, not `sheet`. This popup is drawn inside the
-                // Settings window, so a translucent fill has nothing blurred
-                // behind it — it shows the rows underneath straight through
-                // itself, and the options become unreadable.
-                color: Config.Appearance.solid
+                // Mostly opaque by default, adjustable in Appearance. This
+                // floats over the window's own rows rather than the desktop,
+                // so what shows through is text — readable at a little
+                // translucency, not at a lot.
+                color: Config.Appearance.menuSurface
                 border.width: 1
                 border.color: Config.Appearance.edge
 
@@ -467,9 +477,16 @@ Item {
                        ? Math.max(8, Math.min(anchorPoint.x - width / 2,
                                               root.overlay.width - width - 8))
                        : -width / 2
-                    y: (root.overlay && anchorPoint.y + height + 8 > root.overlay.height)
-                       ? anchorPoint.y - customSwatch.height - height - 8
-                       : anchorPoint.y + 8
+                    readonly property bool flipUp: {
+                        if (!root.overlay) return false;
+                        const avail = root.overlay.height;
+                        if (avail <= 0 || height <= 0) return false;
+                        const below = avail - (anchorPoint.y + 8);
+                        if (below >= height) return false;
+                        return (anchorPoint.y - customSwatch.height - 8) > below;
+                    }
+                    y: flipUp ? anchorPoint.y - customSwatch.height - height - 8
+                              : anchorPoint.y + 8
 
                     value: Config.Appearance.customAccent
                     onPicked: c => {

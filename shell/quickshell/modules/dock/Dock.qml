@@ -46,9 +46,38 @@ Variants {
         readonly property bool onFocusedScreen:
             Services.Compositor.isFocusedScreen(modelData)
 
+        // Auto-hide with hysteresis.
+        //
+        // The naive version — reveal while hovered — fights itself: the
+        // pointer reaches the edge strip, the pill slides out from under it,
+        // the pointer is no longer over the strip, and it slides back. Then
+        // moving *up* into the revealed pill crosses the gap where neither
+        // is true and it retracts under you. That is the glitchiness.
+        //
+        // So: hovering the surface latches it open, and it only closes after
+        // the pointer has been away for a moment. Nothing that happens while
+        // the pointer is inside can retract it.
+        property bool hoverLatch: false
+
         readonly property bool revealed: !Config.Appearance.dockAutoHide
-                                         || windowHover.hovered
+                                         || hoverLatch
                                          || (Config.UiState.launcherOpen && onFocusedScreen)
+
+        onHoveredNowChanged: {
+            if (hoveredNow) { hideDelay.stop(); hoverLatch = true; }
+            else hideDelay.restart();
+        }
+
+        // The mask covers the whole surface while revealed, so the
+        // window's own hover is enough — there is no untracked gap left
+        // between the edge strip and the pill.
+        readonly property bool hoveredNow: windowHover.hovered
+
+        Timer {
+            id: hideDelay
+            interval: 420
+            onTriggered: if (!dock.hoveredNow) dock.hoverLatch = false;
+        }
 
         // The window's short-axis size only needs to fit the *revealed* pill
         // (tooltip headroom + pill + edge gap). The hidden position falls
@@ -76,16 +105,16 @@ Variants {
         // Only the pill itself takes clicks; the tooltip headroom and edge
         // gap around it stay click-through so the desktop underneath is
         // still reachable.
+        // While hidden, only a thin strip along the screen edge takes input,
+        // so the desktop behind stays reachable. While revealed, the whole
+        // surface does — otherwise the pointer crosses untracked empty space
+        // between the strip and the pill, hover drops, and it retracts
+        // mid-approach.
         mask: Region {
-            item: pill
-            // While auto-hidden, a thin strip along the edge is what the
-            // pointer needs to hit to bring the dock back.
-            Region {
-                x: dock.isLeft ? 0 : 0
-                y: dock.isLeft ? 0 : dock.height - 2
-                width: dock.isLeft ? 2 : dock.width
-                height: dock.isLeft ? dock.height : 2
-            }
+            x: 0
+            y: dock.revealed ? 0 : (dock.isLeft ? 0 : dock.height - 3)
+            width: dock.revealed ? dock.width : (dock.isLeft ? 3 : dock.width)
+            height: dock.revealed ? dock.height : (dock.isLeft ? dock.height : 3)
         }
 
         HoverHandler { id: windowHover }

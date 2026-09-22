@@ -23,7 +23,7 @@ Rectangle {
     radius: Config.Appearance.r
     // Opaque: this floats over the settings rows and has nothing blurred
     // behind it to justify a translucent fill.
-    color: Config.Appearance.solid
+    color: Config.Appearance.menuSurface
     border.width: 1
     border.color: Config.Appearance.edge
 
@@ -81,6 +81,11 @@ Rectangle {
 
                 Rectangle {
                     anchors.fill: parent
+                    // Same radius as the plane it covers. Without it this
+                    // wash painted square corners straight over the rounded
+                    // ones underneath, which is what made the square look
+                    // un-rounded however much the corner setting was raised.
+                    radius: parent.radius
                     gradient: Gradient {
                         GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0.92) }
                         GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0) }

@@ -115,7 +115,7 @@ Variants {
                     anchors.centerIn: parent
                     anchors.verticalCenterOffset: -1
                     text: Services.Compositor.activeClass || "Desktop"
-                    font.pixelSize: Config.Appearance.barFs(4)
+                    font.pixelSize: Config.Appearance.fs(Config.Appearance.barAppSize)
                     font.weight: Font.Bold
                     font.letterSpacing: 0.16
                     color: Config.Appearance.ink
@@ -151,7 +151,7 @@ Variants {
                 width: Math.min(implicitWidth, Math.max(0, bar.width - left.x - right.width - 420))
                 elide: Text.ElideRight
                 text: Services.Compositor.activeTitle
-                font.pixelSize: Config.Appearance.barFs(0)
+                font.pixelSize: Config.Appearance.fs(Config.Appearance.barTitleSize)
                 font.weight: Font.Normal
                 color: Config.Appearance.ink3
             }
@@ -204,7 +204,7 @@ Variants {
                         id: badge
                         anchors.centerIn: parent
                         text: Services.Notifications.count
-                        font.pixelSize: Config.Appearance.barFs(-1)
+                        font.pixelSize: Config.Appearance.fs(Config.Appearance.barBadgeSize)
                         font.weight: Font.Bold
                         color: Config.Appearance.onAccent
                     }
@@ -312,7 +312,7 @@ Variants {
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: bar.timeText
-                    font.pixelSize: Config.Appearance.barFs(1)
+                    font.pixelSize: Config.Appearance.fs(Config.Appearance.barClockSize)
                     font.weight: Font.DemiBold
                     color: Config.Appearance.ink
                 }

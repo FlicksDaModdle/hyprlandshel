@@ -236,7 +236,10 @@ hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
 -- Shell surfaces — routed into Quickshell over its IPC socket.
 -- Tap-only Super (matching the design's "Start — super" hint): fires on
 -- release of the bare modifier, not when it's paired with another key.
-hl.bind("SUPER_L",                   hl.dsp.exec_cmd(shell("toggleLauncher")), { release = true })
+-- A bare Super tap. The modifier has to appear on both sides: SUPER is the
+-- mask that must be held, SUPER_L the key whose release fires it. Written
+-- as just "SUPER_L" there is no mask, and the bind never matches.
+hl.bind("SUPER + SUPER_L",           hl.dsp.exec_cmd(shell("toggleLauncher")), { release = true })
 hl.bind(mainMod .. " + Tab",         hl.dsp.exec_cmd(shell("toggleOverview")))
 hl.bind(mainMod .. " + C",           hl.dsp.exec_cmd(shell("toggleControlCenter")))
 hl.bind(mainMod .. " + N",           hl.dsp.exec_cmd(shell("toggleNotifications")))

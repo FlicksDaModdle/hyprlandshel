@@ -95,6 +95,29 @@ Singleton {
             // Typography
             property int fontScale: 100               // 75-150 %
             property int barFontSize: 12              // 10-18 px
+            property int barTitleSize: 12             // window title beside the app name
+            property int barAppSize: 16               // the focused app's name
+            property int barClockSize: 13             // the clock's time
+            property int barBadgeSize: 11             // notification count
+            property int dockLabelSize: 12            // dock tooltips and the active label
+            property int launcherTitleSize: 13        // launcher entry names
+            property int launcherMetaSize: 11         // launcher categories and hints
+
+            // Launcher geometry
+            property int launcherWidth: 720
+            property int launcherHeight: 560
+            property int launcherTileSize: 70
+            property int launcherColumns: 4
+
+            // How much of the window shows through a dropdown or the colour
+            // picker. 0 is fully opaque.
+            property int menuTranslucency: 8          // 0-60 %
+
+            // Hyprland window frame
+            property int gapsIn: 4
+            property int gapsOut: 8
+            property int borderSize: 1
+            property bool borderFollowsAccent: true
 
             // Notifications
             property bool dnd: false
@@ -154,6 +177,25 @@ Singleton {
     // ── typography ────────────────────────────────────────────────────────
     property alias fontScale: prefs.fontScale
     property alias barFontSize: prefs.barFontSize
+    property alias barTitleSize: prefs.barTitleSize
+    property alias barAppSize: prefs.barAppSize
+    property alias barClockSize: prefs.barClockSize
+    property alias barBadgeSize: prefs.barBadgeSize
+    property alias dockLabelSize: prefs.dockLabelSize
+    property alias launcherTitleSize: prefs.launcherTitleSize
+    property alias launcherMetaSize: prefs.launcherMetaSize
+
+    property alias launcherWidth: prefs.launcherWidth
+    property alias launcherHeight: prefs.launcherHeight
+    property alias launcherTileSize: prefs.launcherTileSize
+    property alias launcherColumns: prefs.launcherColumns
+
+    property alias menuTranslucency: prefs.menuTranslucency
+
+    property alias gapsIn: prefs.gapsIn
+    property alias gapsOut: prefs.gapsOut
+    property alias borderSize: prefs.borderSize
+    property alias borderFollowsAccent: prefs.borderFollowsAccent
     property alias dnd: prefs.dnd
     property alias badges: prefs.badges
     property alias grouping: prefs.grouping
@@ -229,6 +271,15 @@ Singleton {
     // content through itself, which is illegible. Menus use this.
     readonly property color solid: dark ? "#1f1d1c" : "#fbfafa"
 
+    // What a dropdown or the colour picker is filled with. Mostly opaque by
+    // default: these float over the window's own rows, not over the desktop,
+    // so anything showing through is text rather than wallpaper. The control
+    // is in Appearance for anyone who wants more of it.
+    readonly property real menuAlpha:
+        1.0 - Math.max(0, Math.min(60, menuTranslucency)) / 100
+    readonly property color menuSurface:
+        Qt.rgba(solid.r, solid.g, solid.b, menuAlpha)
+
     readonly property color hover: dark ? Qt.rgba(0.973, 0.957, 0.957, 0.09) : Qt.rgba(0.125, 0.118, 0.114, 0.07)
     readonly property color sel: dark ? Qt.rgba(0.973, 0.957, 0.957, 0.14) : Qt.rgba(0.125, 0.118, 0.114, 0.10)
     readonly property color gloss: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.6)
@@ -281,6 +332,16 @@ Singleton {
     // larger and the notification badge one smaller, which is the 16/12/11
     // the mockup specifies at the default of 12.
     function barFs(delta) { return fs(Math.max(6, barFontSize + (delta || 0))); }
+
+    // Hyprland wants colours as rgba(rrggbbaa), which is not a form Qt hands
+    // out, so it is built by hand.
+    function hyprColor(c, alphaByte) {
+        const h = x => {
+            const v = Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16);
+            return v.length < 2 ? "0" + v : v;
+        };
+        return "rgba(" + h(c.r) + h(c.g) + h(c.b) + (alphaByte || "ff") + ")";
+    }
 
     readonly property string fontFamily: "Inter"
     readonly property string monoFamily: "JetBrains Mono"

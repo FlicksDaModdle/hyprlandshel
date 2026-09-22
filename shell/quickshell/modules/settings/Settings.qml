@@ -67,6 +67,7 @@ PanelWindow {
         "Bar":           { icon: "layout",    group: "Shell",  note: "The top bar: height, clock, tray and the task list." },
         "Dock":          { icon: "dock",      group: "Shell",  note: "The dock: position, size, labels and auto-hide." },
         "Notifications": { icon: "bell",      group: "Shell",  note: "Banner behaviour, badge counts and how the center stacks items." },
+        "Launcher":      { icon: "search",    group: "Shell",  note: "Size of the start menu, its grid, and its text." },
         "Fonts":         { icon: "file",      group: "Shell",  note: "Every typeface the shell uses, and one scale over all of them." },
         "Keybinds":      { icon: "keyboard",  group: "Shell",  note: "Hyprland bindings this shell listens for." }
     })
@@ -76,8 +77,8 @@ PanelWindow {
     readonly property var paneGroups: [
         { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
                                    "Network", "Bluetooth", "Sound", "Power", "About"] },
-        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Notifications",
-                                   "Fonts", "Keybinds"] }
+        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Launcher",
+                                   "Notifications", "Fonts", "Keybinds"] }
     ]
 
     // ══ the window ═══════════════════════════════════════════════════════
@@ -513,6 +514,11 @@ PanelWindow {
             { n: "Translucency", s: "How much of the desktop shows through the bar, dock and panels",
               type: "slider", min: 0, max: 100, unit: "%",
               value: A.translucency, set: v => A.translucency = v },
+            { n: "Menu translucency", s: "How much of the window shows through a "
+                 + "dropdown or the colour picker — these float over rows, not the "
+                 + "desktop, so a little goes a long way",
+              type: "slider", min: 0, max: 60, unit: "%",
+              value: A.menuTranslucency, set: v => A.menuTranslucency = v },
             { n: "Corner rounding", s: "Scales every radius — 0% is fully square", type: "slider",
               min: 0, max: 160, unit: "%", value: A.roundingPct, set: v => A.roundingPct = v },
             { n: "Wallpaper tint", s: "Ground gradient temperature", type: "seg",
@@ -525,12 +531,24 @@ PanelWindow {
         case "Bar": return [
             { n: "Bar height", s: "Top bar thickness", type: "slider",
               min: 32, max: 56, unit: "px", value: A.barHeight, set: v => A.barHeight = v },
-            { n: "Text size", s: "Sets every label in the bar at once — the focused "
-                 + "app's name, the window title, the clock and the status capsule "
-                 + "all move together, keeping the design's proportions",
-              type: "slider",
-              min: 10, max: 18, unit: "px", value: A.barFontSize,
+            { type: "header", n: "Text",
+              s: "Body size moves everything together; the rest are offsets from it" },
+            { n: "Body text", s: "The window title, the date and the status capsule",
+              type: "slider", min: 8, max: 22, unit: "px", value: A.barFontSize,
               set: v => A.barFontSize = v },
+            { n: "App name", s: "The focused app's name, beside the workspace pills",
+              type: "slider", min: 8, max: 28, unit: "px", value: A.barAppSize,
+              set: v => A.barAppSize = v },
+            { n: "Window title", s: "The live title after the app name",
+              type: "slider", min: 8, max: 22, unit: "px", value: A.barTitleSize,
+              set: v => A.barTitleSize = v },
+            { n: "Clock", s: "The time; the date follows body text",
+              type: "slider", min: 8, max: 24, unit: "px", value: A.barClockSize,
+              set: v => A.barClockSize = v },
+            { n: "Notification badge", s: "The count on the bell",
+              type: "slider", min: 7, max: 16, unit: "px", value: A.barBadgeSize,
+              set: v => A.barBadgeSize = v },
+            { type: "header", n: "Behaviour", s: "" },
             { n: "Clock format", s: "24-hour, or 12-hour with meridiem", type: "seg",
               options: [{ label: "24 h", value: "24" }, { label: "12 h", value: "12" }],
               value: A.clock24 ? "24" : "12", set: v => A.clock24 = (v === "24") },
@@ -560,6 +578,30 @@ PanelWindow {
               value: Config.Apps.pinned.length + " pinned" },
             { n: "Reset pinned apps", s: "Back to the set this shell ships with",
               type: "action", label: "Reset", set: () => Config.Apps.resetPinned() }
+        ];
+
+        case "Launcher": return [
+            { type: "header", n: "Size", s: "The start menu's own geometry" },
+            { n: "Width", s: "How wide the panel opens", type: "slider",
+              min: 520, max: 1200, unit: "px", value: A.launcherWidth,
+              set: v => A.launcherWidth = v },
+            { n: "Height", s: "How tall the panel opens", type: "slider",
+              min: 400, max: 900, unit: "px", value: A.launcherHeight,
+              set: v => A.launcherHeight = v },
+            { n: "Tile size", s: "Each pinned app's square in the grid", type: "slider",
+              min: 56, max: 120, unit: "px", value: A.launcherTileSize,
+              set: v => A.launcherTileSize = v },
+            { n: "Columns", s: "Tiles per row — fewer means larger tiles fit",
+              type: "slider", min: 3, max: 8, unit: "", value: A.launcherColumns,
+              set: v => A.launcherColumns = v },
+
+            { type: "header", n: "Text", s: "" },
+            { n: "Entry names", s: "App and command names in the grid and results",
+              type: "slider", min: 9, max: 20, unit: "px", value: A.launcherTitleSize,
+              set: v => A.launcherTitleSize = v },
+            { n: "Secondary text", s: "Categories, hints and the section headings",
+              type: "slider", min: 8, max: 18, unit: "px", value: A.launcherMetaSize,
+              set: v => A.launcherMetaSize = v }
         ];
 
         case "Fonts": return [
