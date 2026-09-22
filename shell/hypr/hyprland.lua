@@ -85,24 +85,28 @@ hl.env("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1")
 -- Two paths, because one is not enough:
 --
 --   login   the body of this file runs during the very first config parse,
---           which Hyprland does in initManagers(STAGE_PRIORITY) — before it
---           has created the Wayland socket. hl.exec_cmd forks right then
---           (it is not deferred like exec-once was), so the child gets an
---           empty WAYLAND_DISPLAY and the shell dies on the spot. The login
---           launch therefore lives in the hyprland.start hook, which fires
---           on the first rendered frame, with a session to connect to.
+--           which Hyprland does in initManagers(STAGE_PRIORITY) — before
+--           initServer has created the Wayland socket. hl.exec_cmd forks
+--           right then (it is not deferred the way exec-once was), so the
+--           child has no display to connect to and the shell dies on the
+--           spot. The login launch therefore lives in the hyprland.start
+--           hook, which fires on the first rendered frame.
 --
 --   reload  hyprland.start fires once per compositor run, so the hook alone
 --           can never bring the shell back after `hyprctl reload`. That is
---           the body's job — but only on a reload, which is what the marker
---           distinguishes: the hook drops it, so finding it means the hook
---           has already run and this parse is a reload.
+--           the body's job — but only on a reload, and the body has to tell
+--           the two apart by itself.
 --
--- The marker lives in Hyprland's own per-instance directory, so it is
--- unique to this compositor run: one from an earlier boot can never be
--- mistaken for this one's. $HYPRLAND_INSTANCE_SIGNATURE is already exported
--- when the config is parsed (it is set in the compositor's constructor), so
--- both commands can expand it themselves.
+-- It tells them apart by WAYLAND_DISPLAY. Hyprland sets that in every
+-- process it spawns, from the socket name it has at the time: empty during
+-- the first parse, because the socket does not exist yet, and the real name
+-- on every reload after. So an empty one *is* "too early to launch
+-- anything", which is the exact condition that made the login launch fail.
+--
+-- This used to be a marker file the start hook dropped. It worked, but only
+-- from the next login: a session whose hook had already run under an older
+-- config had no marker, so reload-restart stayed dead until you logged out.
+-- Nothing is remembered now, so there is nothing to be stale.
 --
 -- The pgrep guard makes both paths safe: with the shell already running,
 -- either is a no-op rather than a second instance.
@@ -118,16 +122,15 @@ hl.env("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1")
 -- Nothing here is wrapped in `sh -c`: Hyprland already runs exec commands
 -- through /bin/sh. They just must not *start* with "[", which Hyprland
 -- would read as an exec rule.
-local marker = '"$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprshell.started"'
 local launch = "pgrep -x qs >/dev/null 2>&1 || "
     .. "exec env QT_QPA_PLATFORM=wayland qs -c hyprshell"
 
--- Reload only: the marker does not exist on the first parse, so this does
+-- Reload only: WAYLAND_DISPLAY is empty on the first parse, so this does
 -- nothing then and the hook below does the real work.
-hl.exec_cmd("test -e " .. marker .. " && { " .. launch .. "; }")
+hl.exec_cmd('test -n "$WAYLAND_DISPLAY" && { ' .. launch .. "; }")
 
 hl.on("hyprland.start", function()
-    hl.exec_cmd("touch " .. marker .. "; " .. launch)
+    hl.exec_cmd(launch)
     -- The shell draws its own lock screen; hypridle just decides when to ask
     -- for it. Safe to drop if hypridle isn't installed.
     hl.exec_cmd("pgrep -x hypridle >/dev/null 2>&1 || exec hypridle")

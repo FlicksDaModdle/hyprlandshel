@@ -104,9 +104,10 @@ directly:
 `hyprctl reload` also brings the shell back if it isn't running. At login
 the shell is started from `hyprland.lua`'s `hyprland.start` hook, because
 the config body runs before Hyprland has a Wayland socket for it to connect
-to; that hook fires once per session, so the body covers reloads, gated on a
-marker the hook drops in Hyprland's per-instance runtime directory. A
-`pgrep` guard makes either path a no-op when the shell is already up.
+to. That hook fires once per session, so the body covers reloads — telling
+a reload from that first parse by `WAYLAND_DISPLAY`, which Hyprland leaves
+empty in anything it spawns before the socket exists. A `pgrep` guard makes
+either path a no-op when the shell is already up.
 
 It forces `QT_QPA_PLATFORM=wayland` and, if the terminal was started outside
 the Hyprland session, finds the live instance and exports its signature. Both
