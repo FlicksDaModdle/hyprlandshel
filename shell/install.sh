@@ -226,6 +226,9 @@ need wl-copy       optional "screenshot to clipboard"    wl-clipboard wl-clipboa
 need notify-send   optional "screenshot confirmations"   libnotify libnotify-bin libnotify libnotify-tools
 need playerctl     optional "media transport keys"       playerctl playerctl playerctl playerctl
 need kitty         optional "the themed terminal"        kitty kitty kitty kitty
+# The style plugin is what actually draws; kvantummanager only comes with it
+# and is the thing that is reliably on PATH to look for.
+need kvantummanager optional "Kvantum widget theme"        kvantum qt6-style-kvantum kvantum kvantum-qt6
 need hypridle      optional "idle timeout to lock"       hypridle "" "" ""
 need loginctl      optional "suspend, reboot, power off" systemd systemd systemd systemd
 

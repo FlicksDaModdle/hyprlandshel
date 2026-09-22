@@ -236,6 +236,22 @@ Scope {
               type: "toggle", value: A.themeQtApps,
               set: v => { A.themeQtApps = v; if (v) Services.Theming.applyKde(); } },
 
+            { n: "Kvantum widget theme",
+              s: "Generates a Kvantum theme from this one and selects it. "
+                 + "Kvantum draws Qt widgets from an SVG, so this changes how "
+                 + "KDE applications are drawn — flat surfaces, hairline "
+                 + "borders, the shell's radii and accent — not only their "
+                 + "colours. Needs the kvantum package; applications pick it "
+                 + "up when they next start.",
+              type: "toggle", value: A.kvantumTheme,
+              set: v => { A.kvantumTheme = v;
+                          if (v) Services.Kvantum.apply();
+                          // Either way: turning it on selects Kvantum as the
+                          // widget style, turning it off deselects it again.
+                          Services.Theming.applyKde(); } },
+            { n: "Theme written to", s: "Regenerated whenever the theme changes",
+              type: "info", value: "Kvantum/Hyprshell/" },
+
             { type: "header", n: "This window",
               s: "How Settings itself is put on screen" },
             { n: "Window mode",

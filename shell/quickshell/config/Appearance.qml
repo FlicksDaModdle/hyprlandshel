@@ -132,6 +132,13 @@ Singleton {
             // outside this shell's own config.
             property bool themeQtApps: false
 
+            // Generate a Kvantum theme from this one and select it. Kvantum
+            // is a Qt style that draws widgets from an SVG, so this changes
+            // how KDE applications are *drawn*, not only their colours —
+            // which is as close as a file manager gets to the design without
+            // being rewritten.
+            property bool kvantumTheme: false
+
             // Subpixel order, written to fontconfig for every app, not just
             // this one: "" leaves your existing setting alone, "none" is
             // grayscale antialiasing, and rgb/bgr/vrgb/vbgr name the stripe
@@ -257,6 +264,7 @@ Singleton {
 
     property alias textNative: prefs.textNative
     property alias themeQtApps: prefs.themeQtApps
+    property alias kvantumTheme: prefs.kvantumTheme
     property alias subpixel: prefs.subpixel
     property alias fontHinting: prefs.fontHinting
 

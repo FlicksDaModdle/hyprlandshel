@@ -33,12 +33,14 @@ shell/
       Bluetooth.qml        bluetoothctl: radio, paired devices, scanning
       Brightness.qml       brightnessctl backlight, debounced
       Compositor.qml       Hyprland workspaces, windows and their geometry
+      Kvantum.qml          Generates a Kvantum widget theme from the palette
       Network.qml          nmcli: Wi-Fi, access points, VPN, IP
       NightLight.qml       hyprsunset / wlsunset colour temperature
       Notifications.qml    The org.freedesktop.Notifications server
       Session.qml          Lock / suspend / reboot / log out / reload
       SysInfo.qml          Host, CPU, memory, disk, uptime, compositor
-      Theming.qml          Follows the theme out into kitty
+      Theming.qml          Follows the theme out into kitty, kdeglobals
+                           and fontconfig
     modules/
       background/          The desktop ground + its right-click menu
       bar/                 Top bar: workspaces, window menu, tasks, tray,
@@ -499,14 +501,54 @@ without restarting anything.
 Be clear about what it does and does not do. It is **colours only**. It
 cannot move Dolphin's toolbar, change its icons, or give it the shell's
 rounded chrome — a KDE app themed this way reads as the same *palette* with
-KDE's own layout. Matching the design's file manager more closely than that
-means a Kvantum theme, which is a separate and much larger piece of work.
+KDE's own layout. To change how the widgets themselves are *drawn*, turn on
+the Kvantum theme below as well; the two are meant to be used together.
 
 `kdeglobals` is not this shell's file — it is where KDE keeps single-click,
 the icon theme and the rest — so the groups the shell owns (`[Colors:*]`,
 `[WM]`, and two keys in `[General]`) are replaced and every other group is
 carried across untouched. The setting is off by default, because writing
 outside the shell's own config should be something you ask for.
+
+## The Kvantum widget theme
+
+Colours in `kdeglobals` only repaint what KDE's own style already draws.
+Kvantum is a Qt style that draws every widget from an SVG instead, so it is
+the layer where a button's radius, a hairline border or a flat toolbar is
+decided. Settings → Appearance → **Kvantum widget theme** generates one from
+whatever theme the shell is currently wearing and selects it.
+
+It needs the `kvantum` package (`qt6-style-kvantum` on Debian/Ubuntu). The
+installer reports whether it's there.
+
+What gets written, all under `~/.config/Kvantum/`:
+
+    Hyprshell/Hyprshell.svg        every widget, drawn from the live palette
+    Hyprshell/Hyprshell.kvconfig   which SVG element each widget uses
+    kvantum.kvconfig               `theme=Hyprshell` — only that one key
+
+and `widgetStyle=kvantum` in `kdeglobals`, which is what actually puts Qt on
+this style. Turning the setting back off removes that key again, so "off"
+means off rather than a theme that is still selected. If you had set
+`widgetStyle` to something else by hand, that value is left alone.
+
+The SVG is generated, not hand-drawn. Each element is a nine-slice: four
+corner arcs, four edges and an interior, so a widget of any size keeps a
+1px border and the shell's corner radius. Buttons, entries, combo boxes,
+tabs, checkboxes, radios, scrollbars, sliders and item views each get the
+five states Kvantum asks for (normal, focused, pressed, toggled, inactive);
+frames, menus, tooltips, headers and progress bars get one. Arrows, ticks
+and the drag-handle dots are drawn in the accent or the foreground colour.
+
+It regenerates whenever the palette does — switch light to dark and both
+files are rewritten. **Applications pick it up when they next start**, not
+live: unlike `kdeglobals`, Qt reads its style once at startup. Restart
+Dolphin to see the change.
+
+This gets a KDE app much closer to the concept than colours alone, and it is
+still not the concept's file manager. Kvantum decides how widgets are drawn;
+it cannot move Dolphin's toolbar, replace its sidebar or change its icons,
+because those are Dolphin's layout rather than its style.
 
 ## Text rendering, and the one file written outside this shell
 

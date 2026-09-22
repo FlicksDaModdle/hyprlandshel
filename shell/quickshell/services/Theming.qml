@@ -212,6 +212,46 @@ Singleton {
                  general: general };
     }
 
+    // Kvantum only draws anything if Qt is actually using it as the style,
+    // and for KDE applications that is one key in kdeglobals. Set inside the
+    // [KDE] group we otherwise leave alone, because leaving the theme
+    // generated but unselected would be the most annoying kind of working.
+    //
+    // Switching it back off has to undo that, or "off" would leave every KDE
+    // application still drawing through Kvantum. Only a widgetStyle we
+    // recognise as ours is dropped: if you have since set Breeze or anything
+    // else by hand, that is your choice and it stays.
+    function withWidgetStyle(rest) {
+        const on = Config.Appearance.kvantumTheme;
+        if (rest.indexOf("[KDE]") === -1)
+            return on ? (rest === "" ? "" : rest + "\n\n") + "[KDE]\nwidgetStyle=kvantum"
+                      : rest;
+
+        const out = [];
+        let inKde = false, wrote = false;
+        for (const line of rest.split("\n")) {
+            if (line.indexOf("[") === 0) {
+                if (on && inKde && !wrote) {
+                    // Behind any blank lines that separate the groups, or the
+                    // key lands looking like it belongs to the next one.
+                    while (out.length && out[out.length - 1].trim() === "") out.pop();
+                    out.push("widgetStyle=kvantum");
+                    out.push("");
+                    wrote = true;
+                }
+                inKde = line.indexOf("[KDE]") === 0;
+            }
+            if (inKde && line.indexOf("widgetStyle=") === 0) {
+                if (on) { out.push("widgetStyle=kvantum"); wrote = true; }
+                else if (line.trim().toLowerCase() !== "widgetstyle=kvantum") out.push(line);
+                continue;
+            }
+            out.push(line);
+        }
+        if (on && inKde && !wrote) out.push("widgetStyle=kvantum");
+        return out.join("\n");
+    }
+
     // Running KDE apps re-read kdeglobals when it changes, so this lands
     // without restarting Dolphin.
     function applyKde() {
@@ -221,7 +261,8 @@ Singleton {
         const wanted = kdeWanted.replace("[General]\nColorScheme=Hyprshell\nName=Hyprshell\n",
                                          "[General]\nColorScheme=Hyprshell\nName=Hyprshell\n"
                                          + (kept.general.length ? kept.general.join("\n") + "\n" : ""))
-                     + (kept.rest !== "" ? "\n" + kept.rest + "\n" : "");
+                     + (root.withWidgetStyle(kept.rest) !== ""
+                        ? "\n" + root.withWidgetStyle(kept.rest) + "\n" : "");
         if (existing === wanted) return;
         kdeColors.setText(wanted);
     }

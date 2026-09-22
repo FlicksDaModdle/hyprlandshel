@@ -43,6 +43,10 @@ ShellRoot {
     // happened to touch the singleton.
     readonly property bool commandsReady: Services.Commands.watching
 
+    // And again: Kvantum writes a Qt style out of the current theme, and
+    // nothing else in the shell has any reason to look at it.
+    readonly property bool qtThemed: Services.Kvantum.enabled
+
     // Shell shortcuts, registered with the compositor over
     // hyprland-global-shortcuts-v1, so anything on the session can dispatch
     // `global, hyprshell:<name>` to the shell.
