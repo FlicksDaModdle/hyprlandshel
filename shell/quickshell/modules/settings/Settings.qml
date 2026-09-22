@@ -707,110 +707,114 @@ PanelWindow {
         case "Display": {
             const mons = Services.Compositor.monitors;
             if (!mons || mons.length === 0)
-                return [{ n: "No display", s: "Hyprland reported no monitors", type: "info", value: "—" }];
+                return [{ n: "No display", s: "Hyprland reported no monitors",
+                          type: "info", value: "—" }];
+
+            // One display at a time, chosen by the picker at the top.
+            //
+            // Stacking every output's settings meant a two-monitor machine
+            // scrolled through twenty-odd rows to reach the second one, and
+            // it got worse with each display. The picker costs one row and
+            // the rest of the pane is only ever about the screen you chose.
+            const m = mons.find(x => x.name === settings.displayPick) || mons[0];
+            const ipc = m.lastIpcObject || ({});
+            const pxW = ipc.width || m.width || 0;
+            const pxH = ipc.height || m.height || 0;
+            const rate = ipc.refreshRate || 0;
+            const curRes = pxW + "x" + pxH;
+            const scale = m.scale || ipc.scale || 1;
 
             const rows = [];
 
-            // One block per output rather than only the focused one. Hyprland
-            // configures monitors by name, so everything here is addressed to
-            // a specific output and a second screen is a first-class thing
-            // rather than something you have to focus first to touch.
-            for (let i = 0; i < mons.length; i++) {
-                const m = mons[i];
-                const ipc = m.lastIpcObject || ({});
-                const pxW = ipc.width || m.width || 0;
-                const pxH = ipc.height || m.height || 0;
-                const rate = ipc.refreshRate || 0;
-                const curRes = pxW + "x" + pxH;
-                const scale = m.scale || ipc.scale || 1;
+            if (mons.length > 1) {
+                rows.push({ n: "Display", s: "Which screen these settings apply to",
+                    type: "seg",
+                    options: mons.map(x => ({
+                        label: x.name + (x.focused ? " ·" : ""), value: x.name })),
+                    value: m.name,
+                    set: v => settings.displayPickRaw = v });
+            }
 
-                // availableModes comes through as "2560x1440@165.00Hz"
-                // strings. Splitting resolution from refresh rate lets each
-                // be its own control, as every other settings panel does it —
-                // picking a resolution shouldn't mean hunting for the row
-                // that also has the rate you wanted.
-                const byRes = ({});
-                for (let k = 0; k < (ipc.availableModes || []).length; k++) {
-                    const parsed = /^(\d+)x(\d+)@([\d.]+)/.exec(ipc.availableModes[k]);
-                    if (!parsed) continue;
-                    const res = parsed[1] + "x" + parsed[2];
-                    if (!byRes[res]) byRes[res] = [];
-                    const hz = parseFloat(parsed[3]);
-                    // Deduped on the rounded value: 59.997 and 60.000 are one
-                    // rate to a person, and two rows both labelled "60 Hz"
-                    // would make the menu's lookup ambiguous.
-                    let seen = false;
-                    for (let q = 0; q < byRes[res].length; q++) {
-                        if (Math.round(byRes[res][q]) === Math.round(hz)) { seen = true; break; }
-                    }
-                    if (!seen) byRes[res].push(hz);
+            rows.push({ type: "header", n: m.name,
+                s: (m.description || "Display")
+                   + (m.focused ? "  ·  focused" : "")
+                   + "  ·  " + curRes + " at " + Math.round(rate) + " Hz" });
+
+            // availableModes comes through as "2560x1440@165.00Hz" strings.
+            // Splitting resolution from refresh rate lets each be its own
+            // control, as every other settings panel does it.
+            const byRes = ({});
+            for (let k = 0; k < (ipc.availableModes || []).length; k++) {
+                const parsed = /^(\d+)x(\d+)@([\d.]+)/.exec(ipc.availableModes[k]);
+                if (!parsed) continue;
+                const res = parsed[1] + "x" + parsed[2];
+                if (!byRes[res]) byRes[res] = [];
+                const hz = parseFloat(parsed[3]);
+                // Deduped on the rounded value: 59.997 and 60.000 are one
+                // rate to a person, and two rows both labelled "60 Hz" would
+                // make the menu's lookup ambiguous.
+                let seen = false;
+                for (let q = 0; q < byRes[res].length; q++) {
+                    if (Math.round(byRes[res][q]) === Math.round(hz)) { seen = true; break; }
                 }
-                const resList = Object.keys(byRes).sort((a, b) => {
-                    const A = a.split("x"), B = b.split("x");
-                    return (B[0] * B[1]) - (A[0] * A[1]);
-                });
-                const rateList = (byRes[curRes] || []).slice().sort((a, b) => b - a);
+                if (!seen) byRes[res].push(hz);
+            }
+            const resList = Object.keys(byRes).sort((a, b) => {
+                const A2 = a.split("x"), B2 = b.split("x");
+                return (B2[0] * B2[1]) - (A2[0] * A2[1]);
+            });
+            const rateList = (byRes[curRes] || []).slice().sort((a, b) => b - a);
 
-                rows.push({ type: "header", n: m.name,
-                    s: (m.description || "Display") + (m.focused ? "  ·  focused" : "") });
+            rows.push({ n: "Resolution", s: resList.length > 1
+                    ? resList.length + " modes reported by this output"
+                    : "Only one mode reported",
+                type: resList.length > 1 ? "menu" : "info",
+                options: resList,
+                value: curRes,
+                set: v => settings.applyMode(m.name, v,
+                                             settings.nearestRate(byRes[v] || [], rate)) });
 
-                rows.push({ n: "Resolution", s: resList.length > 1
-                        ? resList.length + " modes reported by this output"
-                        : "Only one mode reported",
-                    type: resList.length > 1 ? "menu" : "info",
-                    options: resList,
-                    value: curRes,
-                    // Keep the closest refresh rate the new resolution can
-                    // actually do, instead of silently dropping to its lowest.
-                    set: v => settings.applyMode(m.name, v, settings.nearestRate(byRes[v] || [], rate)) });
+            // Labels go out, labels come back — the menu hands back the
+            // string it displayed. So the label is looked up in the list it
+            // came from rather than parsed: a rate is really 164.836 Hz and a
+            // scale really 1.333333, and re-reading "165 Hz" or "133%" would
+            // send a value the panel does not have.
+            const rateLabels = rateList.map(r => settings.formatHz(r));
+            rows.push({ n: "Refresh rate", s: rateList.length > 1
+                    ? "Rates available at " + curRes
+                    : "Only one rate at this resolution",
+                type: rateList.length > 1 ? "menu" : "info",
+                options: rateLabels,
+                value: settings.formatHz(rate),
+                set: v => { const k = rateLabels.indexOf(v);
+                            if (k >= 0) settings.applyMode(m.name, curRes, rateList[k]); } });
 
-                // Labels go out, labels come back — the menu hands back the
-                // string it displayed. So the label is looked up in the list
-                // it came from rather than parsed: a rate is really 164.836 Hz
-                // and a scale really 1.333333, and re-reading "165 Hz" or
-                // "133%" would send a value the panel does not have and
-                // Hyprland quietly refuses.
-                const rateLabels = rateList.map(r => settings.formatHz(r));
-                rows.push({ n: "Refresh rate", s: rateList.length > 1
-                        ? "Rates available at " + curRes
-                        : "Only one rate at this resolution",
-                    type: rateList.length > 1 ? "menu" : "info",
-                    options: rateLabels,
-                    value: settings.formatHz(rate),
-                    set: v => { const k = rateLabels.indexOf(v);
-                                if (k >= 0) settings.applyMode(m.name, curRes, rateList[k]); } });
+            // A menu, not a slider. Hyprland rejects any scale that doesn't
+            // divide the mode into whole logical pixels, and says so only in
+            // its log — so a slider spends most of its travel on values that
+            // quietly don't apply.
+            const scales = Services.Compositor.validScales(pxW, pxH);
+            const scaleLabels = scales.map(x => Math.round(x * 100) + "%");
+            rows.push({ n: "Scale", s: scales.length > 1
+                    ? "Whole-pixel scales available at " + curRes
+                    : "No fractional scale divides " + curRes + " cleanly",
+                type: scales.length > 1 ? "menu" : "info",
+                options: scaleLabels,
+                value: Math.round(scale * 100) + "%",
+                set: v => { const k = scaleLabels.indexOf(v);
+                            if (k >= 0) settings.applyScale(m.name, scales[k]); } });
 
-                // A menu, not a slider. Hyprland rejects any scale that
-                // doesn't divide the mode into whole logical pixels, and says
-                // so only in its log — so a slider spends most of its travel
-                // on values that quietly don't apply. This offers the ones
-                // that work on this panel and nothing else.
-                const scales = Services.Compositor.validScales(pxW, pxH);
-                const scaleLabels = scales.map(x => Math.round(x * 100) + "%");
-                rows.push({ n: "Scale", s: scales.length > 1
-                        ? "Whole-pixel scales available at " + curRes
-                        : "No fractional scale divides " + curRes + " cleanly",
-                    type: scales.length > 1 ? "menu" : "info",
-                    options: scaleLabels,
-                    value: Math.round(scale * 100) + "%",
-                    set: v => { const k = scaleLabels.indexOf(v);
-                                if (k >= 0) settings.applyScale(m.name, scales[k]); } });
+            rows.push({ n: "Adaptive sync", s: "VRR while a fullscreen client is focused",
+                type: "toggle", value: (ipc.vrr || 0) !== 0,
+                set: v => Services.Compositor.setConfig({ misc: { vrr: v ? 2 : 0 } }) });
 
-                rows.push({ n: "Adaptive sync", s: "VRR while a fullscreen client is focused",
-                    type: "toggle", value: (ipc.vrr || 0) !== 0,
-                    set: v => Services.Compositor.setConfig(
-                        { misc: { vrr: v ? 2 : 0 } }) });
-
-                if (mons.length > 1) {
-                    rows.push({ n: "Position", s: "Top-left corner in the layout, in logical pixels",
-                        type: "info", value: m.x + ", " + m.y });
-                }
+            if (mons.length > 1) {
+                rows.push({ n: "Position", s: "Top-left corner in the layout, in logical pixels",
+                    type: "info", value: m.x + ", " + m.y });
             }
 
             rows.push({ type: "header", n: "All displays",
-                s: Services.Compositor.monitorCount
-                   + (Services.Compositor.monitorCount === 1 ? " output" : " outputs")
-                   + " · " + mons.map(x => x.name).join(" · ") });
+                s: "These apply to every screen" });
 
             rows.push({ n: "Brightness",
                 s: !Services.Brightness.available
@@ -831,176 +835,11 @@ PanelWindow {
                 type: "slider", min: 2500, max: 6000, unit: "K",
                 value: Services.NightLight.temperature,
                 set: v => Services.NightLight.setTemperature(v) });
-            return rows;
-        }
-
-        case "Hyprland": {
-            const push = () => Services.Devices.applyFrame();
-            return [
-            { type: "header", n: "Layout", s: "How windows are tiled and spaced" },
-            { n: "Tiling layout", s: "dwindle splits the focused window; master keeps "
-                 + "one large window with a stack beside it",
-              type: "seg",
-              options: [{ label: "Dwindle", value: "dwindle" },
-                        { label: "Master", value: "master" }],
-              value: A.hyprLayout, set: v => { A.hyprLayout = v; push(); } },
-            { n: "Inner gap", s: "Between tiled windows", type: "slider",
-              min: 0, max: 40, unit: "px", value: A.gapsIn,
-              set: v => { A.gapsIn = v; push(); } },
-            { n: "Outer gap", s: "Between windows and the screen edge", type: "slider",
-              min: 0, max: 80, unit: "px", value: A.gapsOut,
-              set: v => { A.gapsOut = v; push(); } },
-            { n: "Focus follows mouse", s: "Moving the pointer over a window focuses it",
-              type: "toggle", value: A.hyprFocusFollowsMouse,
-              set: v => { A.hyprFocusFollowsMouse = v; push(); } },
-
-            { type: "header", n: "Frame", s: "Borders and corners on real windows" },
-            { n: "Corner rounding", s: "Hyprland's own window rounding — separate from "
-                 + "the shell's, which is in Appearance",
-              type: "slider", min: 0, max: 24, unit: "px", value: A.hyprRounding,
-              set: v => { A.hyprRounding = v; push(); } },
-            { n: "Border width", s: "Thickness of the focus highlight", type: "slider",
-              min: 0, max: 8, unit: "px", value: A.borderSize,
-              set: v => { A.borderSize = v; push(); } },
-            { n: "Highlight follows accent",
-              s: "The focused window's border takes the shell's accent colour",
-              type: "toggle", value: A.borderFollowsAccent,
-              set: v => { A.borderFollowsAccent = v; push(); } },
-            { n: "Inactive opacity", s: "How solid unfocused windows are",
-              type: "slider", min: 40, max: 100, unit: "%",
-              value: A.hyprInactiveOpacity,
-              set: v => { A.hyprInactiveOpacity = v; push(); } },
-
-            { type: "header", n: "Effects", s: "Costs GPU time; turn down on a laptop" },
-            { n: "Blur behind windows", s: "Applies to anything translucent, including "
-                 + "the terminal and the shell's own panels",
-              type: "toggle", value: A.hyprBlur,
-              set: v => { A.hyprBlur = v; push(); } },
-            { n: "Blur size", s: "Radius of each blur pass", type: "slider",
-              min: 1, max: 12, unit: "", value: A.hyprBlurSize,
-              set: v => { A.hyprBlurSize = v; push(); } },
-            { n: "Blur passes", s: "More passes is smoother and more expensive",
-              type: "slider", min: 1, max: 5, unit: "", value: A.hyprBlurPasses,
-              set: v => { A.hyprBlurPasses = v; push(); } },
-            { n: "Window shadows", s: "Drop shadow under floating windows",
-              type: "toggle", value: A.hyprShadow,
-              set: v => { A.hyprShadow = v; push(); } },
-
-            { type: "header", n: "The config file",
-              s: "Anything not here is edited by hand and read on the next reload" },
-            { n: "hyprland.lua", s: "Everything above is applied over it at runtime; "
-                 + "the file itself is the source of truth at login",
-              type: "info", value: "~/.config/hypr" },
-            { n: "Open in your editor", s: "Uses $EDITOR in a terminal",
-              type: "action", label: "Edit",
-              set: () => Quickshell.execDetached(["sh", "-c",
-                  "cd \"$HOME/.config/hypr\" && "
-                  + "${TERMINAL:-kitty} -e ${EDITOR:-nano} hyprland.lua"]) },
-            { n: "Reload hyprland.lua", s: "Re-reads the file, discarding runtime "
-                 + "overrides — the shell re-applies its own straight after",
-              type: "action", label: "Reload",
-              set: () => { Services.Compositor.reloadConfig(); } }
-            ];
-        }
-
-        case "Network": return [
-            { n: "Wi-Fi", s: Services.Network.connected
-                ? Services.Network.ssid + " · " + Services.Network.security
-                  + " · " + Services.Network.signalStrength + "%"
-                : "Not connected", type: "toggle",
-              value: Services.Network.wifiEnabled, set: v => Services.Network.setWifiEnabled(v) },
-            { n: "VPN", s: Services.Network.vpnName || "No VPN profile configured", type: "toggle",
-              value: Services.Network.vpnActive, set: v => Services.Network.setVpn(v) },
-            { n: "Interface", s: "Active wireless device", type: "info",
-              value: Services.Network.ifname || "—" },
-            { n: "IPv4", s: "Address leased on this connection", type: "info",
-              value: Services.Network.ipv4 || "—" },
-            { n: "Networks in range", s: "Rescan and pick one from the control center", type: "info",
-              value: Services.Network.networks.length },
-            { n: "Connection editor", s: "Add a network, or edit a saved profile", type: "action",
-              label: "Open", set: () => Services.Network.openEditor() }
-        ];
-
-        case "Bluetooth": {
-            const rows = [
-                { n: "Bluetooth", s: Services.Bluetooth.available
-                    ? "Controller " + Services.Bluetooth.controller : "No adapter found",
-                  type: "toggle", value: Services.Bluetooth.powered,
-                  set: v => Services.Bluetooth.setPowered(v) },
-                { n: "Discoverable", s: "Let nearby devices find this machine", type: "toggle",
-                  value: Services.Bluetooth.discoverable,
-                  set: v => Services.Bluetooth.setDiscoverable(v) }
-            ];
-            for (const d of Services.Bluetooth.devices) {
-                rows.push({ n: d.name, s: d.connected ? "Connected" : "Paired · not connected",
-                    type: "toggle", value: d.connected,
-                    set: () => Services.Bluetooth.toggleDevice(d) });
-            }
-            rows.push({ n: "Pair a device", s: "Scan for nearby devices for 15 seconds",
-                type: "action", label: Services.Bluetooth.discovering ? "Scanning…" : "Scan",
-                set: () => Services.Bluetooth.scan() });
-            return rows;
-        }
-
-        case "Sound": {
-            const rows = [];
-            const sinks = Services.Audio.sinks;
-            if (sinks.length > 0) rows.push({
-                n: "Output device", s: "Route system audio", type: "menu",
-                options: sinks.map(s => Services.Audio.displayName(s)),
-                value: Services.Audio.sinkName,
-                set: v => {
-                    const node = sinks.find(s => Services.Audio.displayName(s) === v);
-                    if (node) Services.Audio.setDefaultSink(node);
-                }
-            });
-            rows.push({ n: "Output volume", s: Services.Audio.muted ? "Muted" : "Master level",
-                type: "slider", min: 0, max: 100, unit: "%",
-                value: Services.Audio.volumePercent, set: v => Services.Audio.setVolume(v / 100) });
-            rows.push({ n: "Mute output", s: "Silence the default sink", type: "toggle",
-                value: Services.Audio.muted, set: v => Services.Audio.setMuted(v) });
-            if (Services.Audio.sourceReady) {
-                rows.push({ n: "Input volume", s: Services.Audio.sourceName || "Microphone",
-                    type: "slider", min: 0, max: 100, unit: "%",
-                    value: Services.Audio.inputPercent,
-                    set: v => Services.Audio.setInputVolume(v / 100) });
-            }
-            rows.push({ n: "Graph", s: "PipeWire session", type: "info",
-                value: Pipewire.ready ? "ready" : "starting" });
-            return rows;
-        }
-
-        case "Power": {
-            const bat = UPower.displayDevice;
-            const hasBat = !!bat && bat.isLaptopBattery && bat.isPresent;
-            const rows = [];
-            const ppd = PowerProfiles.hasPerformanceProfile;
-            rows.push({
-                n: "Power profile",
-                s: ppd ? "Platform profile via power-profiles-daemon"
-                       : "power-profiles-daemon is not running — this has no effect",
-                type: "seg",
-                options: [{ label: "Saver", value: "saver" },
-                          { label: "Balanced", value: "balanced" },
-                          { label: "Performance", value: "performance" }],
-                value: PowerProfiles.profile === PowerProfile.PowerSaver ? "saver"
-                     : (PowerProfiles.profile === PowerProfile.Performance ? "performance" : "balanced"),
-                set: v => PowerProfiles.profile = v === "saver" ? PowerProfile.PowerSaver
-                        : (v === "performance" ? PowerProfile.Performance : PowerProfile.Balanced)
-            });
-            rows.push({ n: "Lock before sleep", s: "Lock the screen when suspending", type: "toggle",
-                value: Services.Session.lockBeforeSleep,
-                set: v => Services.Session.lockBeforeSleep = v });
-            if (hasBat) {
-                rows.push({ n: "Battery", s: settings.batteryDetail(bat), type: "meter",
-                    value: bat.percentage, label: Math.round(bat.percentage * 100) + "%",
-                    color: bat.percentage < 0.15 ? Config.Appearance.accent : Config.Appearance.ink2 });
-                if (bat.healthSupported) rows.push({
-                    n: "Battery health", s: "Capacity against when it was new", type: "info",
-                    value: Math.round(bat.healthPercentage) + "%" });
-            } else {
-                rows.push({ n: "Battery", s: "No battery on this machine", type: "info", value: "AC" });
-            }
+            rows.push({ n: "Forget saved layouts",
+                s: "Drops the remembered mode and scale for every output, so they "
+                   + "fall back to what hyprland.lua says",
+                type: "action", label: "Forget",
+                set: () => Services.Devices.forgetDisplays() });
             return rows;
         }
 
@@ -1183,6 +1022,12 @@ PanelWindow {
         if (h > 0) return h + " h " + m + " m";
         return m + " m";
     }
+
+    // Which display the Display pane is showing. Empty follows the focused
+    // monitor, so opening the pane lands on the screen you are looking at.
+    property string displayPickRaw: ""
+    readonly property string displayPick: displayPickRaw !== ""
+        ? displayPickRaw : Services.Compositor.focusedMonitorName
 
     // ── launcher presets ──────────────────────────────────────────────────
     // Whole-shape starting points rather than one dimension at a time. The

@@ -219,6 +219,30 @@ hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })
 
 local mainMod = "SUPER"
 
+-- Tap-only Super, matching the design's "Start — super" hint.
+--
+-- Hyprland has no "tap" bind. Binding the bare modifier's release fires on
+-- *every* release, so SUPER + Q would close a window and then open the
+-- launcher on the way back up. The chord has to be tracked by hand: any
+-- Super combination sets superUsed, and the release only opens the launcher
+-- when nothing did.
+--
+-- Defined here, before the first bind that uses it. Lua resolves globals and
+-- upvalues as it runs, top to bottom: declared further down, chord is still
+-- nil when the binds above it are registered, and the config dies with
+-- "attempt to call a nil value".
+--
+-- Every mainMod bind below is wrapped in chord(). A bind added later without
+-- it still works — it just won't suppress the tap.
+local superUsed = false
+
+local function chord(dispatcher)
+    return function()
+        superUsed = true
+        hl.dispatch(dispatcher)
+    end
+end
+
 -- Apps
 hl.bind(mainMod .. " + Return", chord(hl.dsp.exec_cmd(terminal)))
 hl.bind(mainMod .. " + E",      chord(hl.dsp.exec_cmd(fileManager)))
@@ -232,25 +256,6 @@ hl.bind(mainMod .. " + SHIFT + F",   chord(hl.dsp.exec_cmd(dispatch("fullscreen 
 hl.bind(mainMod .. " + SHIFT + P",   chord(hl.dsp.exec_cmd(dispatch("pin"))))
 hl.bind(mainMod .. " + P",           chord(hl.dsp.window.pseudo()))
 hl.bind(mainMod .. " + J",           chord(hl.dsp.layout("togglesplit")))
-
--- Tap-only Super, matching the design's "Start — super" hint.
---
--- Hyprland has no "tap" bind. Binding the bare modifier's release fires on
--- *every* release, so SUPER + Q would close a window and then open the
--- launcher on the way back up. The chord has to be tracked by hand: any
--- Super combination sets superUsed, and the release only opens the launcher
--- when nothing did.
---
--- Every mainMod bind below is wrapped in chord() for that reason. A bind
--- added later without it still works — it just won't suppress the tap.
-local superUsed = false
-
-local function chord(dispatcher)
-    return function()
-        superUsed = true
-        hl.dispatch(dispatcher)
-    end
-end
 
 -- Two ways in, because the tap is the unreliable one.
 --
