@@ -219,106 +219,72 @@ hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })
 
 local mainMod = "SUPER"
 
--- Tap-only Super, matching the design's "Start — super" hint.
---
--- Hyprland has no "tap" bind. Binding the bare modifier's release fires on
--- *every* release, so SUPER + Q would close a window and then open the
--- launcher on the way back up. The chord has to be tracked by hand: any
--- Super combination sets superUsed, and the release only opens the launcher
--- when nothing did.
---
--- Defined here, before the first bind that uses it. Lua resolves globals and
--- upvalues as it runs, top to bottom: declared further down, chord is still
--- nil when the binds above it are registered, and the config dies with
--- "attempt to call a nil value".
---
--- Every mainMod bind below is wrapped in chord(). A bind added later without
--- it still works — it just won't suppress the tap.
-local superUsed = false
-
-local function chord(dispatcher)
-    return function()
-        superUsed = true
-        hl.dispatch(dispatcher)
-    end
-end
-
 -- Apps
-hl.bind(mainMod .. " + Return", chord(hl.dsp.exec_cmd(terminal)))
-hl.bind(mainMod .. " + E",      chord(hl.dsp.exec_cmd(fileManager)))
-hl.bind(mainMod .. " + B",      chord(hl.dsp.exec_cmd(browser)))
+hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(terminal))
+hl.bind(mainMod .. " + E",      hl.dsp.exec_cmd(fileManager))
+hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(browser))
 
 -- Window management
-hl.bind(mainMod .. " + Q",           chord(hl.dsp.window.close()))
-hl.bind(mainMod .. " + V",           chord(hl.dsp.window.float({ action = "toggle" })))
-hl.bind(mainMod .. " + F",           chord(hl.dsp.exec_cmd(dispatch("fullscreen 0"))))
-hl.bind(mainMod .. " + SHIFT + F",   chord(hl.dsp.exec_cmd(dispatch("fullscreen 1"))))
-hl.bind(mainMod .. " + SHIFT + P",   chord(hl.dsp.exec_cmd(dispatch("pin"))))
-hl.bind(mainMod .. " + P",           chord(hl.dsp.window.pseudo()))
-hl.bind(mainMod .. " + J",           chord(hl.dsp.layout("togglesplit")))
+hl.bind(mainMod .. " + Q",           hl.dsp.window.close())
+hl.bind(mainMod .. " + V",           hl.dsp.window.float({ action = "toggle" }))
+hl.bind(mainMod .. " + F",           hl.dsp.exec_cmd(dispatch("fullscreen 0")))
+hl.bind(mainMod .. " + SHIFT + F",   hl.dsp.exec_cmd(dispatch("fullscreen 1")))
+hl.bind(mainMod .. " + SHIFT + P",   hl.dsp.exec_cmd(dispatch("pin")))
+hl.bind(mainMod .. " + P",           hl.dsp.window.pseudo())
+hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
 
--- Two ways in, because the tap is the unreliable one.
+-- The launcher. An ordinary chord, using only the dispatcher forms that
+-- Hyprland's own example config uses.
 --
--- SUPER + SPACE always works: an ordinary chord, nothing clever. If the tap
--- below does nothing on your build, this is the shortcut, and Settings →
--- Keybinds can move it anywhere you like.
-hl.bind("SUPER + SPACE", chord(hl.dsp.exec_cmd(shell("toggleLauncher"))))
-
--- The bare tap. Hyprland has no tap bind, so this is the release of the
--- modifier, suppressed when the chord was used for something.
---
--- There is deliberately no press bind on SUPER_L: binding a bare modifier's
--- press risks swallowing it as a modifier entirely, which would take every
--- Super shortcut with it. Resetting the flag at the end of the release
--- handler does the same job with nothing at stake.
-hl.bind("SUPER + SUPER_L", function()
-    if not superUsed then
-        hl.dispatch(hl.dsp.exec_cmd(shell("toggleLauncher")))
-    end
-    superUsed = false
-end, { release = true })
+-- There was a tap-to-open here that passed a Lua *function* to hl.bind and
+-- called hl.dispatch from inside it. Neither appears anywhere in upstream's
+-- example config, and every Super bind in this file was wrapped in it — so
+-- when it turned out not to work, it did not break the tap, it broke all of
+-- them at once. Tap-to-open is not worth that; if Hyprland grows a real tap
+-- bind it can come back.
+hl.bind("SUPER + SPACE", hl.dsp.exec_cmd(shell("toggleLauncher")))
 
 -- Shell surfaces — routed into Quickshell over its IPC socket.
-hl.bind(mainMod .. " + Tab",         chord(hl.dsp.exec_cmd(shell("toggleOverview"))))
-hl.bind(mainMod .. " + C",           chord(hl.dsp.exec_cmd(shell("toggleControlCenter"))))
-hl.bind(mainMod .. " + N",           chord(hl.dsp.exec_cmd(shell("toggleNotifications"))))
-hl.bind(mainMod .. " + SHIFT + N",   chord(hl.dsp.exec_cmd(shell("toggleDnd"))))
-hl.bind(mainMod .. " + comma",       chord(hl.dsp.exec_cmd(shell("openSettings", "Appearance"))))
-hl.bind(mainMod .. " + SHIFT + T",   chord(hl.dsp.exec_cmd(shell("toggleTheme"))))
-hl.bind(mainMod .. " + SHIFT + R",   chord(hl.dsp.exec_cmd(shell("reloadShell"))))
-hl.bind(mainMod .. " + L",           chord(hl.dsp.exec_cmd(shell("lock"))))
-hl.bind(mainMod .. " + D",           chord(hl.dsp.exec_cmd(shell("showDesktop"))))
+hl.bind(mainMod .. " + Tab",         hl.dsp.exec_cmd(shell("toggleOverview")))
+hl.bind(mainMod .. " + C",           hl.dsp.exec_cmd(shell("toggleControlCenter")))
+hl.bind(mainMod .. " + N",           hl.dsp.exec_cmd(shell("toggleNotifications")))
+hl.bind(mainMod .. " + SHIFT + N",   hl.dsp.exec_cmd(shell("toggleDnd")))
+hl.bind(mainMod .. " + comma",       hl.dsp.exec_cmd(shell("openSettings", "Appearance")))
+hl.bind(mainMod .. " + SHIFT + T",   hl.dsp.exec_cmd(shell("toggleTheme")))
+hl.bind(mainMod .. " + SHIFT + R",   hl.dsp.exec_cmd(shell("reloadShell")))
+hl.bind(mainMod .. " + L",           hl.dsp.exec_cmd(shell("lock")))
+hl.bind(mainMod .. " + D",           hl.dsp.exec_cmd(shell("showDesktop")))
 
 -- Screenshots: region to ~/Pictures and the clipboard, matching what the
 -- control center's Capture tile and the launcher's Screenshot command do.
-hl.bind(mainMod .. " + SHIFT + S", chord(hl.dsp.exec_cmd(
+hl.bind(mainMod .. " + SHIFT + S", hl.dsp.exec_cmd(
     "f=\"$HOME/Pictures/$(date +%Y-%m-%d-%H%M%S).png\"; mkdir -p \"$HOME/Pictures\"; "
     .. "grim -g \"$(slurp)\" \"$f\" && wl-copy < \"$f\" && "
-    .. "notify-send -a Screenshot 'Region saved' \"$f\"")))
+    .. "notify-send -a Screenshot 'Region saved' \"$f\""))
 hl.bind("Print", hl.dsp.exec_cmd(
     "f=\"$HOME/Pictures/$(date +%Y-%m-%d-%H%M%S).png\"; mkdir -p \"$HOME/Pictures\"; "
     .. "grim \"$f\" && wl-copy < \"$f\" && "
     .. "notify-send -a Screenshot 'Screen saved' \"$f\""))
 
 -- Focus movement
-hl.bind(mainMod .. " + left",  chord(hl.dsp.focus({ direction = "left" })))
-hl.bind(mainMod .. " + right", chord(hl.dsp.focus({ direction = "right" })))
-hl.bind(mainMod .. " + up",    chord(hl.dsp.focus({ direction = "up" })))
-hl.bind(mainMod .. " + down",  chord(hl.dsp.focus({ direction = "down" })))
+hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }))
+hl.bind(mainMod .. " + right", hl.dsp.focus({ direction = "right" }))
+hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }))
+hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }))
 
 -- Workspaces 1-10, and moving windows to them
 for i = 1, 10 do
     local key = i % 10
-    hl.bind(mainMod .. " + " .. key,         chord(hl.dsp.focus({ workspace = i })))
-    hl.bind(mainMod .. " + SHIFT + " .. key, chord(hl.dsp.window.move({ workspace = i })))
+    hl.bind(mainMod .. " + " .. key,         hl.dsp.focus({ workspace = i }))
+    hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({ workspace = i }))
 end
 
-hl.bind(mainMod .. " + mouse_down", chord(hl.dsp.focus({ workspace = "e+1" })))
-hl.bind(mainMod .. " + mouse_up",   chord(hl.dsp.focus({ workspace = "e-1" })))
+hl.bind(mainMod .. " + mouse_down", hl.dsp.focus({ workspace = "e+1" }))
+hl.bind(mainMod .. " + mouse_up",   hl.dsp.focus({ workspace = "e-1" }))
 
 -- Move/resize with mouse
-hl.bind(mainMod .. " + mouse:272", chord(hl.dsp.window.drag()),   { mouse = true })
-hl.bind(mainMod .. " + mouse:273", chord(hl.dsp.window.resize()), { mouse = true })
+hl.bind(mainMod .. " + mouse:272", hl.dsp.window.drag(),   { mouse = true })
+hl.bind(mainMod .. " + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
 -- Media and backlight keys go through the shell so its OSD is what appears,
 -- rather than each key silently poking wpctl with nothing on screen.
