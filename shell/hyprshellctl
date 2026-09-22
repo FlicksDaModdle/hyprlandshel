@@ -8,6 +8,7 @@
 #
 #   hyprshellctl doctor              check every link and every command
 #   hyprshellctl list                list the commands
+#   hyprshellctl trace               what the keybinds have tried lately
 #   hyprshellctl <command> [arg]     run one
 set -u
 
@@ -78,6 +79,30 @@ call() {
     return 1
 }
 
+# What the keybinds themselves have been doing. They write a line here for
+# every press, because Hyprland sends a spawned command's output to
+# /dev/null and a shortcut that fails is otherwise completely silent.
+#
+#   a line ending "-> 0"       the call went through; if nothing happened,
+#                              the shell got it and chose to do nothing
+#   a line ending "-> 1"       the shell refused or was not reachable, and
+#                              the qs errors above it say which
+#   no line at all             the bind never fired: the key or the
+#                              modifier, not the shell
+BIND_LOG="${XDG_RUNTIME_DIR:-/tmp}/hyprshell-bind.log"
+
+trace() {
+    if [ ! -s "$BIND_LOG" ]; then
+        red "nothing logged at $BIND_LOG"
+        dim "  Either no shell shortcut has been pressed since this boot, or"
+        dim "  none of them is firing at all. Press one and look again; if it"
+        dim "  stays empty the key never reached the bind."
+        return 1
+    fi
+    dim "$BIND_LOG"
+    tail -n 25 "$BIND_LOG"
+}
+
 # What the shell registered with the compositor. Keybinds no longer go this
 # way — they call the IPC function above — but the registrations are still
 # made, so other clients can dispatch to them, and an empty list here is the
@@ -142,7 +167,7 @@ shortcuts() {
 }
 
 usage() {
-    echo "usage: hyprshellctl doctor | list | shortcuts | <command> [arg]"
+    echo "usage: hyprshellctl doctor | list | shortcuts | trace | <command> [arg]"
     echo
     echo "commands:"
     for c in $COMMANDS; do
@@ -214,16 +239,21 @@ doctor() {
     fi
 
     echo
-    echo "4. this script is where the keybinds point"
-    if [ -x "$QS_DIR/hyprshellctl" ]; then
-        grn "   ok  $QS_DIR/hyprshellctl"
-        dim "       hyprland.lua binds run exactly that path, so a shortcut"
-        dim "       does whatever the matching command below does"
+    echo "4. what the keybinds have tried"
+    if [ -s "$BIND_LOG" ]; then
+        if tail -n 40 "$BIND_LOG" | grep -q -- "-> 0"; then
+            grn "   ok  shortcuts are reaching the shell"
+            dim "       $(tail -n 1 "$BIND_LOG")"
+        else
+            red "   no  every logged shortcut failed"
+            tail -n 6 "$BIND_LOG" | sed 's/^/       /'
+            fail=1
+        fi
     else
-        red "   no  $QS_DIR/hyprshellctl is missing or not executable"
-        dim "       The binds call it by absolute path. Reinstall:"
-        dim "         ./shell/install.sh && hyprctl reload"
-        fail=1
+        dim "   --  nothing logged yet at $BIND_LOG"
+        dim "       Press a shell shortcut and run this again. Still empty"
+        dim "       means the bind never fired — the key or the modifier,"
+        dim "       not the shell. 'hyprshellctl trace' explains the lines."
     fi
 
     echo
@@ -274,6 +304,7 @@ case "${1:-}" in
     ""|-h|--help|help) usage ;;
     doctor)            doctor ;;
     shortcuts)         shortcuts ;;
+    trace)             trace ;;
     list)              usage ;;
     *)
         cmd=$1; shift

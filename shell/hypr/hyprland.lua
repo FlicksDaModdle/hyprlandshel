@@ -36,33 +36,52 @@ local function dispatch(cmd)
     return "hyprctl dispatch " .. cmd
 end
 
--- Shell shortcuts call the shell's own IPC function, because that is the
--- route that actually works here.
+-- Shell shortcuts call the shell's IPC function, written out here rather
+-- than handed to a wrapper script.
 --
--- They went through hyprland-global-shortcuts-v1 for a while: the shell
--- registers "hyprshell:<name>", and `global` dispatches straight to it over
--- the Wayland connection it already holds. Fewer moving parts on paper. But
--- the protocol sits behind a Quickshell build flag, and on a build without
--- it `hyprctl globalshortcuts` lists nothing and every bind pointing at one
--- is a no-op that says nothing. That is this machine. The same actions
--- answer instantly over IPC from a terminal.
+-- Two routes have been tried and dropped. Global shortcuts
+-- (hyprland-global-shortcuts-v1) need a Quickshell built with the protocol,
+-- and on a build without it nothing registers and every bind is a silent
+-- no-op. Then hyprshellctl, which works perfectly from a terminal — but a
+-- bind that calls a script depends on the script being where the config
+-- thinks, being executable, and finding qs on the compositor's PATH, and
+-- when it fails it fails into /dev/null.
 --
--- So the binds go where the working call goes. They still register as global
--- shortcuts — other clients can dispatch to them, and `hyprctl
--- globalshortcuts` is still worth a look — but nothing here depends on it.
+-- So the call is inline now. Nothing to install, nothing to resolve, and
+-- what Hyprland runs is exactly what you can read here.
 --
--- hyprshellctl is the one place that knows how to make the call: Quickshell
--- has moved its config selector between releases, so it tries each form
--- until one answers and remembers which. Called by absolute path, because
--- Hyprland runs binds through /bin/sh with the session's PATH, which need
--- not have ~/.local/bin on it.
-local ctl = (os.getenv("HOME") or "") .. "/.config/quickshell/hyprshell/hyprshellctl"
+-- All three selector forms are tried in turn because Quickshell has moved
+-- the config selector between releases and this config cannot know which
+-- build is installed. The first that answers wins; the others cost nothing
+-- once one has.
+--
+-- Nothing may *start* with "[", which Hyprland reads as an exec rule. A
+-- "{" group is fine.
+--
+-- Tracing: Hyprland sends a spawned command's output to /dev/null, so a
+-- failing shortcut is completely silent — which is most of why this took so
+-- long to pin down. Each shortcut appends what it tried and the status it
+-- got to $XDG_RUNTIME_DIR/hyprshell-bind.log. A line there with a non-zero
+-- status is the shell refusing the call; no line at all means the bind
+-- never fired, which is a keyboard or modifier problem, not a shell one.
+-- The file lives on tmpfs and is gone at reboot. Set this to false to stop.
+local traceBinds = true
+local bindLog = '"$XDG_RUNTIME_DIR/hyprshell-bind.log"'
 
 local function shell(fn, arg)
-    if arg then
-        return ctl .. " " .. fn .. " " .. arg
+    local call = fn .. (arg and (" " .. arg) or "")
+    local cmd = "{ qs -c hyprshell ipc call shell " .. call
+        .. " || qs ipc -c hyprshell call shell " .. call
+        .. " || qs ipc call shell " .. call .. "; }"
+
+    if not traceBinds then
+        return cmd .. " >/dev/null 2>&1"
     end
-    return ctl .. " " .. fn
+
+    -- $? is the group's status, read before anything else can change it.
+    return cmd .. " >>" .. bindLog .. " 2>&1; "
+        .. 'printf "%s %s -> %s\\n" "$(date +%T)" ' .. "'" .. call .. "' "
+        .. '"$?" >>' .. bindLog
 end
 
 -------------------------------
@@ -296,6 +315,16 @@ hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
 -- them at once. Tap-to-open is not worth that; if Hyprland grows a real tap
 -- bind it can come back.
 hl.bind("SUPER + SPACE", hl.dsp.exec_cmd(shell("toggleLauncher")))
+
+-- Tap Super on its own to open the launcher. Uncomment to try it.
+--
+-- It is a release bind on the Super key itself, which is the only way
+-- Hyprland can express "the modifier, by itself". It is off by default
+-- because a release bind on a modifier also fires at the end of a chord on
+-- many setups — so SUPER+C would open the control center and then the
+-- launcher on top of it. Worth trying, not worth defaulting to.
+-- hl.bind("SUPER + Super_L", hl.dsp.exec_cmd(shell("toggleLauncher")),
+--     { release = true })
 
 -- Shell surfaces — routed into Quickshell over its IPC socket.
 hl.bind(mainMod .. " + Tab",         hl.dsp.exec_cmd(shell("toggleOverview")))
