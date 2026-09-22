@@ -126,6 +126,12 @@ Singleton {
             // fractional scale, because it cannot be resampled.
             property bool textNative: true
 
+            // Write the shell's palette into kdeglobals, so Dolphin, Ark and
+            // the rest of the KDE applications take their colours from the
+            // same theme the shell does. Off by default: it rewrites a file
+            // outside this shell's own config.
+            property bool themeQtApps: false
+
             // Subpixel order, written to fontconfig for every app, not just
             // this one: "" leaves your existing setting alone, "none" is
             // grayscale antialiasing, and rgb/bgr/vrgb/vbgr name the stripe
@@ -250,6 +256,7 @@ Singleton {
     property alias launcherMetaSize: prefs.launcherMetaSize
 
     property alias textNative: prefs.textNative
+    property alias themeQtApps: prefs.themeQtApps
     property alias subpixel: prefs.subpixel
     property alias fontHinting: prefs.fontHinting
 

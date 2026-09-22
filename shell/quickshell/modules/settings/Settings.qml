@@ -224,6 +224,18 @@ Scope {
         switch (pane) {
 
         case "Appearance": return [
+            { type: "header", n: "Other applications",
+              s: "Colours the shell can hand to things that are not part of "
+                 + "it" },
+            { n: "Theme KDE applications",
+              s: "Writes this theme's palette into kdeglobals, so Dolphin, "
+                 + "Ark and Okular use the same charcoal and the same accent "
+                 + "on selection. Colours only — it cannot change their "
+                 + "layout, icons or rounded corners. Your other kdeglobals "
+                 + "settings are kept.",
+              type: "toggle", value: A.themeQtApps,
+              set: v => { A.themeQtApps = v; if (v) Services.Theming.applyKde(); } },
+
             { type: "header", n: "This window",
               s: "How Settings itself is put on screen" },
             { n: "Window mode",

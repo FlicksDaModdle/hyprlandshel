@@ -222,16 +222,25 @@ doctor() {
     echo "5. the tap-to-open bind"
     if ! command -v hyprctl >/dev/null 2>&1; then
         dim "   --  hyprctl is not on PATH, so this cannot be checked"
-    elif hyprctl binds 2>/dev/null | grep -qi "super_l"; then
-        grn "   ok  Hyprland has a bind on the Super key"
-        dim "       If tapping Super still does nothing, the bind exists and"
-        dim "       is not matching — which is the compositor's side, not"
-        dim "       the shell's. Send me: hyprctl binds | grep -B3 -A6 -i super_l"
     else
-        red "   no  Hyprland has no bind on the Super key"
-        dim "       It was in the config but did not register, so this build"
-        dim "       rejected the key name. hyprctl configerrors will say."
-        fail=1
+        # Print what Hyprland actually took, rather than a yes or a no. Two
+        # rounds have now been spent guessing at this from the outside; the
+        # registered bind is the evidence, so show it.
+        taps=$(hyprctl binds 2>/dev/null \
+               | grep -B4 -A6 -iE 'Super_L|Super_R|keycode: 13[34]')
+        if [ -n "$taps" ]; then
+            grn "   ok  Hyprland registered a bind on the Super key:"
+            printf '%s\n' "$taps" | sed 's/^/       /'
+            dim "       If tapping Super still does nothing, the bind is there"
+            dim "       and is not matching, which is the compositor's side."
+        else
+            red "   no  Hyprland registered no bind on the Super key"
+            dim "       The config asks for four (Super_L, Super_R, code:133,"
+            dim "       code:134). None took, so this build rejected them all."
+            errs=$(hyprctl configerrors 2>/dev/null | grep -v '^no errors' | head -n 6)
+            [ -n "$errs" ] && printf '%s\n' "$errs" | sed 's/^/       /'
+            fail=1
+        fi
     fi
 
     echo

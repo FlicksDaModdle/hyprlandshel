@@ -83,6 +83,28 @@ Singleton {
 
     readonly property var names: Object.keys(table)
 
+    // A toggle asked for twice within a blink is one press, not two.
+    //
+    // This exists so the config can bind the same physical key more than one
+    // way — by keysym and by keycode — without a tap opening and closing the
+    // launcher again. Which spelling a Hyprland build accepts for the Super
+    // key has not been possible to determine from here, so it binds both and
+    // the second delivery is swallowed.
+    //
+    // Only toggles: nobody means to toggle the same panel twice in 200ms,
+    // while volume and brightness are held down on purpose.
+    property string lastToggle: ""
+    property double lastToggleAt: 0
+
+    function isDuplicate(name) {
+        if (name.indexOf("toggle") !== 0) return false;
+        const now = Date.now();
+        if (name === lastToggle && now - lastToggleAt < 200) return true;
+        lastToggle = name;
+        lastToggleAt = now;
+        return false;
+    }
+
     // "openSettings Display" -> table.openSettings("Display")
     function run(line) {
         const s = String(line || "").trim();
@@ -97,6 +119,8 @@ Singleton {
             console.warn("Commands: no such command:", name);
             return false;
         }
+
+        if (isDuplicate(name)) return true;
 
         fn(arg);
         return true;

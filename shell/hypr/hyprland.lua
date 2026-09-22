@@ -325,23 +325,33 @@ hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
 -- The launcher, on Super by itself.
 --
 -- A bare modifier cannot be an ordinary bind, so this is a *release* bind on
--- the Super key: it fires when you let the key go.
+-- the Super key: it fires when you let the key go. It does not fire at the
+-- end of SUPER+C, because Hyprland shadows a release bind whose key took
+-- part in a chord (shadowBinds, src/keybinds/Manager.cpp).
 --
--- Written as the key alone rather than "SUPER + Super_L". On current
--- Hyprland the two are identical — Super_L is in SIDED_MODIFIER_NAMES, so
--- naming it sets the SUPER bit in the mask as well as binding the key
--- (CBind::make, src/keybinds/Bind.cpp). Where they differ is a build that
--- does not have that list: there "SUPER + Super_L" wants the SUPER modifier
--- to already be set at the moment Super itself is pressed, which is exactly
--- the thing that varies, and the bare key does not care either way.
+-- Bound twice, by keysym and by keycode, because which spelling a given
+-- Hyprland build accepts for this has not been possible to establish from
+-- outside it, and both forms reach the same physical key:
 --
--- It does not fire at the end of SUPER+C: Hyprland shadows a release bind
--- whose key took part in a chord (shadowBinds, same file).
+--   Super_L    the keysym. On current Hyprland this is also in
+--              SIDED_MODIFIER_NAMES, so naming it sets the SUPER bit in the
+--              mask as well as binding the key.
+--   code:133   the keycode — evdev KEY_LEFTMETA (125) plus the 8 that xkb
+--              adds. Independent of layout and of keysym naming entirely.
 --
--- `hyprctl binds | grep -A4 Super_L` shows whether it registered at all, and
--- `hyprshellctl doctor` reports the same thing in one line.
-hl.bind("Super_L", hl.dsp.exec_cmd(shell("toggleLauncher")), { release = true })
-hl.bind("Super_R", hl.dsp.exec_cmd(shell("toggleLauncher")), { release = true })
+-- Binding both is only safe because the shell ignores the same toggle twice
+-- inside 200ms (services/Commands.qml). If both binds fire, the launcher
+-- opens once.
+--
+-- `hyprshellctl doctor` step 5 prints what Hyprland actually registered.
+hl.bind("SUPER + Super_L", hl.dsp.exec_cmd(shell("toggleLauncher")),
+    { release = true })
+hl.bind("SUPER + Super_R", hl.dsp.exec_cmd(shell("toggleLauncher")),
+    { release = true })
+hl.bind("SUPER + code:133", hl.dsp.exec_cmd(shell("toggleLauncher")),
+    { release = true })
+hl.bind("SUPER + code:134", hl.dsp.exec_cmd(shell("toggleLauncher")),
+    { release = true })
 
 -- Kept until the tap above is confirmed working on your keyboard, so there
 -- is always a way to open the launcher. Delete this line once it is.

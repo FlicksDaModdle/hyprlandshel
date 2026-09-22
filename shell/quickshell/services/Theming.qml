@@ -102,6 +102,132 @@ Singleton {
         signalKitty();
     }
 
+    // ── KDE / Qt applications ─────────────────────────────────────────────
+    // Dolphin, Ark, Okular and the rest read their colours from kdeglobals,
+    // so writing the shell's palette there is what makes a file manager look
+    // like it belongs to this desktop rather than to Breeze.
+    //
+    // This is colours only, and worth being plain about: it cannot move
+    // Dolphin's toolbar, change its icons or give it the shell's rounded
+    // chrome. A KDE app themed this way reads as the same *palette* as the
+    // shell — the same charcoal, the same accent on selection — with KDE's
+    // own layout. Going further means a Kvantum theme, which is a different
+    // and much larger piece of work.
+    //
+    // kdeglobals is not ours — it is where KDE keeps single-click, the icon
+    // theme, and whatever else you have set — so the groups this owns are
+    // replaced and every other group is carried across untouched. Only
+    // [General]'s two colour-scheme keys and the [Colors:*] and [WM] groups
+    // are rewritten.
+    readonly property string kdeDir: (Quickshell.env("XDG_CONFIG_HOME")
+                                      || (Quickshell.env("HOME") + "/.config"))
+
+    function rgb(c) {
+        return Math.round(c.r * 255) + "," + Math.round(c.g * 255) + ","
+             + Math.round(c.b * 255);
+    }
+
+    // Flatten a translucent token against the background it sits on: KDE
+    // takes flat colours, and handing it an alpha would just be ignored.
+    function over(top, under) {
+        const a = top.a;
+        return Qt.rgba(top.r * a + under.r * (1 - a),
+                       top.g * a + under.g * (1 - a),
+                       top.b * a + under.b * (1 - a), 1);
+    }
+
+    readonly property string kdeWanted: {
+        const A = Config.Appearance;
+        const bg = A.ground, view = A.surface, ink = A.ink, dim = A.ink2;
+        const sel = A.accent, onSel = A.onAccent;
+        const line = root.over(A.rule, bg);
+        const hover = root.over(A.hover, bg);
+
+        function group(name, back, fore, extra) {
+            return "[Colors:" + name + "]\n"
+                 + "BackgroundNormal=" + root.rgb(back) + "\n"
+                 + "BackgroundAlternate=" + root.rgb(extra || hover) + "\n"
+                 + "ForegroundNormal=" + root.rgb(fore) + "\n"
+                 + "ForegroundInactive=" + root.rgb(dim) + "\n"
+                 + "ForegroundActive=" + root.rgb(sel) + "\n"
+                 + "ForegroundLink=" + root.rgb(sel) + "\n"
+                 + "DecorationFocus=" + root.rgb(sel) + "\n"
+                 + "DecorationHover=" + root.rgb(sel) + "\n\n";
+        }
+
+        return "# Written by the shell (services/Theming.qml) from the "
+             + "current theme.\n"
+             + "# The [Colors:*] groups below are rewritten whenever the "
+             + "theme changes;\n# edit theme.json, or the shell's Settings, "
+             + "rather than this file.\n\n"
+             + "[General]\n"
+             + "ColorScheme=Hyprshell\n"
+             + "Name=Hyprshell\n\n"
+             + group("Window", bg, ink)
+             + group("View", view, ink, bg)
+             + group("Button", root.over(A.hover, view), ink)
+             + group("Selection", sel, onSel, sel)
+             + group("Tooltip", view, ink)
+             + group("Complementary", bg, ink)
+             + group("Header", root.over(A.hover, bg), ink)
+             + "[WM]\n"
+             + "activeBackground=" + root.rgb(bg) + "\n"
+             + "activeForeground=" + root.rgb(ink) + "\n"
+             + "inactiveBackground=" + root.rgb(view) + "\n"
+             + "inactiveForeground=" + root.rgb(dim) + "\n"
+             + "frame=" + root.rgb(sel) + "\n"
+             + "inactiveFrame=" + root.rgb(line) + "\n";
+    }
+
+    FileView {
+        id: kdeColors
+        path: root.kdeDir + "/kdeglobals"
+        preload: true
+        printErrors: false
+        atomicWrites: true
+    }
+
+    // Everything in the existing file that is not ours, in the order it was
+    // written. A group is "ours" if this writes it; the rest — [KDE],
+    // [Icons], [General]'s font keys and so on — is somebody else's and is
+    // handed back unchanged.
+    function keepForeign(existing) {
+        const ours = /^\[(Colors:|WM\]|General\])/;
+        const out = [];
+        let keeping = true;
+        for (const line of String(existing || "").split("\n")) {
+            if (line.indexOf("[") === 0) keeping = !ours.test(line);
+            if (keeping) out.push(line);
+        }
+        // Their [General] keys, minus the two this one sets.
+        const general = [];
+        let inGeneral = false;
+        for (const line of String(existing || "").split("\n")) {
+            if (line.indexOf("[") === 0) inGeneral = line.indexOf("[General]") === 0;
+            else if (inGeneral && line.trim() !== ""
+                     && line.indexOf("ColorScheme=") !== 0
+                     && line.indexOf("Name=") !== 0) general.push(line);
+        }
+        return { rest: out.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+                 general: general };
+    }
+
+    // Running KDE apps re-read kdeglobals when it changes, so this lands
+    // without restarting Dolphin.
+    function applyKde() {
+        if (!Config.Appearance.themeQtApps) return;
+        const existing = kdeColors.text() || "";
+        const kept = keepForeign(existing);
+        const wanted = kdeWanted.replace("[General]\nColorScheme=Hyprshell\nName=Hyprshell\n",
+                                         "[General]\nColorScheme=Hyprshell\nName=Hyprshell\n"
+                                         + (kept.general.length ? kept.general.join("\n") + "\n" : ""))
+                     + (kept.rest !== "" ? "\n" + kept.rest + "\n" : "");
+        if (existing === wanted) return;
+        kdeColors.setText(wanted);
+    }
+
+    onKdeWantedChanged: applyKde()
+
     // ── text rendering ────────────────────────────────────────────────────
     // Subpixel order and hinting are fontconfig's to decide, not Qt's, and
     // fontconfig is read by every application on the session. So this writes
@@ -172,5 +298,7 @@ Singleton {
         signalKitty();
         fontconf.reload();
         fontconf.setText(fontconfWanted);
+        kdeColors.reload();
+        applyKde();
     }
 }

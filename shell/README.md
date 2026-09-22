@@ -488,6 +488,26 @@ for the session, so Qt draws no title bar of its own and the chrome is still
 the designed one. The window carries Quickshell's app id, `org.quickshell`,
 which is what a Hyprland window rule would match on.
 
+## Theming KDE applications
+
+Settings → Appearance → Theme KDE applications writes this theme's palette
+into `~/.config/kdeglobals`, so Dolphin, Ark, Okular and the rest take their
+colours from the same place the shell does: the same charcoal, the same
+accent on a selected row. Running apps re-read that file, so it lands
+without restarting anything.
+
+Be clear about what it does and does not do. It is **colours only**. It
+cannot move Dolphin's toolbar, change its icons, or give it the shell's
+rounded chrome — a KDE app themed this way reads as the same *palette* with
+KDE's own layout. Matching the design's file manager more closely than that
+means a Kvantum theme, which is a separate and much larger piece of work.
+
+`kdeglobals` is not this shell's file — it is where KDE keeps single-click,
+the icon theme and the rest — so the groups the shell owns (`[Colors:*]`,
+`[WM]`, and two keys in `[General]`) are replaced and every other group is
+carried across untouched. The setting is off by default, because writing
+outside the shell's own config should be something you ask for.
+
 ## Text rendering, and the one file written outside this shell
 
 Settings → Fonts → Text rendering has three controls:
