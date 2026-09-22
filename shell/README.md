@@ -101,9 +101,12 @@ directly:
 ~/.config/quickshell/hyprshell/run.sh --restart   # replace a running one
 ```
 
-`hyprctl reload` also brings the shell back if it isn't running: it is
-started from `hyprland.lua`'s body rather than its start hook, so a reload
-re-runs it, and a `pgrep` guard makes that a no-op when it is already up.
+`hyprctl reload` also brings the shell back if it isn't running. At login
+the shell is started from `hyprland.lua`'s `hyprland.start` hook, because
+the config body runs before Hyprland has a Wayland socket for it to connect
+to; that hook fires once per session, so the body covers reloads, gated on a
+marker the hook drops in Hyprland's per-instance runtime directory. A
+`pgrep` guard makes either path a no-op when the shell is already up.
 
 It forces `QT_QPA_PLATFORM=wayland` and, if the terminal was started outside
 the Hyprland session, finds the live instance and exports its signature. Both

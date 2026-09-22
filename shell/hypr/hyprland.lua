@@ -86,29 +86,57 @@ hl.env("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1")
 ---- AUTOSTART ----
 -------------------
 
--- The shell is started from the config body rather than from the
--- "hyprland.start" hook, because the body runs on every `hyprctl reload`
--- too. So a reload brings the shell back if it isn't running — which is
--- what you want after killing it to try something, and what the hook alone
--- could not do.
+-- Starting the shell.
 --
--- The pgrep guard is what makes that safe: on a reload with the shell
--- already up, this is a no-op instead of a second instance.
+-- Two paths, because one is not enough:
 --
--- QT_QPA_PLATFORM is forced on this one command rather than left to hl.env
--- above, because a login shell that pins it (plenty of setups pin it to
--- "xcb" for legacy Qt apps) wins over the session env and the shell comes
--- up on X11. On X11 there is no wlr-layer-shell, so every WlrLayershell
--- attached property fails to build, every surface holding one is "not
--- ready", and the bar, dock, wallpaper and panel layer are never created.
--- Setting it here leaves every other Qt app on the session default.
-hl.exec_cmd("sh -c 'pgrep -x qs >/dev/null 2>&1 || "
-    .. "exec env QT_QPA_PLATFORM=wayland qs -c hyprshell'")
+--   login   the body of this file runs during the very first config parse,
+--           which Hyprland does in initManagers(STAGE_PRIORITY) — before it
+--           has created the Wayland socket. hl.exec_cmd forks right then
+--           (it is not deferred like exec-once was), so the child gets an
+--           empty WAYLAND_DISPLAY and the shell dies on the spot. The login
+--           launch therefore lives in the hyprland.start hook, which fires
+--           on the first rendered frame, with a session to connect to.
+--
+--   reload  hyprland.start fires once per compositor run, so the hook alone
+--           can never bring the shell back after `hyprctl reload`. That is
+--           the body's job — but only on a reload, which is what the marker
+--           distinguishes: the hook drops it, so finding it means the hook
+--           has already run and this parse is a reload.
+--
+-- The marker lives in Hyprland's own per-instance directory, so it is
+-- unique to this compositor run: one from an earlier boot can never be
+-- mistaken for this one's. $HYPRLAND_INSTANCE_SIGNATURE is already exported
+-- when the config is parsed (it is set in the compositor's constructor), so
+-- both commands can expand it themselves.
+--
+-- The pgrep guard makes both paths safe: with the shell already running,
+-- either is a no-op rather than a second instance.
+--
+-- QT_QPA_PLATFORM is forced on the launch rather than left to hl.env above,
+-- because a login shell that pins it (plenty of setups pin it to "xcb" for
+-- legacy Qt apps) wins over the session env, and the shell comes up on X11.
+-- On X11 there is no wlr-layer-shell, so every WlrLayershell attached
+-- property fails to build, every surface holding one is "not ready", and
+-- the bar, dock, wallpaper and panel layer are never created. Setting it
+-- here leaves every other Qt app on the session default.
+--
+-- Nothing here is wrapped in `sh -c`: Hyprland already runs exec commands
+-- through /bin/sh. They just must not *start* with "[", which Hyprland
+-- would read as an exec rule.
+local marker = '"$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprshell.started"'
+local launch = "pgrep -x qs >/dev/null 2>&1 || "
+    .. "exec env QT_QPA_PLATFORM=wayland qs -c hyprshell"
+
+-- Reload only: the marker does not exist on the first parse, so this does
+-- nothing then and the hook below does the real work.
+hl.exec_cmd("test -e " .. marker .. " && { " .. launch .. "; }")
 
 hl.on("hyprland.start", function()
+    hl.exec_cmd("touch " .. marker .. "; " .. launch)
     -- The shell draws its own lock screen; hypridle just decides when to ask
     -- for it. Safe to drop if hypridle isn't installed.
-    hl.exec_cmd("sh -c 'pgrep -x hypridle >/dev/null 2>&1 || exec hypridle'")
+    hl.exec_cmd("pgrep -x hypridle >/dev/null 2>&1 || exec hypridle")
 end)
 
 -----------------------
