@@ -71,27 +71,29 @@ local bindLog = '"$XDG_RUNTIME_DIR/hyprshell-bind.log"'
 local function shell(fn, arg)
     local call = fn .. (arg and (" " .. arg) or "")
 
-    -- Ways to reach the running shell, in order of precision.
+    -- Ways to reach the running shell, most direct first.
     --
-    -- The first three name the config and let Quickshell find the instance
-    -- that belongs to it; which of those three spellings a build accepts has
-    -- moved between releases, so all are tried.
+    -- --pid goes straight to $XDG_RUNTIME_DIR/quickshell/by-pid/<pid>, reads
+    -- that instance's lock and connects. No config path to hash, no instance
+    -- list to filter by display — the two steps that were losing an instance
+    -- that was plainly running. It is how DankMaterialShell's own helper
+    -- reaches Quickshell, and pgrep already tells us the pid.
     --
-    -- The fourth does not go through that lookup at all. It asks for every
-    -- instance Quickshell knows about and calls the first by its id. That
-    -- covers the case the log here caught: the shell running, and
-    -- `ipc call` still answering "No running instances for
-    -- ~/.config/quickshell/hyprshell/shell.qml" — the instance is there, the
-    -- config-to-instance lookup is what missed it. It is last because it
-    -- would also hit a Quickshell running a different config, which only
-    -- matters if you run two.
+    -- The two config-named spellings are kept because they are the
+    -- documented way and which one a build accepts has moved between
+    -- releases. Last is by instance id, which asks Quickshell for everything
+    -- it knows about; it would also reach a Quickshell running a different
+    -- config, which only matters if you run two.
+    local byPid = [[{ p=$(pgrep -x qs 2>/dev/null | head -n1); ]]
+        .. [[test -n "$p" && qs --pid "$p" ipc call shell ]] .. call .. "; }"
+
     local byId = [[{ i=$(qs list --all -j 2>/dev/null ]]
         .. [[| sed -n 's/.*"id"[^"]*"\([^"]*\)".*/\1/p' | head -n1); ]]
         .. [[test -n "$i" && qs -i "$i" ipc call shell ]] .. call .. "; }"
 
-    local try = "{ qs -c hyprshell ipc call shell " .. call
+    local try = "{ " .. byPid
+        .. " || qs -c hyprshell ipc call shell " .. call
         .. " || qs ipc -c hyprshell call shell " .. call
-        .. " || qs ipc call shell " .. call
         .. " || " .. byId .. "; }"
 
     if not traceBinds then

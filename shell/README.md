@@ -330,18 +330,25 @@ Every shell keybind in `hyprland.lua` runs the IPC call itself — the
 command is written out in the config, not handed to a script:
 
 ```sh
-qs -c hyprshell ipc call shell toggleLauncher     # and three fallbacks
+qs --pid "$(pgrep -x qs | head -n1)" ipc call shell toggleLauncher
 ```
 
-which lands on the `IpcHandler` in `shell.qml`. Three spellings of "the
-instance running *this* config" are tried, because which one a build accepts
-has moved between Quickshell releases. If all three come back **"No running
-instances for ~/.config/quickshell/hyprshell/shell.qml"** while the shell is
-plainly running — the config-to-instance lookup missing an instance that is
-right there — a fourth asks for every instance Quickshell knows about and
-calls the first by its id. That one does not go through the lookup at all.
-It is last because it would also reach a Quickshell running a different
-config, which only matters if you run two.
+which lands on the `IpcHandler` in `shell.qml`.
+
+`--pid` rather than `-c hyprshell`, because it is the only route that skips
+Quickshell's instance lookup. Naming the config makes `qs` hash the config
+file path, read `$XDG_RUNTIME_DIR/quickshell/by-path/<md5>` and filter what
+it finds by display connection; `--pid` reads
+`$XDG_RUNTIME_DIR/quickshell/by-pid/<pid>` and connects. On at least one
+machine the first comes back **"No running instances for
+~/.config/quickshell/hyprshell/shell.qml"** with the shell plainly running
+and `qs list --all` listing it — and every shortcut is then a silent no-op.
+It is also how DankMaterialShell's helper reaches Quickshell.
+
+Three fallbacks follow, in case `pgrep` finds nothing or a build predates
+`--pid`: `-c hyprshell ipc call`, `ipc -c hyprshell call` (the spelling
+moved between releases), and finally the first instance Quickshell lists,
+by id.
 
 Two other routes were tried and dropped. Global shortcuts
 (`hyprland-global-shortcuts-v1`) need a Quickshell built with the protocol,
