@@ -287,6 +287,17 @@ else
     fi
 fi
 
+if [ -x "$QS_DIR/hyprshellctl" ]; then
+    if command -v hyprshellctl >/dev/null 2>&1; then
+        ok "hyprshellctl" "on PATH — run 'hyprshellctl doctor'"
+    else
+        warn "hyprshellctl" "installed but not on PATH"
+        printf '      run it as %s/hyprshellctl\n' "$QS_DIR"
+    fi
+else
+    warn "hyprshellctl" "not installed yet — it ships with the shell tree"
+fi
+
 head1 "Lock screen"
 if [ -r /etc/pam.d/login ]; then
     ok "/etc/pam.d/login" "PAM stack the lock authenticates against"
@@ -366,6 +377,20 @@ cp -- "$SRC/run.sh" "$QS_DIR/run.sh" 2>/dev/null && chmod +x "$QS_DIR/run.sh" \
 cp -- "$SRC/hyprshellctl" "$QS_DIR/hyprshellctl" 2>/dev/null \
     && chmod +x "$QS_DIR/hyprshellctl" \
     && printf '  installed %s/hyprshellctl\n' "$QS_DIR"
+
+# ...and onto PATH, because a diagnostic you have to type the full path to
+# is a diagnostic nobody runs. ~/.local/bin is the XDG user location and is
+# already on PATH on most distributions.
+BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
+if mkdir -p "$BIN_DIR" 2>/dev/null; then
+    ln -sf "$QS_DIR/hyprshellctl" "$BIN_DIR/hyprshellctl" 2>/dev/null \
+        && printf '  linked    %s/hyprshellctl\n' "$BIN_DIR"
+    case ":${PATH}:" in
+        *":$BIN_DIR:"*) : ;;
+        *) printf '  note      %s is not on your PATH; add it, or run the copy\n' "$BIN_DIR"
+           printf '            at %s/hyprshellctl\n' "$QS_DIR" ;;
+    esac
+fi
 
 # theme.json lives *inside* the tree that was just moved aside, so without
 # this every preference you have set would be lost to a reinstall. It is your

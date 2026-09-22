@@ -327,8 +327,12 @@ fails the keybind does nothing and says nothing — the compositor ran a
 command, the command failed, and nobody is watching a keybind's stderr.
 
 ```sh
-~/.config/quickshell/hyprshell/hyprshellctl doctor
+hyprshellctl doctor
 ```
+
+`install.sh` links it into `~/.local/bin`, which is on PATH on most
+distributions; if yours isn't, the installer says so and the copy at
+`~/.config/quickshell/hyprshell/hyprshellctl` works the same.
 
 walks the chain: `qs` on PATH (Hyprland runs binds through `/bin/sh`, so a
 `qs` that only exists in a shell rc is not found), a shell instance running,
