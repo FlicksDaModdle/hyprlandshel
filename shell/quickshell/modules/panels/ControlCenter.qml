@@ -63,12 +63,12 @@ PanelSurface {
                     spacing: 2
                     StyledText {
                         text: Services.SysInfo.user
-                        font.pixelSize: 13
+                        font.pixelSize: Config.Appearance.fs(13)
                         font.weight: Font.DemiBold
                     }
                     StyledText {
                         text: Services.SysInfo.sessionLabel(Services.Compositor.monitorCount)
-                        font.pixelSize: 11
+                        font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.Normal
                         color: Config.Appearance.ink3
                     }
@@ -102,7 +102,7 @@ PanelSurface {
                         anchors.verticalCenter: parent.verticalCenter
                         text: Config.Appearance.theme === "auto" ? "Auto"
                             : (Config.Appearance.dark ? "Dark" : "Light")
-                        font.pixelSize: 12
+                        font.pixelSize: Config.Appearance.fs(12)
                         font.weight: Font.DemiBold
                     }
                 }
@@ -220,7 +220,7 @@ PanelSurface {
 
                             StyledText {
                                 text: tile.modelData.n
-                                font.pixelSize: 12
+                                font.pixelSize: Config.Appearance.fs(12)
                                 font.weight: Font.DemiBold
                                 color: tile.modelData.on ? Config.Appearance.onAccent : Config.Appearance.ink
                             }
@@ -228,7 +228,7 @@ PanelSurface {
                                 width: parent.width
                                 elide: Text.ElideRight
                                 text: tile.modelData.s
-                                font.pixelSize: 11
+                                font.pixelSize: Config.Appearance.fs(11)
                                 font.weight: Font.Normal
                                 opacity: tile.modelData.on ? 0.75 : 1
                                 color: tile.modelData.on ? Config.Appearance.onAccent : Config.Appearance.ink3
@@ -276,7 +276,7 @@ PanelSurface {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: sliderRow.modelData.n
-                                font.pixelSize: 12
+                                font.pixelSize: Config.Appearance.fs(12)
                                 color: Config.Appearance.ink2
                             }
                         }
@@ -285,7 +285,7 @@ PanelSurface {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             text: sliderRow.modelData.label
-                            font.pixelSize: 12
+                            font.pixelSize: Config.Appearance.fs(12)
                             font.weight: Font.DemiBold
                         }
                     }
@@ -346,7 +346,7 @@ PanelSurface {
 
                 StyledText {
                     text: Config.UiState.ccExpanded
-                    font.pixelSize: 13
+                    font.pixelSize: Config.Appearance.fs(13)
                     font.weight: Font.DemiBold
                 }
                 StyledText {
@@ -359,7 +359,7 @@ PanelSurface {
                              : "Wi-Fi is off")
                           : (Services.Bluetooth.powered
                              ? Services.Bluetooth.pairedCount + " paired" : "Bluetooth is off")
-                    font.pixelSize: 11
+                    font.pixelSize: Config.Appearance.fs(11)
                     font.weight: Font.Normal
                     color: Config.Appearance.ink3
                 }
@@ -452,13 +452,13 @@ PanelSurface {
                                         width: parent.width
                                         elide: Text.ElideRight
                                         text: entry.modelData.n
-                                        font.pixelSize: 12
+                                        font.pixelSize: Config.Appearance.fs(12)
                                     }
                                     StyledText {
                                         width: parent.width
                                         elide: Text.ElideRight
                                         text: entry.modelData.s
-                                        font.pixelSize: 10
+                                        font.pixelSize: Config.Appearance.fs(10)
                                         font.weight: Font.Normal
                                         color: Config.Appearance.ink3
                                     }
@@ -471,7 +471,7 @@ PanelSurface {
                                 anchors.rightMargin: 10
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: entry.modelData.meta
-                                font.pixelSize: 10
+                                font.pixelSize: Config.Appearance.fs(10)
                                 font.weight: Font.DemiBold
                                 color: entry.modelData.current
                                        ? Config.Appearance.accent : Config.Appearance.ink3
@@ -491,7 +491,7 @@ PanelSurface {
                         text: root.wifiPane
                               ? (Services.Network.wifiEnabled ? "Looking for networks…" : "Wi-Fi is off")
                               : (Services.Bluetooth.powered ? "No paired devices" : "Bluetooth is off")
-                        font.pixelSize: 12
+                        font.pixelSize: Config.Appearance.fs(12)
                         color: Config.Appearance.ink3
                     }
                 }
@@ -530,7 +530,7 @@ PanelSurface {
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.wifiPane ? "Rescan" : "Scan"
-                        font.pixelSize: 11
+                        font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.DemiBold
                         color: Config.Appearance.ink2
                     }
@@ -555,7 +555,7 @@ PanelSurface {
                     id: moreLabel
                     anchors.centerIn: parent
                     text: "More settings"
-                    font.pixelSize: 11
+                    font.pixelSize: Config.Appearance.fs(11)
                     font.weight: Font.DemiBold
                     color: moreSettingsHover.hovered ? Config.Appearance.ink : Config.Appearance.ink3
                 }

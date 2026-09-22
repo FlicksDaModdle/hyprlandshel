@@ -209,6 +209,13 @@ tap-to-click, tap-and-drag, drag lock, natural scrolling, disable-while-typing,
 two-finger versus corner right-click, tap button map and middle-click
 emulation.
 
+System settings persist too, which takes explaining: Hyprland's config is
+write-only over IPC and everything it holds comes from `hyprland.lua`, re-read
+from scratch on every launch. So anything Settings changes at runtime is gone
+next login unless the shell remembers it. `services/Devices.qml` does that —
+your input devices and each display's mode and scale live in `theme.json` and
+are pushed back once the compositor is up.
+
 Shell panes write `theme.json` as you drag. System panes act on the machine
 through PipeWire, UPower, `nmcli`, `bluetoothctl` and — for anything that is
 Hyprland's own — `hyprctl eval` against the `hl.*` Lua API. Not `hyprctl

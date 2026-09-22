@@ -67,6 +67,7 @@ PanelWindow {
         "Bar":           { icon: "layout",    group: "Shell",  note: "The top bar: height, clock, tray and the task list." },
         "Dock":          { icon: "dock",      group: "Shell",  note: "The dock: position, size, labels and auto-hide." },
         "Notifications": { icon: "bell",      group: "Shell",  note: "Banner behaviour, badge counts and how the center stacks items." },
+        "Fonts":         { icon: "file",      group: "Shell",  note: "Every typeface the shell uses, and one scale over all of them." },
         "Keybinds":      { icon: "keyboard",  group: "Shell",  note: "Hyprland bindings this shell listens for." }
     })
 
@@ -75,7 +76,8 @@ PanelWindow {
     readonly property var paneGroups: [
         { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
                                    "Network", "Bluetooth", "Sound", "Power", "About"] },
-        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Notifications", "Keybinds"] }
+        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Notifications",
+                                   "Fonts", "Keybinds"] }
     ]
 
     // ══ the window ═══════════════════════════════════════════════════════
@@ -157,7 +159,7 @@ PanelWindow {
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Settings"
-                    font.pixelSize: 13
+                    font.pixelSize: Config.Appearance.fs(13)
                     font.weight: Font.DemiBold
                     font.letterSpacing: 0.13
                 }
@@ -165,7 +167,7 @@ PanelWindow {
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "quickshell · live"
-                    font.pixelSize: 12
+                    font.pixelSize: Config.Appearance.fs(12)
                     font.weight: Font.Normal
                     color: Config.Appearance.ink3
                 }
@@ -247,6 +249,7 @@ PanelWindow {
                 contentHeight: sidebarColumn.implicitHeight + 16
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
+                flickableDirection: Flickable.VerticalFlick
 
                 Column {
                     id: sidebarColumn
@@ -267,7 +270,7 @@ PanelWindow {
 
                             StyledText {
                                 text: group.modelData.label
-                                font.pixelSize: 11
+                                font.pixelSize: Config.Appearance.fs(11)
                                 font.weight: Font.DemiBold
                                 font.capitalization: Font.AllUppercase
                                 font.letterSpacing: 1.2
@@ -327,7 +330,7 @@ PanelWindow {
                                         StyledText {
                                             anchors.verticalCenter: parent.verticalCenter
                                             text: entry.modelData
-                                            font.pixelSize: 13
+                                            font.pixelSize: Config.Appearance.fs(13)
                                         }
                                     }
 
@@ -355,6 +358,9 @@ PanelWindow {
             contentHeight: paneColumn.implicitHeight + 40
             clip: true
             boundsBehavior: Flickable.StopAtBounds
+            // Vertical only. Otherwise a sideways drag on a slider is read
+            // as a flick and the pane takes the grab off the control.
+            flickableDirection: Flickable.VerticalFlick
 
             Column {
                 id: paneColumn
@@ -365,7 +371,7 @@ PanelWindow {
 
                 StyledText {
                     text: settings.pane
-                    font.pixelSize: 17
+                    font.pixelSize: Config.Appearance.fs(17)
                     font.weight: Font.Bold
                 }
 
@@ -373,7 +379,7 @@ PanelWindow {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     text: settings.paneMeta[settings.pane].note
-                    font.pixelSize: 13
+                    font.pixelSize: Config.Appearance.fs(13)
                     font.weight: Font.Normal
                     color: Config.Appearance.ink3
                     topPadding: 4
@@ -406,7 +412,7 @@ PanelWindow {
                                 anchors.left: parent.left
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: bind.modelData.n
-                                font.pixelSize: 13
+                                font.pixelSize: Config.Appearance.fs(13)
                             }
 
                             Rectangle {
@@ -423,7 +429,7 @@ PanelWindow {
                                     id: keyLabel
                                     anchors.centerIn: parent
                                     text: bind.modelData.k
-                                    font.pixelSize: 12
+                                    font.pixelSize: Config.Appearance.fs(12)
                                     font.weight: Font.DemiBold
                                     color: Config.Appearance.ink2
                                 }
@@ -491,6 +497,10 @@ PanelWindow {
         case "Bar": return [
             { n: "Bar height", s: "Top bar thickness", type: "slider",
               min: 32, max: 56, unit: "px", value: A.barHeight, set: v => A.barHeight = v },
+            { n: "Text size", s: "Point size of the bar's own labels — the clock, "
+                 + "app name and status capsule", type: "slider",
+              min: 10, max: 18, unit: "px", value: A.barFontSize,
+              set: v => A.barFontSize = v },
             { n: "Clock format", s: "24-hour, or 12-hour with meridiem", type: "seg",
               options: [{ label: "24 h", value: "24" }, { label: "12 h", value: "12" }],
               value: A.clock24 ? "24" : "12", set: v => A.clock24 = (v === "24") },
@@ -520,6 +530,35 @@ PanelWindow {
               value: Config.Apps.pinned.length + " pinned" },
             { n: "Reset pinned apps", s: "Back to the set this shell ships with",
               type: "action", label: "Reset", set: () => Config.Apps.resetPinned() }
+        ];
+
+        case "Fonts": return [
+            { type: "header", n: "Scale",
+              s: "One multiplier over every text size in the shell" },
+            { n: "Interface scale", s: "Applies to the bar, dock, launcher, "
+                 + "panels and this window — 100% is the size the design specifies",
+              type: "slider", min: 75, max: 150, unit: "%",
+              value: A.fontScale, set: v => A.fontScale = v },
+
+            { type: "header", n: "Typefaces",
+              s: "Edit theme.json to change these — the shell reloads them live" },
+            { n: "Interface", s: "Everything except the readouts below. The design "
+                 + "specifies Inter; without it installed, the system sans is used.",
+              type: "info", value: A.fontFamily },
+            { n: "Monospaced", s: "Clock digits, the hex field in the colour "
+                 + "picker, and the terminal's own config",
+              type: "info", value: A.monoFamily },
+
+            { type: "header", n: "Sizes in use",
+              s: "What each one comes out at with the scale above applied" },
+            { n: "Bar labels", s: "Set in Shell → Bar", type: "info",
+              value: A.fs(A.barFontSize) + " px" },
+            { n: "Settings rows", s: "Row titles in this window", type: "info",
+              value: A.fs(13) + " px" },
+            { n: "Row descriptions", s: "The smaller grey line under each title",
+              type: "info", value: A.fs(12) + " px" },
+            { n: "Menus and tooltips", s: "Dock tooltips, dropdown options, context menus",
+              type: "info", value: A.fs(12) + " px" }
         ];
 
         case "Notifications": return [
@@ -644,6 +683,16 @@ PanelWindow {
                    + (Services.Compositor.monitorCount === 1 ? " output" : " outputs")
                    + " · " + mons.map(x => x.name).join(" · ") });
 
+            rows.push({ n: "Brightness",
+                s: !Services.Brightness.available
+                   ? "No backlight on this machine"
+                   : (Services.Brightness.lastError !== ""
+                      ? "brightnessctl: " + Services.Brightness.lastError
+                      : "Backlight on " + Services.Brightness.device),
+                type: Services.Brightness.available ? "slider" : "info",
+                min: 1, max: 100, unit: "%",
+                value: Services.Brightness.percent,
+                set: v => Services.Brightness.set(v / 100) });
             rows.push({ n: "Night shift", s: Services.NightLight.available
                     ? "Warm the panel — " + Services.NightLight.temperature + " K"
                     : "Install hyprsunset or wlsunset to enable", type: "toggle",
@@ -761,17 +810,17 @@ PanelWindow {
             { n: "Layout", s: "xkb layout list, comma-separated — e.g. us,de",
               type: "info", value: Services.SysInfo.keymap || "—" },
             { n: "Repeat rate", s: "Repeats per second while a key is held",
-              type: "slider", min: 10, max: 60, unit: "/s", value: settings.repeatRate,
-              set: v => { settings.repeatRate = v;
-                          Services.Compositor.setConfig({ input: { repeat_rate: v } }); } },
+              type: "slider", min: 10, max: 60, unit: "/s", value: A.repeatRate,
+              set: v => { A.repeatRate = v;
+                          Services.Devices.applyInput(); } },
             { n: "Repeat delay", s: "Milliseconds before a held key starts repeating",
-              type: "slider", min: 150, max: 900, unit: "ms", value: settings.repeatDelay,
-              set: v => { settings.repeatDelay = v;
-                          Services.Compositor.setConfig({ input: { repeat_delay: v } }); } },
+              type: "slider", min: 150, max: 900, unit: "ms", value: A.repeatDelay,
+              set: v => { A.repeatDelay = v;
+                          Services.Devices.applyInput(); } },
             { n: "Num Lock at start-up", s: "Turn the numeric keypad on when Hyprland starts",
-              type: "toggle", value: settings.numlock,
-              set: v => { settings.numlock = v;
-                          Services.Compositor.setConfig({ input: { numlock_by_default: v } }); } },
+              type: "toggle", value: A.numlock,
+              set: v => { A.numlock = v;
+                          Services.Devices.applyInput(); } },
             // Segmented deals in strings — its `value` is a string property and
             // its signal carries one — so the numeric option is carried as text
             // and converted here. Sent as a number, or Hyprland gets "1".
@@ -779,10 +828,9 @@ PanelWindow {
               type: "seg",
               options: [{ label: "Off", value: "0" }, { label: "Loose", value: "2" },
                         { label: "Full", value: "1" }],
-              value: String(settings.followMouse),
-              set: v => { settings.followMouse = parseInt(v, 10);
-                          Services.Compositor.setConfig(
-                              { input: { follow_mouse: parseInt(v, 10) } }); } },
+              value: String(A.followMouse),
+              set: v => { A.followMouse = parseInt(v, 10);
+                          Services.Devices.applyInput(); } },
             { n: "Keymap", s: "What the compositor currently has loaded",
               type: "info", value: Services.SysInfo.keymap || "—" }
         ];
@@ -790,90 +838,81 @@ PanelWindow {
         case "Mouse": return [
             { n: "Pointer speed", s: "libinput sensitivity, -1 slowest to +1 fastest",
               type: "slider", min: -100, max: 100, unit: "",
-              value: Math.round(settings.sensitivity * 100),
-              set: v => { settings.sensitivity = v / 100;
-                          Services.Compositor.setConfig({ input: { sensitivity: v / 100 } }); } },
+              value: Math.round(A.sensitivity * 100),
+              set: v => { A.sensitivity = v / 100;
+                          Services.Devices.applyInput(); } },
             { n: "Acceleration", s: "Adaptive speeds up with fast movement; flat is 1:1",
               type: "seg",
               options: [{ label: "Adaptive", value: "adaptive" }, { label: "Flat", value: "flat" }],
-              value: settings.accelProfile,
-              set: v => { settings.accelProfile = v;
-                          Services.Compositor.setConfig({ input: { accel_profile: v } }); } },
+              value: A.accelProfile,
+              set: v => { A.accelProfile = v;
+                          Services.Devices.applyInput(); } },
             { n: "Left-handed", s: "Swap the primary and secondary buttons",
-              type: "toggle", value: settings.leftHanded,
-              set: v => { settings.leftHanded = v;
-                          Services.Compositor.setConfig({ input: { left_handed: v } }); } },
+              type: "toggle", value: A.leftHanded,
+              set: v => { A.leftHanded = v;
+                          Services.Devices.applyInput(); } },
             { n: "Natural scrolling", s: "Content follows the wheel rather than the view",
-              type: "toggle", value: settings.mouseNaturalScroll,
-              set: v => { settings.mouseNaturalScroll = v;
-                          Services.Compositor.setConfig({ input: { natural_scroll: v } }); } },
+              type: "toggle", value: A.mouseNaturalScroll,
+              set: v => { A.mouseNaturalScroll = v;
+                          Services.Devices.applyInput(); } },
             { n: "Scroll speed", s: "Multiplier applied to every wheel step",
               type: "slider", min: 25, max: 300, unit: "%",
-              value: Math.round(settings.mouseScrollFactor * 100),
-              set: v => { settings.mouseScrollFactor = v / 100;
-                          Services.Compositor.setConfig({ input: { scroll_factor: v / 100 } }); } },
+              value: Math.round(A.mouseScrollFactor * 100),
+              set: v => { A.mouseScrollFactor = v / 100;
+                          Services.Devices.applyInput(); } },
             { n: "Pointer hides while typing", s: "Hide the cursor on the next key press",
-              type: "toggle", value: settings.hideCursorOnKey,
-              set: v => { settings.hideCursorOnKey = v;
-                          Services.Compositor.setConfig({ cursor: { hide_on_key_press: v } }); } },
+              type: "toggle", value: A.hideCursorOnKey,
+              set: v => { A.hideCursorOnKey = v;
+                          Services.Devices.applyInput(); } },
             { n: "Hide when idle", s: "Seconds of stillness before the pointer disappears — 0 never",
-              type: "slider", min: 0, max: 30, unit: "s", value: settings.cursorTimeout,
-              set: v => { settings.cursorTimeout = v;
-                          Services.Compositor.setConfig({ cursor: { inactive_timeout: v } }); } }
+              type: "slider", min: 0, max: 30, unit: "s", value: A.cursorTimeout,
+              set: v => { A.cursorTimeout = v;
+                          Services.Devices.applyInput(); } }
         ];
 
         case "Touchpad": return [
             { n: "Tap to click", s: "A tap counts as a click without pressing down",
-              type: "toggle", value: settings.tapToClick,
-              set: v => { settings.tapToClick = v;
-                          Services.Compositor.setConfig(
-                              { input: { touchpad: { tap_to_click: v } } }); } },
+              type: "toggle", value: A.tapToClick,
+              set: v => { A.tapToClick = v;
+                          Services.Devices.applyInput(); } },
             { n: "Tap and drag", s: "Tap then hold to drag, without a physical click",
-              type: "toggle", value: settings.tapAndDrag,
-              set: v => { settings.tapAndDrag = v;
-                          Services.Compositor.setConfig(
-                              { input: { touchpad: { tap_and_drag: v } } }); } },
+              type: "toggle", value: A.tapAndDrag,
+              set: v => { A.tapAndDrag = v;
+                          Services.Devices.applyInput(); } },
             { n: "Drag lock", s: "Keep dragging through a brief lift of the finger",
-              type: "toggle", value: settings.dragLock,
-              set: v => { settings.dragLock = v;
-                          Services.Compositor.setConfig(
-                              { input: { touchpad: { drag_lock: v } } }); } },
+              type: "toggle", value: A.dragLock,
+              set: v => { A.dragLock = v;
+                          Services.Devices.applyInput(); } },
             { n: "Natural scrolling", s: "Content follows finger direction",
-              type: "toggle", value: settings.naturalScroll,
-              set: v => { settings.naturalScroll = v;
-                          Services.Compositor.setConfig(
-                              { input: { touchpad: { natural_scroll: v } } }); } },
+              type: "toggle", value: A.padNaturalScroll,
+              set: v => { A.padNaturalScroll = v;
+                          Services.Devices.applyInput(); } },
             { n: "Scroll speed", s: "Multiplier applied to two-finger scrolling",
               type: "slider", min: 25, max: 300, unit: "%",
-              value: Math.round(settings.padScrollFactor * 100),
-              set: v => { settings.padScrollFactor = v / 100;
-                          Services.Compositor.setConfig(
-                              { input: { touchpad: { scroll_factor: v / 100 } } }); } },
+              value: Math.round(A.padScrollFactor * 100),
+              set: v => { A.padScrollFactor = v / 100;
+                          Services.Devices.applyInput(); } },
             { n: "Disable while typing", s: "Ignore the pad briefly after a key press",
-              type: "toggle", value: settings.disableWhileTyping,
-              set: v => { settings.disableWhileTyping = v;
-                          Services.Compositor.setConfig(
-                              { input: { touchpad: { disable_while_typing: v } } }); } },
+              type: "toggle", value: A.disableWhileTyping,
+              set: v => { A.disableWhileTyping = v;
+                          Services.Devices.applyInput(); } },
             { n: "Right click", s: "Two-finger click, or a press in the bottom-right corner",
               type: "seg",
               options: [{ label: "Two fingers", value: "finger" },
                         { label: "Corner", value: "corner" }],
-              value: settings.clickfinger ? "finger" : "corner",
-              set: v => { settings.clickfinger = v === "finger";
-                          Services.Compositor.setConfig(
-                              { input: { touchpad: { clickfinger_behavior: v === "finger" } } }); } },
+              value: A.clickfinger ? "finger" : "corner",
+              set: v => { A.clickfinger = v === "finger";
+                          Services.Devices.applyInput(); } },
             { n: "Tap button map", s: "Which button two- and three-finger taps send",
               type: "seg",
               options: [{ label: "L R M", value: "lrm" }, { label: "L M R", value: "lmr" }],
-              value: settings.tapButtonMap,
-              set: v => { settings.tapButtonMap = v;
-                          Services.Compositor.setConfig(
-                              { input: { touchpad: { tap_button_map: v } } }); } },
+              value: A.tapButtonMap,
+              set: v => { A.tapButtonMap = v;
+                          Services.Devices.applyInput(); } },
             { n: "Middle-click emulation", s: "Left and right together counts as a middle click",
-              type: "toggle", value: settings.middleEmulation,
-              set: v => { settings.middleEmulation = v;
-                          Services.Compositor.setConfig(
-                              { input: { touchpad: { middle_button_emulation: v } } }); } }
+              type: "toggle", value: A.middleEmulation,
+              set: v => { A.middleEmulation = v;
+                          Services.Devices.applyInput(); } }
         ];
 
         case "About": return [
@@ -918,37 +957,10 @@ PanelWindow {
         return [];
     }
 
-    // ── input state ───────────────────────────────────────────────────────
-    // Hyprland's config is write-only over IPC — there is no "read this
-    // option back" call — so these mirror what the shell has set this
-    // session. They start from the values hyprland.lua ships, so a control
-    // reads correctly until something outside the shell changes it.
-    //
-    // Keyboard
-    property int repeatRate: 25
-    property int repeatDelay: 600
-    property bool numlock: false
-    property int followMouse: 1
-
-    // Mouse
-    property real sensitivity: 0
-    property string accelProfile: "adaptive"
-    property bool leftHanded: false
-    property bool mouseNaturalScroll: false
-    property real mouseScrollFactor: 1
-    property bool hideCursorOnKey: true
-    property int cursorTimeout: 0
-
-    // Touchpad
-    property bool tapToClick: true
-    property bool tapAndDrag: true
-    property bool dragLock: false
-    property bool naturalScroll: true
-    property real padScrollFactor: 1
-    property bool disableWhileTyping: true
-    property bool clickfinger: false
-    property string tapButtonMap: "lrm"
-    property bool middleEmulation: false
+    // The device settings themselves live in theme.json via
+    // Config.Appearance, and Services.Devices is what pushes them to
+    // Hyprland — at startup as well as on change, since Hyprland forgets
+    // everything not in hyprland.lua each time it launches.
 
     // ── helpers ───────────────────────────────────────────────────────────
     function batteryDetail(bat) {
@@ -983,12 +995,16 @@ PanelWindow {
         const m = Services.Compositor.monitors.find(x => x.name === name);
         if (!m) return;
         const rate = hz > 0 ? hz : Math.round((m.lastIpcObject || {}).refreshRate || 60);
-        Services.Compositor.setMonitor({
-            output: name,
-            mode: res + "@" + formatHzPlain(rate),
-            scale: m.scale || 1
-        });
-        Services.Compositor.refresh();
+        const mode = res + "@" + formatHzPlain(rate);
+        const scale = m.scale || 1;
+        Services.Compositor.setMonitor({ output: name, mode: mode, scale: scale });
+        // Remembered, so it comes back after a logout — Hyprland reverts to
+        // whatever hyprland.lua says otherwise.
+        Services.Devices.rememberDisplay(name, mode, scale);
+        // And re-read, or the dropdown keeps showing the mode you just
+        // changed away from: these controls are drawn from the compositor's
+        // own report of the monitor, and nothing else asks it to refresh.
+        Services.Compositor.refreshMonitors();
     }
 
     function applyScale(name, scale) {
@@ -996,12 +1012,10 @@ PanelWindow {
         if (!m) return;
         const ipc = m.lastIpcObject || ({});
         const pxW = ipc.width || m.width, pxH = ipc.height || m.height;
-        Services.Compositor.setMonitor({
-            output: name,
-            mode: pxW + "x" + pxH + "@" + formatHzPlain(ipc.refreshRate || 60),
-            scale: scale
-        });
-        Services.Compositor.refresh();
+        const mode = pxW + "x" + pxH + "@" + formatHzPlain(ipc.refreshRate || 60);
+        Services.Compositor.setMonitor({ output: name, mode: mode, scale: scale });
+        Services.Devices.rememberDisplay(name, mode, scale);
+        Services.Compositor.refreshMonitors();
     }
 
     // Panels report fractional rates — 59.997 and 164.836 are real numbers a

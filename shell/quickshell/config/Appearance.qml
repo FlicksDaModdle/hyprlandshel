@@ -62,6 +62,40 @@ Singleton {
             // source, which has no JSON form of its own.
             property string dockPinned: ""
 
+            // Input devices. These are applied to Hyprland at startup and
+            // whenever they change — Hyprland's config is write-only over
+            // IPC, so the shell has to be the thing that remembers them.
+            property int repeatRate: 25
+            property int repeatDelay: 600
+            property bool numlock: false
+            property int followMouse: 1
+            property real sensitivity: 0
+            property string accelProfile: "adaptive"
+            property bool leftHanded: false
+            property bool mouseNaturalScroll: false
+            property real mouseScrollFactor: 1
+            property bool hideCursorOnKey: true
+            property int cursorTimeout: 0
+            property bool tapToClick: true
+            property bool tapAndDrag: true
+            property bool dragLock: false
+            property bool padNaturalScroll: true
+            property real padScrollFactor: 1
+            property bool disableWhileTyping: true
+            property bool clickfinger: false
+            property string tapButtonMap: "lrm"
+            property bool middleEmulation: false
+
+            // Per-output display state, as JSON:
+            //   { "DP-1": { "mode": "2560x1440@165", "scale": 1.25 }, ... }
+            // Re-applied at startup, since Hyprland goes back to whatever
+            // hyprland.lua says on every launch.
+            property string displays: ""
+
+            // Typography
+            property int fontScale: 100               // 75-150 %
+            property int barFontSize: 12              // 10-18 px
+
             // Notifications
             property bool dnd: false
             property bool badges: true
@@ -93,6 +127,33 @@ Singleton {
     property alias dockLabels: prefs.dockLabels
     property alias dockAutoHide: prefs.dockHide
     property alias dockPinned: prefs.dockPinned
+
+    // ── input devices ─────────────────────────────────────────────────────
+    property alias repeatRate: prefs.repeatRate
+    property alias repeatDelay: prefs.repeatDelay
+    property alias numlock: prefs.numlock
+    property alias followMouse: prefs.followMouse
+    property alias sensitivity: prefs.sensitivity
+    property alias accelProfile: prefs.accelProfile
+    property alias leftHanded: prefs.leftHanded
+    property alias mouseNaturalScroll: prefs.mouseNaturalScroll
+    property alias mouseScrollFactor: prefs.mouseScrollFactor
+    property alias hideCursorOnKey: prefs.hideCursorOnKey
+    property alias cursorTimeout: prefs.cursorTimeout
+    property alias tapToClick: prefs.tapToClick
+    property alias tapAndDrag: prefs.tapAndDrag
+    property alias dragLock: prefs.dragLock
+    property alias padNaturalScroll: prefs.padNaturalScroll
+    property alias padScrollFactor: prefs.padScrollFactor
+    property alias disableWhileTyping: prefs.disableWhileTyping
+    property alias clickfinger: prefs.clickfinger
+    property alias tapButtonMap: prefs.tapButtonMap
+    property alias middleEmulation: prefs.middleEmulation
+    property alias displays: prefs.displays
+
+    // ── typography ────────────────────────────────────────────────────────
+    property alias fontScale: prefs.fontScale
+    property alias barFontSize: prefs.barFontSize
     property alias dnd: prefs.dnd
     property alias badges: prefs.badges
     property alias grouping: prefs.grouping
@@ -163,6 +224,11 @@ Singleton {
     readonly property color sheet: dark ? Qt.rgba(0.137, 0.129, 0.125, sheetAlpha)
                                         : Qt.rgba(0.980, 0.976, 0.976, sheetAlpha)
 
+    // Fully opaque. A dropdown or popup drawn *inside* a translucent window
+    // has nothing blurred behind it — it just shows that window's own
+    // content through itself, which is illegible. Menus use this.
+    readonly property color solid: dark ? "#1f1d1c" : "#fbfafa"
+
     readonly property color hover: dark ? Qt.rgba(0.973, 0.957, 0.957, 0.09) : Qt.rgba(0.125, 0.118, 0.114, 0.07)
     readonly property color sel: dark ? Qt.rgba(0.973, 0.957, 0.957, 0.14) : Qt.rgba(0.125, 0.118, 0.114, 0.10)
     readonly property color gloss: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.6)
@@ -204,6 +270,11 @@ Singleton {
     // ── typography ────────────────────────────────────────────────────────
     // Inter throughout, as in the mockup; the fallback chain keeps the shell
     // legible if it isn't installed.
+    // One multiplier over every text size in the shell, so the whole thing
+    // scales without each module carrying its own setting.
+    readonly property real fontFactor: Math.max(75, Math.min(150, fontScale)) / 100
+    function fs(px) { return Math.round(px * fontFactor); }
+
     readonly property string fontFamily: "Inter"
     readonly property string monoFamily: "JetBrains Mono"
 

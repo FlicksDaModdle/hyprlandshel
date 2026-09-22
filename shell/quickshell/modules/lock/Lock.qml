@@ -129,7 +129,7 @@ WlSessionLock {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: Qt.formatDateTime(clock.date,
                               Config.Appearance.clock24 ? "HH:mm" : "h:mm AP")
-                        font.pixelSize: 116
+                        font.pixelSize: Config.Appearance.fs(116)
                         font.weight: Font.Bold
                         font.letterSpacing: -4
                         color: Config.Appearance.ink
@@ -137,7 +137,7 @@ WlSessionLock {
                     StyledText {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: Qt.formatDate(clock.date, "dddd d MMMM yyyy")
-                        font.pixelSize: 17
+                        font.pixelSize: Config.Appearance.fs(17)
                         color: Config.Appearance.ink2
                     }
                 }
@@ -188,7 +188,7 @@ WlSessionLock {
                         StyledText {
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: Services.SysInfo.user
-                            font.pixelSize: 16
+                            font.pixelSize: Config.Appearance.fs(16)
                             font.weight: Font.DemiBold
                         }
 
@@ -214,7 +214,7 @@ WlSessionLock {
                                 // Dots rather than the characters, at the
                                 // tracking the mockup uses.
                                 text: "•".repeat(Math.min(surface.entered.length, 24))
-                                font.pixelSize: 18
+                                font.pixelSize: Config.Appearance.fs(18)
                                 font.letterSpacing: 5
                                 color: Config.Appearance.ink2
                             }
@@ -225,7 +225,7 @@ WlSessionLock {
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: surface.entered.length === 0
                                 text: surface.busy ? "Checking…" : "Password"
-                                font.pixelSize: 13
+                                font.pixelSize: Config.Appearance.fs(13)
                                 font.weight: Font.Normal
                                 color: Config.Appearance.ink3
                             }
@@ -256,7 +256,7 @@ WlSessionLock {
                             anchors.horizontalCenter: parent.horizontalCenter
                             height: 14
                             text: surface.status || (pam.message && pam.messageIsError ? pam.message : "")
-                            font.pixelSize: 12
+                            font.pixelSize: Config.Appearance.fs(12)
                             font.weight: Font.Normal
                             color: surface.failed ? Config.Appearance.accent : Config.Appearance.ink3
                         }
@@ -283,7 +283,7 @@ WlSessionLock {
                             anchors.verticalCenter: parent.verticalCenter
                             text: surface.hasBattery
                                   ? Math.round(surface.battery.percentage * 100) + "%" : ""
-                            font.pixelSize: 12
+                            font.pixelSize: Config.Appearance.fs(12)
                             color: Config.Appearance.ink3
                         }
                     }
@@ -300,7 +300,7 @@ WlSessionLock {
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: Services.Network.label
-                            font.pixelSize: 12
+                            font.pixelSize: Config.Appearance.fs(12)
                             color: Config.Appearance.ink3
                         }
                     }
@@ -320,7 +320,7 @@ WlSessionLock {
                             text: Services.Notifications.count
                                   + (Services.Notifications.count === 1
                                      ? " notification" : " notifications")
-                            font.pixelSize: 12
+                            font.pixelSize: Config.Appearance.fs(12)
                             color: Config.Appearance.ink3
                         }
                     }

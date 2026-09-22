@@ -87,7 +87,7 @@ Item {
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: Config.Apps.labelFor(task.modelData.cls)
-                        font.pixelSize: 13
+                        font.pixelSize: Config.Appearance.fs(13)
                         color: Config.Appearance.ink
                     }
 
@@ -103,7 +103,7 @@ Item {
                             id: countLabel
                             anchors.centerIn: parent
                             text: task.modelData.windows.length
-                            font.pixelSize: 10
+                            font.pixelSize: Config.Appearance.fs(10)
                             font.weight: Font.DemiBold
                             color: Config.Appearance.ink3
                         }

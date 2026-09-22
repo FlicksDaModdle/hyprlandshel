@@ -40,7 +40,7 @@ Item {
         id: label
         anchors.centerIn: parent
         text: "Window"
-        font.pixelSize: 13
+        font.pixelSize: Config.Appearance.fs(13)
         color: Config.Appearance.ink
     }
 

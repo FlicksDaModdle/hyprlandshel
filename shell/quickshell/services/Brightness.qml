@@ -43,7 +43,28 @@ Singleton {
         }
     }
 
-    Process { id: setter }
+    // Why a write failed matters here: brightnessctl needs either its
+    // setuid helper, a udev rule, or you in the `video` group, and without
+    // one of those every write fails with a permission error that used to go
+    // straight to /dev/null — the slider moved and the screen didn't.
+    property string lastError: ""
+
+    Process {
+        id: setter
+        stderr: StdioCollector {
+            onStreamFinished: {
+                const msg = text.trim();
+                if (msg) {
+                    root.lastError = msg.split("\n")[0];
+                    console.warn("Brightness: brightnessctl:", root.lastError);
+                }
+            }
+        }
+        onExited: {
+            // Re-send anything that arrived while this one was running.
+            if (root.pendingValue >= 0) flush.restart();
+        }
+    }
 
     Timer {
         id: flush
@@ -53,6 +74,11 @@ Singleton {
             const pct = Math.round(root.pendingValue * 100);
             root.pendingValue = -1;
             // -n1 keeps a minimum of 1% so the screen never goes fully black.
+            //
+            // Assigning running while the process is still up is a no-op, so
+            // a write landing mid-flight used to be dropped silently. The
+            // last value asked for is kept and re-sent when it exits.
+            if (setter.running) { root.pendingValue = clampedPending(pct); return; }
             setter.command = ["brightnessctl", "-m", "-n1", "set", pct + "%"];
             setter.running = true;
             refresh.restart();
@@ -73,6 +99,8 @@ Singleton {
         repeat: true
         onTriggered: query.running = true
     }
+
+    function clampedPending(pct) { return Math.max(0.01, Math.min(1, pct / 100)); }
 
     function set(v) {
         if (!available) return;

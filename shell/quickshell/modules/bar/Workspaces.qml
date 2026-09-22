@@ -61,7 +61,7 @@ Item {
                     visible: pill.expanded
                     opacity: pill.expanded ? 1 : 0
                     text: pill.modelData.id
-                    font.pixelSize: 11
+                    font.pixelSize: Config.Appearance.fs(11)
                     font.weight: Font.Bold
                     font.letterSpacing: 0.2
                     color: pill.focused ? Config.Appearance.onAccent

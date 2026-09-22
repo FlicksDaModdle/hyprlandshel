@@ -61,7 +61,7 @@ PanelSurface {
             anchors.leftMargin: 14
             anchors.verticalCenter: parent.verticalCenter
             text: Qt.formatDate(root.shown, "MMMM yyyy")
-            font.pixelSize: 13
+            font.pixelSize: Config.Appearance.fs(13)
             font.weight: Font.DemiBold
         }
 
@@ -131,7 +131,7 @@ PanelSurface {
                 StyledText {
                     anchors.centerIn: parent
                     text: parent.modelData
-                    font.pixelSize: 11
+                    font.pixelSize: Config.Appearance.fs(11)
                     font.weight: Font.DemiBold
                     // Weekend columns sit back a step.
                     color: (parent.index === 0 || parent.index === 6)
@@ -157,7 +157,7 @@ PanelSurface {
                     anchors.centerIn: parent
                     visible: cell.modelData.day > 0
                     text: cell.modelData.day
-                    font.pixelSize: 12
+                    font.pixelSize: Config.Appearance.fs(12)
                     color: cell.modelData.today ? Config.Appearance.onAccent : Config.Appearance.ink2
                 }
 

@@ -44,10 +44,11 @@ Variants {
         // the left one. Quickshell has no pointer-position API, so the
         // compositor's focused monitor is the stand-in — it's the monitor
         // whose bar you just clicked.
-        readonly property bool isPrimary: {
-            const focused = Services.Compositor.monitors.find(m => m.focused);
-            return !focused || !modelData || focused.name === modelData.name;
-        }
+        //
+        // This used to scan `monitors` for a focused flag and treat "none
+        // found" as "yes, this screen", which is true on every screen at
+        // once — so every dropdown opened on all of them.
+        readonly property bool isPrimary: Services.Compositor.isFocusedScreen(modelData)
 
         // Click-away. Right-clicking bare backdrop reopens the desktop menu
         // at the new spot rather than just dismissing.

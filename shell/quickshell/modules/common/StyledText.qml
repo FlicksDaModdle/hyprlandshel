@@ -6,7 +6,7 @@ import "../../config" as Config
 // `font.family: "Inter"` several hundred times.
 Text {
     font.family: Config.Appearance.fontFamily
-    font.pixelSize: 12
+    font.pixelSize: Config.Appearance.fs(12)   // callers override; scale still applies
     font.weight: Font.Medium
     color: Config.Appearance.ink
     textFormat: Text.PlainText

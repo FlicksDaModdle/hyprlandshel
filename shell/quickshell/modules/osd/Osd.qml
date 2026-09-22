@@ -101,7 +101,7 @@ PanelWindow {
                 width: 48
                 horizontalAlignment: Text.AlignRight
                 text: osd.muted ? "muted" : Math.round(osd.value * 100) + "%"
-                font.pixelSize: 13
+                font.pixelSize: Config.Appearance.fs(13)
                 font.weight: Font.DemiBold
             }
         }

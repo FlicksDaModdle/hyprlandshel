@@ -32,7 +32,7 @@ PanelSurface {
             anchors.leftMargin: 16
             anchors.verticalCenter: parent.verticalCenter
             text: "Notifications"
-            font.pixelSize: 13
+            font.pixelSize: Config.Appearance.fs(13)
             font.weight: Font.DemiBold
         }
 
@@ -65,7 +65,7 @@ PanelSurface {
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "Do not disturb"
-                        font.pixelSize: 11
+                        font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.DemiBold
                         color: Config.Appearance.dnd ? Config.Appearance.onAccent : Config.Appearance.ink2
                     }
@@ -88,7 +88,7 @@ PanelSurface {
                     id: clearLabel
                     anchors.centerIn: parent
                     text: "Clear"
-                    font.pixelSize: 11
+                    font.pixelSize: Config.Appearance.fs(11)
                     font.weight: Font.DemiBold
                     color: Config.Appearance.ink2
                 }
@@ -130,7 +130,7 @@ PanelSurface {
                     StyledText {
                         visible: Config.Appearance.grouping === "App" && group.modelData.entries.length > 1
                         text: group.modelData.app + " · " + group.modelData.entries.length
-                        font.pixelSize: 11
+                        font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.DemiBold
                         font.capitalization: Font.AllUppercase
                         font.letterSpacing: 0.8
@@ -159,7 +159,7 @@ PanelSurface {
                 StyledText {
                     anchors.centerIn: parent
                     text: Config.Appearance.dnd ? "Do not disturb is on" : "No notifications"
-                    font.pixelSize: 12
+                    font.pixelSize: Config.Appearance.fs(12)
                     color: Config.Appearance.ink3
                 }
             }

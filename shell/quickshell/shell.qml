@@ -27,6 +27,11 @@ ShellRoot {
     // completes, so this reference is the thing that starts it.
     readonly property bool terminalThemed: Services.Theming.kittyPresent
 
+    // Same reason: Devices has no surface, and it is what puts your saved
+    // input and display settings back after a restart — Hyprland forgets
+    // everything that isn't in hyprland.lua each time it launches.
+    readonly property bool devicesRestored: Services.Devices.applied
+
     // ── surfaces ──────────────────────────────────────────────────────────
     // Ordered background to foreground, though each one sets its own
     // layer-shell layer and the compositor does the actual stacking.

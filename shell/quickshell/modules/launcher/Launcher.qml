@@ -338,7 +338,7 @@ PanelWindow {
                         onTextChanged: launcher.query = text
                         color: Config.Appearance.ink
                         font.family: Config.Appearance.fontFamily
-                        font.pixelSize: 13
+                        font.pixelSize: Config.Appearance.fs(13)
                         selectByMouse: true
                         selectionColor: Config.Appearance.accent
                         selectedTextColor: Config.Appearance.onAccent
@@ -372,7 +372,7 @@ PanelWindow {
                             text: Config.UiState.appPickerFor !== ""
                                   ? "Choose an application for this dock slot"
                                   : "Search apps and commands"
-                            font.pixelSize: 13
+                            font.pixelSize: Config.Appearance.fs(13)
                             font.weight: Font.Normal
                             color: Config.Appearance.ink3
                         }
@@ -393,7 +393,7 @@ PanelWindow {
                         id: escLabel
                         anchors.centerIn: parent
                         text: "ESC"
-                        font.pixelSize: 10
+                        font.pixelSize: Config.Appearance.fs(10)
                         font.weight: Font.DemiBold
                         color: Config.Appearance.ink3
                     }
@@ -428,7 +428,7 @@ PanelWindow {
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "Pinned"
-                            font.pixelSize: 11
+                            font.pixelSize: Config.Appearance.fs(11)
                             font.weight: Font.DemiBold
                             font.capitalization: Font.AllUppercase
                             font.letterSpacing: 0.85
@@ -453,7 +453,7 @@ PanelWindow {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "All apps"
-                                font.pixelSize: 11
+                                font.pixelSize: Config.Appearance.fs(11)
                                 font.weight: Font.DemiBold
                                 color: allHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
                             }
@@ -525,7 +525,7 @@ PanelWindow {
                                     horizontalAlignment: Text.AlignHCenter
                                     elide: Text.ElideRight
                                     text: gridItem.modelData.label
-                                    font.pixelSize: 11
+                                    font.pixelSize: Config.Appearance.fs(11)
                                 }
                             }
 
@@ -612,7 +612,7 @@ PanelWindow {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "Recommended"
-                                font.pixelSize: 11
+                                font.pixelSize: Config.Appearance.fs(11)
                                 font.weight: Font.DemiBold
                                 font.capitalization: Font.AllUppercase
                                 font.letterSpacing: 0.85
@@ -625,7 +625,7 @@ PanelWindow {
                             anchors.rightMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
                             text: "recent"
-                            font.pixelSize: 11
+                            font.pixelSize: Config.Appearance.fs(11)
                             color: Config.Appearance.ink3
                         }
                     }
@@ -689,13 +689,13 @@ PanelWindow {
                                             width: parent.width
                                             elide: Text.ElideRight
                                             text: recentItem.modelData.name
-                                            font.pixelSize: 11
+                                            font.pixelSize: Config.Appearance.fs(11)
                                         }
                                         StyledText {
                                             width: parent.width
                                             elide: Text.ElideRight
                                             text: launcher.relativeTime(recentItem.modelData.modified)
-                                            font.pixelSize: 10
+                                            font.pixelSize: Config.Appearance.fs(10)
                                             font.weight: Font.Normal
                                             color: Config.Appearance.ink3
                                         }
@@ -730,7 +730,7 @@ PanelWindow {
                         anchors.leftMargin: 16
                         anchors.verticalCenter: parent.verticalCenter
                         text: launcher.listTitle
-                        font.pixelSize: 13
+                        font.pixelSize: Config.Appearance.fs(13)
                         font.weight: Font.DemiBold
                     }
 
@@ -758,7 +758,7 @@ PanelWindow {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "Back to pinned"
-                                font.pixelSize: 11
+                                font.pixelSize: Config.Appearance.fs(11)
                                 font.weight: Font.DemiBold
                                 color: Config.Appearance.ink2
                             }
@@ -850,7 +850,7 @@ PanelWindow {
                                     width: parent.width
                                     elide: Text.ElideRight
                                     text: resultRow.modelData.label
-                                    font.pixelSize: 12
+                                    font.pixelSize: Config.Appearance.fs(12)
                                     font.weight: Font.DemiBold
                                     color: resultRow.selected
                                            ? Config.Appearance.onAccent : Config.Appearance.ink
@@ -859,7 +859,7 @@ PanelWindow {
                                     width: parent.width
                                     elide: Text.ElideRight
                                     text: resultRow.modelData.cat || ""
-                                    font.pixelSize: 10
+                                    font.pixelSize: Config.Appearance.fs(10)
                                     font.weight: Font.Normal
                                     opacity: resultRow.selected ? 0.8 : 1
                                     color: resultRow.selected
@@ -874,7 +874,7 @@ PanelWindow {
                             anchors.rightMargin: 12
                             anchors.verticalCenter: parent.verticalCenter
                             text: resultRow.selected ? "return" : ""
-                            font.pixelSize: 11
+                            font.pixelSize: Config.Appearance.fs(11)
                             font.weight: Font.DemiBold
                             color: Config.Appearance.onAccent
                         }
@@ -899,7 +899,7 @@ PanelWindow {
                     wrapMode: Text.WordWrap
                     text: "No matches — press enter to run \u201C" + launcher.query.trim()
                           + "\u201D as a command"
-                    font.pixelSize: 13
+                    font.pixelSize: Config.Appearance.fs(13)
                     color: Config.Appearance.ink3
                 }
             }
@@ -949,7 +949,7 @@ PanelWindow {
                             spacing: 3
                             StyledText {
                                 text: Services.SysInfo.user
-                                font.pixelSize: 12
+                                font.pixelSize: Config.Appearance.fs(12)
                                 font.weight: Font.DemiBold
                             }
                             Rectangle {

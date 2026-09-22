@@ -59,7 +59,7 @@ Item {
             width: parent.width
             wrapMode: Text.WordWrap
             text: root.spec.s || ""
-            font.pixelSize: 12
+            font.pixelSize: Config.Appearance.fs(12)
             font.weight: Font.Normal
             color: Config.Appearance.ink3
         }
@@ -124,7 +124,30 @@ Item {
                 trough: 20
                 showRule: true
                 value: (root.spec.value - root.spec.min) / Math.max(1, root.spec.max - root.spec.min)
-                onMoved: v => root.spec.set(Math.round(root.spec.min + v * (root.spec.max - root.spec.min)))
+
+                function toSteps(v) {
+                    return Math.round(root.spec.min + v * (root.spec.max - root.spec.min));
+                }
+
+                // Committing on every pixel of travel is what made these
+                // feel stuck: each one wrote theme.json, or — for a device
+                // setting — spawned an hyprctl. Dragging fired hundreds.
+                // The fill follows the pointer live off dragValue; the value
+                // itself is written at most every 80ms, and always once more
+                // on release so the last position is never lost.
+                property int pendingValue: 0
+                onMoved: v => { pendingValue = toSteps(v); throttle.start(); }
+                onReleased: v => {
+                    throttle.stop();
+                    root.spec.set(toSteps(v));
+                }
+
+                Timer {
+                    id: throttle
+                    interval: 80
+                    repeat: false
+                    onTriggered: root.spec.set(slider.pendingValue)
+                }
             }
 
             // Numeric readout, typed into directly.
@@ -146,10 +169,14 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 34
                         horizontalAlignment: Text.AlignRight
-                        text: root.spec.value
+                        // Follows the drag rather than the committed value,
+                        // which is throttled — otherwise the number visibly
+                        // stutters behind the fill.
+                        text: slider.dragging
+                              ? slider.toSteps(slider.shownValue) : root.spec.value
                         color: Config.Appearance.ink
                         font.family: Config.Appearance.fontFamily
-                        font.pixelSize: 12
+                        font.pixelSize: Config.Appearance.fs(12)
                         font.weight: Font.DemiBold
                         selectByMouse: true
                         selectionColor: Config.Appearance.accent
@@ -171,7 +198,7 @@ Item {
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.spec.unit || ""
-                        font.pixelSize: 11
+                        font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.Normal
                         color: Config.Appearance.ink3
                     }
@@ -201,7 +228,7 @@ Item {
                     anchors.leftMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.spec.value
-                    font.pixelSize: 12
+                    font.pixelSize: Config.Appearance.fs(12)
                     font.weight: Font.DemiBold
                 }
 
@@ -231,7 +258,11 @@ Item {
                 width: parent.width
                 height: optionColumn.implicitHeight + 8
                 radius: Config.Appearance.rSm
-                color: Config.Appearance.sheet
+                // Opaque, not `sheet`. This popup is drawn inside the
+                // Settings window, so a translucent fill has nothing blurred
+                // behind it — it shows the rows underneath straight through
+                // itself, and the options become unreadable.
+                color: Config.Appearance.solid
                 border.width: 1
                 border.color: Config.Appearance.edge
 
@@ -257,7 +288,7 @@ Item {
                                 anchors.leftMargin: 9
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: option.modelData
-                                font.pixelSize: 12
+                                font.pixelSize: Config.Appearance.fs(12)
                             }
 
                             MonoIcon {
@@ -331,9 +362,11 @@ Item {
                 }
             }
 
-            // Custom accent: cycles a small set of hues rather than opening a
-            // colour dialog, which a layer-shell process can't host. The
-            // exact value is still editable by hand in theme.json.
+            // Custom accent. Opens a picker rather than cycling a fixed
+            // set of hues, which is what it used to do — that was a
+            // workaround for a layer-shell process not being able to host a
+            // system colour dialog, and the answer is to draw one in the
+            // shell's own vocabulary instead of borrowing the desktop's.
             Rectangle {
                 id: customSwatch
                 width: 28
@@ -361,22 +394,24 @@ Item {
                     monochrome: true
                 }
 
-                // Not `palette`: QQuickItem already has one, and shadowing it
-                // makes the engine warn about overriding a base member.
-                readonly property var hues: [
-                    "#3b6ef5", "#1f9d6b", "#8b5cf6", "#d97706", "#db2777", "#0891b2"
-                ]
-
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler {
                     onTapped: {
-                        if (Config.Appearance.accentIndex !== -1) {
-                            Config.Appearance.accentIndex = -1;
-                        } else {
-                            const hues = customSwatch.hues;
-                            const at = hues.indexOf(String(Config.Appearance.customAccent));
-                            Config.Appearance.customAccent = hues[(at + 1) % hues.length];
-                        }
+                        Config.Appearance.accentIndex = -1;
+                        picker.open = !picker.open;
+                    }
+                }
+
+                ColorPicker {
+                    id: picker
+                    z: 200
+                    anchors.top: parent.bottom
+                    anchors.topMargin: 8
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    value: Config.Appearance.customAccent
+                    onPicked: c => {
+                        Config.Appearance.customAccent = c;
+                        Config.Appearance.accentIndex = -1;
                     }
                 }
             }
@@ -410,7 +445,7 @@ Item {
                 width: 44
                 horizontalAlignment: Text.AlignRight
                 text: root.spec.label
-                font.pixelSize: 13
+                font.pixelSize: Config.Appearance.fs(13)
                 font.weight: Font.DemiBold
                 color: Config.Appearance.ink2
             }
@@ -431,7 +466,7 @@ Item {
                 id: actionLabel
                 anchors.centerIn: parent
                 text: root.spec.label
-                font.pixelSize: 12
+                font.pixelSize: Config.Appearance.fs(12)
                 font.weight: Font.DemiBold
                 color: Config.Appearance.onAccent
             }
@@ -446,7 +481,7 @@ Item {
 
         StyledText {
             text: root.spec.value !== undefined ? root.spec.value : ""
-            font.pixelSize: 13
+            font.pixelSize: Config.Appearance.fs(13)
             font.weight: Font.DemiBold
             color: Config.Appearance.ink2
         }

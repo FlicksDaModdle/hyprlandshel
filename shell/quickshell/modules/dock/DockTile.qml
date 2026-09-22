@@ -72,7 +72,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.showLabel
             text: root.label
-            font.pixelSize: 12
+            font.pixelSize: Config.Appearance.fs(12)
             font.weight: Font.DemiBold
         }
     }
@@ -131,14 +131,14 @@ Item {
             StyledText {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.label
-                font.pixelSize: 11
+                font.pixelSize: Config.Appearance.fs(11)
                 font.weight: Font.DemiBold
             }
             StyledText {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: root.subtitle !== ""
                 text: root.subtitle
-                font.pixelSize: 10
+                font.pixelSize: Config.Appearance.fs(10)
                 color: Config.Appearance.ink3
             }
         }

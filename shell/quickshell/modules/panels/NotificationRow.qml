@@ -98,7 +98,7 @@ Rectangle {
                     anchors.rightMargin: 10
                     elide: Text.ElideRight
                     text: Services.Notifications.appNameOf(root.notification)
-                    font.pixelSize: 12
+                    font.pixelSize: Config.Appearance.fs(12)
                     font.weight: Font.DemiBold
                 }
 
@@ -110,7 +110,7 @@ Rectangle {
                           ? Services.Notifications.relativeTime(
                                 Services.Notifications.timeOf(root.notification))
                           : ""
-                    font.pixelSize: 11
+                    font.pixelSize: Config.Appearance.fs(11)
                     font.weight: Font.Normal
                     color: Config.Appearance.ink3
                 }
@@ -120,7 +120,7 @@ Rectangle {
                 width: parent.width
                 visible: text !== ""
                 text: root.notification ? root.notification.summary : ""
-                font.pixelSize: 13
+                font.pixelSize: Config.Appearance.fs(13)
                 font.weight: Font.DemiBold
                 wrapMode: Text.WordWrap
                 maximumLineCount: 2
@@ -131,7 +131,7 @@ Rectangle {
                 width: parent.width
                 visible: text !== ""
                 text: root.notification ? root.notification.body : ""
-                font.pixelSize: 13
+                font.pixelSize: Config.Appearance.fs(13)
                 font.weight: Font.Normal
                 color: Config.Appearance.ink2
                 wrapMode: Text.WordWrap
@@ -168,7 +168,7 @@ Rectangle {
                             id: actionLabel
                             anchors.centerIn: parent
                             text: actionBtn.modelData.text
-                            font.pixelSize: 11
+                            font.pixelSize: Config.Appearance.fs(11)
                             font.weight: Font.DemiBold
                             color: actionBtn.index === 0 ? Config.Appearance.onAccent : Config.Appearance.ink
                         }

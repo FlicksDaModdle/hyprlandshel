@@ -119,7 +119,7 @@ PanelSurface {
                         anchors.leftMargin: 11
                         anchors.verticalCenter: parent.verticalCenter
                         text: row.modelData.n
-                        font.pixelSize: 12
+                        font.pixelSize: Config.Appearance.fs(12)
                         color: rowHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink
                     }
                     StyledText {
@@ -127,7 +127,7 @@ PanelSurface {
                         anchors.rightMargin: 11
                         anchors.verticalCenter: parent.verticalCenter
                         text: row.modelData.k
-                        font.pixelSize: 11
+                        font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.Normal
                         color: rowHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink3
                     }
@@ -144,7 +144,7 @@ PanelSurface {
 
         StyledText {
             text: "Snap layout"
-            font.pixelSize: 11
+            font.pixelSize: Config.Appearance.fs(11)
             font.weight: Font.DemiBold
             color: Config.Appearance.ink3
             topPadding: 10

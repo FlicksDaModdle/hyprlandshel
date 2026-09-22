@@ -112,7 +112,7 @@ PanelSurface {
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: item.modelData.n
-                            font.pixelSize: 12
+                            font.pixelSize: Config.Appearance.fs(12)
                             color: rowHover.hovered ? Config.Appearance.onAccent
                                                     : Config.Appearance.ink
                         }

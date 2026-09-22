@@ -22,6 +22,24 @@ Singleton {
     }
 
     readonly property var monitors: Hyprland.monitors.values
+
+    // The monitor Hyprland says is focused. Quickshell tracks this itself,
+    // which is more reliable than scanning `monitors` for a focused flag —
+    // and when that scan found nothing it returned undefined, which the
+    // panel layer read as "this screen is the right one" on *every* screen,
+    // so a bar dropdown opened on all of them at once.
+    readonly property var focusedMonitor: Hyprland.focusedMonitor
+    readonly property string focusedMonitorName:
+        focusedMonitor ? focusedMonitor.name : ""
+
+    // True for exactly one screen: the focused one, or the first as a
+    // fallback so a panel is never invisible everywhere.
+    function isFocusedScreen(screenInfo) {
+        if (!screenInfo) return false;
+        if (focusedMonitorName !== "") return screenInfo.name === focusedMonitorName;
+        const all = monitors || [];
+        return all.length === 0 || !all[0] || all[0].name === screenInfo.name;
+    }
     readonly property int monitorCount: monitors.length
     readonly property var focusedWorkspace: Hyprland.focusedWorkspace
 
@@ -176,6 +194,24 @@ Singleton {
     }
 
     function refresh() { debounce.restart(); }
+
+    // Monitor state is Quickshell's, not ours, and it only re-reads it on a
+    // compositor event. Changing a mode or scale through hl.monitor doesn't
+    // raise one, so the Settings window has to ask — otherwise its dropdowns
+    // keep reporting the mode you just changed away from.
+    //
+    // Twice: once now, and once after the mode change has actually landed,
+    // because a modeset takes a moment and the first read can beat it.
+    function refreshMonitors() {
+        Hyprland.refreshMonitors();
+        monitorSettle.restart();
+    }
+
+    Timer {
+        id: monitorSettle
+        interval: 900
+        onTriggered: Hyprland.refreshMonitors()
+    }
 
     Connections {
         target: Hyprland

@@ -86,7 +86,7 @@ PanelSurface {
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: entry.modelData.n
-                            font.pixelSize: 12
+                            font.pixelSize: Config.Appearance.fs(12)
                             color: entryHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink
                         }
                     }
@@ -96,7 +96,7 @@ PanelSurface {
                         anchors.rightMargin: 11
                         anchors.verticalCenter: parent.verticalCenter
                         text: entry.modelData.k
-                        font.pixelSize: 11
+                        font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.Normal
                         color: entryHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink3
                     }

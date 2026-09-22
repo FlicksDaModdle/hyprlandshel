@@ -79,7 +79,7 @@ PanelWindow {
             StyledText {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Workspaces"
-                font.pixelSize: 12
+                font.pixelSize: Config.Appearance.fs(12)
                 font.weight: Font.DemiBold
                 font.capitalization: Font.AllUppercase
                 font.letterSpacing: 1.7
@@ -159,7 +159,7 @@ PanelWindow {
                                             width: Math.min(implicitWidth, thumb.width - 44)
                                             elide: Text.ElideRight
                                             text: Config.Apps.labelFor(thumb.modelData.cls)
-                                            font.pixelSize: 11
+                                            font.pixelSize: Config.Appearance.fs(11)
                                             font.weight: Font.DemiBold
                                             color: Config.Appearance.ink2
                                         }
@@ -184,7 +184,7 @@ PanelWindow {
                                 anchors.centerIn: parent
                                 visible: card.windows.length === 0
                                 text: "Empty"
-                                font.pixelSize: 12
+                                font.pixelSize: Config.Appearance.fs(12)
                                 color: Config.Appearance.ink3
                             }
                         }
@@ -207,7 +207,7 @@ PanelWindow {
                                        && card.modelData.workspace.name !== String(card.modelData.id))
                                       ? card.modelData.workspace.name
                                       : "Workspace " + card.modelData.id
-                                font.pixelSize: 11
+                                font.pixelSize: Config.Appearance.fs(11)
                                 font.weight: Font.DemiBold
                                 color: card.modelData.focused
                                        ? Config.Appearance.onAccent : Config.Appearance.ink
@@ -228,7 +228,7 @@ PanelWindow {
                             StyledText {
                                 anchors.centerIn: parent
                                 text: card.windows.length
-                                font.pixelSize: 11
+                                font.pixelSize: Config.Appearance.fs(11)
                                 font.weight: Font.DemiBold
                                 color: Config.Appearance.ink2
                             }
@@ -250,7 +250,7 @@ PanelWindow {
             StyledText {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Click a window to focus it · middle click to close · Esc to dismiss"
-                font.pixelSize: 11
+                font.pixelSize: Config.Appearance.fs(11)
                 font.weight: Font.Normal
                 color: Config.Appearance.ink3
             }
