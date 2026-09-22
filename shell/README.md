@@ -320,9 +320,31 @@ a slider that moved some numbers and not the text would be worse than not
 having one. Bar height, dock size and corner rounding each scale on their
 own, which covers most of what it was for.
 
+## How shell shortcuts reach the shell
+
+The compositor delivers them directly. The shell registers each one over
+`hyprland-global-shortcuts-v1` as `hyprshell:<name>`, and `hyprland.lua`
+binds a key to `global, hyprshell:<name>`.
+
+That replaced a chain — keybind spawns a command, command finds the running
+shell, command opens its IPC socket, shell acts — where every link could
+fail without saying anything, because nobody watches a keybind's stderr.
+Now there is no binary to find on PATH, no socket to match, and no CLI flags
+to get right.
+
+It is also inspectable from outside, which the old route never was:
+
+```sh
+hyprctl globalshortcuts      # what the shell registered
+hyprshellctl shortcuts       # the same, filtered
+```
+
+A Quickshell built without `HYPRLAND_GLOBAL_SHORTCUTS` registers nothing;
+the shell says so in its log and the IPC route below still works.
+
 ## When a shortcut does nothing
 
-Every shell shortcut is an IPC call into the running shell. When that call
+The IPC route is still there for anything without a global shortcut. When that call
 fails the keybind does nothing and says nothing — the compositor ran a
 command, the command failed, and nobody is watching a keybind's stderr.
 

@@ -47,8 +47,26 @@ call() {
     return 1
 }
 
+# What the shell registered with the compositor. This is the far end of a
+# keybind now — if a name is missing here, nothing will dispatch to it.
+shortcuts() {
+    if ! command -v hyprctl >/dev/null 2>&1; then
+        red "hyprctl is not on PATH"; return 1
+    fi
+    out=$(hyprctl globalshortcuts 2>&1) || { red "$out"; return 1; }
+    if printf '%s' "$out" | grep -q hyprshell; then
+        printf '%s\n' "$out" | grep hyprshell
+    else
+        red "the shell has registered no global shortcuts"
+        dim "   Either it isn't running, or this Quickshell was built without"
+        dim "   HYPRLAND_GLOBAL_SHORTCUTS. Check the shell's log:"
+        dim "     qs -c $CONFIG log"
+        return 1
+    fi
+}
+
 usage() {
-    echo "usage: hyprshellctl doctor | list | <command> [arg]"
+    echo "usage: hyprshellctl doctor | list | shortcuts | <command> [arg]"
     echo
     echo "commands:"
     for c in $COMMANDS; do
@@ -107,7 +125,19 @@ doctor() {
     fi
 
     echo
-    echo "4. every command answers"
+    echo "4. global shortcuts are registered"
+    if shortcuts >/dev/null 2>&1; then
+        grn "   ok  $(hyprctl globalshortcuts 2>/dev/null | grep -c hyprshell) registered"
+        dim "       shortcuts are delivered by the compositor, so a keybind"
+        dim "       bound to 'global, hyprshell:<name>' needs nothing else"
+    else
+        red "   no  the shell registered no global shortcuts"
+        dim "       Keybinds will fall back to IPC, which needs everything below."
+        fail=1
+    fi
+
+    echo
+    echo "5. every command answers over IPC"
     ok=0; bad=0
     for c in $COMMANDS; do
         case $c in *:arg) continue ;; esac
@@ -143,6 +173,7 @@ doctor() {
 case "${1:-}" in
     ""|-h|--help|help) usage ;;
     doctor)            doctor ;;
+    shortcuts)         shortcuts ;;
     list)              usage ;;
     *)
         cmd=$1; shift
