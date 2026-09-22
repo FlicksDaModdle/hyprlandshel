@@ -910,6 +910,294 @@ PanelWindow {
             return rows;
         }
 
+        // ── Network ───────────────────────────────────────────────────────
+        case "Network": {
+            const net = Services.Network;
+            if (!net.available) return [
+                { type: "header", n: "Network",
+                  s: "NetworkManager is not running, so there is nothing "
+                     + "here to set. The shell reads and drives the network "
+                     + "through nmcli." },
+                { n: "NetworkManager", s: "Expected on the session bus",
+                  type: "info", value: "not running" }
+            ];
+
+            const rows = [
+                { type: "header", n: "Wi-Fi", s: "" },
+                { n: "Wireless", s: net.wifiEnabled
+                     ? "The radio is on" : "The radio is off — nothing will scan",
+                  type: "toggle", value: net.wifiEnabled,
+                  set: v => net.setWifiEnabled(v) },
+                { n: "Connection", s: net.connected
+                     ? (net.security || "open") + " · " + net.signalStrength + "% signal"
+                     : "Not connected to anything",
+                  type: "info", value: net.connected ? net.ssid : "—" },
+                { n: "Address", s: "IPv4 on " + (net.ifname || "this interface"),
+                  type: "info", value: net.ipv4 || "—" },
+                { n: "Scan", s: net.scanning
+                     ? "Looking for networks…"
+                     : "Look again for networks in range",
+                  type: "action", label: net.scanning ? "Scanning" : "Scan",
+                  set: () => net.refresh() }
+            ];
+
+            if (net.vpnActive)
+                rows.push({ n: "VPN", s: "An active VPN connection",
+                            type: "info", value: net.vpnName || "connected" });
+
+            rows.push({ type: "header", n: "In range",
+                        s: (net.networks || []).length + " network"
+                           + ((net.networks || []).length === 1 ? "" : "s")
+                           + " — open the bar's network menu to join one" });
+            const seen = (net.networks || []).slice(0, 8);
+            for (let i = 0; i < seen.length; i++) {
+                const w = seen[i];
+                const joined = net.connected && w.ssid === net.ssid;
+                rows.push({ n: w.ssid || "(hidden)",
+                            s: (w.security || "open")
+                               + (joined ? " · connected" : ""),
+                            type: "meter",
+                            value: Math.max(0, Math.min(1, (w.signal || 0) / 100)),
+                            label: (w.signal || 0) + "%",
+                            color: joined ? Config.Appearance.accent
+                                          : Config.Appearance.ink2 });
+            }
+            if (seen.length === 0)
+                rows.push({ n: "Nothing found", s: "Scan again, or the radio is off",
+                            type: "info", value: "—" });
+            return rows;
+        }
+
+        // ── Bluetooth ─────────────────────────────────────────────────────
+        case "Bluetooth": {
+            const bt = Services.Bluetooth;
+            if (!bt.available) return [
+                { type: "header", n: "Bluetooth",
+                  s: "No adapter is present, or bluetoothd is not running." },
+                { n: "Adapter", s: "Expected via bluetoothctl", type: "info",
+                  value: "none" }
+            ];
+
+            const rows = [
+                { type: "header", n: "Adapter",
+                  s: bt.controller || "The default controller" },
+                { n: "Bluetooth", s: bt.powered
+                     ? "The radio is on" : "The radio is off",
+                  type: "toggle", value: bt.powered,
+                  set: v => bt.setPowered(v) },
+                { n: "Discoverable", s: "Let other devices see this machine "
+                     + "while the setting is on",
+                  type: "toggle", value: bt.discoverable,
+                  set: v => bt.setDiscoverable(v) },
+                { n: "Scan", s: bt.discovering
+                     ? "Looking for devices…" : "Look for devices to pair",
+                  type: "action", label: bt.discovering ? "Scanning" : "Scan",
+                  set: () => bt.scan() },
+
+                { type: "header", n: "Devices",
+                  s: bt.pairedCount + " known, " + bt.connectedDevices.length
+                     + " connected" }
+            ];
+
+            const devs = bt.devices || [];
+            for (let i = 0; i < devs.length; i++) {
+                const d = devs[i];
+                rows.push({ n: d.name || d.mac,
+                            s: d.connected ? "Connected · " + d.mac : d.mac,
+                            type: "action",
+                            label: d.connected ? "Disconnect" : "Connect",
+                            set: () => bt.toggleDevice(d) });
+            }
+            if (devs.length === 0)
+                rows.push({ n: "Nothing paired", s: "Scan to find devices nearby",
+                            type: "info", value: "—" });
+            return rows;
+        }
+
+        // ── Sound ─────────────────────────────────────────────────────────
+        case "Sound": {
+            const au = Services.Audio;
+            const rows = [
+                { type: "header", n: "Output",
+                  s: au.sinkName || "No output device" },
+                { n: "Volume", s: au.muted ? "Muted" : "Output level",
+                  type: "slider", min: 0, max: 100, unit: "%",
+                  value: au.volumePercent,
+                  set: v => au.setVolume(v / 100) },
+                { n: "Mute output", s: "Silence everything without moving the "
+                     + "level", type: "toggle", value: au.muted,
+                  set: v => au.setMuted(v) },
+
+                { type: "header", n: "Input",
+                  s: au.sourceName || "No input device" },
+                { n: "Microphone", s: au.inputMuted ? "Muted" : "Input level",
+                  type: "slider", min: 0, max: 100, unit: "%",
+                  value: au.inputPercent,
+                  set: v => au.setInputVolume(v / 100) },
+                { n: "Mute microphone", s: "Applies to everything using the "
+                     + "default source", type: "toggle", value: au.inputMuted,
+                  set: v => { if (v !== au.inputMuted) au.toggleInputMute(); } }
+            ];
+
+            const sinks = au.sinks || [];
+            if (sinks.length > 1) {
+                rows.push({ type: "header", n: "Devices",
+                            s: "Switch what the default output is" });
+                for (let i = 0; i < sinks.length; i++) {
+                    const n = sinks[i];
+                    const isDefault = au.sink === n;
+                    rows.push({ n: n.nickname || n.description || n.name,
+                                s: isDefault ? "Current output" : "Available",
+                                type: "action",
+                                label: isDefault ? "In use" : "Use",
+                                set: () => au.setDefaultSink(n) });
+                }
+            }
+            return rows;
+        }
+
+        // ── Power ─────────────────────────────────────────────────────────
+        case "Power": {
+            const bat = UPower.displayDevice;
+            const hasBattery = !!bat && bat.isLaptopBattery;
+            const rows = [
+                { type: "header", n: "Profile",
+                  s: PowerProfiles.hasPerformanceProfile
+                     ? "What the firmware is asked to prioritise"
+                     : "power-profiles-daemon is not available, so this "
+                       + "machine has one profile" }
+            ];
+
+            if (PowerProfiles.hasPerformanceProfile)
+                rows.push({ n: "Power profile",
+                            s: "Balanced suits most work; Performance costs "
+                               + "battery and runs hotter",
+                            type: "seg",
+                            options: [{ label: "Saver",       value: "saver" },
+                                      { label: "Balanced",    value: "balanced" },
+                                      { label: "Performance", value: "performance" }],
+                            value: settings.powerProfileName,
+                            set: v => settings.setPowerProfile(v) });
+
+            rows.push({ type: "header", n: "Battery",
+                        s: hasBattery ? "" : "No battery — this is a desktop" });
+            if (hasBattery) {
+                rows.push({ n: "Charge",
+                            s: bat.state === UPowerDeviceState.Charging
+                               ? "Charging"
+                               : (bat.state === UPowerDeviceState.FullyCharged
+                                  ? "Full" : "On battery"),
+                            type: "meter",
+                            value: Math.max(0, Math.min(1, bat.percentage)),
+                            label: Math.round(bat.percentage * 100) + "%",
+                            color: Config.Appearance.accent });
+                rows.push({ n: "Health", s: "Capacity against when it was new",
+                            type: "info",
+                            value: bat.healthSupported
+                                   ? Math.round(bat.healthPercentage) + "%" : "—" });
+            }
+
+            rows.push({ type: "header", n: "Screen",
+                        s: "Backlight and colour temperature" });
+            if (Services.Brightness.available)
+                rows.push({ n: "Brightness", s: Services.Brightness.device
+                                || "The backlight this machine exposes",
+                            type: "slider", min: 1, max: 100, unit: "%",
+                            value: Services.Brightness.percent,
+                            set: v => Services.Brightness.set(v / 100) });
+            else
+                rows.push({ n: "Brightness", s: "No backlight device was found",
+                            type: "info", value: "—" });
+
+            rows.push({ n: "Night light", s: "Warms the screen after dark. "
+                           + "Driven by " + Services.NightLight.backend + ".",
+                        type: "toggle", value: Services.NightLight.active,
+                        set: v => Services.NightLight.setActive(v) });
+            rows.push({ n: "Colour temperature",
+                        s: "Lower is warmer. Only applies while night light is on.",
+                        type: "slider", min: 2500, max: 6000, unit: " K",
+                        value: Services.NightLight.temperature,
+                        set: v => Services.NightLight.setTemperature(v) });
+            return rows;
+        }
+
+        // ── Hyprland ──────────────────────────────────────────────────────
+        // Every row here is a live `hl.config` call through Devices, which
+        // also re-applies them after a compositor reload — so these survive
+        // `hyprctl reload` rather than lasting until the next one.
+        case "Hyprland": return [
+            { type: "header", n: "Layout",
+              s: "How new windows are placed. Applied immediately." },
+            { n: "Tiling layout", s: "Dwindle splits the focused window; "
+                 + "master keeps one large window beside a stack",
+              type: "seg",
+              options: [{ label: "Dwindle", value: "dwindle" },
+                        { label: "Master",  value: "master" }],
+              value: A.hyprLayout,
+              set: v => { A.hyprLayout = v; Services.Devices.applyFrame(); } },
+            { n: "Focus follows mouse", s: "Move the pointer onto a window to "
+                 + "focus it, without clicking",
+              type: "toggle", value: A.hyprFocusFollowsMouse,
+              set: v => { A.hyprFocusFollowsMouse = v; Services.Devices.applyFrame(); } },
+
+            { type: "header", n: "Gaps and borders", s: "" },
+            { n: "Inner gap", s: "Between tiled windows", type: "slider",
+              min: 0, max: 40, unit: "px", value: A.gapsIn,
+              set: v => { A.gapsIn = v; Services.Devices.applyFrame(); } },
+            { n: "Outer gap", s: "Between windows and the screen edge",
+              type: "slider", min: 0, max: 60, unit: "px", value: A.gapsOut,
+              set: v => { A.gapsOut = v; Services.Devices.applyFrame(); } },
+            { n: "Border width", s: "0 removes window borders entirely",
+              type: "slider", min: 0, max: 8, unit: "px", value: A.borderSize,
+              set: v => { A.borderSize = v; Services.Devices.applyFrame(); } },
+            { n: "Border follows accent", s: "The focused window's border "
+                 + "takes the shell's accent colour",
+              type: "toggle", value: A.borderFollowsAccent,
+              set: v => { A.borderFollowsAccent = v; Services.Devices.applyFrame(); } },
+            { n: "Corner radius", s: "Window corners, not the shell's own",
+              type: "slider", min: 0, max: 24, unit: "px", value: A.hyprRounding,
+              set: v => { A.hyprRounding = v; Services.Devices.applyFrame(); } },
+
+            { type: "header", n: "Effects",
+              s: "Blur and shadows are the expensive ones on a weak GPU" },
+            { n: "Blur behind windows", s: "Applies to anything translucent",
+              type: "toggle", value: A.hyprBlur,
+              set: v => { A.hyprBlur = v; Services.Devices.applyFrame(); } },
+            { n: "Blur size", s: "Radius of each pass", type: "slider",
+              min: 1, max: 20, unit: "", value: A.hyprBlurSize,
+              set: v => { A.hyprBlurSize = v; Services.Devices.applyFrame(); } },
+            { n: "Blur passes", s: "More passes look smoother and cost more",
+              type: "slider", min: 1, max: 5, unit: "", value: A.hyprBlurPasses,
+              set: v => { A.hyprBlurPasses = v; Services.Devices.applyFrame(); } },
+            { n: "Window shadows", s: "A drop shadow under floating windows",
+              type: "toggle", value: A.hyprShadow,
+              set: v => { A.hyprShadow = v; Services.Devices.applyFrame(); } },
+            { n: "Inactive opacity", s: "How much unfocused windows fade back. "
+                 + "100% leaves them solid.",
+              type: "slider", min: 40, max: 100, unit: "%",
+              value: A.hyprInactiveOpacity,
+              set: v => { A.hyprInactiveOpacity = v; Services.Devices.applyFrame(); } },
+
+            { type: "header", n: "Animations", s: "" },
+            { n: "Animations", s: "Off is the fastest the compositor gets",
+              type: "toggle", value: A.hyprAnimEnabled,
+              set: v => { A.hyprAnimEnabled = v; Services.Devices.applyFrame(); } },
+            { n: "Speed", s: "Higher is quicker. 100% is what this shell ships.",
+              type: "slider", min: 25, max: 300, unit: "%", value: A.hyprAnimSpeed,
+              set: v => { A.hyprAnimSpeed = v; Services.Devices.applyFrame(); } },
+
+            { type: "header", n: "The config file", s: "" },
+            { n: "Where these are written",
+              s: "Changes here are applied live and saved to theme.json, then "
+                 + "re-applied after every compositor reload. hyprland.lua is "
+                 + "never rewritten — your own edits to it stay yours.",
+              type: "info", value: "hypr/hyprland.lua" },
+            { n: "Reload Hyprland", s: "Re-read hyprland.lua, then put these "
+                 + "back on top of it",
+              type: "action", label: "Reload",
+              set: () => Services.Compositor.reloadConfig() }
+        ];
+
         case "Keyboard": return [
             { n: "Layout", s: "xkb layout list, comma-separated — e.g. us,de",
               type: "info", value: Services.SysInfo.keymap || "—" },
@@ -1095,6 +1383,22 @@ PanelWindow {
     // What the "Test it" row last captured, so pressing a key reports the
     // modifier it really produced rather than silently rebinding something.
     property string modProbe: "press a key"
+
+    // PowerProfiles.profile is an enum; the segmented control speaks
+    // strings, so the two are mapped here rather than inside the row.
+    readonly property string powerProfileName: {
+        switch (PowerProfiles.profile) {
+        case PowerProfile.PowerSaver:  return "saver";
+        case PowerProfile.Performance: return "performance";
+        default:                       return "balanced";
+        }
+    }
+
+    function setPowerProfile(name) {
+        if (name === "saver") PowerProfiles.profile = PowerProfile.PowerSaver;
+        else if (name === "performance") PowerProfiles.profile = PowerProfile.Performance;
+        else PowerProfiles.profile = PowerProfile.Balanced;
+    }
 
     property string displayPickRaw: ""
     readonly property string displayPick: displayPickRaw !== ""
