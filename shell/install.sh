@@ -363,6 +363,9 @@ printf '  installed %s\n' "$QS_DIR"
 
 cp -- "$SRC/run.sh" "$QS_DIR/run.sh" 2>/dev/null && chmod +x "$QS_DIR/run.sh" \
     && printf '  installed %s/run.sh\n' "$QS_DIR"
+cp -- "$SRC/hyprshellctl" "$QS_DIR/hyprshellctl" 2>/dev/null \
+    && chmod +x "$QS_DIR/hyprshellctl" \
+    && printf '  installed %s/hyprshellctl\n' "$QS_DIR"
 
 # theme.json lives *inside* the tree that was just moved aside, so without
 # this every preference you have set would be lost to a reinstall. It is your

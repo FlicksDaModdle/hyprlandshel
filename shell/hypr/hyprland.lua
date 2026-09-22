@@ -36,11 +36,23 @@ local function dispatch(cmd)
     return "hyprctl dispatch " .. cmd
 end
 
+-- Shell shortcuts go through hyprshellctl rather than calling qs directly.
+--
+-- Quickshell's CLI accepts the config selector in more than one position,
+-- and which one works has moved between releases — so a bind hard-coding one
+-- form silently does nothing on a build that wants another, with no output
+-- because nobody is watching a keybind's stderr. hyprshellctl tries each in
+-- turn, and `hyprshellctl doctor` reports which link is broken.
+--
+-- It is installed next to the shell. The PATH fallback is for a config
+-- copied by hand without running install.sh.
+local ctl = (os.getenv("HOME") or "") .. "/.config/quickshell/hyprshell/hyprshellctl"
+
 local function shell(fn, arg)
     if arg then
-        return "qs -c hyprshell ipc call shell " .. fn .. " " .. arg
+        return ctl .. " " .. fn .. " " .. arg
     end
-    return "qs -c hyprshell ipc call shell " .. fn
+    return ctl .. " " .. fn
 end
 
 -------------------------------

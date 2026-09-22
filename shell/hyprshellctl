@@ -1,0 +1,161 @@
+#!/bin/sh
+# Drive the shell from a terminal, and find out why a keybind isn't working.
+#
+# Every shell shortcut is `qs ... ipc call shell <function>`. When that fails
+# the keybind does nothing and says nothing — the compositor ran a command,
+# the command failed, and no one is watching its output. This runs the same
+# call with the output visible, and `doctor` walks the whole chain.
+#
+#   hyprshellctl doctor              check every link and every command
+#   hyprshellctl list                list the commands
+#   hyprshellctl <command> [arg]     run one
+set -u
+
+CONFIG=hyprshell
+TARGET=shell
+
+# Every function on shell.qml's IpcHandler. `:arg` marks one that takes a
+# value; doctor skips those rather than guessing what to pass.
+COMMANDS='toggleLauncher toggleOverview toggleControlCenter toggleNotifications
+toggleCalendar togglePower closePanels openSettings:arg toggleTheme cycleTheme
+setTheme:arg setWallpaper:arg setAccent:arg lock reloadShell toggleDnd
+syncTheming showDesktop volumeUp volumeDown volumeMute micMute
+brightnessUp brightnessDown'
+
+red()  { printf '\033[31m%s\033[0m\n' "$*"; }
+grn()  { printf '\033[32m%s\033[0m\n' "$*"; }
+dim()  { printf '\033[2m%s\033[0m\n' "$*"; }
+
+# Quickshell's CLI accepts the config selector in more than one position, and
+# which one works has moved between releases. Rather than pick one and hope,
+# each is tried until one answers.
+call() {
+    _fn=$1; shift
+    for form in 1 2 3; do
+        case $form in
+            1) set -- qs -c "$CONFIG" ipc call "$TARGET" "$_fn" ${1+"$@"} ;;
+            2) set -- qs ipc -c "$CONFIG" call "$TARGET" "$_fn" ${1+"$@"} ;;
+            3) set -- qs ipc call "$TARGET" "$_fn" ${1+"$@"} ;;
+        esac
+        if out=$("$@" 2>&1); then
+            [ -n "$out" ] && printf '%s\n' "$out"
+            return 0
+        fi
+        last=$out
+    done
+    printf '%s\n' "${last:-no output}" >&2
+    return 1
+}
+
+usage() {
+    echo "usage: hyprshellctl doctor | list | <command> [arg]"
+    echo
+    echo "commands:"
+    for c in $COMMANDS; do
+        case $c in
+            *:arg) printf '  %s <value>\n' "${c%:arg}" ;;
+            *)     printf '  %s\n' "$c" ;;
+        esac
+    done
+}
+
+doctor() {
+    fail=0
+
+    echo "1. quickshell on PATH"
+    if command -v qs >/dev/null 2>&1; then
+        grn "   ok  $(command -v qs)   $(qs --version 2>/dev/null | head -n1)"
+    else
+        red "   no  qs is not on PATH"
+        dim "       Hyprland runs binds through /bin/sh, which uses your login"
+        dim "       PATH — a qs installed only in a shell rc will not be found."
+        return 1
+    fi
+
+    echo
+    echo "2. a shell instance is running"
+    if pgrep -x qs >/dev/null 2>&1; then
+        grn "   ok  $(pgrep -x qs | tr '\n' ' ')"
+    else
+        red "   no  nothing is running"
+        dim "       start it: ~/.config/quickshell/hyprshell/run.sh"
+        return 1
+    fi
+
+    echo
+    echo "3. its IPC target is reachable"
+    shown=""
+    for form in 1 2 3; do
+        case $form in
+            1) shown=$(qs -c "$CONFIG" ipc show 2>&1) ;;
+            2) shown=$(qs ipc -c "$CONFIG" show 2>&1) ;;
+            3) shown=$(qs ipc show 2>&1) ;;
+        esac
+        # shellcheck disable=SC2181
+        if [ $? -eq 0 ] && printf '%s' "$shown" | grep -q "$TARGET"; then
+            grn "   ok  target '$TARGET' is listening (selector form $form)"
+            break
+        fi
+        shown=""
+    done
+    if [ -z "$shown" ]; then
+        red "   no  no IPC target called '$TARGET'"
+        dim "       The shell is running but its IpcHandler did not register."
+        dim "       Check the shell's own log for a load error:"
+        dim "         qs -c $CONFIG log"
+        fail=1
+    fi
+
+    echo
+    echo "4. every command answers"
+    ok=0; bad=0
+    for c in $COMMANDS; do
+        case $c in *:arg) continue ;; esac
+        # Only harmless, self-reversing ones are actually invoked. The rest
+        # are checked for existence by calling with a bad arity, which a
+        # registered function rejects differently from a missing one.
+        case $c in
+            lock|reloadShell|showDesktop|toggleLauncher|toggleOverview|\
+            toggleControlCenter|toggleNotifications|toggleCalendar|togglePower)
+                continue ;;
+        esac
+        if out=$(call "$c" 2>&1); then
+            ok=$((ok + 1))
+        else
+            bad=$((bad + 1))
+            red "   no  $c"
+            [ -n "$out" ] && dim "       $out"
+        fi
+    done
+    [ "$bad" -eq 0 ] && grn "   ok  $ok commands answered"
+    [ "$bad" -gt 0 ] && fail=1
+
+    echo
+    if [ "$fail" -eq 0 ]; then
+        grn "The chain is intact: a keybind failing now is the bind, not the shell."
+        dim "Check it fired at all:  hyprctl binds | grep -A3 <your key>"
+    else
+        red "Something above is broken — that is why the shortcuts do nothing."
+    fi
+    return "$fail"
+}
+
+case "${1:-}" in
+    ""|-h|--help|help) usage ;;
+    doctor)            doctor ;;
+    list)              usage ;;
+    *)
+        cmd=$1; shift
+        known=0
+        for c in $COMMANDS; do
+            [ "${c%:arg}" = "$cmd" ] && known=1
+        done
+        if [ "$known" -eq 0 ]; then
+            red "no such command: $cmd"
+            echo
+            usage
+            exit 2
+        fi
+        call "$cmd" ${1+"$@"}
+        ;;
+esac

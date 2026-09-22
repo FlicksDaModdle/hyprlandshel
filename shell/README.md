@@ -320,6 +320,34 @@ a slider that moved some numbers and not the text would be worse than not
 having one. Bar height, dock size and corner rounding each scale on their
 own, which covers most of what it was for.
 
+## When a shortcut does nothing
+
+Every shell shortcut is an IPC call into the running shell. When that call
+fails the keybind does nothing and says nothing — the compositor ran a
+command, the command failed, and nobody is watching a keybind's stderr.
+
+```sh
+~/.config/quickshell/hyprshell/hyprshellctl doctor
+```
+
+walks the chain: `qs` on PATH (Hyprland runs binds through `/bin/sh`, so a
+`qs` that only exists in a shell rc is not found), a shell instance running,
+its IPC target registered, and then every command individually. It names the
+link that is broken.
+
+The same tool runs any of them:
+
+```sh
+hyprshellctl list
+hyprshellctl toggleLauncher
+hyprshellctl openSettings Display
+```
+
+The keybinds themselves go through it rather than calling `qs` directly.
+Quickshell's CLI accepts the config selector in more than one position and
+which one works has moved between releases, so a bind hard-coding one form
+silently does nothing on a build that wants another; the wrapper tries each.
+
 ## Why the menus frost rather than blur the desktop
 
 Compositor blur — what the bar, dock and panels get — is a property of a
