@@ -53,6 +53,27 @@ shell/
 ## Install
 
 ```sh
+./shell/install.sh --check     # report what's present, change nothing
+./shell/install.sh             # install, backing up anything it replaces
+```
+
+The installer never deletes: an existing `hyprland.lua` or `quickshell/hyprshell`
+is moved to `<name>.bak.<timestamp>` first, so you can always put it back. It
+also refuses to run if Hyprland or Quickshell are missing, and prints the right
+package line for your distribution for everything else.
+
+If you already have a Hyprland config you'd rather keep, use:
+
+```sh
+./shell/install.sh --shell-only
+```
+
+which installs only the Quickshell tree and prints the handful of `exec-once`,
+`bind` and `layerrule` lines to paste into your own config.
+
+By hand, it's just two copies:
+
+```sh
 mkdir -p ~/.config/hypr ~/.config/quickshell
 cp shell/hypr/hyprland.lua ~/.config/hypr/hyprland.lua
 cp -r shell/quickshell ~/.config/quickshell/hyprshell
@@ -60,6 +81,13 @@ cp -r shell/quickshell ~/.config/quickshell/hyprshell
 
 `hyprland.lua` autostarts the shell (`qs -c hyprshell`) and routes its
 keybinds into it over Quickshell's IPC socket, so the directory name matters.
+
+Run `qs -c hyprshell` in a terminal the first time, so any errors are visible
+before you hand the session over to it.
+
+> **If you already have `~/.config/hypr/hyprland.conf`**, move it aside before
+> logging out. Hyprland loads one config file, and which one wins with both a
+> `.conf` and a `.lua` present is not worth leaving to chance.
 
 ### Requirements
 
