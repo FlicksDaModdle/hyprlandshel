@@ -154,7 +154,12 @@ a status capsule showing SSID / volume / battery that opens the control
 center, a clock that opens the calendar, and the power button.
 
 **Dock.** Start and overview, pinned apps, then any unpinned app that
-happens to be running, then Settings and show-desktop. Pips under each tile
+happens to be running, then Settings and show-desktop. Right-click a tile
+for its menu: open a new window, re-point the slot at a different
+application (which hands off to the launcher as a chooser), or unpin it.
+Right-clicking a running app that isn't pinned offers to pin it. The same
+menu is on the launcher's pinned tiles. Your list persists in `theme.json`
+and Settings → Dock has a reset. Pips under each tile
 count that app's windows and the focused app's first pip stretches into a
 bar. Left click focuses or launches and cycles through an app's windows,
 right click always opens a new instance, middle click closes one. Bottom or

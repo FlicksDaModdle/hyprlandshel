@@ -97,9 +97,11 @@ PanelWindow {
         return scored.map(s => s.item);
     }
 
-    readonly property string listTitle: searching
-        ? (appResults.length + (appResults.length === 1 ? " result" : " results"))
-        : "All apps"
+    readonly property string listTitle: Config.UiState.appPickerFor !== ""
+        ? "Pick an app — it replaces the tile you right-clicked"
+        : (searching
+            ? (appResults.length + (appResults.length === 1 ? " result" : " results"))
+            : "All apps")
 
     // ── recently used ─────────────────────────────────────────────────────
     FileView {
@@ -159,9 +161,43 @@ PanelWindow {
     // ── running ───────────────────────────────────────────────────────────
     function run(item) {
         if (!item) return;
+        // In picker mode the launcher is being used to fill a dock slot, so
+        // an entry is a choice rather than something to start.
+        if (Config.UiState.appPickerFor !== "") { assignToSlot(item); return; }
         if (item.kind === "command") runCommand(item.key);
         else if (item.kind === "desktop" && item.entry) item.entry.execute();
         else if (item.exec && item.exec.length > 0) Quickshell.execDetached(item.exec);
+        close();
+    }
+
+    // A .desktop entry knows its own name, icon and command; the window class
+    // it will produce is a guess, and startupClass is the entry's own
+    // declaration of it where one exists, which is the case that matters for
+    // apps whose class doesn't match their binary.
+    function assignToSlot(item) {
+        const key = Config.UiState.appPickerFor;
+        if (key === "") return;
+        let exec = item.exec || [];
+        let cls = "";
+        let icon = item.icon || "square";
+        if (item.kind === "desktop" && item.entry) {
+            const e = item.entry;
+            // StartupWMClass when the entry declares one — that is the whole
+            // point of the key, and it is the only reliable answer for apps
+            // whose window class doesn't match their binary. Otherwise the
+            // entry id with its .desktop suffix taken off.
+            cls = e.startupClass || e.id || "";
+            if (cls.endsWith(".desktop")) cls = cls.slice(0, -8);
+            // `command` is the Exec line already parsed into argv with the
+            // %f/%U field codes removed, so it can be run directly.
+            if (e.command && e.command.length > 0) exec = e.command.slice();
+            icon = Config.Apps.iconFor(cls || e.name);
+        } else if (exec.length > 0) {
+            cls = exec[0];
+            icon = Config.Apps.iconFor(cls);
+        }
+        Config.Apps.assign(key, item.label, exec, icon, cls);
+        Config.UiState.appPickerFor = "";
         close();
     }
 
@@ -330,7 +366,12 @@ PanelWindow {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
                             visible: searchInput.text === ""
-                            text: "Search apps and commands"
+                            // Picker mode says so plainly, because the
+                            // launcher otherwise looks exactly like it does
+                            // when it is going to start what you click.
+                            text: Config.UiState.appPickerFor !== ""
+                                  ? "Choose an application for this dock slot"
+                                  : "Search apps and commands"
                             font.pixelSize: 13
                             font.weight: Font.Normal
                             color: Config.Appearance.ink3
@@ -494,6 +535,22 @@ PanelWindow {
                                 onHoveredChanged: if (hovered) launcher.selectedIndex = gridItem.index;
                             }
                             TapHandler { onTapped: launcher.run(gridItem.modelData) }
+                            // Right-clicking a pinned tile here opens the same
+                            // menu the dock's tiles use, so a slot can be
+                            // re-pointed or unpinned from either place.
+                            TapHandler {
+                                acceptedButtons: Qt.RightButton
+                                gesturePolicy: TapHandler.ReleaseWithinBounds
+                                onTapped: {
+                                    if (gridItem.modelData.kind !== "app") return;
+                                    const p = gridItem.mapToItem(null,
+                                                  gridItem.width / 2, 0);
+                                    Config.UiState.openAppMenu(
+                                        p.x, p.y, gridItem.modelData.key, "",
+                                        gridItem.modelData.label,
+                                        gridItem.modelData.icon);
+                                }
+                            }
                         }
                     }
                 }

@@ -55,6 +55,12 @@ Singleton {
             property int dockIcon: 50                 // 30-72 %
             property bool dockLabels: true
             property bool dockHide: false
+            // The pinned apps, as a JSON array of
+            // { key, label, icon, exec[], match } — empty means "use the
+            // defaults in config/Apps.qml". Carried as text because a
+            // JsonAdapter property is a scalar and `match` is a regex
+            // source, which has no JSON form of its own.
+            property string dockPinned: ""
 
             // Notifications
             property bool dnd: false
@@ -86,6 +92,7 @@ Singleton {
     property alias dockIconPct: prefs.dockIcon
     property alias dockLabels: prefs.dockLabels
     property alias dockAutoHide: prefs.dockHide
+    property alias dockPinned: prefs.dockPinned
     property alias dnd: prefs.dnd
     property alias badges: prefs.badges
     property alias grouping: prefs.grouping

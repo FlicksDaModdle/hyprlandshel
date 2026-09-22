@@ -46,7 +46,43 @@ Singleton {
         }
     }
 
-    Process { id: dispatchProc }
+    // Queued, and the reply is read. A Process is one slot: assigning
+    // `running = true` while it is already running is a no-op, so a second
+    // dispatch arriving before the first exits used to be dropped on the
+    // floor — which is exactly what a run of quick clicks on the workspace
+    // pills is. hyprctl also answers "ok" or an error string, and that reply
+    // was being discarded, so a rejected dispatch looked identical to one
+    // that worked.
+    property var dispatchQueue: []
+    property bool dispatchBusy: false
+    property string dispatchLast: ""
+
+    signal dispatchFailed(string request, string reply)
+
+    Process {
+        id: dispatchProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const reply = text.trim();
+                if (reply && reply.toLowerCase() !== "ok") {
+                    console.warn("Compositor: hyprctl dispatch", root.dispatchLast, "->", reply);
+                    root.dispatchFailed(root.dispatchLast, reply);
+                }
+            }
+        }
+        onExited: { root.dispatchBusy = false; root.pumpDispatch(); }
+    }
+
+    function pumpDispatch() {
+        if (dispatchBusy || dispatchQueue.length === 0) return;
+        const cmd = dispatchQueue.shift();
+        dispatchLast = cmd;
+        dispatchBusy = true;
+        // hyprctl takes the dispatcher and its arguments as separate argv
+        // entries, so the request is split rather than passed as one blob.
+        dispatchProc.command = ["hyprctl", "dispatch"].concat(cmd.split(" "));
+        dispatchProc.running = true;
+    }
 
     // The mockup's bar always shows at least five workspace pills, filling in
     // empty ones — otherwise the pill group jitters in width as you open and
@@ -209,10 +245,8 @@ Singleton {
         if (ipcReady) {
             Hyprland.dispatch(cmd);
         } else {
-            // hyprctl takes the dispatcher and its arguments as separate argv
-            // entries, so the request is split rather than passed as one blob.
-            dispatchProc.command = ["hyprctl", "dispatch"].concat(cmd.split(" "));
-            dispatchProc.running = true;
+            dispatchQueue.push(cmd);
+            pumpDispatch();
         }
     }
 

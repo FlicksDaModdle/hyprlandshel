@@ -512,7 +512,14 @@ PanelWindow {
             { n: "Label for active app", s: "Expand the focused app into a labelled pill", type: "toggle",
               value: A.dockLabels, set: v => A.dockLabels = v },
             { n: "Auto-hide", s: "Slide off the screen edge until the pointer reaches it", type: "toggle",
-              value: A.dockAutoHide, set: v => A.dockAutoHide = v }
+              value: A.dockAutoHide, set: v => A.dockAutoHide = v },
+            { n: "Pinned apps",
+              s: "Right-click any dock tile to re-point it at a different "
+                 + "application, unpin it, or pin one that's only running",
+              type: "info",
+              value: Config.Apps.pinned.length + " pinned" },
+            { n: "Reset pinned apps", s: "Back to the set this shell ships with",
+              type: "action", label: "Reset", set: () => Config.Apps.resetPinned() }
         ];
 
         case "Notifications": return [
@@ -887,6 +894,20 @@ PanelWindow {
             { n: "Compositor", s: "Wayland session", type: "info",
               value: Services.SysInfo.compositorVersion
                      ? "hyprland " + Services.SysInfo.compositorVersion : "hyprland" },
+            // Whether the shell can actually talk to Hyprland, and what it
+            // sees. If the workspace pills or the window menu look inert,
+            // this row says whether anything is getting through at all.
+            { n: "Compositor link",
+              s: Services.Compositor.ipcReady
+                 ? "Quickshell's own Hyprland IPC — live events"
+                 : "No IPC; falling back to polling hyprctl",
+              type: "info",
+              value: Services.Compositor.ipcReady ? "connected" : "degraded" },
+            { n: "Workspaces seen", s: "What the bar's pills are drawn from — "
+                 + "focused is " + Services.Compositor.focusedId,
+              type: "info",
+              value: Services.Compositor.workspaces.length
+                     + " of " + Services.Compositor.workspaceSlots.length + " slots" },
             { n: "Uptime", s: "Since last boot", type: "info", value: Services.SysInfo.uptimeLabel },
             { n: "Shell config", s: Config.Appearance.configDir + "/theme.json", type: "info",
               value: "theme.json" },

@@ -1,6 +1,10 @@
 pragma Singleton
 import QtQuick
 import Quickshell
+// Same directory, imported explicitly rather than leaning on QML's implicit
+// one — every other reference to these singletons in the tree is qualified,
+// and this keeps the static checks able to resolve it.
+import "." as Config
 
 // The dock's pinned apps (mockup: APPS in Hyprshell Live.dc.html), plus the
 // class→glyph mapping the dock, task buttons and overview all share.
@@ -11,7 +15,85 @@ import Quickshell
 Singleton {
     id: root
 
-    readonly property var pinned: [
+    // The pinned list is editable: the dock's right-click menu writes it, and
+    // it persists in theme.json. `defaultPinned` is what a fresh install gets
+    // and what "Reset pinned apps" goes back to.
+    //
+    // `match` is a regex, which JSON has no form for, so it is stored as its
+    // source string and compiled back here.
+    readonly property var pinned: {
+        const raw = Config.Appearance.dockPinned;
+        if (!raw) return defaultPinned;
+        try {
+            const list = JSON.parse(raw);
+            if (!Array.isArray(list) || list.length === 0) return defaultPinned;
+            return list.map(e => ({
+                key: e.key,
+                label: e.label,
+                icon: e.icon,
+                exec: e.exec || [],
+                match: new RegExp(e.match || "^$", "i")
+            }));
+        } catch (err) {
+            // A hand-edited theme.json shouldn't cost you your dock.
+            console.warn("Apps: dockPinned is not valid JSON, using defaults —", err);
+            return defaultPinned;
+        }
+    }
+
+    function serialise(list) {
+        return JSON.stringify(list.map(e => ({
+            key: e.key, label: e.label, icon: e.icon,
+            exec: e.exec || [],
+            // RegExp.source round-trips; String(re) would keep the slashes.
+            match: (e.match && e.match.source) || "^$"
+        })));
+    }
+
+    function save(list) { Config.Appearance.dockPinned = serialise(list); }
+
+    function isPinned(key) { return pinned.some(e => e.key === key); }
+
+    function unpin(key) {
+        const next = pinned.filter(e => e.key !== key);
+        // Never leave an empty dock — an empty list means "use the defaults",
+        // so unpinning the last app would silently restore all of them.
+        save(next.length > 0 ? next : [{ key: "appSettings", label: "Settings",
+                                         icon: "settings", exec: [], match: /^$/ }]);
+    }
+
+    // Adds a running app the user right-clicked. `cls` is its Hyprland class,
+    // which is also the only reliable thing to match it by later.
+    function pinClass(cls, label, icon) {
+        if (!cls) return;
+        const key = "app:" + cls;
+        if (isPinned(key)) return;
+        const next = pinned.slice();
+        // Before the trailing Settings tile, so that stays last as in the mockup.
+        const at = next.findIndex(e => e.key === "appSettings");
+        const entry = { key: key, label: label || cls, icon: icon || "square",
+                        exec: [cls], match: new RegExp("^" + cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i") };
+        if (at >= 0) next.splice(at, 0, entry); else next.push(entry);
+        save(next);
+    }
+
+    // Re-points an existing tile at a different application, keeping its slot.
+    // This is what right-clicking a tile and picking "Choose application" does.
+    function assign(key, label, exec, icon, cls) {
+        const next = pinned.map(e => e.key !== key ? e : ({
+            key: e.key,
+            label: label || e.label,
+            icon: icon || e.icon,
+            exec: exec && exec.length > 0 ? exec : e.exec,
+            match: new RegExp("^" + String(cls || (exec && exec[0]) || "$^")
+                              .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i")
+        }));
+        save(next);
+    }
+
+    function resetPinned() { Config.Appearance.dockPinned = ""; }
+
+    readonly property var defaultPinned: [
         { key: "appTerm",     label: "Terminal", icon: "terminal",   exec: ["kitty"],    match: /^(kitty|foot|alacritty|wezterm|org\.wezfurlong\.wezterm)$/i },
         { key: "appFiles",    label: "Files",    icon: "folder",     exec: ["nautilus"], match: /^(org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$/i },
         { key: "appWeb",      label: "Web",      icon: "globe",      exec: ["firefox"],  match: /^(firefox.*|chromium|google-chrome.*|brave-browser|zen.*)$/i },

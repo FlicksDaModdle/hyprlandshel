@@ -110,5 +110,19 @@ Variants {
             y: Math.max(Config.Appearance.barHeight + 4,
                         Math.min(Config.UiState.desktopMenuY, layer.height - height - 8))
         }
+
+        // Right-clicking a dock or launcher tile. Opened at the pointer like
+        // the desktop menu, but it prefers to sit *above* the click, since
+        // the dock it is usually launched from is at the bottom of the
+        // screen and a menu hanging down from there would be off it.
+        AppMenu {
+            id: appCtx
+            visible: Config.UiState.appMenuOpen
+            x: Math.max(8, Math.min(Config.UiState.appMenuX - width / 2,
+                                    layer.width - width - 8))
+            y: Config.UiState.appMenuY - height - 10 >= Config.Appearance.barHeight + 4
+               ? Config.UiState.appMenuY - height - 10
+               : Math.min(Config.UiState.appMenuY + 10, layer.height - height - 8)
+        }
     }
 }

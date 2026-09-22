@@ -22,6 +22,21 @@ Singleton {
     property bool desktopMenuOpen: false
     property bool windowMenuOpen: false
 
+    // Right-clicking a dock tile or a launcher tile. `appMenuKey` is the
+    // pinned entry's key when the tile is pinned; for a running app that
+    // isn't pinned, appMenuClass carries its window class so it can be.
+    property bool appMenuOpen: false
+    property real appMenuX: 0
+    property real appMenuY: 0
+    property string appMenuKey: ""
+    property string appMenuClass: ""
+    property string appMenuLabel: ""
+    property string appMenuIcon: ""
+
+    // Set while the launcher is being used to pick an application for a
+    // pinned slot rather than to launch something. Holds that slot's key.
+    property string appPickerFor: ""
+
     // Settings is a real toplevel window, not a shell panel, so it isn't
     // part of the exclusive group — it can stay open behind a dropdown.
     property bool settingsOpen: false
@@ -59,7 +74,7 @@ Singleton {
 
     readonly property bool anyPanelOpen: controlCenterOpen || notificationsOpen
                                          || calendarOpen || powerOpen || desktopMenuOpen
-                                         || windowMenuOpen
+                                         || windowMenuOpen || appMenuOpen
 
     function closeAll() {
         launcherOpen = false;
@@ -70,6 +85,8 @@ Singleton {
         powerOpen = false;
         desktopMenuOpen = false;
         windowMenuOpen = false;
+        appMenuOpen = false;
+        appPickerFor = "";
         ccExpanded = "";
     }
 
@@ -95,6 +112,25 @@ Singleton {
             windowMenuX = x;
             windowMenuOpen = true;
         }
+    }
+
+    function openAppMenu(x, y, key, cls, label, icon) {
+        closeAll();
+        appMenuX = x;
+        appMenuY = y;
+        appMenuKey = key || "";
+        appMenuClass = cls || "";
+        appMenuLabel = label || "";
+        appMenuIcon = icon || "";
+        appMenuOpen = true;
+    }
+
+    // Opens the launcher as a chooser: picking an entry assigns it to `key`
+    // instead of launching it.
+    function pickAppFor(key) {
+        closeAll();
+        appPickerFor = key;
+        launcherOpen = true;
     }
 
     function openDesktopMenu(x, y) {

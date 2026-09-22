@@ -129,7 +129,23 @@ Variants {
             if (app.exec && app.exec.length > 0) Quickshell.execDetached(app.exec);
         }
 
-        function launchNew(app) {
+        // The menu is drawn on the panel-layer surface, which covers the whole
+    // screen, so the tile's position has to be given in screen coordinates.
+    // A layer-shell window has no meaningful x/y of its own, so they are
+    // derived from how this one is anchored: bottom-centred, or left-centred
+    // when the dock is on the left edge.
+    function openTileMenu(tile, key, cls, label, icon) {
+        const local = tile.mapToItem(null, tile.width / 2, 0);
+        const sw = dock.screen ? dock.screen.width : dock.width;
+        const sh = dock.screen ? dock.screen.height : dock.height;
+        const originX = dock.isLeft ? 0 : Math.round((sw - dock.width) / 2);
+        const originY = dock.isLeft ? Math.round((sh - dock.height) / 2)
+                                    : sh - dock.height;
+        Config.UiState.openAppMenu(originX + local.x, originY + local.y,
+                                   key, cls, label, icon);
+    }
+
+    function launchNew(app) {
             if (app.key === "appSettings") { Config.UiState.openSettings(); return; }
             if (app.exec && app.exec.length > 0) Quickshell.execDetached(app.exec);
         }
@@ -220,9 +236,13 @@ Variants {
                                 : (wins.length === 1 ? "1 window" : wins.length + " windows")
 
                         onActivated: dock.launchOrFocus(modelData)
-                        // Right click always opens a fresh instance, the way
-                        // a dock is expected to behave.
-                        onSecondaryActivated: dock.launchNew(modelData)
+                        // Right click opens the tile's menu — new window,
+                        // re-point it at a different application, or unpin.
+                        // Opening a fresh instance moved in there, since it
+                        // is one of three things you might want and no longer
+                        // the only one.
+                        onSecondaryActivated: dock.openTileMenu(
+                            pinnedTile, modelData.key, "", modelData.label, modelData.icon)
                         onMiddleActivated: {
                             if (wins.length > 0) Services.Compositor.closeClient(wins[0].address);
                         }
@@ -265,6 +285,8 @@ Variants {
                             const next = at >= 0 ? wins[(at + 1) % wins.length] : wins[0];
                             Services.Compositor.focusClient(next.address);
                         }
+                        onSecondaryActivated: dock.openTileMenu(
+                            unpinnedTile, "", modelData.cls, modelData.label, modelData.icon)
                         onMiddleActivated:
                             Services.Compositor.closeClient(modelData.windows[0].address)
                     }
