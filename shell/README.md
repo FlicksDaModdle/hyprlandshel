@@ -97,8 +97,13 @@ hand the session over to it — but use the installed launcher, not `qs`
 directly:
 
 ```sh
-~/.config/quickshell/hyprshell/run.sh
+~/.config/quickshell/hyprshell/run.sh             # start it
+~/.config/quickshell/hyprshell/run.sh --restart   # replace a running one
 ```
+
+`hyprctl reload` also brings the shell back if it isn't running: it is
+started from `hyprland.lua`'s body rather than its start hook, so a reload
+re-runs it, and a `pgrep` guard makes that a no-op when it is already up.
 
 It forces `QT_QPA_PLATFORM=wayland` and, if the terminal was started outside
 the Hyprland session, finds the live instance and exports its signature. Both

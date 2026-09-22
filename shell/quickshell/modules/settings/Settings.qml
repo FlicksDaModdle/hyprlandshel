@@ -223,6 +223,20 @@ PanelWindow {
             }
         }
 
+        // Anything that has to float above the rows lives here: dropdown
+        // menus and the colour picker. Inside the window so it moves with it,
+        // but outside the pane's Flickable, which clips — a menu opened on a
+        // row near the bottom was being cut in half by it, and later rows
+        // painted straight over the top of it.
+        Item {
+            id: popupLayer
+            anchors.fill: parent
+            z: 900
+            // Click-through except where a popup actually is; the popups add
+            // their own input handling.
+            enabled: children.length > 0
+        }
+
         // ── sidebar ───────────────────────────────────────────────────────
         Rectangle {
             id: sidebar
@@ -444,6 +458,10 @@ PanelWindow {
                         required property var modelData
                         width: paneColumn.width
                         spec: modelData
+                        // Popups reparent themselves here so they are neither
+                        // clipped by the scrolling pane nor painted over by
+                        // the rows that come after them.
+                        overlay: popupLayer
                     }
                 }
             }

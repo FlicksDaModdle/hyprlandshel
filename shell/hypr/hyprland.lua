@@ -58,19 +58,29 @@ hl.env("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1")
 ---- AUTOSTART ----
 -------------------
 
+-- The shell is started from the config body rather than from the
+-- "hyprland.start" hook, because the body runs on every `hyprctl reload`
+-- too. So a reload brings the shell back if it isn't running — which is
+-- what you want after killing it to try something, and what the hook alone
+-- could not do.
+--
+-- The pgrep guard is what makes that safe: on a reload with the shell
+-- already up, this is a no-op instead of a second instance.
+--
+-- QT_QPA_PLATFORM is forced on this one command rather than left to hl.env
+-- above, because a login shell that pins it (plenty of setups pin it to
+-- "xcb" for legacy Qt apps) wins over the session env and the shell comes
+-- up on X11. On X11 there is no wlr-layer-shell, so every WlrLayershell
+-- attached property fails to build, every surface holding one is "not
+-- ready", and the bar, dock, wallpaper and panel layer are never created.
+-- Setting it here leaves every other Qt app on the session default.
+hl.exec_cmd("sh -c 'pgrep -x qs >/dev/null 2>&1 || "
+    .. "exec env QT_QPA_PLATFORM=wayland qs -c hyprshell'")
+
 hl.on("hyprland.start", function()
-    -- QT_QPA_PLATFORM is forced here rather than left to hl.env above,
-    -- because a login shell that sets it (plenty of setups pin it to "xcb"
-    -- for legacy Qt apps) wins over the session env and the shell comes up
-    -- on X11. On X11 there is no wlr-layer-shell, so every WlrLayershell
-    -- attached property fails to build, every surface component with one is
-    -- "not ready", and the bar, dock, wallpaper and panel layer are simply
-    -- never created. Setting it on this one command leaves every other Qt
-    -- app to the session default above.
-    hl.exec_cmd("env QT_QPA_PLATFORM=wayland qs -c hyprshell")
     -- The shell draws its own lock screen; hypridle just decides when to ask
     -- for it. Safe to drop if hypridle isn't installed.
-    hl.exec_cmd("hypridle")
+    hl.exec_cmd("sh -c 'pgrep -x hypridle >/dev/null 2>&1 || exec hypridle'")
 end)
 
 -----------------------

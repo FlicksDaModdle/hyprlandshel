@@ -40,9 +40,15 @@ Variants {
         readonly property real tooltipRoom: Config.Appearance.dockTooltipRoom
         readonly property real panelBreadth: Config.Appearance.dockPanelBreadth
 
+        // Is this the screen the user is actually on? The launcher is global
+        // state, so without this every dock on every monitor slid out when
+        // the start menu opened — including the one you weren't looking at.
+        readonly property bool onFocusedScreen:
+            Services.Compositor.isFocusedScreen(modelData)
+
         readonly property bool revealed: !Config.Appearance.dockAutoHide
                                          || windowHover.hovered
-                                         || Config.UiState.launcherOpen
+                                         || (Config.UiState.launcherOpen && onFocusedScreen)
 
         // The window's short-axis size only needs to fit the *revealed* pill
         // (tooltip headroom + pill + edge gap). The hidden position falls

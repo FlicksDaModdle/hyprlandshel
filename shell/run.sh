@@ -74,4 +74,16 @@ fi
 
 command -v qs >/dev/null 2>&1 || die "quickshell (qs) is not on PATH."
 
+# --restart replaces a running shell rather than adding a second one, which
+# is the usual reason for running this by hand twice.
+if [ "${1:-}" = "--restart" ]; then
+    shift
+    if pkill -x qs 2>/dev/null; then
+        note "stopped the running shell"
+        # Give the compositor a moment to drop its layer surfaces, or the new
+        # instance races the old one's teardown.
+        sleep 0.4
+    fi
+fi
+
 exec qs -c hyprshell "$@"

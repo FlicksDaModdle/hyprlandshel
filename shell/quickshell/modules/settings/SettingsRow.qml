@@ -19,6 +19,11 @@ Item {
     required property var spec
     property bool showRule: true
 
+    // Where popups (dropdowns, the colour picker) are drawn. They reparent
+    // into it so the pane's clipping and the rows painted after them stop
+    // applying. Null is fine — they fall back to being drawn in place.
+    property Item overlay: null
+
     readonly property bool isHeader: root.spec.type === "header"
 
     implicitWidth: parent ? parent.width : 560
@@ -129,25 +134,20 @@ Item {
                     return Math.round(root.spec.min + v * (root.spec.max - root.spec.min));
                 }
 
-                // Committing on every pixel of travel is what made these
-                // feel stuck: each one wrote theme.json, or — for a device
-                // setting — spawned an hyprctl. Dragging fired hundreds.
-                // The fill follows the pointer live off dragValue; the value
-                // itself is written at most every 80ms, and always once more
-                // on release so the last position is never lost.
-                property int pendingValue: 0
-                onMoved: v => { pendingValue = toSteps(v); throttle.start(); }
-                onReleased: v => {
-                    throttle.stop();
-                    root.spec.set(toSteps(v));
-                }
-
-                Timer {
-                    id: throttle
-                    interval: 80
-                    repeat: false
-                    onTriggered: root.spec.set(slider.pendingValue)
-                }
+                // Committed on release only, and this is not about cost.
+                //
+                // The pane's Repeater is driven by `settings.rows`, which is
+                // a binding that returns a *new array* whenever any value it
+                // reads changes. So writing a value mid-drag rebuilds the
+                // model, the Repeater destroys and recreates every delegate,
+                // and the slider under the pointer is destroyed along with
+                // the mouse grab it was holding. That is the whole reason
+                // these felt stuck: the drag was being cut, repeatedly.
+                //
+                // Throttling only changed how often it happened. The fill
+                // already tracks the pointer through dragValue without any
+                // help from the model, so nothing is lost by waiting.
+                onReleased: v => root.spec.set(toSteps(v))
             }
 
             // Numeric readout, typed into directly.
@@ -248,14 +248,27 @@ Item {
                 TapHandler { onTapped: menuRoot.open = !menuRoot.open }
             }
 
-            // Drawn inside the Settings window, above the rows below it.
+            // Drawn in the window's popup layer rather than here, so the
+            // scrolling pane can't clip it and the rows below can't paint
+            // over it. Its position is mapped from this button each frame,
+            // so it follows the row when the pane scrolls.
             Rectangle {
+                id: menuPopup
+                parent: root.overlay || menuRoot
                 visible: menuRoot.open
                 z: 100
-                anchors.top: parent.bottom
-                anchors.topMargin: 4
-                anchors.right: parent.right
-                width: parent.width
+
+                readonly property point anchorPoint: root.overlay
+                    ? menuRoot.mapToItem(root.overlay, 0, menuRoot.height)
+                    : Qt.point(0, menuRoot.height)
+
+                x: anchorPoint.x
+                // Flips above the button when there isn't room below, which
+                // is what a menu on the last row of the pane needs.
+                y: (root.overlay && anchorPoint.y + height + 8 > root.overlay.height)
+                   ? anchorPoint.y - menuRoot.height - height - 4
+                   : anchorPoint.y + 4
+                width: menuRoot.width
                 height: optionColumn.implicitHeight + 8
                 radius: Config.Appearance.rSm
                 // Opaque, not `sheet`. This popup is drawn inside the
@@ -402,12 +415,31 @@ Item {
                     }
                 }
 
+                // Same treatment as the dropdown: drawn in the window's
+                // popup layer, because the accent row sits near the top of a
+                // scrolling pane that clips, and the picker is tall enough
+                // that its hex field was being cut off entirely.
                 ColorPicker {
                     id: picker
+                    parent: root.overlay || customSwatch
                     z: 200
-                    anchors.top: parent.bottom
-                    anchors.topMargin: 8
-                    anchors.horizontalCenter: parent.horizontalCenter
+
+                    readonly property point anchorPoint: root.overlay
+                        ? customSwatch.mapToItem(root.overlay,
+                                                 customSwatch.width / 2,
+                                                 customSwatch.height)
+                        : Qt.point(customSwatch.width / 2, customSwatch.height)
+
+                    // Kept inside the window on both axes, and flipped above
+                    // the swatch when there isn't room beneath it.
+                    x: root.overlay
+                       ? Math.max(8, Math.min(anchorPoint.x - width / 2,
+                                              root.overlay.width - width - 8))
+                       : -width / 2
+                    y: (root.overlay && anchorPoint.y + height + 8 > root.overlay.height)
+                       ? anchorPoint.y - customSwatch.height - height - 8
+                       : anchorPoint.y + 8
+
                     value: Config.Appearance.customAccent
                     onPicked: c => {
                         Config.Appearance.customAccent = c;
