@@ -254,15 +254,30 @@ Singleton {
 
     // Running KDE apps re-read kdeglobals when it changes, so this lands
     // without restarting Dolphin.
+    // Two independent decisions land in this one file: the palette, from
+    // "Theme KDE applications", and which style draws the widgets, from
+    // "Kvantum widget theme". They used to be tied together — the style key
+    // was only written on the way through the palette writer — so turning on
+    // Kvantum by itself generated a theme, selected it in kvantum.kvconfig,
+    // and never told Qt to use it. Dolphin carried on in Breeze, and the
+    // setting looked like it simply did not work.
     function applyKde() {
-        if (!Config.Appearance.themeQtApps) return;
         const existing = kdeColors.text() || "";
-        const kept = keepForeign(existing);
-        const wanted = kdeWanted.replace("[General]\nColorScheme=Hyprshell\nName=Hyprshell\n",
-                                         "[General]\nColorScheme=Hyprshell\nName=Hyprshell\n"
-                                         + (kept.general.length ? kept.general.join("\n") + "\n" : ""))
-                     + (root.withWidgetStyle(kept.rest) !== ""
-                        ? "\n" + root.withWidgetStyle(kept.rest) + "\n" : "");
+        let wanted;
+
+        if (Config.Appearance.themeQtApps) {
+            const kept = keepForeign(existing);
+            wanted = kdeWanted.replace("[General]\nColorScheme=Hyprshell\nName=Hyprshell\n",
+                                       "[General]\nColorScheme=Hyprshell\nName=Hyprshell\n"
+                                       + (kept.general.length ? kept.general.join("\n") + "\n" : ""))
+                   + (root.withWidgetStyle(kept.rest) !== ""
+                      ? "\n" + root.withWidgetStyle(kept.rest) + "\n" : "");
+        } else {
+            // The colours are not ours to write, so the file is passed
+            // through untouched apart from the one key that names the style.
+            wanted = root.withWidgetStyle(existing);
+        }
+
         if (existing === wanted) return;
         kdeColors.setText(wanted);
     }

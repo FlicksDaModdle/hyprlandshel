@@ -229,6 +229,17 @@ need kitty         optional "the themed terminal"        kitty kitty kitty kitty
 # The style plugin is what actually draws; kvantummanager only comes with it
 # and is the thing that is reliably on PATH to look for.
 need kvantummanager optional "Kvantum widget theme"        kvantum qt6-style-kvantum kvantum kvantum-qt6
+
+# Which Qt the style plugin was built for decides whether it reaches anything.
+# Debian and Ubuntu split them, and the Qt6 package does not exist on older
+# releases — Ubuntu 24.04 ships qt5-style-kvantum only — so say so rather
+# than printing an install line that cannot succeed.
+if command -v kvantummanager >/dev/null 2>&1 && [ "$DISTRO" = debian ]; then
+    if ! ls /usr/lib/*/qt6/plugins/styles/libkvantum.so >/dev/null 2>&1; then
+        warn "kvantum (Qt6)" "only the Qt5 plugin is installed; Qt6 apps ignore it"
+        printf '      Install qt6-style-kvantum if your release has it.\n'
+    fi
+fi
 need hypridle      optional "idle timeout to lock"       hypridle "" "" ""
 need loginctl      optional "suspend, reboot, power off" systemd systemd systemd systemd
 

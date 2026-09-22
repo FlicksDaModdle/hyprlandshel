@@ -55,8 +55,13 @@ Singleton {
     // edges carrying the border, and an interior. Kvantum stretches each
     // piece into its side of the widget, so the corner size is the radius
     // and the edge thickness is the frame width in the .kvconfig.
-    function slice(name, x, y, fill, border, radius) {
+    // `under` is optional: an accent rule along the bottom edge. It is how
+    // the design marks a selected thing — a quiet fill with a line under
+    // it — rather than filling the whole row with accent, which is what
+    // every state did before and which reads as a warning, not a selection.
+    function slice(name, x, y, fill, border, radius, under) {
         const R = radius, S = 24, F = R;
+        const U = under || "";
         const out = [];
         function rect(id, rx, ry, w, h, f) {
             out.push('<rect id="' + id + '" x="' + (x + rx) + '" y="' + (y + ry)
@@ -68,6 +73,12 @@ Singleton {
         function corner(id, cx, cy, sweep, dx, dy) {
             // A quarter disc in the fill, with the arc stroked as the border.
             const px = x + cx, py = y + cy;
+            // The rule carries on under the two bottom corners, or it would
+            // stop short of them and look like a mistake.
+            const bar = (U !== "" && dy < 0)
+                ? '<rect x="' + (dx > 0 ? px : px - R) + '" y="' + (py - 2)
+                  + '" width="' + R + '" height="2" fill="' + U + '"/>'
+                : "";
             out.push('<g id="' + id + '">'
                      + '<path d="M' + px + ',' + (py + dy * R) + ' A' + R + ',' + R
                      + ' 0 0 ' + sweep + ' ' + (px + dx * R) + ',' + py
@@ -75,6 +86,7 @@ Singleton {
                      + '<path d="M' + px + ',' + (py + dy * R) + ' A' + R + ',' + R
                      + ' 0 0 ' + sweep + ' ' + (px + dx * R) + ',' + py
                      + '" fill="none" stroke="' + border + '" stroke-width="1"/>'
+                     + bar
                      + '</g>');
         }
         // corners: the arc always runs from the vertical edge to the
@@ -89,17 +101,21 @@ Singleton {
         // Both inside one group, because Kvantum draws the element with that
         // id and nothing else — a border kept as a sibling rect would never
         // be rendered at all.
-        function edge(id, rx, ry, w, h, lx, ly, lw, lh) {
+        function edge(id, rx, ry, w, h, lx, ly, lw, lh, isBottom) {
+            const rule = (U !== "" && isBottom)
+                ? '<rect x="' + (x + lx) + '" y="' + (y + F + S + F - 2) + '" width="' + lw
+                  + '" height="2" fill="' + U + '"/>'
+                : (border === "none" ? ""
+                   : '<rect x="' + (x + lx) + '" y="' + (y + ly) + '" width="' + lw
+                     + '" height="' + lh + '" fill="' + border + '"/>');
             out.push('<g id="' + id + '">'
                      + '<rect x="' + (x + rx) + '" y="' + (y + ry) + '" width="' + w
                      + '" height="' + h + '" fill="' + fill + '"/>'
-                     + (border === "none" ? ""
-                        : '<rect x="' + (x + lx) + '" y="' + (y + ly) + '" width="' + lw
-                          + '" height="' + lh + '" fill="' + border + '"/>')
+                     + rule
                      + '</g>');
         }
         edge(name + "-top", F, 0, S, F, F, 0, S, 1);
-        edge(name + "-bottom", F, F + S, S, F, F, F + S + F - 1, S, 1);
+        edge(name + "-bottom", F, F + S, S, F, F, F + S + F - 1, S, 1, true);
         edge(name + "-left", 0, F, F, S, 0, F, 1, S);
         edge(name + "-right", F + S, F, F, S, F + S + F - 1, F, 1, S);
 
@@ -125,6 +141,43 @@ Singleton {
         else d = "M" + (cx - 2) + "," + (cy - 4) + " L" + (cx + 3) + "," + cy + " L" + (cx - 2) + "," + (cy + 4);
         return '<path id="' + name + '" d="' + d + '" fill="none" stroke="' + color
              + '" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>';
+    }
+
+    // A check box or a radio, whole, in one element.
+    //
+    // Kvantum draws these from the *interior* element plus a state suffix —
+    // `checkbox-checked-normal`, not the indicator named in the .kvconfig —
+    // and it draws that one id into the whole indicator rect. So the box and
+    // the mark inside it have to be the same element, and every suffix it
+    // can ask for has to exist, or it falls through to its own default SVG
+    // and one control comes out in somebody else's colours.
+    function markBox(id, x, y, fill, border, radius, mark) {
+        return '<g id="' + id + '">'
+             + '<rect x="' + (x + 4) + '" y="' + (y + 4) + '" width="16" height="16"'
+             + ' rx="' + radius + '" ry="' + radius + '" fill="' + fill + '"'
+             + ' stroke="' + border + '" stroke-width="1"/>'
+             + (mark || "")
+             + '</g>';
+    }
+
+    // The mark itself, positioned for markBox's 16×16 interior.
+    function tickPath(x, y, color) {
+        const cx = x + 12, cy = y + 12;
+        return '<path d="M' + (cx - 3.5) + ',' + cy
+             + ' L' + (cx - 1) + ',' + (cy + 2.5)
+             + ' L' + (cx + 3.5) + ',' + (cy - 2.5)
+             + '" fill="none" stroke="' + color
+             + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+    }
+
+    function dashPath(x, y, color) {
+        return '<rect x="' + (x + 8) + '" y="' + (y + 11) + '" width="8" height="2"'
+             + ' rx="1" fill="' + color + '"/>';
+    }
+
+    function dotMark(x, y, color) {
+        return '<circle cx="' + (x + 12) + '" cy="' + (y + 12) + '" r="3.5" fill="'
+             + color + '"/>';
     }
 
     function tick(name, x, y, color) {
@@ -168,6 +221,17 @@ Singleton {
             parts.push(root.slice(name + "-normal-inactive", 480, row * 56, fill, line, radius));
             row++;
         }
+        // Selected things: the design marks them with a quiet fill and an
+        // accent rule underneath — see the selected tile and the selected
+        // sidebar row in the concept — not with a block of accent.
+        function marked(name, fill, hiFill, selFill, border, radius) {
+            parts.push(root.slice(name + "-normal", 0, row * 56, fill, border, radius));
+            parts.push(root.slice(name + "-focused", 120, row * 56, hiFill, border, radius));
+            parts.push(root.slice(name + "-pressed", 240, row * 56, selFill, border, radius, accent));
+            parts.push(root.slice(name + "-toggled", 360, row * 56, selFill, border, radius, accent));
+            parts.push(root.slice(name + "-normal-inactive", 480, row * 56, fill, border, radius));
+            row++;
+        }
         // Containers: one state is the whole story.
         function plain(name, fill, border, radius) {
             parts.push(root.slice(name + "-normal", 0, row * 56, fill, border, radius));
@@ -177,13 +241,13 @@ Singleton {
         states("button", btn, btnHi, btnHi, 6);
         states("lineedit", ground, ground, ground, 6);
         states("combo", btn, btnHi, btnHi, 6);
-        states("tab", surface, btn, btn, 6);
-        states("checkbox", ground, ground, accent, 4);
-        states("radio", ground, ground, accent, 8);
+        marked("tab", surface, btn, btn, line, 6);
+        // Checks and radios are not nine-slices: Kvantum paints one element
+        // into the indicator rect, so each state is drawn whole below.
         states("scrollbarslider", root.hex(root.over(A.sel, A.ground)),
                root.hex(A.ink3), root.hex(A.ink3), 5);
         states("sliderhandle", accent, accent, accent, 8);
-        states("itemview", "none", "none", btnHi, 5);
+        marked("itemview", "none", btn, btnHi, "none", 5);
 
         plain("common", surface, line, 6);
         plain("toolbar", ground, line, 0);
@@ -203,6 +267,33 @@ Singleton {
         plain("focus", "none", accent, 6);
         plain("tfocus", "none", accent, 6);
 
+        // Check boxes and radios, every suffix Kvantum can ask for.
+        // `-inactive` is left out on purpose: the renderer strips it and
+        // retries, so the active element covers it.
+        const cy0 = row * 56;
+        let cx0 = 0;
+        function control(base, radius, mark) {
+            function one(suffix, fill, border, m) {
+                parts.push(root.markBox(base + suffix, cx0, cy0, fill, border, radius, m));
+                cx0 += 24;
+            }
+            one("-normal", ground, line, "");
+            one("-focused", ground, accent, "");
+            one("-pressed", ground, accent, "");
+            one("-checked-normal", accent, accent, mark(cx0, cy0, onAccent));
+            one("-checked-focused", accent, accent, mark(cx0, cy0, onAccent));
+            one("-checked-pressed", accent, accent, mark(cx0, cy0, onAccent));
+        }
+        control("checkbox", 4, (x, y, c) => root.tickPath(x, y, c));
+        control("radio", 8, (x, y, c) => root.dotMark(x, y, c));
+        // The third check state, which Qt calls partially checked.
+        parts.push(root.markBox("checkbox-tristate-normal", cx0, cy0, accent, accent, 4,
+                                root.dashPath(cx0, cy0, onAccent)));
+        cx0 += 24;
+        parts.push(root.markBox("checkbox-tristate-focused", cx0, cy0, accent, accent, 4,
+                                root.dashPath(cx0, cy0, onAccent)));
+        row++;
+
         // Indicators. -normal covers the rest by Kvantum's own fallback.
         const iy = row * 56;
         let ix = 0;
@@ -217,9 +308,6 @@ Singleton {
         ind((x, y) => root.arrow("b-arrow-right-normal", x, y, "right", ink));
         ind((x, y) => root.arrow("s-arrow-down-normal", x, y, "down", ink2));
         ind((x, y) => root.arrow("s-arrow-up-normal", x, y, "up", ink2));
-        ind((x, y) => root.tick("check-checked-normal", x, y, accent));
-        ind((x, y) => root.tick("check-tristate-normal", x, y, ink3));
-        ind((x, y) => root.dot("radio-checked-normal", x, y, accent));
 
         // Kvantum also asks for the bare element with no direction — the
         // "there is more this way" mark on a menu item or a combo — and for
@@ -228,10 +316,6 @@ Singleton {
         ind((x, y) => root.arrow("arrow-normal", x, y, "right", ink2));
         ind((x, y) => root.arrow("b-arrow-normal", x, y, "down", ink));
         ind((x, y) => root.arrow("s-arrow-normal", x, y, "down", ink2));
-        ind((x, y) => '<g id="check-unchecked-normal"><rect x="' + x + '" y="' + y
-                      + '" width="16" height="16" fill="none"/></g>');
-        ind((x, y) => '<g id="radio-unchecked-normal"><rect x="' + x + '" y="' + y
-                      + '" width="16" height="16" fill="none"/></g>');
         ind((x, y) => '<g id="splitter-normal"><rect x="' + (x + 7) + '" y="' + (y + 4)
                       + '" width="2" height="8" rx="1" fill="' + ink3 + '"/></g>');
         ind((x, y) => '<g id="resize-grip-normal">'
@@ -358,12 +442,12 @@ Singleton {
                      + "text.bold=true\n")
              + group("IndicatorSpinBox", "inherits=PanelButtonCommand\n"
                      + "indicator.element=s-arrow\nindicator.size=10\n")
+             // The mark is part of the interior element (see markBox), so
+             // there is no separate indicator to name here.
              + group("RadioButton", "inherits=PanelButtonCommand\nframe=false\n"
-                     + "interior.element=radio\nindicator.element=radio-checked\n"
-                     + "indicator.size=16\n")
+                     + "interior.element=radio\nindicator.size=16\n")
              + group("CheckBox", "inherits=PanelButtonCommand\nframe=false\n"
-                     + "interior.element=checkbox\nindicator.element=check\n"
-                     + "indicator.size=16\n")
+                     + "interior.element=checkbox\nindicator.size=16\n")
              + group("GenericFrame", "inherits=PanelButtonCommand\n"
                      + "frame=true\ninterior=false\n"
                      + "frame.element=common\ninterior.element=common\n"
@@ -380,7 +464,11 @@ Singleton {
              + group("ToolboxTab", "inherits=PanelButtonCommand\n")
              + group("Tab", "inherits=PanelButtonCommand\n" + framed("tab", 6)
                      + "text.margin.left=8\ntext.margin.right=8\n"
-                     + "text.margin.top=4\ntext.margin.bottom=4\n")
+                     + "text.margin.top=4\ntext.margin.bottom=4\n"
+                     // Same as ItemView: the selected tab is marked by the
+                     // rule beneath it, not by an accent fill.
+                     + "text.press.color=" + ink + "\n"
+                     + "text.toggle.color=" + ink + "\n")
              + group("TabFrame", "inherits=PanelButtonCommand\n" + framed("tabframe", 6))
              + group("TreeExpander", "indicator.element=arrow\nindicator.size=10\n")
              + group("HeaderSection", "inherits=PanelButtonCommand\n"
@@ -397,12 +485,16 @@ Singleton {
                      + "text.normal.color=" + ink2 + "\ntext.bold=false\n")
              + group("ProgressbarContents", "inherits=PanelButtonCommand\n"
                      + framed("progress", 5))
+             // A selected row is a quiet fill with an accent rule under it,
+             // so its label stays the ordinary foreground. The inherited
+             // colour here is the one for an accent-filled button, and on
+             // this fill it would be white text on near-black.
              + group("ItemView", "inherits=PanelButtonCommand\n"
                      + framed("itemview", 5)
                      + "text.normal.color=" + ink + "\n"
                      + "text.focus.color=" + ink + "\n"
-                     + "text.press.color=" + onAccent + "\n"
-                     + "text.toggle.color=" + onAccent + "\n")
+                     + "text.press.color=" + ink + "\n"
+                     + "text.toggle.color=" + ink + "\n")
              + group("Splitter", "indicator.element=splitter\nindicator.size=16\n")
              + group("Scrollbar", "inherits=PanelButtonCommand\n"
                      + "indicator.element=arrow\nindicator.size=10\n")

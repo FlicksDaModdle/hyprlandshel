@@ -518,8 +518,15 @@ the layer where a button's radius, a hairline border or a flat toolbar is
 decided. Settings → Appearance → **Kvantum widget theme** generates one from
 whatever theme the shell is currently wearing and selects it.
 
-It needs the `kvantum` package (`qt6-style-kvantum` on Debian/Ubuntu). The
-installer reports whether it's there.
+It needs the `kvantum` package (`qt6-style-kvantum` on Debian and Ubuntu,
+where older releases such as 24.04 carry only the Qt5 build, which Qt6
+applications ignore). The installer reports whether it's there, and whether
+the build you have matches the Qt your applications use.
+
+It stands on its own: turning it on writes `widgetStyle=kvantum` into
+`kdeglobals` whether or not "Theme KDE applications" is also on. Turning both
+on is still the better pairing — Kvantum draws the widgets, the palette gives
+it the colours to draw them in.
 
 What gets written, all under `~/.config/Kvantum/`:
 
@@ -532,13 +539,22 @@ this style. Turning the setting back off removes that key again, so "off"
 means off rather than a theme that is still selected. If you had set
 `widgetStyle` to something else by hand, that value is left alone.
 
-The SVG is generated, not hand-drawn. Each element is a nine-slice: four
+The SVG is generated, not hand-drawn. Most elements are a nine-slice: four
 corner arcs, four edges and an interior, so a widget of any size keeps a
 1px border and the shell's corner radius. Buttons, entries, combo boxes,
-tabs, checkboxes, radios, scrollbars, sliders and item views each get the
-five states Kvantum asks for (normal, focused, pressed, toggled, inactive);
-frames, menus, tooltips, headers and progress bars get one. Arrows, ticks
-and the drag-handle dots are drawn in the accent or the foreground colour.
+scrollbars and sliders each get the five states Kvantum asks for (normal,
+focused, pressed, toggled, inactive); frames, menus, tooltips, headers and
+progress bars get one.
+
+A selected row or tab is marked the way the design marks it — a quiet fill
+with an accent rule underneath — rather than by filling it with accent,
+which reads as a warning rather than a selection.
+
+Check boxes and radios are the exception to the nine-slice, because Kvantum
+draws them from a single element painted into the whole indicator rect, and
+from the *interior* element's name rather than the indicator's: it asks for
+`checkbox-checked-normal`, not for whatever `indicator.element` says. So each
+state of each control is drawn whole, box and mark together.
 
 It regenerates whenever the palette does — switch light to dark and both
 files are rewritten. **Applications pick it up when they next start**, not
