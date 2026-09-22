@@ -269,6 +269,19 @@ so editing that one line by hand works standalone. A reinstall never resets
 your choice — `install.sh` backs up an existing `kitty.conf` but leaves
 `hyprshell-colors.conf` alone.
 
+**Keybinds are editable.** Settings → Shell → Keybinds lists every shortcut
+the shell owns; click one and press the keys you want. Escape cancels,
+Backspace restores the default.
+
+The shell never rewrites `hyprland.lua` — that file is hand-written, carries
+comments and logic, and regenerating it would throw all of that away the
+first time you changed a shortcut. Instead the shell owns
+`~/.config/hypr/binds.lua`, which `hyprland.lua` reads at the very end of its
+own run, so anything in it replaces the default bound above without touching
+it. Delete that file to go back to the defaults. Only the shortcuts you
+actually change are stored, so the defaults can move without stranding you on
+an old value.
+
 **Lock screen.** A Wayland session-lock surface authenticating against PAM.
 The compositor guarantees nothing behind it is visible and nothing else takes
 input while it's up.

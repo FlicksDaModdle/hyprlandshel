@@ -275,8 +275,17 @@ PanelWindow {
         id: panel
 
         width: launcher.panelWidth
-        // Tall enough for its content, but never past the height you set.
-        height: Math.min(launcher.panelHeight, body.implicitHeight)
+        // The height you set, not "whatever the content happens to need".
+        //
+        // This used to be min(setting, content), which meant the slider did
+        // nothing whenever the content was shorter — which it almost always
+        // is. Raising it looked broken because it was: the panel was already
+        // as tall as its contents and the setting only ever capped it.
+        //
+        // Clamped to the screen so a large value can't push it off the top.
+        height: Math.max(body.implicitHeight,
+                         Math.min(launcher.panelHeight,
+                                  launcher.height - launcher.dockOffset - 24))
 
         // Anchored to the dock's Start tile: above it when the dock is at
         // the bottom, beside it when the dock is on the left. Clamped so it
@@ -784,7 +793,12 @@ PanelWindow {
                     id: results
                     x: 8
                     width: parent.width - 16
-                    height: Math.min(356, Math.max(64, contentHeight))
+                    // Grows with the panel: a taller launcher should show more
+                    // results, not the same nine with empty space under them.
+                    // 356 was a fixed cap that made the height setting look
+                    // like it did nothing while searching.
+                    height: Math.min(Math.max(140, launcher.panelHeight - 204),
+                                     Math.max(64, contentHeight))
                     clip: true
                     spacing: 1
                     boundsBehavior: Flickable.StopAtBounds

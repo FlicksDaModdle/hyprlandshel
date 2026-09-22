@@ -92,6 +92,11 @@ Singleton {
             // hyprland.lua says on every launch.
             property string displays: ""
 
+            // key → accelerator, for shortcuts changed from their default.
+            // Only overrides are stored, so the defaults can move without
+            // stranding anyone on an old value.
+            property string keybinds: ""
+
             // Typography
             property int fontScale: 100               // 75-150 %
             property int barFontSize: 12              // 10-18 px
@@ -185,6 +190,7 @@ Singleton {
     property alias tapButtonMap: prefs.tapButtonMap
     property alias middleEmulation: prefs.middleEmulation
     property alias displays: prefs.displays
+    property alias keybinds: prefs.keybinds
 
     // ── typography ────────────────────────────────────────────────────────
     property alias fontScale: prefs.fontScale

@@ -23,10 +23,29 @@ import "../icons"
 // Every row acts on the live system and, where it's a shell preference,
 // persists to theme.json immediately. There's no Apply button because there's
 // nothing to apply: the shell repaints as you drag.
+// One surface per monitor, of which exactly one is mapped.
+//
+// This was a single PanelWindow with no `screen`, so the compositor put it
+// on one output and there it stayed — there was no second surface for it to
+// move onto, which is why it could not be dragged to another display.
+// Now every screen has one, `settingsScreen` decides which is live, and
+// dragging past an edge hands the window to the neighbour.
+Variants {
+    model: Quickshell.screens
+
 PanelWindow {
     id: settings
+    required property var modelData
 
-    visible: Config.UiState.settingsOpen
+    screen: modelData ?? null
+
+    // "" means follow the focused monitor, which is what a freshly opened
+    // window should do; once dragged across, it stays where it was put.
+    readonly property bool isMine: Config.UiState.settingsScreen === ""
+        ? Services.Compositor.isFocusedScreen(modelData)
+        : (modelData && modelData.name === Config.UiState.settingsScreen)
+
+    visible: Config.UiState.settingsOpen && isMine
     color: "transparent"
     exclusiveZone: 0
 
@@ -42,6 +61,40 @@ PanelWindow {
 
     // Only the window itself takes input; the rest of the desktop stays live.
     mask: Region { item: frame }
+
+    // Dragging past a screen edge hands the window to the monitor next door.
+    //
+    // Each surface only covers its own output, so x is always screen-local:
+    // crossing the boundary means switching which surface is mapped and
+    // re-entering from the opposite side, not letting x run past the width.
+    function moveTo(x, y) {
+        const mons = Services.Compositor.monitors || [];
+        const here = modelData ? modelData.name : "";
+
+        if (mons.length > 1 && frame) {
+            // Ordered left to right by their real position in the layout.
+            const ordered = mons.slice().sort((a, b) => a.x - b.x);
+            const at = ordered.findIndex(m => m.name === here);
+
+            if (x + frame.width > settings.width + 8 && at >= 0 && at < ordered.length - 1) {
+                Config.UiState.settingsScreen = ordered[at + 1].name;
+                // Re-enter just inside the left edge of the new screen.
+                Config.UiState.settingsX = 8;
+                Config.UiState.settingsY = y;
+                return;
+            }
+            if (x < -8 && at > 0) {
+                Config.UiState.settingsScreen = ordered[at - 1].name;
+                Config.UiState.settingsX = Math.max(
+                    8, (ordered[at - 1].width || settings.width) - frame.width - 8);
+                Config.UiState.settingsY = y;
+                return;
+            }
+        }
+
+        Config.UiState.settingsX = x;
+        Config.UiState.settingsY = y;
+    }
 
     readonly property string pane: Config.UiState.settingsPane
     readonly property bool maximised: Config.UiState.settingsMaximized
@@ -129,8 +182,8 @@ PanelWindow {
                 onPositionChanged: mouse => {
                     if (!pressed || settings.maximised) return;
                     const p = mapToItem(null, mouse.x, mouse.y);
-                    Config.UiState.settingsX = Math.round(p.x - pressX);
-                    Config.UiState.settingsY = Math.round(p.y - pressY);
+                    settings.moveTo(Math.round(p.x - pressX),
+                                    Math.round(p.y - pressY));
                 }
                 onDoubleClicked: Config.UiState.settingsMaximized = !settings.maximised
             }
@@ -417,60 +470,8 @@ PanelWindow {
                     bottomPadding: 12
                 }
 
-                // Keybinds is a reference table rather than a list of controls.
-                Column {
-                    visible: settings.pane === "Keybinds"
-                    width: parent.width
-                    spacing: 1
-
-                    Repeater {
-                        model: settings.keybinds
-
-                        Item {
-                            id: bind
-                            required property var modelData
-                            width: paneColumn.width
-                            height: 42
-
-                            Rectangle {
-                                anchors.top: parent.top
-                                width: parent.width
-                                height: 1
-                                color: Config.Appearance.rule
-                            }
-
-                            StyledText {
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: bind.modelData.n
-                                font.pixelSize: Config.Appearance.fs(13)
-                            }
-
-                            Rectangle {
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: keyLabel.implicitWidth + 20
-                                height: 26
-                                radius: Config.Appearance.rSm
-                                color: Config.Appearance.hover
-                                border.width: 1
-                                border.color: Config.Appearance.rule
-
-                                StyledText {
-                                    id: keyLabel
-                                    anchors.centerIn: parent
-                                    text: bind.modelData.k
-                                    font.pixelSize: Config.Appearance.fs(12)
-                                    font.weight: Font.DemiBold
-                                    color: Config.Appearance.ink2
-                                }
-                            }
-                        }
-                    }
-                }
-
                 Repeater {
-                    model: settings.pane === "Keybinds" ? [] : settings.rows
+                    model: settings.rows
                     SettingsRow {
                         required property var modelData
                         width: paneColumn.width
@@ -627,6 +628,38 @@ PanelWindow {
               type: "slider", min: 7, max: 22, unit: "px", value: A.launcherMetaSize,
               set: v => A.launcherMetaSize = v }
         ];
+
+        case "Keybinds": {
+            const rows = [{
+                type: "header", n: "Shell",
+                s: "Click a shortcut and press the keys you want. Escape cancels, "
+                   + "Backspace restores the default."
+            }];
+            const list = Services.Keybinds.actions;
+            for (let i = 0; i < list.length; i++) {
+                const a = list[i];
+                if (i === 10) rows.push({ type: "header", n: "Applications", s: "" });
+                if (i === 13) rows.push({ type: "header", n: "Windows", s: "" });
+                rows.push({
+                    n: a.n,
+                    s: Services.Keybinds.isCustom(a.key)
+                       ? "Changed from " + a.def : "Default",
+                    type: "keybind",
+                    value: Services.Keybinds.accelFor(a.key),
+                    set: v => Services.Keybinds.setAccel(a.key, v)
+                });
+            }
+            rows.push({ type: "header", n: "The generated file", s: "" });
+            rows.push({
+                n: "Where these are written",
+                s: "hyprland.lua reads it last, so these replace the defaults "
+                   + "without the shell ever rewriting your own config",
+                type: "info", value: "hypr/binds.lua" });
+            rows.push({ n: "Reset all shortcuts", s: "Back to the defaults this shell ships",
+                type: "action", label: "Reset",
+                set: () => Services.Keybinds.resetAll() });
+            return rows;
+        }
 
         case "Fonts": return [
             { type: "header", n: "Scale",
@@ -1247,4 +1280,5 @@ PanelWindow {
             + " || kdialog --getopenfilename \"$HOME/Pictures\" 2>/dev/null); "
             + "[ -n \"$f\" ] && qs -c hyprshell ipc call shell setWallpaper \"$f\""]);
     }
+}
 }

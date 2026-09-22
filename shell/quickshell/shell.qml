@@ -32,6 +32,10 @@ ShellRoot {
     // everything that isn't in hyprland.lua each time it launches.
     readonly property bool devicesRestored: Services.Devices.applied
 
+    // Same again: Keybinds owns the generated binds.lua and is only reached
+    // from the Settings pane, which may never be opened.
+    readonly property int shortcutCount: Services.Keybinds.actions.length
+
     // ── surfaces ──────────────────────────────────────────────────────────
     // Ordered background to foreground, though each one sets its own
     // layer-shell layer and the compositor does the actual stacking.

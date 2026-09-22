@@ -45,6 +45,10 @@ Singleton {
     // The Settings window draws its own chrome on a shell surface, so its
     // geometry lives here rather than with the compositor. -1 means "centre
     // me"; kept across a minimise so reopening restores it where you left it.
+    // Which monitor the Settings window is on. Empty means "wherever the
+    // focus is"; dragging it past a screen edge sets it explicitly.
+    property string settingsScreen: ""
+
     property real settingsX: -1
     property real settingsY: -1
     property bool settingsMaximized: false
@@ -143,6 +147,9 @@ Singleton {
     function openSettings(pane) {
         closeAll();
         if (pane) settingsPane = pane;
+        // Opens on whichever monitor you are on, unless it is already open
+        // somewhere — then it stays put rather than jumping to you.
+        if (!settingsOpen) settingsScreen = "";
         settingsOpen = true;
     }
 

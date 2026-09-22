@@ -252,9 +252,20 @@ local function chord(dispatcher)
     end
 end
 
--- Press: a fresh tap begins. No mask, because the modifier is the key here.
-hl.bind("SUPER_L", function() superUsed = false end)
+-- Two ways in, because the tap is the unreliable one.
+--
+-- SUPER + SPACE always works: an ordinary chord, nothing clever. If the tap
+-- below does nothing on your build, this is the shortcut, and Settings →
+-- Keybinds can move it anywhere you like.
+hl.bind("SUPER + SPACE", chord(hl.dsp.exec_cmd(shell("toggleLauncher"))))
 
+-- The bare tap. Hyprland has no tap bind, so this is the release of the
+-- modifier, suppressed when the chord was used for something.
+--
+-- There is deliberately no press bind on SUPER_L: binding a bare modifier's
+-- press risks swallowing it as a modifier entirely, which would take every
+-- Super shortcut with it. Resetting the flag at the end of the release
+-- handler does the same job with nothing at stake.
 hl.bind("SUPER + SUPER_L", function()
     if not superUsed then
         hl.dispatch(hl.dsp.exec_cmd(shell("toggleLauncher")))
@@ -340,3 +351,29 @@ hl.window_rule({
     match = { class = "^(org.pulseaudio.pavucontrol|pavucontrol)$" },
     float = true,
 })
+
+-------------------------------------
+---- SHELL-MANAGED KEYBINDS (last) ---
+-------------------------------------
+-- Settings → Keybinds writes ~/.config/hypr/binds.lua and reloads. It is
+-- read here, at the very end, so anything it defines replaces the default
+-- bound above rather than the other way round.
+--
+-- Nothing in this file is ever rewritten by the shell: your comments and
+-- your own binds stay exactly as you left them. Delete binds.lua to go back
+-- to the defaults above.
+--
+-- pcall, because a missing file is the normal case on a fresh install and
+-- should not take the whole config down with it.
+do
+    local home = os.getenv("HOME") or ""
+    local generated = home .. "/.config/hypr/binds.lua"
+    local f = io.open(generated, "r")
+    if f then
+        f:close()
+        local ok, err = pcall(dofile, generated)
+        if not ok then
+            print("hyprshell: binds.lua failed to load: " .. tostring(err))
+        end
+    end
+end

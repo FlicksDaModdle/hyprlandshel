@@ -91,6 +91,13 @@ Singleton {
         save(next);
     }
 
+    // The command behind a pinned slot, as one shell word list joined for
+    // Lua. Used by the keybind generator, which has to put it in a string.
+    function execFor(key) {
+        const e = pinned.find(x => x.key === key);
+        return (e && e.exec && e.exec.length > 0) ? e.exec.join(" ") : "";
+    }
+
     function resetPinned() { Config.Appearance.dockPinned = ""; }
 
     readonly property var defaultPinned: [

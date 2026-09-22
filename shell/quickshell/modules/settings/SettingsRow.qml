@@ -92,6 +92,7 @@ Item {
                 case "swatch": return swatchComponent;
                 case "meter":  return meterComponent;
                 case "action": return actionComponent;
+                case "keybind": return keybindComponent;
                 default:       return infoComponent;
                 }
             }
@@ -99,6 +100,111 @@ Item {
     }
 
     // ── controls ──────────────────────────────────────────────────────────
+
+    // Records the next chord you press. There is no portable way to ask a
+    // compositor for a key name, so this builds Hyprland's own spelling from
+    // the Qt event: modifiers in its order, then the key.
+    Component {
+        id: keybindComponent
+
+        Rectangle {
+            id: capture
+            property bool listening: false
+
+            width: 196
+            height: 30
+            radius: Config.Appearance.rSm
+            color: listening ? Config.Appearance.accent
+                             : (capHover.hovered ? Config.Appearance.sel
+                                                 : Config.Appearance.hover)
+            border.width: 1
+            border.color: listening ? Config.Appearance.accent : Config.Appearance.rule
+
+            StyledText {
+                anchors.centerIn: parent
+                width: parent.width - 16
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+                text: capture.listening ? "Press a shortcut…" : (root.spec.value || "unset")
+                font.pixelSize: Config.Appearance.fs(12)
+                font.weight: Font.DemiBold
+                font.family: capture.listening ? Config.Appearance.fontFamily
+                                               : Config.Appearance.monoFamily
+                color: capture.listening ? Config.Appearance.onAccent : Config.Appearance.ink
+            }
+
+            HoverHandler { id: capHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler {
+                onTapped: { capture.listening = !capture.listening; if (capture.listening) capture.forceActiveFocus(); }
+            }
+
+            focus: capture.listening
+            Keys.onPressed: event => {
+                if (!capture.listening) return;
+                event.accepted = true;
+
+                if (event.key === Qt.Key_Escape) { capture.listening = false; return; }
+                // Backspace clears back to the default rather than binding it.
+                if (event.key === Qt.Key_Backspace) {
+                    capture.listening = false;
+                    root.spec.set("");
+                    return;
+                }
+                // A modifier on its own is not a shortcut — wait for the key.
+                if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R
+                    || event.key === Qt.Key_Shift || event.key === Qt.Key_Control
+                    || event.key === Qt.Key_Alt || event.key === Qt.Key_Meta) return;
+
+                const parts = [];
+                if (event.modifiers & Qt.MetaModifier) parts.push("SUPER");
+                if (event.modifiers & Qt.ControlModifier) parts.push("CTRL");
+                if (event.modifiers & Qt.AltModifier) parts.push("ALT");
+                if (event.modifiers & Qt.ShiftModifier) parts.push("SHIFT");
+                parts.push(root.hyprKeyName(event));
+                capture.listening = false;
+                root.spec.set(parts.join(" + "));
+            }
+        }
+    }
+
+    // Qt key → the name Hyprland expects. Letters and digits are themselves;
+    // the rest are xkb keysym names, which is what Hyprland parses.
+    function hyprKeyName(event) {
+        const k = event.key;
+        if (k >= Qt.Key_A && k <= Qt.Key_Z) return String.fromCharCode(k);
+        if (k >= Qt.Key_0 && k <= Qt.Key_9) return String.fromCharCode(k);
+        if (k >= Qt.Key_F1 && k <= Qt.Key_F12) return "F" + (k - Qt.Key_F1 + 1);
+        switch (k) {
+        case Qt.Key_Space:     return "SPACE";
+        case Qt.Key_Return:
+        case Qt.Key_Enter:     return "Return";
+        case Qt.Key_Tab:       return "Tab";
+        case Qt.Key_Comma:     return "comma";
+        case Qt.Key_Period:    return "period";
+        case Qt.Key_Slash:     return "slash";
+        case Qt.Key_Semicolon: return "semicolon";
+        case Qt.Key_Apostrophe:return "apostrophe";
+        case Qt.Key_BracketLeft:  return "bracketleft";
+        case Qt.Key_BracketRight: return "bracketright";
+        case Qt.Key_Minus:     return "minus";
+        case Qt.Key_Equal:     return "equal";
+        case Qt.Key_Backslash: return "backslash";
+        case Qt.Key_Grave:     return "grave";
+        case Qt.Key_Left:      return "left";
+        case Qt.Key_Right:     return "right";
+        case Qt.Key_Up:        return "up";
+        case Qt.Key_Down:      return "down";
+        case Qt.Key_Home:      return "Home";
+        case Qt.Key_End:       return "End";
+        case Qt.Key_PageUp:    return "Prior";
+        case Qt.Key_PageDown:  return "Next";
+        case Qt.Key_Delete:    return "Delete";
+        case Qt.Key_Print:     return "Print";
+        }
+        // Fall back to the text the key produced, which covers most of the
+        // rest of a standard layout.
+        return event.text ? event.text.toUpperCase() : "";
+    }
 
     Component {
         id: segComponent
