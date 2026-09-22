@@ -64,7 +64,9 @@ shell/
 ```
 
 The installer never deletes: an existing `hyprland.lua` or `quickshell/hyprshell`
-is moved to `<name>.bak.<timestamp>` first, so you can always put it back. It
+is moved to `<name>.bak.<timestamp>` first, so you can always put it back. Your
+`theme.json` lives inside that tree, so it is carried across to the new one —
+a reinstall keeps every preference you have set. It
 also refuses to run if Hyprland or Quickshell are missing, and prints the right
 package line for your distribution for everything else.
 
@@ -200,8 +202,13 @@ Changing the theme in Settings recolours kitty windows that are already open.
 `~/.config/kitty/hyprshell-colors.conf` and sends kitty `SIGUSR1`, which is
 kitty's own config reload — so nothing has to be enabled on kitty's side and
 `allow_remote_control` stays off. A kitty that isn't running is simply not
-signalled and picks the right palette up when it next starts. Installing the
-kitty config into a session that's already up needs one nudge:
+signalled and picks the right palette up when it next starts.
+
+A first install picks the palette from your `theme.json` rather than from a
+shipped default, so a dark shell never gets a blinding white terminal. If the
+shell was already running when you installed, it notices the file appearing
+and reconciles on its own; `install.sh` also nudges it. If you ever want to
+force it by hand:
 
 ```sh
 qs -c hyprshell ipc call shell syncTheming

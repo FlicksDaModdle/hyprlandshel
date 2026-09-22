@@ -49,10 +49,20 @@ Singleton {
         preload: true
         printErrors: false
         atomicWrites: true
+        // Without this, installing the kitty config into a session that is
+        // already up leaves kittyPresent stuck false for the life of the
+        // shell — the one read happened before the file existed — and the
+        // terminal keeps whatever palette it was installed with.
+        watchChanges: true
+        onFileChanged: reload()
 
         onLoaded: root.kittyPresent = true
         onLoadFailed: root.kittyPresent = false
     }
+
+    // Covers the file appearing after startup: the moment it becomes
+    // readable, make sure it names the palette the shell is actually using.
+    onKittyPresentChanged: if (primed && kittyPresent) apply();
 
     Process { id: reloadProc }
 

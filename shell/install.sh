@@ -324,18 +324,55 @@ backup "$QS_DIR"
 cp -r -- "$SRC/quickshell" "$QS_DIR" || die "could not copy the Quickshell tree to $QS_DIR"
 printf '  installed %s\n' "$QS_DIR"
 
+# theme.json lives *inside* the tree that was just moved aside, so without
+# this every preference you have set would be lost to a reinstall. It is your
+# data, not ours — carry it across.
+if [ -e "$QS_DIR.bak.$STAMP/theme.json" ]; then
+    cp -- "$QS_DIR.bak.$STAMP/theme.json" "$QS_DIR/theme.json" \
+        && printf '  kept your theme.json\n'
+fi
+
 if command -v kitty >/dev/null 2>&1; then
     mkdir -p "$KITTY_DIR" || die "could not create $KITTY_DIR"
     backup "$KITTY_DIR/kitty.conf"
-    for f in kitty.conf colors-light.conf colors-dark.conf hyprshell-colors.conf; do
-        # hyprshell-colors.conf is the live palette pointer the shell rewrites;
-        # keep an existing one so a reinstall doesn't reset your theme.
-        if [ "$f" = hyprshell-colors.conf ] && [ -e "$KITTY_DIR/$f" ]; then continue; fi
+    for f in kitty.conf colors-light.conf colors-dark.conf; do
         cp -- "$SRC/kitty/$f" "$KITTY_DIR/$f" || die "could not copy $f to $KITTY_DIR"
     done
+
+    # hyprshell-colors.conf names the live palette. An existing one is the
+    # running shell's own choice, so a reinstall leaves it alone.
+    #
+    # A new one must not be the file's shipped default. That default is light,
+    # and installing it under a dark shell is how you end up with one blinding
+    # white terminal on a dark desktop until something happens to resync. So
+    # derive it from the theme you actually have.
+    if [ ! -e "$KITTY_DIR/hyprshell-colors.conf" ]; then
+        _theme=light
+        _json="$QS_DIR/theme.json"
+        if [ -r "$_json" ]; then
+            _theme="$(sed -n 's/.*"theme"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p' "$_json" \
+                      | head -n1)"
+            [ -n "$_theme" ] || _theme=light
+        fi
+        # "auto" is dark from 19:00 to 07:00 — the same rule Appearance.qml uses.
+        if [ "$_theme" = auto ]; then
+            _hour="$(date +%H)"
+            _hour="${_hour#0}"
+            if [ "${_hour:-0}" -ge 19 ] || [ "${_hour:-0}" -lt 7 ]
+                then _theme=dark; else _theme=light; fi
+        fi
+        [ "$_theme" = dark ] || _theme=light
+        sed "s/^include colors-.*/include colors-$_theme.conf/" \
+            "$SRC/kitty/hyprshell-colors.conf" > "$KITTY_DIR/hyprshell-colors.conf" \
+            || die "could not write $KITTY_DIR/hyprshell-colors.conf"
+        printf '  kitty palette set to %s, from your theme.json\n' "$_theme"
+    fi
+
     printf '  installed %s/kitty.conf and its palettes\n' "$KITTY_DIR"
-    # Recolour any kitty already running.
+    # Recolour any kitty already running, and tell a running shell to re-read
+    # the file it now shares with us. Both are best-effort.
     pkill -USR1 -x kitty 2>/dev/null || true
+    qs -c hyprshell ipc call shell syncTheming >/dev/null 2>&1 || true
 fi
 
 if [ "$MODE" != shell-only ]; then
