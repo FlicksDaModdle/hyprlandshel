@@ -295,6 +295,27 @@ a slider that moved some numbers and not the text would be worse than not
 having one. Bar height, dock size and corner rounding each scale on their
 own, which covers most of what it was for.
 
+## Why the menus frost rather than blur the desktop
+
+Compositor blur — what the bar, dock and panels get — is a property of a
+*layer surface*, and blurs what sits behind that surface on the desktop.
+`hyprland.lua` has a `layer_rule` per namespace to switch it on.
+
+A dropdown or the colour picker is drawn inside the Settings window, not as
+its own surface, so Hyprland has nothing to blur there: what is behind it is
+the window's own rows. `modules/common/BlurBackdrop.qml` blurs those instead,
+which is what you would expect to see through a menu that belongs to a
+window. Toggle it in Appearance → Frosted menus.
+
+Getting real desktop blur would mean promoting every popup to its own
+layer-shell surface, which brings its own positioning, focus and dismissal
+problems — a different trade, not a setting.
+
+That file is the only thing in the tree importing `QtQuick.Effects`, and it
+is reached through a `Loader` with a URL rather than a direct import, so a Qt
+without that module leaves the menus unfrosted instead of stopping the shell
+from starting.
+
 ## If the shell comes up with no bar, dock or wallpaper
 
 Almost always one of two environment problems, and the log says which.

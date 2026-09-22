@@ -112,6 +112,7 @@ Singleton {
             // How much of the window shows through a dropdown or the colour
             // picker. 0 is fully opaque.
             property int menuTranslucency: 8          // 0-60 %
+            property bool menuBlur: true              // frost what's behind a popup
 
             // Hyprland window frame
             property int gapsIn: 4
@@ -191,6 +192,7 @@ Singleton {
     property alias launcherColumns: prefs.launcherColumns
 
     property alias menuTranslucency: prefs.menuTranslucency
+    property alias menuBlur: prefs.menuBlur
 
     property alias gapsIn: prefs.gapsIn
     property alias gapsOut: prefs.gapsOut

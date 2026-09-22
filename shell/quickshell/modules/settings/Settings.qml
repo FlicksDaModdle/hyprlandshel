@@ -245,6 +245,10 @@ PanelWindow {
             // whenever anything that moves a row has moved.
             readonly property real scrollY: paneFlick.contentY
             readonly property string pane: settings.pane
+
+            // What a popup frosts: the pane behind it. It is a sibling of
+            // this overlay, not an ancestor, so sampling it is safe.
+            readonly property Item backdrop: paneFlick
         }
 
         // ── sidebar ───────────────────────────────────────────────────────
@@ -514,9 +518,12 @@ PanelWindow {
             { n: "Translucency", s: "How much of the desktop shows through the bar, dock and panels",
               type: "slider", min: 0, max: 100, unit: "%",
               value: A.translucency, set: v => A.translucency = v },
-            { n: "Menu translucency", s: "How much of the window shows through a "
-                 + "dropdown or the colour picker — these float over rows, not the "
-                 + "desktop, so a little goes a long way",
+            { n: "Frosted menus", s: "Blur what's behind a dropdown or the colour "
+                 + "picker. They sit inside a window rather than on the desktop, so "
+                 + "what gets blurred is the rows underneath them.",
+              type: "toggle", value: A.menuBlur, set: v => A.menuBlur = v },
+            { n: "Menu translucency", s: "How much shows through — with frosting on, "
+                 + "this is how strong the frost reads",
               type: "slider", min: 0, max: 60, unit: "%",
               value: A.menuTranslucency, set: v => A.menuTranslucency = v },
             { n: "Corner rounding", s: "Scales every radius — 0% is fully square", type: "slider",

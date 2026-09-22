@@ -310,6 +310,37 @@ Item {
                 border.width: 1
                 border.color: Config.Appearance.edge
 
+                // Frosted glass behind the menu. Via a Loader with a URL, not
+                // a direct import: BlurBackdrop pulls in QtQuick.Effects, and
+                // if that module is missing this degrades to an unfrosted
+                // menu instead of the whole shell failing to load.
+                Loader {
+                    id: menuBlur
+                    anchors.fill: parent
+                    z: -1
+                    active: Config.Appearance.menuBlur
+                            && root.overlay !== null
+                            && menuRoot.open
+                    source: "../common/BlurBackdrop.qml"
+                    onLoaded: {
+                        item.sourceItem = Qt.binding(
+                            () => root.overlay ? root.overlay.backdrop : null);
+                        // The sample is taken in the backdrop's own
+                        // coordinates. Both it and this popup's overlay are
+                        // anchored children of the window frame, so the
+                        // offset between them is the backdrop's own x and y —
+                        // no mapToItem, and therefore nothing to go stale.
+                        item.sampleRect = Qt.binding(() => {
+                            const b = root.overlay ? root.overlay.backdrop : null;
+                            if (!b) return Qt.rect(0, 0, 0, 0);
+                            return Qt.rect(menuPopup.x - b.x, menuPopup.y - b.y,
+                                           menuPopup.width, menuPopup.height);
+                        });
+                        item.radius = Qt.binding(() => Config.Appearance.rSm);
+                    }
+                }
+
+
                 Column {
                     id: optionColumn
                     anchors.fill: parent
@@ -488,6 +519,7 @@ Item {
                     y: flipUp ? anchorPoint.y - customSwatch.height - height - 8
                               : anchorPoint.y + 8
 
+                    backdrop: root.overlay ? root.overlay.backdrop : null
                     value: Config.Appearance.customAccent
                     onPicked: c => {
                         Config.Appearance.customAccent = c;

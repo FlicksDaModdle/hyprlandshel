@@ -27,6 +27,25 @@ Rectangle {
     border.width: 1
     border.color: Config.Appearance.edge
 
+    // What to frost, and where this sits inside it. Set by whoever places
+    // the picker; left null the picker is simply unfrosted.
+    property Item backdrop: null
+
+    Loader {
+        anchors.fill: parent
+        z: -1
+        active: Config.Appearance.menuBlur && root.backdrop !== null && root.open
+        source: "BlurBackdrop.qml"
+        onLoaded: {
+            item.sourceItem = Qt.binding(() => root.backdrop);
+            item.sampleRect = Qt.binding(() => root.backdrop
+                ? Qt.rect(root.x - root.backdrop.x, root.y - root.backdrop.y,
+                          root.width, root.height)
+                : Qt.rect(0, 0, 0, 0));
+            item.radius = Qt.binding(() => root.radius);
+        }
+    }
+
     // Working state, so dragging the square doesn't fight the binding that
     // feeds `value` back in from the preference it writes.
     property real hue: 0.6
