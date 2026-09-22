@@ -44,7 +44,7 @@ Singleton {
         { key: "browser",     n: "Browser",              def: "SUPER + B",         exec: "browser" },
         { key: "close",       n: "Close window",         def: "SUPER + Q",         dsp: "hl.dsp.window.close()" },
         { key: "float",       n: "Toggle floating",      def: "SUPER + V",         dsp: "hl.dsp.window.float({ action = \"toggle\" })" },
-        { key: "fullscreen",  n: "Fullscreen",           def: "SUPER + F",         dsp: "hl.dsp.fullscreen({ mode = 0 })" }
+        { key: "fullscreen",  n: "Fullscreen",           def: "SUPER + F",         dsp: "hl.dsp.window.fullscreen({ mode = \"fullscreen\", action = \"toggle\" })" }
     ]
 
     // key → accelerator, for anything changed from its default.
@@ -206,12 +206,15 @@ Singleton {
 
         lines.push("");
         lines.push("-- Workspaces 1-10, and moving windows to them.");
+        // Native dispatchers, not `hyprctl dispatch workspace N`: under a
+        // Lua config hyprctl evaluates its argument as Lua, so the old
+        // hyprlang wording is a syntax error that only shows up in a log.
         lines.push("for i = 1, 10 do");
         lines.push("    local k = i % 10");
         lines.push("    hl.bind(MOD .. \" + \" .. k,"
-                   + " hl.dsp.exec_cmd(\"hyprctl dispatch workspace \" .. i))");
+                   + " hl.dsp.focus({ workspace = i }))");
         lines.push("    hl.bind(MOD .. \" + SHIFT + \" .. k,"
-                   + " hl.dsp.exec_cmd(\"hyprctl dispatch movetoworkspace \" .. i))");
+                   + " hl.dsp.window.move({ workspace = i }))");
         lines.push("end");
 
         return lines.join("\n") + "\n";

@@ -27,15 +27,6 @@ local terminal    = "kitty"
 local fileManager = "nautilus"
 local browser     = "firefox"
 
--- Everything the shell owns is reached over Quickshell's IPC socket.
--- `qs ipc call <target> <function> [args]` lands on the IpcHandler in
--- shell.qml, so the compositor never needs to know how the shell is built.
--- Dispatchers without a typed `hl.dsp.*` helper in this config go through
--- hyprctl, which accepts every dispatcher name Hyprland has.
-local function dispatch(cmd)
-    return "hyprctl dispatch " .. cmd
-end
-
 -- Shell shortcuts write a line to a file the shell is reading.
 --
 -- That is the fourth mechanism tried here, and the first with nothing in it
@@ -319,9 +310,15 @@ hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(browser))
 -- Window management
 hl.bind(mainMod .. " + Q",           hl.dsp.window.close())
 hl.bind(mainMod .. " + V",           hl.dsp.window.float({ action = "toggle" }))
-hl.bind(mainMod .. " + F",           hl.dsp.exec_cmd(dispatch("fullscreen 0")))
-hl.bind(mainMod .. " + SHIFT + F",   hl.dsp.exec_cmd(dispatch("fullscreen 1")))
-hl.bind(mainMod .. " + SHIFT + P",   hl.dsp.exec_cmd(dispatch("pin")))
+-- Native dispatchers rather than `hyprctl dispatch fullscreen 0`: under a
+-- Lua config hyprctl evaluates its argument as Lua — it is a wrapper for
+-- hl.dispatch(...) — so the old hyprlang wording is a syntax error, and the
+-- only sign of it is a line in a log nobody reads.
+hl.bind(mainMod .. " + F",
+    hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }))
+hl.bind(mainMod .. " + SHIFT + F",
+    hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" }))
+hl.bind(mainMod .. " + SHIFT + P",   hl.dsp.window.pin())
 hl.bind(mainMod .. " + P",           hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
 

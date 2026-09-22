@@ -137,16 +137,14 @@ Singleton {
             property string subpixel: ""
             property bool fontHinting: true
 
-            // Launcher geometry: a layout and one size, not five numbers.
+            // Launcher geometry: one number.
             //
-            // The layout picks the shape — how many columns, and the
-            // proportions that go with them — and the size scales the whole
-            // thing at that shape. Width and height are no longer set
-            // independently, because every pair that was not the layout's
-            // own ratio looked wrong, and picking them apart was work with
-            // no good answer at the end of it.
-            property string launcherLayout: "standard"
-            property int launcherSize: 125            // 70-200 % of the layout
+            // Width, height, tile and icon were separately settable, then a
+            // layout picker and a size. Both are gone. Everything below is
+            // one shape scaled evenly, because every combination that was
+            // not that shape looked wrong and none of them was worth a
+            // control.
+            property int launcherSize: 145            // 70-220 % of the base
 
             // How much of the window shows through a dropdown or the colour
             // picker. 0 is fully opaque.
@@ -241,25 +239,11 @@ Singleton {
     property alias subpixel: prefs.subpixel
     property alias fontHinting: prefs.fontHinting
 
-    property alias launcherLayout: prefs.launcherLayout
     property alias launcherSize: prefs.launcherSize
 
-    // The layouts. Each is a whole shape: its own column count and the
-    // proportions that suit it, at 100%. `standard` is the one the mockup
-    // draws, and its 9:7 is what the others are judged against.
-    readonly property var launcherLayouts: ({
-        "compact":  { w: 620,  h: 500, tile: 60, icon: 22, cols: 4,
-                      n: "Compact",  d: "Fewer, tighter tiles" },
-        "standard": { w: 720,  h: 560, tile: 70, icon: 26, cols: 4,
-                      n: "Standard", d: "The proportions in the design" },
-        "wide":     { w: 1000, h: 560, tile: 76, icon: 28, cols: 6,
-                      n: "Wide",     d: "Two more columns, same height" },
-        "tall":     { w: 640,  h: 740, tile: 72, icon: 27, cols: 3,
-                      n: "Tall",     d: "Narrow and deep, for a portrait screen" }
-    })
-
-    readonly property var launcherShape:
-        launcherLayouts[launcherLayout] || launcherLayouts["standard"]
+    // The shape everything is scaled from, at 100%.
+    readonly property var launcherBase: ({ w: 620, h: 500, tile: 60, icon: 22,
+                                           cols: 4 })
 
     // Everything the launcher measures itself by, derived. Nothing else in
     // the shell had to change: these are the same property names it always
@@ -267,11 +251,11 @@ Singleton {
     function launcherScaled(px) {
         return Math.round(px * Math.max(40, launcherSize) / 100);
     }
-    readonly property int launcherWidth: launcherScaled(launcherShape.w)
-    readonly property int launcherHeight: launcherScaled(launcherShape.h)
-    readonly property int launcherTileSize: launcherScaled(launcherShape.tile)
-    readonly property int launcherIconSize: launcherScaled(launcherShape.icon)
-    readonly property int launcherColumns: launcherShape.cols
+    readonly property int launcherWidth: launcherScaled(launcherBase.w)
+    readonly property int launcherHeight: launcherScaled(launcherBase.h)
+    readonly property int launcherTileSize: launcherScaled(launcherBase.tile)
+    readonly property int launcherIconSize: launcherScaled(launcherBase.icon)
+    readonly property int launcherColumns: launcherBase.cols
 
     property alias menuTranslucency: prefs.menuTranslucency
     property alias menuBlur: prefs.menuBlur

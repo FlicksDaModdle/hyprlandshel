@@ -591,26 +591,15 @@ PanelWindow {
         ];
 
         case "Launcher": return [
-            { type: "header", n: "Layout",
-              s: "The shape of the panel — how many columns, and the "
-                 + "proportions that go with them" },
-            { n: "Layout", s: settings.launcherLayoutHint,
-              type: "seg",
-              options: settings.launcherLayoutOptions,
-              value: A.launcherLayout,
-              set: v => A.launcherLayout = v },
-
             { type: "header", n: "Size",
-              s: "One control for the whole panel. Width, height, tiles and "
-                 + "icons all scale together, so the layout keeps its "
+              s: "One control for the whole panel. Everything — the panel, "
+                 + "the tiles, the icons — scales together, so it keeps its "
                  + "proportions instead of being stretched." },
-            { n: "Overall size", s: "100% is the layout at the size the design "
-                 + "draws it", type: "slider", min: 70, max: 200, unit: "%",
+            { n: "Overall size", s: "Drag until it looks right",
+              type: "slider", min: 70, max: 220, unit: "%",
               value: A.launcherSize, set: v => A.launcherSize = v },
-            { n: "Opens at", s: "What the two above come out to",
-              type: "info",
-              value: A.launcherWidth + " × " + A.launcherHeight + " px, "
-                     + A.launcherColumns + " columns" },
+            { n: "Opens at", s: "What that comes out to", type: "info",
+              value: A.launcherWidth + " × " + A.launcherHeight + " px" },
 
             { type: "header", n: "Text", s: "" },
             { n: "Entry names", s: "App and command names in the grid and results",
@@ -1090,21 +1079,6 @@ PanelWindow {
     property string displayPickRaw: ""
     readonly property string displayPick: displayPickRaw !== ""
         ? displayPickRaw : Services.Compositor.focusedMonitorName
-
-    // ── launcher layout ───────────────────────────────────────────────────
-    // The table lives in Appearance so the launcher and this window read one
-    // definition; these only turn it into rows.
-    readonly property var launcherLayoutOptions: {
-        const out = [];
-        const t = Config.Appearance.launcherLayouts;
-        for (const k in t) out.push({ label: t[k].n, value: k });
-        return out;
-    }
-
-    readonly property string launcherLayoutHint: {
-        const shape = Config.Appearance.launcherShape;
-        return shape ? shape.d : "";
-    }
 
     // ── display helpers ───────────────────────────────────────────────────
     // hl.monitor takes the output by name, so a change is addressed to one

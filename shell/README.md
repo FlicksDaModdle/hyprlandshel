@@ -427,6 +427,33 @@ The shell also still registers each shortcut as `hyprshell:<name>` over
 `hyprland-global-shortcuts-v1`, so anything else on the session can dispatch
 `global, hyprshell:launcher`. Nothing here depends on it.
 
+## Dispatching to Hyprland from the shell
+
+Under a Lua config, `hyprctl dispatch X` is not a dispatcher call — it is
+evaluated as `return hl.dispatch(X)` (`dispatchRequest`, `src/ipc/s1/
+Commands.cpp`). So the old hyprlang wording is Lua:
+
+```
+dispatch workspace 1      ->  return hl.dispatch(workspace 1)   -- syntax error
+```
+
+which the compositor rejects with a line in the shell's log and nothing
+else. That is what made the workspace pills look dead: the click worked, the
+request went out, and Hyprland threw it away.
+
+Everything the shell dispatches is a Lua call now, and so is everything in
+`hyprland.lua`:
+
+```lua
+hl.dsp.focus({ workspace = 3 })
+hl.dsp.focus({ window = "address:0x55d1c0" })
+hl.dsp.window.move({ workspace = 4, follow = false, window = "address:…" })
+hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" })
+```
+
+Note that switching workspace is `hl.dsp.focus`. There is a `workspace`
+subtable, but it is for renaming and moving workspaces, not entering them.
+
 ## Text rendering, and the one file written outside this shell
 
 Settings → Fonts → Text rendering has three controls:

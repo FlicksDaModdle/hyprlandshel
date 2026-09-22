@@ -130,9 +130,10 @@ Singleton {
         const cmd = dispatchQueue.shift();
         dispatchLast = cmd;
         dispatchBusy = true;
-        // hyprctl takes the dispatcher and its arguments as separate argv
-        // entries, so the request is split rather than passed as one blob.
-        dispatchProc.command = ["hyprctl", "dispatch"].concat(cmd.split(" "));
+        // One argv entry, not split on spaces: hyprctl joins its arguments
+        // back together with single spaces anyway, and what goes in here is
+        // a Lua call with spaces inside its braces.
+        dispatchProc.command = ["hyprctl", "dispatch", cmd];
         dispatchProc.running = true;
     }
 
@@ -328,34 +329,61 @@ Singleton {
     // ── actions ───────────────────────────────────────────────────────────
 
     function focusWorkspace(id) {
-        dispatch("workspace " + id);
+        dispatch("hl.dsp.focus({ workspace = " + parseInt(id, 10) + " })");
         refresh();
         actionSettle.restart();
     }
 
     function focusClient(address) {
         if (!address) return;
-        dispatch("focuswindow address:" + address);
+        dispatch("hl.dsp.focus({ window = " + luaSel("address:" + address) + " })");
+        actionSettle.restart();
     }
 
     function closeClient(address) {
         if (!address) return;
-        dispatch("closewindow address:" + address);
+        dispatch("hl.dsp.window.close({ window = "
+                 + luaSel("address:" + address) + " })");
+        actionSettle.restart();
     }
 
+    // follow = false is what the old `movetoworkspacesilent` meant: move the
+    // window, stay where you are.
     function moveClientToWorkspace(address, workspaceId) {
         if (!address) return;
-        dispatch("movetoworkspacesilent " + workspaceId + ",address:" + address);
+        dispatch("hl.dsp.window.move({ workspace = " + parseInt(workspaceId, 10)
+                 + ", follow = false, window = "
+                 + luaSel("address:" + address) + " })");
+        actionSettle.restart();
     }
 
     // Hyprland has no "minimise everything" dispatcher; the equivalent is a
     // scratch workspace nothing else uses, toggled in and out of.
     property int stashWorkspace: 99
     function toggleShowDesktop() {
-        if (focusedId === stashWorkspace) dispatch("workspace previous");
-        else dispatch("workspace " + stashWorkspace);
+        if (focusedId === stashWorkspace)
+            dispatch('hl.dsp.focus({ workspace = "previous" })');
+        else
+            dispatch("hl.dsp.focus({ workspace = " + stashWorkspace + " })");
+        refresh();
+        actionSettle.restart();
     }
 
+    // `cmd` is a Lua call, not a hyprlang dispatcher line.
+    //
+    // Under a Lua config Hyprland's IPC evaluates a dispatch request as
+    // `return hl.dispatch(<request>)` (dispatchRequest in src/ipc/s1/
+    // Commands.cpp), so "workspace 1" is not a dispatcher name — it is a Lua
+    // syntax error, and the only sign of it is a line in the shell's log:
+    //
+    //     Dispatch request "workspace 1" failed with error
+    //     "...')' expected near '1'"
+    //
+    // Which is why clicking a workspace pill did nothing: the click worked,
+    // the request went out, and the compositor rejected it.
+    //
+    // Both routes end at the same socket and the same evaluation, so both
+    // take the same Lua.
     function dispatch(cmd) {
         if (ipcReady) {
             Hyprland.dispatch(cmd);
@@ -363,6 +391,13 @@ Singleton {
             dispatchQueue.push(cmd);
             pumpDispatch();
         }
+    }
+
+    // Lua literals for the dispatcher arguments. A window address is a
+    // string selector ("address:0x…"), a workspace is a number or one of
+    // Hyprland's selector words.
+    function luaSel(s) {
+        return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
     }
 
     // ── runtime configuration ─────────────────────────────────────────────

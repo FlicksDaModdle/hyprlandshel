@@ -39,8 +39,11 @@ Singleton {
 
     // Ends the Wayland session cleanly: Hyprland tears down its clients
     // rather than being killed out from under them.
+    // `hyprctl dispatch` under a Lua config evaluates its argument as Lua —
+    // it is a wrapper for hl.dispatch(...) — so the dispatcher goes in as a
+    // Lua call, not as the old hyprlang word.
     function logout() {
-        Quickshell.execDetached(["hyprctl", "dispatch", "exit"]);
+        Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.exit()"]);
     }
 
     // Re-execs the shell in place. `qs` picks the same config back up, so
