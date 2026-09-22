@@ -18,37 +18,39 @@ import "." as Services
 Singleton {
     id: root
 
-    readonly property var A: Config.Appearance
+    // Lower case: QML rejects a property whose name starts with a
+    // capital, because that is the namespace for types.
+    readonly property var prefs: Config.Appearance
 
     // The whole input tree in one call. hl.config merges, so sending it as a
     // single statement is one hyprctl round trip instead of twenty.
     function inputTree() {
         return {
             input: {
-                repeat_rate: A.repeatRate,
-                repeat_delay: A.repeatDelay,
-                numlock_by_default: A.numlock,
-                follow_mouse: A.followMouse,
-                sensitivity: A.sensitivity,
-                accel_profile: A.accelProfile,
-                left_handed: A.leftHanded,
-                natural_scroll: A.mouseNaturalScroll,
-                scroll_factor: A.mouseScrollFactor,
+                repeat_rate: prefs.repeatRate,
+                repeat_delay: prefs.repeatDelay,
+                numlock_by_default: prefs.numlock,
+                follow_mouse: prefs.followMouse,
+                sensitivity: prefs.sensitivity,
+                accel_profile: prefs.accelProfile,
+                left_handed: prefs.leftHanded,
+                natural_scroll: prefs.mouseNaturalScroll,
+                scroll_factor: prefs.mouseScrollFactor,
                 touchpad: {
-                    tap_to_click: A.tapToClick,
-                    tap_and_drag: A.tapAndDrag,
-                    drag_lock: A.dragLock,
-                    natural_scroll: A.padNaturalScroll,
-                    scroll_factor: A.padScrollFactor,
-                    disable_while_typing: A.disableWhileTyping,
-                    clickfinger_behavior: A.clickfinger,
-                    tap_button_map: A.tapButtonMap,
-                    middle_button_emulation: A.middleEmulation
+                    tap_to_click: prefs.tapToClick,
+                    tap_and_drag: prefs.tapAndDrag,
+                    drag_lock: prefs.dragLock,
+                    natural_scroll: prefs.padNaturalScroll,
+                    scroll_factor: prefs.padScrollFactor,
+                    disable_while_typing: prefs.disableWhileTyping,
+                    clickfinger_behavior: prefs.clickfinger,
+                    tap_button_map: prefs.tapButtonMap,
+                    middle_button_emulation: prefs.middleEmulation
                 }
             },
             cursor: {
-                hide_on_key_press: A.hideCursorOnKey,
-                inactive_timeout: A.cursorTimeout
+                hide_on_key_press: prefs.hideCursorOnKey,
+                inactive_timeout: prefs.cursorTimeout
             }
         };
     }
@@ -57,9 +59,9 @@ Singleton {
 
     // ── displays ──────────────────────────────────────────────────────────
     function displayMap() {
-        if (!A.displays) return ({});
+        if (!prefs.displays) return ({});
         try {
-            const o = JSON.parse(A.displays);
+            const o = JSON.parse(prefs.displays);
             return (o && typeof o === "object") ? o : ({});
         } catch (e) {
             console.warn("Devices: theme.json displays is not valid JSON —", e);
@@ -70,10 +72,10 @@ Singleton {
     function rememberDisplay(name, mode, scale) {
         const map = displayMap();
         map[name] = { mode: mode, scale: scale };
-        A.displays = JSON.stringify(map);
+        prefs.displays = JSON.stringify(map);
     }
 
-    function forgetDisplays() { A.displays = ""; }
+    function forgetDisplays() { prefs.displays = ""; }
 
     // Only outputs that are actually connected are re-applied: a saved mode
     // for a monitor that isn't plugged in would be an error every launch.
