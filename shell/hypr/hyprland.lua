@@ -36,76 +36,70 @@ local function dispatch(cmd)
     return "hyprctl dispatch " .. cmd
 end
 
--- Shell shortcuts call the shell's IPC function, written out here rather
--- than handed to a wrapper script.
+-- Shell shortcuts write a line to a file the shell is reading.
 --
--- Two routes have been tried and dropped. Global shortcuts
--- (hyprland-global-shortcuts-v1) need a Quickshell built with the protocol,
--- and on a build without it nothing registers and every bind is a silent
--- no-op. Then hyprshellctl, which works perfectly from a terminal — but a
--- bind that calls a script depends on the script being where the config
--- thinks, being executable, and finding qs on the compositor's PATH, and
--- when it fails it fails into /dev/null.
+-- That is the fourth mechanism tried here, and the first with nothing in it
+-- that can fail to find anything:
 --
--- So the call is inline now. Nothing to install, nothing to resolve, and
--- what Hyprland runs is exactly what you can read here.
+--   global shortcuts     need a Quickshell built with
+--                        hyprland-global-shortcuts-v1. This one is not, so
+--                        nothing registered and every bind was a silent
+--                        no-op.
 --
--- All three selector forms are tried in turn because Quickshell has moved
--- the config selector between releases and this config cannot know which
--- build is installed. The first that answers wins; the others cost nothing
--- once one has.
+--   qs ipc call          has to find the running shell first. Naming the
+--                        config makes it hash the config file path, read
+--                        $XDG_RUNTIME_DIR/quickshell/by-path/<hash> and
+--                        filter what it finds by display connection. On this
+--                        machine that came back "No running instances for
+--                        ~/.config/quickshell/hyprshell/shell.qml" while
+--                        `qs list --all` printed the instance, its pid and
+--                        that exact config path.
 --
--- Nothing may *start* with "[", which Hyprland reads as an exec rule. A
--- "{" group is fine.
+--   by pid, by id        the same call addressed differently — the route
+--                        DankMaterialShell's helper takes. No better here.
+--
+-- So the shortcuts stop trying to find the shell. The shell opens
+-- $XDG_RUNTIME_DIR/hyprshell.cmd and reads it (services/Commands.qml); a
+-- shortcut appends one line to it. There is no binary to locate, no socket,
+-- no protocol, no instance lookup and no agreement needed about how the
+-- shell was started — only that both ends see the same $XDG_RUNTIME_DIR,
+-- which these binds had already proven, because their own log has been
+-- landing in it the whole time.
+--
+-- Nothing may *start* with "[", which Hyprland reads as an exec rule.
 --
 -- Tracing: Hyprland sends a spawned command's output to /dev/null, so a
--- failing shortcut is completely silent — which is most of why this took so
--- long to pin down. Each shortcut appends what it tried and the status it
--- got to $XDG_RUNTIME_DIR/hyprshell-bind.log, and on failure it also writes
--- down what it could see of the shell at that moment, which is what turns
--- "it didn't work" into something answerable. `hyprshellctl trace` prints
--- it. The file is on tmpfs and gone at reboot. Set this to false to stop.
+-- failing shortcut is otherwise silent. Each one appends what it asked for
+-- and whether the shell's watcher was alive to $XDG_RUNTIME_DIR/
+-- hyprshell-bind.log, and writes down what it could see when it was not.
+-- `hyprshellctl trace` prints it. Set this to false to stop.
 local traceBinds = true
 local bindLog = '"$XDG_RUNTIME_DIR/hyprshell-bind.log"'
 
 local function shell(fn, arg)
     local call = fn .. (arg and (" " .. arg) or "")
 
-    -- Ways to reach the running shell, most direct first.
-    --
-    -- --pid goes straight to $XDG_RUNTIME_DIR/quickshell/by-pid/<pid>, reads
-    -- that instance's lock and connects. No config path to hash, no instance
-    -- list to filter by display — the two steps that were losing an instance
-    -- that was plainly running. It is how DankMaterialShell's own helper
-    -- reaches Quickshell, and pgrep already tells us the pid.
-    --
-    -- The two config-named spellings are kept because they are the
-    -- documented way and which one a build accepts has moved between
-    -- releases. Last is by instance id, which asks Quickshell for everything
-    -- it knows about; it would also reach a Quickshell running a different
-    -- config, which only matters if you run two.
-    local byPid = [[{ p=$(pgrep -x qs 2>/dev/null | head -n1); ]]
-        .. [[test -n "$p" && qs --pid "$p" ipc call shell ]] .. call .. "; }"
-
-    local byId = [[{ i=$(qs list --all -j 2>/dev/null ]]
-        .. [[| sed -n 's/.*"id"[^"]*"\([^"]*\)".*/\1/p' | head -n1); ]]
-        .. [[test -n "$i" && qs -i "$i" ipc call shell ]] .. call .. "; }"
-
-    local try = "{ " .. byPid
-        .. " || qs -c hyprshell ipc call shell " .. call
-        .. " || qs ipc -c hyprshell call shell " .. call
-        .. " || " .. byId .. "; }"
+    local head = [[f="${XDG_RUNTIME_DIR:-/tmp}/hyprshell.cmd"; ]]
+    local write = "echo '" .. call .. "' >> \"$f\""
 
     if not traceBinds then
-        return try .. " >/dev/null 2>&1"
+        return head .. write .. " 2>/dev/null"
     end
 
-    -- $? is read straight into s, before anything else can change it.
-    local facts = "{ echo \"  qs=$(command -v qs) display=$WAYLAND_DISPLAY\"; "
-        .. [[echo "  running: $(pgrep -x qs | tr '\n' ' ')"; ]]
-        .. "qs list --all 2>&1 | sed 's/^/  /'; } >>" .. bindLog .. " 2>&1"
+    -- The watcher writes its pid into hyprshell.cmd.status when the shell
+    -- starts, so "did anything hear that" is answerable without waiting for
+    -- a reply that a one-way channel cannot give.
+    local alive = [[w=$(sed -n 's/^watcher //p' "$f.status" 2>/dev/null); ]]
+        .. [[if [ -n "$w" ] && kill -0 "$w" 2>/dev/null; then s=0; else s=1; fi; ]]
 
-    return try .. " >>" .. bindLog .. " 2>&1; s=$?; "
+    local facts = '{ echo "  no watcher — the shell is not reading '
+        .. 'commands"; if [ -f "$f.status" ]; then sed "s/^/    /" '
+        .. '"$f.status"; else echo "    (no status file: no shell has '
+        .. 'started a watcher since boot)"; fi; '
+        .. [[echo "  qs running: $(pgrep -x qs | tr '\n' ' ')"; } >>]]
+        .. bindLog .. " 2>&1"
+
+    return head .. write .. " 2>>" .. bindLog .. "; " .. alive
         .. 'printf "%s %s -> %s\\n" "$(date +%T)" ' .. "'" .. call .. "' "
         .. '"$s" >>' .. bindLog .. '; test "$s" = 0 || ' .. facts
 end

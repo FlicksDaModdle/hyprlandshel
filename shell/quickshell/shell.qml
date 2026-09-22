@@ -36,6 +36,13 @@ ShellRoot {
     // from the Settings pane, which may never be opened.
     readonly property int shortcutCount: Services.Keybinds.actions.length
 
+    // And again, but this one matters most: Commands owns the table of
+    // everything the shell can be asked to do *and* the watcher that the
+    // keyboard shortcuts talk to. Nothing else references it at startup, so
+    // without this line the shortcuts would not work until something else
+    // happened to touch the singleton.
+    readonly property bool commandsReady: Services.Commands.watching
+
     // Shell shortcuts, registered with the compositor over
     // hyprland-global-shortcuts-v1, so anything on the session can dispatch
     // `global, hyprshell:<name>` to the shell.
@@ -93,50 +100,48 @@ ShellRoot {
     // Reached from Hyprland keybinds via `qs ipc call shell <fn>`
     // (see ../hypr/hyprland.lua). Keeping every shortcut on this one target
     // means the compositor never has to know how the shell is structured.
+    // The same commands over Quickshell's IPC socket, for `qs ipc call` and
+    // for anything else that wants to drive the shell. Every function hands
+    // straight to the Commands table, which is also what the keyboard
+    // shortcuts reach, so the two cannot drift into doing different things.
+    //
+    // This is no longer how the keybinds get here: finding this process from
+    // outside turned out to be the unreliable part. See Commands.qml.
     IpcHandler {
         target: "shell"
 
         // Panels
-        function toggleLauncher(): void { Config.UiState.toggleLauncher(); }
-        function toggleOverview(): void { Config.UiState.toggleOverview(); }
-        function toggleControlCenter(): void { Config.UiState.toggleControlCenter(); }
-        function toggleNotifications(): void { Config.UiState.toggleNotifications(); }
-        function toggleCalendar(): void { Config.UiState.toggleCalendar(); }
-        function togglePower(): void { Config.UiState.togglePower(); }
-        function closePanels(): void { Config.UiState.closeAll(); }
-
-        function openSettings(pane: string): void {
-            Config.UiState.openSettings(pane && pane !== "" ? pane : "Appearance");
-        }
+        function toggleLauncher(): void { Services.Commands.run("toggleLauncher"); }
+        function toggleOverview(): void { Services.Commands.run("toggleOverview"); }
+        function toggleControlCenter(): void { Services.Commands.run("toggleControlCenter"); }
+        function toggleNotifications(): void { Services.Commands.run("toggleNotifications"); }
+        function toggleCalendar(): void { Services.Commands.run("toggleCalendar"); }
+        function togglePower(): void { Services.Commands.run("togglePower"); }
+        function closePanels(): void { Services.Commands.run("closePanels"); }
+        function openSettings(pane: string): void { Services.Commands.run("openSettings " + pane); }
 
         // Appearance
-        function toggleTheme(): void { Config.Appearance.toggleTheme(); }
-        function cycleTheme(): void { Config.Appearance.cycleTheme(); }
-        function setTheme(name: string): void { Config.Appearance.setTheme(name); }
-        function setWallpaper(path: string): void { Config.Appearance.wallpaper = path; }
-        function setAccent(index: int): void { Config.Appearance.accentIndex = index; }
+        function toggleTheme(): void { Services.Commands.run("toggleTheme"); }
+        function cycleTheme(): void { Services.Commands.run("cycleTheme"); }
+        function setTheme(name: string): void { Services.Commands.run("setTheme " + name); }
+        function setWallpaper(path: string): void { Services.Commands.run("setWallpaper " + path); }
+        function setAccent(index: int): void { Services.Commands.run("setAccent " + index); }
+        function syncTheming(): void { Services.Commands.run("syncTheming"); }
 
         // Session
-        function lock(): void { Config.UiState.lock(); }
-        function reloadShell(): void { Services.Session.reloadShell(); }
+        function lock(): void { Services.Commands.run("lock"); }
+        function reloadShell(): void { Services.Commands.run("reloadShell"); }
 
-        // Levels. Bound to the media keys so the shell's own OSD is what
-        // shows, instead of each hotkey silently poking wpctl.
-        function volumeUp(): void { Services.Audio.step(0.05); }
-        function volumeDown(): void { Services.Audio.step(-0.05); }
-        function volumeMute(): void { Services.Audio.toggleMute(); }
-        function micMute(): void { Services.Audio.toggleInputMute(); }
-        function brightnessUp(): void { Services.Brightness.step(0.05); }
-        function brightnessDown(): void { Services.Brightness.step(-0.05); }
+        // Levels
+        function volumeUp(): void { Services.Commands.run("volumeUp"); }
+        function volumeDown(): void { Services.Commands.run("volumeDown"); }
+        function volumeMute(): void { Services.Commands.run("volumeMute"); }
+        function micMute(): void { Services.Commands.run("micMute"); }
+        function brightnessUp(): void { Services.Commands.run("brightnessUp"); }
+        function brightnessDown(): void { Services.Commands.run("brightnessDown"); }
 
-        // Do not disturb
-        function toggleDnd(): void { Services.Notifications.toggleDnd(); }
-
-        // Re-push the theme to the terminal. Useful straight after installing
-        // the kitty config into a session that is already running.
-        function syncTheming(): void { Services.Theming.resync(); }
-
-        // Windows
-        function showDesktop(): void { Services.Compositor.toggleShowDesktop(); }
+        // Notifications and windows
+        function toggleDnd(): void { Services.Commands.run("toggleDnd"); }
+        function showDesktop(): void { Services.Commands.run("showDesktop"); }
     }
 }

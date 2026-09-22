@@ -1,21 +1,28 @@
 #!/bin/sh
-# Drive the shell from a terminal — and the far end of every shell keybind.
+# Drive the shell from a terminal, over the same channel its keybinds use.
 #
-# hyprland.lua binds call this by absolute path, so `hyprshellctl lock` from
-# a terminal and SUPER+L run the same code. When a keybind does nothing, run
-# its command here and the output that the compositor threw away is visible;
-# `doctor` walks the whole chain.
+# hyprland.lua's shortcuts append a line to $XDG_RUNTIME_DIR/hyprshell.cmd;
+# the shell reads that file (quickshell/services/Commands.qml). This writes
+# the same line, so `hyprshellctl lock` and SUPER+L are the same thing, and
+# a shortcut that misbehaves can be reproduced by hand.
 #
-#   hyprshellctl doctor              check every link and every command
+#   hyprshellctl doctor              check the whole chain
 #   hyprshellctl list                list the commands
 #   hyprshellctl trace               what the keybinds have tried lately
+#   hyprshellctl ipc <command>       send over Quickshell's IPC instead
 #   hyprshellctl <command> [arg]     run one
 set -u
 
 CONFIG=hyprshell
 TARGET=shell
 
-# Every function on shell.qml's IpcHandler. `:arg` marks one that takes a
+RT="${XDG_RUNTIME_DIR:-/tmp}"
+CMD_FILE="$RT/hyprshell.cmd"
+STATUS_FILE="$CMD_FILE.status"
+BIND_LOG="$RT/hyprshell-bind.log"
+QS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/$CONFIG"
+
+# Every command in Commands.qml's table. `:arg` marks one that takes a
 # value; doctor skips those rather than guessing what to pass.
 COMMANDS='toggleLauncher toggleOverview toggleControlCenter toggleNotifications
 toggleCalendar togglePower closePanels openSettings:arg toggleTheme cycleTheme
@@ -27,167 +34,111 @@ red()  { printf '\033[31m%s\033[0m\n' "$*"; }
 grn()  { printf '\033[32m%s\033[0m\n' "$*"; }
 dim()  { printf '\033[2m%s\033[0m\n' "$*"; }
 
-# There is more than one way to point Quickshell at a running shell, and
-# which ones work depends on both the build and the state of its runtime
-# directory. Rather than pick one and hope, each is tried until one answers.
-#
-# The winner is remembered for the rest of the session so repeated calls cost
-# one process instead of several. The note lives in $XDG_RUNTIME_DIR, so a
-# Quickshell upgrade cannot leave a stale one behind a reboot — and a
-# remembered route that stops working falls back to the probe and records the
-# new answer.
-FORM_NOTE="${XDG_RUNTIME_DIR:-/tmp}/hyprshell.ipcform"
-
-# Run one route to the shell. $1 is the route number, $2 the function, the
-# rest its arguments.
-#
-# 1 goes straight to $XDG_RUNTIME_DIR/quickshell/by-pid/<pid>: Quickshell
-#   reads that instance's lock and connects. No config path to hash and no
-#   instance list to filter by display — the two steps that can lose an
-#   instance that is plainly running. Same route DankMaterialShell's helper
-#   takes.
-# 2 and 3 name the config, which is the documented way; which spelling a
-#   build accepts has moved between releases, so both are tried.
-# 4 names no config at all, for a shell running as the default config.
-# 5 asks for every instance and calls the first by id. Last, because it
-#   would also reach a Quickshell running a different config.
-setform() {
-    _form=$1; _fn=$2; shift 2
-    case $_form in
-        1)  _pid=$(pgrep -x qs 2>/dev/null | head -n1)
-            [ -n "$_pid" ] || { echo "no qs process"; return 1; }
-            qs --pid "$_pid" ipc call "$TARGET" "$_fn" ${1+"$@"} 2>&1
-            return ;;
-        5)  _id=$(qs list --all -j 2>/dev/null \
-                  | sed -n 's/.*"id"[^"]*"\([^"]*\)".*/\1/p' | head -n1)
-            [ -n "$_id" ] || { echo "no quickshell instances at all"; return 1; }
-            qs -i "$_id" ipc call "$TARGET" "$_fn" ${1+"$@"} 2>&1
-            return ;;
-        2) set -- qs -c "$CONFIG" ipc call "$TARGET" "$_fn" ${1+"$@"} ;;
-        3) set -- qs ipc -c "$CONFIG" call "$TARGET" "$_fn" ${1+"$@"} ;;
-        4) set -- qs ipc call "$TARGET" "$_fn" ${1+"$@"} ;;
-        *) return 1 ;;
-    esac
-    "$@" 2>&1
+# The pid of the shell's reader, if one is running.
+watcher_pid() {
+    [ -f "$STATUS_FILE" ] || return 1
+    _w=$(sed -n 's/^watcher //p' "$STATUS_FILE" 2>/dev/null)
+    [ -n "$_w" ] || return 1
+    kill -0 "$_w" 2>/dev/null || return 1
+    printf '%s' "$_w"
 }
 
-call() {
-    _fn=$1; shift
-
-    _known=""
-    [ -r "$FORM_NOTE" ] && _known=$(cat "$FORM_NOTE" 2>/dev/null)
-    case $_known in 1|2|3|4|5) ;; *) _known="" ;; esac
-
-    if [ -n "$_known" ]; then
-        if out=$(setform "$_known" "$_fn" ${1+"$@"}); then
-            [ -n "$out" ] && printf '%s\n' "$out"
-            return 0
-        fi
-        last=$out
+# Send one command the way the keybinds do.
+send() {
+    _line=$*
+    if ! echo "$_line" >> "$CMD_FILE" 2>/dev/null; then
+        red "could not write to $CMD_FILE"
+        return 1
     fi
-
-    for form in 1 2 3 4 5; do
-        [ "$form" = "$_known" ] && continue
-        if out=$(setform "$form" "$_fn" ${1+"$@"}); then
-            printf '%s' "$form" > "$FORM_NOTE" 2>/dev/null
-            [ -n "$out" ] && printf '%s\n' "$out"
-            return 0
-        fi
-        last=$out
-    done
-    printf '%s\n' "${last:-no output}" >&2
+    if watcher_pid >/dev/null; then
+        return 0
+    fi
+    red "queued, but nothing is reading $CMD_FILE"
+    if [ -f "$STATUS_FILE" ]; then
+        dim "  last watcher: $(cat "$STATUS_FILE" | tr '\n' ' ')"
+    else
+        dim "  no shell has started a watcher since boot"
+    fi
+    dim "  start the shell: $QS_DIR/run.sh"
     return 1
 }
 
-# What the keybinds themselves have been doing. They write a line here for
-# every press, because Hyprland sends a spawned command's output to
-# /dev/null and a shortcut that fails is otherwise completely silent.
-#
-#   a line ending "-> 0"       the call went through; if nothing happened,
-#                              the shell got it and chose to do nothing
-#   a line ending "-> 1"       the shell refused or was not reachable, and
-#                              the qs errors above it say which
-#   no line at all             the bind never fired: the key or the
-#                              modifier, not the shell
-BIND_LOG="${XDG_RUNTIME_DIR:-/tmp}/hyprshell-bind.log"
+# The old route, kept for comparison: Quickshell's own IPC. It has to find
+# the running instance first, which is the part that fails on some setups —
+# which is why it is no longer what the keybinds use.
+ipc_send() {
+    _fn=$1; shift
+    _pid=$(pgrep -x qs 2>/dev/null | head -n1)
+    for _form in 1 2 3 4; do
+        case $_form in
+            1) [ -n "$_pid" ] || continue
+               out=$(qs --pid "$_pid" ipc call "$TARGET" "$_fn" ${1+"$@"} 2>&1) ;;
+            2) out=$(qs -c "$CONFIG" ipc call "$TARGET" "$_fn" ${1+"$@"} 2>&1) ;;
+            3) out=$(qs ipc -c "$CONFIG" call "$TARGET" "$_fn" ${1+"$@"} 2>&1) ;;
+            4) out=$(qs ipc call "$TARGET" "$_fn" ${1+"$@"} 2>&1) ;;
+        esac
+        # shellcheck disable=SC2181
+        if [ $? -eq 0 ]; then
+            grn "answered on route $_form"
+            [ -n "$out" ] && printf '%s\n' "$out"
+            return 0
+        fi
+        dim "route $_form: $out"
+    done
+    red "no IPC route reached the shell"
+    return 1
+}
 
+known_command() {
+    for c in $COMMANDS; do
+        [ "${c%:arg}" = "$1" ] && return 0
+    done
+    return 1
+}
+
+# What the keybinds have been doing. They write a line per press, because
+# Hyprland sends a spawned command's output to /dev/null and a shortcut that
+# fails is otherwise completely silent.
+#
+#   a line ending "-> 0"   the command was written and the shell was reading
+#   a line ending "-> 1"   nothing was reading it; the lines under it say
+#                          what was there instead
+#   no line at all         the bind never fired: the key or the modifier,
+#                          not the shell
 trace() {
     if [ ! -s "$BIND_LOG" ]; then
         red "nothing logged at $BIND_LOG"
         dim "  Either no shell shortcut has been pressed since this boot, or"
         dim "  none of them is firing at all. Press one and look again; if it"
-        dim "  stays empty the key never reached the bind."
+        dim "  stays empty the key never reached the bind, which is a"
+        dim "  compositor-side problem: check 'hyprctl binds'."
         return 1
     fi
     dim "$BIND_LOG"
     tail -n 25 "$BIND_LOG"
 }
 
-# What the shell registered with the compositor. Keybinds no longer go this
-# way — they call the IPC function above — but the registrations are still
-# made, so other clients can dispatch to them, and an empty list here is the
-# clearest sign that this Quickshell was built without the protocol.
-QS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/$CONFIG"
-
+# What the shell registered with the compositor. Nothing uses these now —
+# the keybinds go through the command file — but other clients can, and an
+# empty list is the clearest sign this Quickshell was built without the
+# global shortcuts protocol.
 shortcuts() {
-    if ! command -v hyprctl >/dev/null 2>&1; then
-        red "hyprctl is not on PATH"; return 1
-    fi
+    command -v hyprctl >/dev/null 2>&1 || { red "hyprctl is not on PATH"; return 1; }
     out=$(hyprctl globalshortcuts 2>&1) || { red "$out"; return 1; }
     if printf '%s' "$out" | grep -q hyprshell; then
         printf '%s\n' "$out" | grep hyprshell
         return 0
     fi
-
     red "the shell has registered no global shortcuts"
-    echo
-    echo "working out why:"
-
-    # 1. is the installed tree new enough to have them at all?
-    if [ -f "$QS_DIR/modules/shortcuts/GlobalShortcuts.qml" ]; then
-        grn "  ok  the installed shell has GlobalShortcuts.qml"
-    else
-        red "  no  $QS_DIR has no modules/shortcuts/GlobalShortcuts.qml"
-        dim "      The installed copy predates them. Pulling the repo is not"
-        dim "      enough — the shell runs from ~/.config, not the checkout:"
-        dim "        ./shell/install.sh && hyprctl reload"
-        return 1
-    fi
-
-    # 2. was Quickshell built with the protocol?
-    found=""
-    for d in $(qs --print-qml-import-paths 2>/dev/null) \
-             /usr/lib/qt6/qml /usr/lib/x86_64-linux-gnu/qt6/qml \
-             /usr/lib/qt/qml "$HOME/.local/lib/qt6/qml"; do
-        [ -d "$d/Quickshell/Hyprland" ] || continue
-        if ls "$d/Quickshell/Hyprland" 2>/dev/null | grep -qi globalshortcut; then
-            found=$d; break
-        fi
-    done
-    if [ -n "$found" ]; then
-        grn "  ok  Quickshell has the global shortcuts module"
-        dim "      ($found/Quickshell/Hyprland)"
-    else
-        red "  no  no _GlobalShortcuts module found in Quickshell's QML dir"
-        dim "      This build was made without HYPRLAND_GLOBAL_SHORTCUTS."
-        dim "      Nothing is broken by that: the keybinds call this script."
-        return 1
-    fi
-
-    # 3. is it running, and what did it say?
-    if pgrep -x qs >/dev/null 2>&1; then
-        grn "  ok  the shell is running"
-        dim "      so it loaded them and something refused. Its log will say:"
-        dim "        qs -c $CONFIG log | grep -i -e shortcut -e globalshortcut"
-    else
-        red "  no  the shell is not running"
-        dim "      start it: $QS_DIR/run.sh"
-    fi
+    dim "  This build of Quickshell has no HYPRLAND_GLOBAL_SHORTCUTS."
+    dim "  Nothing depends on them: the keybinds use $CMD_FILE."
     return 1
 }
 
 usage() {
-    echo "usage: hyprshellctl doctor | list | shortcuts | trace | <command> [arg]"
+    echo "usage: hyprshellctl doctor | list | trace | shortcuts"
+    echo "       hyprshellctl <command> [arg]"
+    echo "       hyprshellctl ipc <command> [arg]"
     echo
     echo "commands:"
     for c in $COMMANDS; do
@@ -201,28 +152,16 @@ usage() {
 doctor() {
     fail=0
 
-    echo "1. quickshell on PATH"
-    if command -v qs >/dev/null 2>&1; then
-        grn "   ok  $(command -v qs)   $(qs --version 2>/dev/null | head -n1)"
-    else
-        red "   no  qs is not on PATH"
-        dim "       Hyprland runs binds through /bin/sh, which uses your login"
-        dim "       PATH — a qs installed only in a shell rc will not be found."
-        return 1
-    fi
-
-    echo
-    echo "2. a shell instance is running"
+    echo "1. the shell is running"
     if pgrep -x qs >/dev/null 2>&1; then
-        grn "   ok  $(pgrep -x qs | tr '\n' ' ')"
+        grn "   ok  pid $(pgrep -x qs | tr '\n' ' ')"
     else
         red "   no  nothing is running"
         dim "       start it: $QS_DIR/run.sh"
         # A config that fails to load leaves no process and no message on
         # screen — the reason is only in the log it wrote on the way down.
-        # Nobody finds that by themselves, so show the tail of the newest.
         newest=""
-        for f in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/quickshell/by-id/*/log.qslog; do
+        for f in "$RT"/quickshell/by-id/*/log.qslog; do
             [ -f "$f" ] || continue
             [ -z "$newest" ] || [ "$f" -nt "$newest" ] && newest=$f
         done
@@ -235,37 +174,29 @@ doctor() {
     fi
 
     echo
-    echo "3. its IPC target is reachable"
-    shown=""
-    for form in 1 2 3 4 5; do
-        case $form in
-            1) _pid=$(pgrep -x qs 2>/dev/null | head -n1)
-               shown=$([ -n "$_pid" ] && qs --pid "$_pid" ipc show 2>&1) ;;
-            2) shown=$(qs -c "$CONFIG" ipc show 2>&1) ;;
-            3) shown=$(qs ipc -c "$CONFIG" show 2>&1) ;;
-            4) shown=$(qs ipc show 2>&1) ;;
-            5) _id=$(qs list --all -j 2>/dev/null \
-                     | sed -n 's/.*"id"[^"]*"\([^"]*\)".*/\1/p' | head -n1)
-               shown=$([ -n "$_id" ] && qs -i "$_id" ipc show 2>&1) ;;
-        esac
-        # shellcheck disable=SC2181
-        if [ $? -eq 0 ] && printf '%s' "$shown" | grep -q "$TARGET"; then
-            grn "   ok  target '$TARGET' is listening (route $form)"
-            case $form in
-                2|3|4) ;;
-                *) dim "       naming the config does not find it — that lookup is"
-                   dim "       broken on this machine, which is why the shortcuts"
-                   dim "       reach the instance directly instead" ;;
-            esac
-            break
+    echo "2. it is reading commands"
+    if w=$(watcher_pid); then
+        grn "   ok  watcher pid $w, reading $CMD_FILE"
+    else
+        red "   no  nothing is reading $CMD_FILE"
+        if [ -f "$STATUS_FILE" ]; then
+            sed 's/^/       /' "$STATUS_FILE"
+            dim "       That watcher is gone. Restart the shell:"
+        else
+            dim "       The shell is running but never started a watcher, so"
+            dim "       it predates this mechanism. Reinstall and restart:"
         fi
-        shown=""
-    done
-    if [ -z "$shown" ]; then
-        red "   no  no IPC target called '$TARGET'"
-        dim "       The shell is running but its IpcHandler did not register."
-        dim "       Check the shell's own log for a load error:"
-        dim "         qs -c $CONFIG log"
+        dim "         ./shell/install.sh && $QS_DIR/run.sh --restart"
+        fail=1
+    fi
+
+    echo
+    echo "3. a round trip"
+    if send closePanels >/dev/null 2>&1; then
+        grn "   ok  closePanels went through"
+        dim "       every shortcut takes exactly this path"
+    else
+        red "   no  could not deliver a command"
         fail=1
     fi
 
@@ -284,46 +215,25 @@ doctor() {
         dim "   --  nothing logged yet at $BIND_LOG"
         dim "       Press a shell shortcut and run this again. Still empty"
         dim "       means the bind never fired — the key or the modifier,"
-        dim "       not the shell. 'hyprshellctl trace' explains the lines."
+        dim "       not the shell."
     fi
 
     echo
-    echo "5. global shortcuts (optional)"
-    if shortcuts >/dev/null 2>&1; then
-        grn "   ok  $(hyprctl globalshortcuts 2>/dev/null | grep -c hyprshell) registered"
-        dim "       other clients can dispatch 'global, hyprshell:<name>'"
+    echo "5. Quickshell IPC (optional)"
+    if [ ! -f "$STATUS_FILE" ]; then
+        dim "   --  unknown; no watcher has reported in"
+    elif grep -q '^socket missing' "$STATUS_FILE"; then
+        dim "   --  no socket at $(sed -n 's/^socket missing //p' "$STATUS_FILE")"
+        dim "       so this build cannot be reached by pid at all"
     else
-        dim "   --  none registered, which is fine: the keybinds do not use"
-        dim "       them. 'hyprshellctl shortcuts' says why if you care."
+        grn "   ok  $(sed -n 's/^socket //p' "$STATUS_FILE")"
     fi
-
-    echo
-    echo "6. every command answers over IPC"
-    ok=0; bad=0
-    for c in $COMMANDS; do
-        case $c in *:arg) continue ;; esac
-        # Only harmless, self-reversing ones are actually invoked. The rest
-        # are checked for existence by calling with a bad arity, which a
-        # registered function rejects differently from a missing one.
-        case $c in
-            lock|reloadShell|showDesktop|toggleLauncher|toggleOverview|\
-            toggleControlCenter|toggleNotifications|toggleCalendar|togglePower)
-                continue ;;
-        esac
-        if out=$(call "$c" 2>&1); then
-            ok=$((ok + 1))
-        else
-            bad=$((bad + 1))
-            red "   no  $c"
-            [ -n "$out" ] && dim "       $out"
-        fi
-    done
-    [ "$bad" -eq 0 ] && grn "   ok  $ok commands answered"
-    [ "$bad" -gt 0 ] && fail=1
+    dim "       Only used by 'hyprshellctl ipc'. The keybinds do not"
+    dim "       need it, which is the point of the command file."
 
     echo
     if [ "$fail" -eq 0 ]; then
-        grn "The chain is intact: a keybind failing now is the bind, not the shell."
+        grn "The chain is intact: a shortcut failing now is the bind itself."
         dim "Check it fired at all:  hyprctl binds | grep -A3 <your key>"
     else
         red "Something above is broken — that is why the shortcuts do nothing."
@@ -334,21 +244,17 @@ doctor() {
 case "${1:-}" in
     ""|-h|--help|help) usage ;;
     doctor)            doctor ;;
-    shortcuts)         shortcuts ;;
     trace)             trace ;;
+    shortcuts)         shortcuts ;;
     list)              usage ;;
+    ipc)
+        shift
+        [ $# -ge 1 ] || { red "usage: hyprshellctl ipc <command> [arg]"; exit 2; }
+        known_command "$1" || { red "no such command: $1"; exit 2; }
+        ipc_send "$@"
+        ;;
     *)
-        cmd=$1; shift
-        known=0
-        for c in $COMMANDS; do
-            [ "${c%:arg}" = "$cmd" ] && known=1
-        done
-        if [ "$known" -eq 0 ]; then
-            red "no such command: $cmd"
-            echo
-            usage
-            exit 2
-        fi
-        call "$cmd" ${1+"$@"}
+        known_command "$1" || { red "no such command: $1"; echo; usage; exit 2; }
+        send "$@"
         ;;
 esac

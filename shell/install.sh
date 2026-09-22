@@ -291,12 +291,11 @@ if [ -x "$QS_DIR/hyprshellctl" ]; then
     if command -v hyprshellctl >/dev/null 2>&1; then
         ok "hyprshellctl" "on PATH — run 'hyprshellctl doctor'"
     else
-        # Only a convenience: the keybinds call it by absolute path.
         ok "hyprshellctl" "installed (not on PATH; run $QS_DIR/hyprshellctl)"
     fi
 else
-    # This one matters — every shell keybind runs this file.
-    fail "hyprshellctl" "missing from $QS_DIR — shell shortcuts will do nothing"
+    warn "hyprshellctl" "missing from $QS_DIR — shortcuts still work; this is"
+    printf '      the diagnostic (hyprshellctl doctor)\n'
 fi
 
 head1 "Lock screen"
