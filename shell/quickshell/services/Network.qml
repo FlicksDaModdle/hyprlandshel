@@ -28,6 +28,16 @@ Singleton {
     property var networks: []
     property bool scanning: false
 
+    // SSIDs NetworkManager already has a profile for. A known network needs
+    // no password to rejoin, and is the only kind that can be forgotten.
+    property var savedNames: []
+
+    // What the last action said when it failed. nmcli is specific — wrong
+    // password, no such network, device busy — and swallowing that left the
+    // shell with nothing to show but a network that did not join.
+    property string lastError: ""
+    property string busySsid: ""
+
     readonly property string icon: !wifiEnabled ? "wifiOff" : (connected ? "wifi" : "wifiOff")
     readonly property string label: !available ? "no network"
                                   : !wifiEnabled ? "Wi-Fi off"
@@ -48,6 +58,25 @@ Singleton {
     function refresh() {
         radioProc.running = true;
         activeProc.running = true;
+        savedProc.running = true;
+    }
+
+    function isKnown(name) { return (savedNames || []).indexOf(name) >= 0; }
+
+    Process {
+        id: savedProc
+        command: ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const out = [];
+                for (const line of text.trim().split("\n")) {
+                    if (!line) continue;
+                    const f = root.splitFields(line);
+                    if ((f[1] || "").indexOf("wireless") >= 0) out.push(f[0]);
+                }
+                root.savedNames = out;
+            }
+        }
     }
 
     Process {
@@ -125,7 +154,8 @@ Singleton {
                         inUse: (f[0] || "").indexOf("*") >= 0,
                         ssid: name,
                         signal: parseInt(f[2]) || 0,
-                        security: (f[3] || "").trim()
+                        security: (f[3] || "").trim(),
+                        known: root.isKnown(name)
                     };
                     out.push(entry);
                     if (entry.inUse) {
@@ -156,7 +186,23 @@ Singleton {
     }
 
     // ── actions ───────────────────────────────────────────────────────────
-    Process { id: action; onExited: root.refresh() }
+    // stderr is kept: "Secrets were required, but not provided" is how nmcli
+    // says the password was wrong, and it is the one thing the person at the
+    // keyboard needs to be told.
+    Process {
+        id: action
+        stderr: StdioCollector {
+            onStreamFinished: {
+                const t = text.trim();
+                root.lastError = t.replace(/^Error:\s*/, "");
+            }
+        }
+        onExited: code => {
+            if (code === 0) root.lastError = "";
+            root.busySsid = "";
+            root.refresh();
+        }
+    }
 
     function setWifiEnabled(on) {
         wifiEnabled = on;               // optimistic, corrected by next poll
@@ -181,11 +227,36 @@ Singleton {
         action.running = true;
     }
 
-    // Connects to a known network. An unknown secured network needs a
-    // password, which the shell has no prompt for — nm-connection-editor
-    // is the right tool for that, so that's what it opens.
-    function connect(name) {
-        action.command = ["nmcli", "device", "wifi", "connect", name];
+    // Joins a network. A known one needs nothing; an unknown secured one
+    // needs the password, which the shell now asks for rather than sending
+    // people to nm-connection-editor.
+    //
+    // `--ask` is deliberately not used: it would block on a terminal that
+    // does not exist. Without a password nmcli tries the saved secret and
+    // fails cleanly if there is none, which is what surfaces in lastError.
+    function connect(name, password) {
+        if (!name) return;
+        lastError = "";
+        busySsid = name;
+        const cmd = ["nmcli", "device", "wifi", "connect", name];
+        if (password && password !== "") { cmd.push("password"); cmd.push(password); }
+        action.command = cmd;
+        action.running = true;
+    }
+
+    // Whether joining this one will need a password from us: secured, and
+    // NetworkManager has no profile for it yet.
+    function needsPassword(ap) {
+        if (!ap) return false;
+        const sec = (ap.security || "").trim();
+        return sec !== "" && sec.toLowerCase() !== "open" && !isKnown(ap.ssid);
+    }
+
+    // Deletes the saved profile, so the next join asks again.
+    function forget(name) {
+        if (!name) return;
+        lastError = "";
+        action.command = ["nmcli", "connection", "delete", name];
         action.running = true;
     }
 

@@ -406,10 +406,23 @@ PanelSurface {
                             id: entry
                             required property var modelData
                             width: entryColumn.width
-                            height: 44
+
+                            // Grows to hold the password field when this is
+                            // the row being asked about.
+                            readonly property bool asking:
+                                entry.modelData.asks
+                                && root.askingSsid === entry.modelData.key
+                            height: asking ? 44 + 40 : 44
+                            Behavior on height {
+                                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                            }
+                            clip: true
 
                             Rectangle {
-                                anchors.fill: parent
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                height: 44
                                 radius: Config.Appearance.rSm
                                 color: entry.modelData.current ? Config.Appearance.sel
                                      : (entryHover.hovered ? Config.Appearance.hover : "transparent")
@@ -421,7 +434,9 @@ PanelSurface {
                                 anchors.leftMargin: 9
                                 anchors.right: metaLabel.left
                                 anchors.rightMargin: 10
-                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.top: parent.top
+                                anchors.topMargin: 8
+                                height: 28
                                 spacing: 10
 
                                 Rectangle {
@@ -469,7 +484,8 @@ PanelSurface {
                                 id: metaLabel
                                 anchors.right: parent.right
                                 anchors.rightMargin: 10
-                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.top: parent.top
+                                anchors.topMargin: 16
                                 text: entry.modelData.meta
                                 font.pixelSize: Config.Appearance.fs(10)
                                 font.weight: Font.DemiBold
@@ -477,8 +493,93 @@ PanelSurface {
                                        ? Config.Appearance.accent : Config.Appearance.ink3
                             }
 
-                            HoverHandler { id: entryHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: entry.modelData.go() }
+                            // Only the row proper reacts; the password field
+                            // below it would otherwise re-trigger the tap.
+                            Item {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                height: 44
+                                HoverHandler { id: entryHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: entry.modelData.go() }
+                            }
+
+                            // Asked for in place, so joining a new network
+                            // never means opening Settings.
+                            Row {
+                                visible: entry.asking
+                                anchors.left: parent.left
+                                anchors.leftMargin: 9
+                                anchors.right: parent.right
+                                anchors.rightMargin: 10
+                                anchors.top: parent.top
+                                anchors.topMargin: 46
+                                spacing: 8
+
+                                Rectangle {
+                                    width: parent.width - joinButton.width - 8
+                                    height: 30
+                                    radius: Config.Appearance.rSm
+                                    color: Config.Appearance.ground
+                                    border.width: pass.activeFocus ? 2 : 1
+                                    border.color: pass.activeFocus
+                                                  ? Config.Appearance.accent
+                                                  : Config.Appearance.rule
+
+                                    TextInput {
+                                        id: pass
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 9
+                                        anchors.rightMargin: 9
+                                        verticalAlignment: Text.AlignVCenter
+                                        clip: true
+                                        color: Config.Appearance.ink
+                                        font.family: Config.Appearance.fontFamily
+                                        font.pixelSize: Config.Appearance.fs(12)
+                                        echoMode: TextInput.Password
+                                        selectByMouse: true
+                                        focus: entry.asking
+                                        onAccepted: {
+                                            Services.Network.connect(entry.modelData.key, text);
+                                            root.askingSsid = "";
+                                        }
+
+                                        StyledText {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: pass.text === "" && !pass.activeFocus
+                                            text: "Password"
+                                            font.pixelSize: Config.Appearance.fs(12)
+                                            color: Config.Appearance.ink3
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: joinButton
+                                    width: joinLabel.implicitWidth + 22
+                                    height: 30
+                                    radius: Config.Appearance.rSm
+                                    color: Config.Appearance.accent
+                                    opacity: joinHover.hovered ? 0.9 : 1
+
+                                    StyledText {
+                                        id: joinLabel
+                                        anchors.centerIn: parent
+                                        text: "Join"
+                                        font.pixelSize: Config.Appearance.fs(12)
+                                        font.weight: Font.DemiBold
+                                        color: Config.Appearance.onAccent
+                                    }
+
+                                    HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler {
+                                        onTapped: {
+                                            Services.Network.connect(entry.modelData.key, pass.text);
+                                            root.askingSsid = "";
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -490,7 +591,8 @@ PanelSurface {
                         bottomPadding: 18
                         text: root.wifiPane
                               ? (Services.Network.wifiEnabled ? "Looking for networks…" : "Wi-Fi is off")
-                              : (Services.Bluetooth.powered ? "No paired devices" : "Bluetooth is off")
+                              : (Services.Bluetooth.powered
+                                 ? "No devices — scan to find one" : "Bluetooth is off")
                         font.pixelSize: Config.Appearance.fs(12)
                         color: Config.Appearance.ink3
                     }
@@ -572,6 +674,21 @@ PanelSurface {
     // Airplane mode is derived rather than read from rfkill: "all radios
     // off" is exactly what the shell can both observe and set through the
     // two radio services it already talks to.
+    // The network the list is currently asking a password for. One at a
+    // time: the row grows a field in place rather than opening anything.
+    property string askingSsid: ""
+
+    // Ask for the keyboard only while the field is up, and give it back when
+    // the panel closes with the field still open.
+    onAskingSsidChanged: Config.UiState.panelWantsKeyboard = askingSsid !== ""
+
+    Connections {
+        target: Config.UiState
+        function onControlCenterOpenChanged() {
+            if (!Config.UiState.controlCenterOpen) root.askingSsid = "";
+        }
+    }
+
     readonly property bool airplane: !Services.Network.wifiEnabled
                                      && (!Services.Bluetooth.available || !Services.Bluetooth.powered)
 
@@ -680,19 +797,38 @@ PanelSurface {
             return Services.Network.networks.map(ap => ({
                 n: ap.ssid,
                 s: (ap.security && ap.security !== "" ? ap.security : "Open")
-                   + (ap.inUse ? " · connected" : ""),
+                   + (ap.inUse ? " · connected"
+                      : (Services.Network.busySsid === ap.ssid ? " · joining…"
+                         : (ap.known ? " · saved" : ""))),
                 icon: "wifi",
                 meta: ap.signal + "%",
                 current: ap.inUse,
-                go: () => { if (!ap.inUse) Services.Network.connect(ap.ssid); }
+                // A saved or open network joins on a tap. A new secured one
+                // asks here rather than sending anyone to Settings.
+                asks: Services.Network.needsPassword(ap),
+                key: ap.ssid,
+                go: () => {
+                    if (ap.inUse) { Services.Network.disconnect(); return; }
+                    if (Services.Network.needsPassword(ap)) {
+                        root.askingSsid = root.askingSsid === ap.ssid ? "" : ap.ssid;
+                        return;
+                    }
+                    root.askingSsid = "";
+                    Services.Network.connect(ap.ssid, "");
+                }
             }));
         }
         return Services.Bluetooth.devices.map(dev => ({
             n: dev.name,
-            s: dev.connected ? "Connected" : "Paired",
+            s: Services.Bluetooth.busyMac === dev.mac ? "Working…"
+               : (dev.connected ? "Connected"
+                  : (dev.paired ? "Paired · tap to connect"
+                     : "Not paired · tap to pair")),
             icon: "bluetooth",
-            meta: dev.connected ? "on" : "",
+            meta: dev.connected ? "on" : (dev.paired ? "" : "new"),
             current: dev.connected,
+            asks: false,
+            key: dev.mac,
             go: () => Services.Bluetooth.toggleDevice(dev)
         }));
     }

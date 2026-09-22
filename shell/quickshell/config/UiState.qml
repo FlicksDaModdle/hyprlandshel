@@ -19,6 +19,12 @@ Singleton {
     property bool notificationsOpen: false
     property bool calendarOpen: false
     property bool powerOpen: false
+    // A panel wants to be typed into — the control center's password field,
+    // for one. The panel layer takes keyboard focus only while this is set,
+    // because a layer surface that holds focus the rest of the time takes it
+    // away from whatever you were working in.
+    property bool panelWantsKeyboard: false
+
     property bool desktopMenuOpen: false
     property bool windowMenuOpen: false
 

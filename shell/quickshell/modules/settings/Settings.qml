@@ -275,6 +275,10 @@ Scope {
             { n: "App name", s: "The focused app's name, beside the workspace pills",
               type: "slider", min: 8, max: 28, unit: "px", value: A.barAppSize,
               set: v => A.barAppSize = v },
+            { n: "Window menu", s: "The \u201CWindow\u201D button beside the app name, "
+                 + "which opens the window\u2019s own actions",
+              type: "slider", min: 8, max: 24, unit: "px", value: A.barMenuSize,
+              set: v => A.barMenuSize = v },
             { n: "Window title", s: "The live title after the app name",
               type: "slider", min: 8, max: 22, unit: "px", value: A.barTitleSize,
               set: v => A.barTitleSize = v },
@@ -671,22 +675,54 @@ Scope {
                 rows.push({ n: "VPN", s: "An active VPN connection",
                             type: "info", value: net.vpnName || "connected" });
 
+            if (net.lastError !== "")
+                rows.push({ n: "Last attempt", s: net.lastError,
+                            type: "info", value: "failed" });
+
             rows.push({ type: "header", n: "In range",
                         s: (net.networks || []).length + " network"
                            + ((net.networks || []).length === 1 ? "" : "s")
-                           + " — open the bar's network menu to join one" });
-            const seen = (net.networks || []).slice(0, 8);
+                           + " found. Click a saved one to join it; a new "
+                           + "secured one asks for its password first." });
+
+            const seen = (net.networks || []).slice(0, 12);
             for (let i = 0; i < seen.length; i++) {
                 const w = seen[i];
                 const joined = net.connected && w.ssid === net.ssid;
-                rows.push({ n: w.ssid || "(hidden)",
-                            s: (w.security || "open")
-                               + (joined ? " · connected" : ""),
-                            type: "meter",
-                            value: Math.max(0, Math.min(1, (w.signal || 0) / 100)),
-                            label: (w.signal || 0) + "%",
-                            color: joined ? Config.Appearance.accent
-                                          : Config.Appearance.ink2 });
+                const sec = (w.security || "").trim() || "open";
+                const busy = net.busySsid === w.ssid;
+
+                // The row itself says who and how strong; what it *does*
+                // depends on whether this network is already known.
+                if (joined) {
+                    rows.push({ n: w.ssid || "(hidden)",
+                                s: sec + " · " + (w.signal || 0) + "% · connected",
+                                type: "action", label: "Disconnect",
+                                set: () => net.disconnect() });
+                } else if (net.needsPassword(w)) {
+                    rows.push({ n: w.ssid || "(hidden)",
+                                s: sec + " · " + (w.signal || 0) + "%"
+                                   + (busy ? " · joining…" : " · needs a password"),
+                                type: "text", secret: true,
+                                placeholder: "Password",
+                                label: busy ? "Joining" : "Join",
+                                set: v => net.connect(w.ssid, v) });
+                } else {
+                    rows.push({ n: w.ssid || "(hidden)",
+                                s: sec + " · " + (w.signal || 0) + "%"
+                                   + (w.known ? " · saved" : "")
+                                   + (busy ? " · joining…" : ""),
+                                type: "action",
+                                label: busy ? "Joining" : "Join",
+                                set: () => net.connect(w.ssid, "") });
+                }
+
+                if (w.known && !joined)
+                    rows.push({ n: "Forget " + (w.ssid || "this network"),
+                                s: "Delete the saved profile, so joining asks "
+                                   + "for the password again",
+                                type: "action", label: "Forget",
+                                set: () => net.forget(w.ssid) });
             }
             if (seen.length === 0)
                 rows.push({ n: "Nothing found", s: "Scan again, or the radio is off",
@@ -722,20 +758,35 @@ Scope {
 
                 { type: "header", n: "Devices",
                   s: bt.pairedCount + " known, " + bt.connectedDevices.length
-                     + " connected" }
+                     + " connected. Pairing also trusts and connects, so a "
+                     + "device works from then on without asking again." }
             ];
+
+            if (bt.lastError !== "")
+                rows.push({ n: "Last attempt", s: bt.lastError,
+                            type: "info", value: "failed" });
 
             const devs = bt.devices || [];
             for (let i = 0; i < devs.length; i++) {
                 const d = devs[i];
+                const busy = bt.busyMac === d.mac;
+                const state = d.connected ? "Connected"
+                            : (d.paired ? "Paired" : "Found by the last scan");
                 rows.push({ n: d.name || d.mac,
-                            s: d.connected ? "Connected · " + d.mac : d.mac,
+                            s: state + " · " + d.mac
+                               + (d.kind ? " · " + d.kind : ""),
                             type: "action",
-                            label: d.connected ? "Disconnect" : "Connect",
+                            label: busy ? "Working" : bt.actionFor(d),
                             set: () => bt.toggleDevice(d) });
+                if (d.paired)
+                    rows.push({ n: "Forget " + (d.name || d.mac),
+                                s: "Drop the pairing; it has to be paired "
+                                   + "again after this",
+                                type: "action", label: "Forget",
+                                set: () => bt.removeDevice(d.mac) });
             }
             if (devs.length === 0)
-                rows.push({ n: "Nothing paired", s: "Scan to find devices nearby",
+                rows.push({ n: "Nothing found", s: "Scan to find devices nearby",
                             type: "info", value: "—" });
             return rows;
         }

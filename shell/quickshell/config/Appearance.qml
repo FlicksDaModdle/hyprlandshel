@@ -109,6 +109,7 @@ Singleton {
             property int barFontSize: 12              // 10-18 px
             property int barTitleSize: 12             // window title beside the app name
             property int barAppSize: 16               // the focused app's name
+            property int barMenuSize: 13              // the "Window" menu button
             property int barClockSize: 13             // the clock's time
             property int barBadgeSize: 11             // notification count
             property int dockLabelSize: 12            // dock tooltips and the active label
@@ -241,6 +242,7 @@ Singleton {
     property alias barFontSize: prefs.barFontSize
     property alias barTitleSize: prefs.barTitleSize
     property alias barAppSize: prefs.barAppSize
+    property alias barMenuSize: prefs.barMenuSize
     property alias barClockSize: prefs.barClockSize
     property alias barBadgeSize: prefs.barBadgeSize
     property alias dockLabelSize: prefs.dockLabelSize

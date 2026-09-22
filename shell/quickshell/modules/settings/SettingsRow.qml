@@ -92,6 +92,7 @@ Item {
                 case "swatch": return swatchComponent;
                 case "meter":  return meterComponent;
                 case "action": return actionComponent;
+                case "text":   return textComponent;
                 case "keybind": return keybindComponent;
                 default:       return infoComponent;
                 }
@@ -695,6 +696,73 @@ Item {
                 font.pixelSize: Config.Appearance.fs(13)
                 font.weight: Font.DemiBold
                 color: Config.Appearance.ink2
+            }
+        }
+    }
+
+    Component {
+        id: textComponent
+
+        // A typed value — a Wi-Fi password, for now. Committed on Enter or
+        // on the button, not on every keystroke: half a password is not a
+        // password, and joining a network is not something to attempt
+        // sixteen times on the way to typing one.
+        Row {
+            spacing: 8
+
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: 190
+                implicitHeight: 32
+                radius: Config.Appearance.rSm
+                color: Config.Appearance.ground
+                border.width: field.activeFocus ? 2 : 1
+                border.color: field.activeFocus ? Config.Appearance.accent
+                                                : Config.Appearance.rule
+
+                TextInput {
+                    id: field
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    verticalAlignment: Text.AlignVCenter
+                    clip: true
+                    color: Config.Appearance.ink
+                    font.family: Config.Appearance.fontFamily
+                    font.pixelSize: Config.Appearance.fs(12)
+                    echoMode: root.spec.secret ? TextInput.Password : TextInput.Normal
+                    selectByMouse: true
+                    onAccepted: root.spec.set(text)
+
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: field.text === "" && !field.activeFocus
+                        text: root.spec.placeholder || ""
+                        font.pixelSize: Config.Appearance.fs(12)
+                        color: Config.Appearance.ink3
+                    }
+                }
+            }
+
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: goLabel.implicitWidth + 24
+                implicitHeight: 32
+                radius: Config.Appearance.rSm
+                color: Config.Appearance.accent
+                opacity: goHover.hovered ? 0.9 : 1
+
+                StyledText {
+                    id: goLabel
+                    anchors.centerIn: parent
+                    text: root.spec.label || "Go"
+                    font.pixelSize: Config.Appearance.fs(12)
+                    font.weight: Font.DemiBold
+                    color: Config.Appearance.onAccent
+                }
+
+                HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.spec.set(field.text) }
             }
         }
     }

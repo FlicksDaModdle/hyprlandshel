@@ -37,7 +37,12 @@ Variants {
 
         WlrLayershell.namespace: "quickshell:panel"
         WlrLayershell.layer: WlrLayer.Overlay
-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+        // None by default: these panels are pointer-driven, and a layer
+        // surface holding the keyboard would take it from the window behind.
+        // OnDemand only while a panel has something to type into.
+        WlrLayershell.keyboardFocus: Config.UiState.panelWantsKeyboard
+                                     ? WlrKeyboardFocus.OnDemand
+                                     : WlrKeyboardFocus.None
 
         // Panels follow the pointer's monitor: opening the control center
         // from the bar on the right-hand screen should not light it up on
