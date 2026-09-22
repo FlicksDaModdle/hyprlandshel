@@ -97,6 +97,13 @@ Singleton {
             // stranding anyone on an old value.
             property string keybinds: ""
 
+            // Which modifier the Windows key actually sends. SUPER (Mod4) is
+            // the normal answer, but a keyboard remapped in xkb, a Mac
+            // layout, or kb_options like altwin:swap_alt_win can put it
+            // somewhere else — and then every SUPER bind silently matches
+            // nothing. Written into the generated binds in place of SUPER.
+            property string modKey: "SUPER"
+
             // Typography
             property int fontScale: 100               // 75-150 %
             property int barFontSize: 12              // 10-18 px
@@ -191,6 +198,7 @@ Singleton {
     property alias middleEmulation: prefs.middleEmulation
     property alias displays: prefs.displays
     property alias keybinds: prefs.keybinds
+    property alias modKey: prefs.modKey
 
     // ── typography ────────────────────────────────────────────────────────
     property alias fontScale: prefs.fontScale

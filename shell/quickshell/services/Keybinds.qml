@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "../config" as Config
+import "." as Services
 
 // The editable half of the keybinds.
 //
@@ -56,12 +57,26 @@ Singleton {
         }
     }
 
+    // The modifier the Windows key really sends on this keyboard. Every
+    // accelerator is stored with SUPER as the token and translated on the
+    // way out, so changing this re-points all of them at once instead of
+    // needing each one re-recorded.
+    readonly property string modKey: Config.Appearance.modKey || "SUPER"
+
+    function withModKey(accel) {
+        if (!accel || modKey === "SUPER") return accel;
+        return accel.replace(/\bSUPER\b/g, modKey);
+    }
+
     function accelFor(key) {
         const o = overrides();
         if (o[key]) return o[key];
         const a = actions.find(x => x.key === key);
         return a ? a.def : "";
     }
+
+    // What actually gets written — accelFor is what the UI shows.
+    function boundAccel(key) { return withModKey(accelFor(key)); }
 
     function isCustom(key) { return !!overrides()[key]; }
 
@@ -89,8 +104,6 @@ Singleton {
         atomicWrites: true
     }
 
-    Process { id: reloadProc }
-
     function luaStr(s) {
         return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
     }
@@ -105,6 +118,9 @@ Singleton {
             "-- hyprland.lua reads this at the end of its own run, so anything here",
             "-- replaces the default above it. Delete the file to go back to those.",
             "",
+            "-- The modifier the Windows key sends on this keyboard.",
+            "local MOD = " + luaStr(modKey),
+            "",
             "local apps = { terminal = " + luaStr(Config.Apps.execFor("appTerm"))
                 + ", files = " + luaStr(Config.Apps.execFor("appFiles"))
                 + ", browser = " + luaStr(Config.Apps.execFor("appWeb")) + " }",
@@ -112,7 +128,7 @@ Singleton {
         ];
         for (let i = 0; i < actions.length; i++) {
             const a = actions[i];
-            const accel = accelFor(a.key);
+            const accel = boundAccel(a.key);
             if (!accel) continue;
             let d;
             if (a.ipc) d = shellCall(a.ipc);
@@ -120,15 +136,31 @@ Singleton {
             else d = "hl.dsp.exec_cmd(" + luaStr("hyprctl dispatch " + a.dispatch) + ")";
             lines.push("hl.bind(" + luaStr(accel) + ", " + d + ")   -- " + a.n);
         }
+
+        // Workspace switching isn't in the action list — there are twenty of
+        // them and they are positional, not nameable — but it still has to
+        // follow the modifier, or picking ALT would move every shortcut
+        // except the ones people use most.
+        lines.push("");
+        lines.push("-- Workspaces 1-10, and moving windows to them.");
+        lines.push("for i = 1, 10 do");
+        lines.push("    local k = i % 10");
+        lines.push("    hl.bind(MOD .. \" + \" .. k,"
+                   + " hl.dsp.exec_cmd(\"hyprctl dispatch workspace \" .. i))");
+        lines.push("    hl.bind(MOD .. \" + SHIFT + \" .. k,"
+                   + " hl.dsp.exec_cmd(\"hyprctl dispatch movetoworkspace \" .. i))");
+        lines.push("end");
+
         return lines.join("\n") + "\n";
     }
 
     function write() {
         bindsFile.setText(body());
         // Hyprland only reads binds at config load, so the file is inert
-        // until a reload. The shell re-applies its runtime settings after.
-        reloadProc.running = false;
-        reloadProc.command = ["hyprctl", "reload"];
-        reloadProc.running = true;
+        // until a reload. Routed through Compositor rather than run here, so
+        // the configreloaded path re-applies every runtime setting the shell
+        // owns — otherwise changing a shortcut quietly reverted the display
+        // mode and the pointer settings along with it.
+        Services.Compositor.reloadConfig();
     }
 }

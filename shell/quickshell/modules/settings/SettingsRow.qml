@@ -150,10 +150,22 @@ Item {
                     root.spec.set("");
                     return;
                 }
-                // A modifier on its own is not a shortcut — wait for the key.
-                if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R
+                const bareMod =
+                    event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R
                     || event.key === Qt.Key_Shift || event.key === Qt.Key_Control
-                    || event.key === Qt.Key_Alt || event.key === Qt.Key_Meta) return;
+                    || event.key === Qt.Key_Alt || event.key === Qt.Key_Meta
+                    || event.key === Qt.Key_Hyper_L || event.key === Qt.Key_Hyper_R;
+
+                // A modifier on its own is not a shortcut, so normally the
+                // capture waits for the real key. The probe row is the
+                // exception: reporting *which* modifier a key produces is
+                // the entire point of it.
+                if (bareMod) {
+                    if (!root.spec.probe) return;
+                    capture.listening = false;
+                    root.spec.set(root.modNameFor(event.key));
+                    return;
+                }
 
                 const parts = [];
                 if (event.modifiers & Qt.MetaModifier) parts.push("SUPER");
@@ -165,6 +177,23 @@ Item {
                 root.spec.set(parts.join(" + "));
             }
         }
+    }
+
+    // Which modifier a bare key press is, in Hyprland's spelling. Qt maps
+    // X11/Wayland Mod4 to MetaModifier and reports the key as Super_L, so a
+    // standard Windows key lands here as SUPER.
+    function modNameFor(key) {
+        switch (key) {
+        case Qt.Key_Super_L:
+        case Qt.Key_Super_R:
+        case Qt.Key_Meta:    return "SUPER";
+        case Qt.Key_Control: return "CTRL";
+        case Qt.Key_Alt:     return "ALT";
+        case Qt.Key_Shift:   return "SHIFT";
+        case Qt.Key_Hyper_L:
+        case Qt.Key_Hyper_R: return "HYPER";
+        }
+        return "unknown";
     }
 
     // Qt key → the name Hyprland expects. Letters and digits are themselves;

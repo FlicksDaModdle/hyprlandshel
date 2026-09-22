@@ -234,6 +234,20 @@ Singleton {
             case "windowtitlev2":
                 root.refresh();
                 break;
+
+            // Hyprland re-read its config — from `hyprctl reload`, from the
+            // Keybinds pane, or from someone typing it in a terminal. Every
+            // runtime override the shell had applied is gone with it, so
+            // this is what tells Devices to put them back.
+            //
+            // Previously only the shell's own reloadConfig() raised that,
+            // which meant a reload from anywhere else silently reverted the
+            // display mode, the pointer settings and the window frame.
+            case "configreloaded":
+                Hyprland.refreshMonitors();
+                root.refresh();
+                root.configReloaded();
+                break;
             }
         }
     }
@@ -397,12 +411,15 @@ Singleton {
         reloadProc.running = false;
         reloadProc.command = ["hyprctl", "reload"];
         reloadProc.running = true;
+        // Belt and braces: the configreloaded event above is the normal
+        // path, but it only arrives when the IPC connection is live. On the
+        // hyprctl fallback there is no event stream, so this fires anyway.
         reapply.restart();
     }
     Timer {
         id: reapply
         interval: 1200
-        onTriggered: root.configReloaded()
+        onTriggered: if (!root.ipcReady) root.configReloaded();
     }
     signal configReloaded()
 

@@ -282,6 +282,13 @@ it. Delete that file to go back to the defaults. Only the shortcuts you
 actually change are stored, so the defaults can move without stranding you on
 an old value.
 
+**If no Super shortcut fires at all**, the Windows key probably isn't
+sending SUPER on your keyboard — a remapped xkb layout, a Mac keyboard or an
+`altwin:` option puts it elsewhere, and then every `SUPER` bind matches
+nothing. Settings → Keybinds has a "Windows key sends" row and a probe:
+press the key and it reports the modifier it actually produced. Everything
+generated, the workspace shortcuts included, follows that setting.
+
 **Lock screen.** A Wayland session-lock surface authenticating against PAM.
 The compositor guarantees nothing behind it is visible and nothing else takes
 input while it's up.

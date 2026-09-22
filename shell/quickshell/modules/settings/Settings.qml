@@ -630,11 +630,37 @@ PanelWindow {
         ];
 
         case "Keybinds": {
-            const rows = [{
+            const rows = [];
+
+            rows.push({ type: "header", n: "The modifier key",
+                s: "Every shortcut below is written with this in place of SUPER" });
+            rows.push({
+                n: "Windows key sends",
+                s: "SUPER (Mod4) is what a standard PC keyboard sends. If none of "
+                   + "your Super shortcuts fire, it is probably not what yours "
+                   + "sends — a remapped layout, a Mac keyboard or an "
+                   + "altwin: kb_option will put it somewhere else, and then "
+                   + "every SUPER bind matches nothing.",
+                type: "seg",
+                options: [{ label: "Super", value: "SUPER" },
+                          { label: "Alt",   value: "ALT" },
+                          { label: "Ctrl",  value: "CTRL" },
+                          { label: "Hyper", value: "HYPER" }],
+                value: A.modKey,
+                set: v => { A.modKey = v; Services.Keybinds.write(); } });
+            rows.push({
+                n: "Test it",
+                s: "Press the key you want to use as Super. This reports what the "
+                   + "keyboard actually sent, which is the answer to the row above.",
+                type: "keybind", probe: true,
+                value: settings.modProbe,
+                set: v => settings.modProbe = v || "—" });
+
+            rows.push({
                 type: "header", n: "Shell",
                 s: "Click a shortcut and press the keys you want. Escape cancels, "
                    + "Backspace restores the default."
-            }];
+            });
             const list = Services.Keybinds.actions;
             for (let i = 0; i < list.length; i++) {
                 const a = list[i];
@@ -1025,6 +1051,10 @@ PanelWindow {
 
     // Which display the Display pane is showing. Empty follows the focused
     // monitor, so opening the pane lands on the screen you are looking at.
+    // What the "Test it" row last captured, so pressing a key reports the
+    // modifier it really produced rather than silently rebinding something.
+    property string modProbe: "press a key"
+
     property string displayPickRaw: ""
     readonly property string displayPick: displayPickRaw !== ""
         ? displayPickRaw : Services.Compositor.focusedMonitorName
