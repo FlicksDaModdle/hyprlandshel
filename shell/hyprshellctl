@@ -49,6 +49,8 @@ call() {
 
 # What the shell registered with the compositor. This is the far end of a
 # keybind now — if a name is missing here, nothing will dispatch to it.
+QS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/$CONFIG"
+
 shortcuts() {
     if ! command -v hyprctl >/dev/null 2>&1; then
         red "hyprctl is not on PATH"; return 1
@@ -56,13 +58,54 @@ shortcuts() {
     out=$(hyprctl globalshortcuts 2>&1) || { red "$out"; return 1; }
     if printf '%s' "$out" | grep -q hyprshell; then
         printf '%s\n' "$out" | grep hyprshell
+        return 0
+    fi
+
+    red "the shell has registered no global shortcuts"
+    echo
+    echo "working out why:"
+
+    # 1. is the installed tree new enough to have them at all?
+    if [ -f "$QS_DIR/modules/shortcuts/GlobalShortcuts.qml" ]; then
+        grn "  ok  the installed shell has GlobalShortcuts.qml"
     else
-        red "the shell has registered no global shortcuts"
-        dim "   Either it isn't running, or this Quickshell was built without"
-        dim "   HYPRLAND_GLOBAL_SHORTCUTS. Check the shell's log:"
-        dim "     qs -c $CONFIG log"
+        red "  no  $QS_DIR has no modules/shortcuts/GlobalShortcuts.qml"
+        dim "      The installed copy predates them. Pulling the repo is not"
+        dim "      enough — the shell runs from ~/.config, not the checkout:"
+        dim "        ./shell/install.sh && hyprctl reload"
         return 1
     fi
+
+    # 2. was Quickshell built with the protocol?
+    found=""
+    for d in $(qs --print-qml-import-paths 2>/dev/null) \
+             /usr/lib/qt6/qml /usr/lib/x86_64-linux-gnu/qt6/qml \
+             /usr/lib/qt/qml "$HOME/.local/lib/qt6/qml"; do
+        [ -d "$d/Quickshell/Hyprland" ] || continue
+        if ls "$d/Quickshell/Hyprland" 2>/dev/null | grep -qi globalshortcut; then
+            found=$d; break
+        fi
+    done
+    if [ -n "$found" ]; then
+        grn "  ok  Quickshell has the global shortcuts module"
+        dim "      ($found/Quickshell/Hyprland)"
+    else
+        red "  no  no _GlobalShortcuts module found in Quickshell's QML dir"
+        dim "      This build was made without HYPRLAND_GLOBAL_SHORTCUTS."
+        dim "      Shortcuts fall back to IPC; see 'hyprshellctl doctor'."
+        return 1
+    fi
+
+    # 3. is it running, and what did it say?
+    if pgrep -x qs >/dev/null 2>&1; then
+        grn "  ok  the shell is running"
+        dim "      so it loaded them and something refused. Its log will say:"
+        dim "        qs -c $CONFIG log | grep -i -e shortcut -e globalshortcut"
+    else
+        red "  no  the shell is not running"
+        dim "      start it: $QS_DIR/run.sh"
+    fi
+    return 1
 }
 
 usage() {
