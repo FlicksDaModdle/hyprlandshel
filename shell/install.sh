@@ -250,6 +250,42 @@ else
     add_pkg "$(pkg zenity zenity zenity zenity)"
 fi
 
+head1 "Session — checked as this shell sees it, not as root"
+# Both of these are invisible until the shell fails, and they fail loudly but
+# unhelpfully: a shell on X11 loses every layer-shell surface it has, and one
+# that can't reach Hyprland has no workspaces, no window list and no keybinds.
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    case "${QT_QPA_PLATFORM:-}" in
+        "")        ok   "QT_QPA_PLATFORM" "unset — Qt picks Wayland on its own" ;;
+        *wayland*) ok   "QT_QPA_PLATFORM" "${QT_QPA_PLATFORM}" ;;
+        *)         warn "QT_QPA_PLATFORM" "is '${QT_QPA_PLATFORM}' — no layer shell, so no bar/dock/wallpaper"
+                   printf '      the installed hyprland.lua launches the shell with\n'
+                   printf '      QT_QPA_PLATFORM=wayland regardless, so this only bites a shell\n'
+                   printf '      you start by hand. To start one here:\n'
+                   printf '          QT_QPA_PLATFORM=wayland qs -c hyprshell\n'
+                   printf '      To find what sets it: grep -rn QT_QPA_PLATFORM ~/.profile\n'
+                   printf '          ~/.bashrc ~/.zshrc ~/.zshenv /etc/environment 2>/dev/null\n' ;;
+    esac
+else
+    warn "WAYLAND_DISPLAY" "unset — this is not a Wayland session"
+fi
+
+if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+    ok "HYPRLAND_INSTANCE_SIGNATURE" "set — the shell can reach Hyprland"
+else
+    warn "HYPRLAND_INSTANCE_SIGNATURE" "unset — no workspaces, window list or keybinds"
+    if [ -d "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr" ]; then
+        printf '      Hyprland IS running:\n'
+        for _i in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr"/*; do
+            [ -d "$_i" ] && printf '          %s\n' "$(basename -- "$_i")"
+        done
+        printf '      so this terminal was started outside that session. Start the\n'
+        printf '      shell from one inside it, or export the signature above.\n'
+    else
+        printf '      and no Hyprland instance is running at all.\n'
+    fi
+fi
+
 head1 "Lock screen"
 if [ -r /etc/pam.d/login ]; then
     ok "/etc/pam.d/login" "PAM stack the lock authenticates against"

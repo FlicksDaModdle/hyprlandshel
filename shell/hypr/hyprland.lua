@@ -59,7 +59,15 @@ hl.env("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1")
 -------------------
 
 hl.on("hyprland.start", function()
-    hl.exec_cmd("qs -c hyprshell")
+    -- QT_QPA_PLATFORM is forced here rather than left to hl.env above,
+    -- because a login shell that sets it (plenty of setups pin it to "xcb"
+    -- for legacy Qt apps) wins over the session env and the shell comes up
+    -- on X11. On X11 there is no wlr-layer-shell, so every WlrLayershell
+    -- attached property fails to build, every surface component with one is
+    -- "not ready", and the bar, dock, wallpaper and panel layer are simply
+    -- never created. Setting it on this one command leaves every other Qt
+    -- app to the session default above.
+    hl.exec_cmd("env QT_QPA_PLATFORM=wayland qs -c hyprshell")
     -- The shell draws its own lock screen; hypridle just decides when to ask
     -- for it. Safe to drop if hypridle isn't installed.
     hl.exec_cmd("hypridle")

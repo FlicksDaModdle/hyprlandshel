@@ -245,6 +245,42 @@ a slider that moved some numbers and not the text would be worse than not
 having one. Bar height, dock size and corner rounding each scale on their
 own, which covers most of what it was for.
 
+## If the shell comes up with no bar, dock or wallpaper
+
+Almost always one of two environment problems, and the log says which.
+
+**`WAYLAND_DISPLAY is present but QT_QPA_PLATFORM is "xcb"`.** The shell is
+running on X11. There is no wlr-layer-shell there, so every
+`WlrLayershell` attached property fails to build, the components holding
+them are never "ready", and the bar, dock, wallpaper and panel layer are
+simply not created — you get a pile of `Could not create attached
+properties object` and `failed to create variant with object`.
+
+The installed `hyprland.lua` starts the shell with `QT_QPA_PLATFORM=wayland`
+on the command line, so this only bites a shell you launch by hand from a
+terminal whose profile pins the variable. Either way:
+
+```sh
+QT_QPA_PLATFORM=wayland qs -c hyprshell
+grep -rn QT_QPA_PLATFORM ~/.profile ~/.bashrc ~/.zshrc ~/.zshenv /etc/environment
+```
+
+**`$HYPRLAND_INSTANCE_SIGNATURE is unset. Cannot connect to hyprland.`**
+Quickshell cannot reach the compositor at all, so there are no workspaces,
+no window list, no task buttons, and the workspace pills do nothing — they
+have nothing to show or switch to. The variable is set by Hyprland for its
+own children, so a terminal started outside the session doesn't have it:
+
+```sh
+echo $HYPRLAND_INSTANCE_SIGNATURE     # empty is the problem
+ls $XDG_RUNTIME_DIR/hypr              # instances that are actually running
+```
+
+Start the shell from a terminal inside the Hyprland session, or export the
+signature yourself before running `qs`.
+
+`./shell/install.sh --check` reports both, as the user running it.
+
 ## If the lock screen ever traps you
 
 It's a session lock, so by design nothing dismisses it but a successful
