@@ -40,8 +40,22 @@ FORM_NOTE="${XDG_RUNTIME_DIR:-/tmp}/hyprshell.ipcform"
 
 # Build the argv for one selector form into "$@". $1 is the form number,
 # $2 the function, the rest its arguments.
+#
+# Form 4 does not name the config at all. It asks Quickshell for every
+# instance it knows about and calls the first by its id, which is the only
+# one of the four that still works when the config-to-instance lookup is
+# what is broken — "No running instances for .../shell.qml" with the shell
+# plainly running. Last, because it would also hit a Quickshell running a
+# different config.
 setform() {
     _form=$1; _fn=$2; shift 2
+    if [ "$_form" = 4 ]; then
+        _id=$(qs list --all -j 2>/dev/null \
+              | sed -n 's/.*"id"[^"]*"\([^"]*\)".*/\1/p' | head -n1)
+        [ -n "$_id" ] || { echo "no quickshell instances at all"; return 1; }
+        qs -i "$_id" ipc call "$TARGET" "$_fn" ${1+"$@"} 2>&1
+        return
+    fi
     case $_form in
         1) set -- qs -c "$CONFIG" ipc call "$TARGET" "$_fn" ${1+"$@"} ;;
         2) set -- qs ipc -c "$CONFIG" call "$TARGET" "$_fn" ${1+"$@"} ;;
@@ -56,7 +70,7 @@ call() {
 
     _known=""
     [ -r "$FORM_NOTE" ] && _known=$(cat "$FORM_NOTE" 2>/dev/null)
-    case $_known in 1|2|3) ;; *) _known="" ;; esac
+    case $_known in 1|2|3|4) ;; *) _known="" ;; esac
 
     if [ -n "$_known" ]; then
         if out=$(setform "$_known" "$_fn" ${1+"$@"}); then
@@ -66,7 +80,7 @@ call() {
         last=$out
     fi
 
-    for form in 1 2 3; do
+    for form in 1 2 3 4; do
         [ "$form" = "$_known" ] && continue
         if out=$(setform "$form" "$_fn" ${1+"$@"}); then
             printf '%s' "$form" > "$FORM_NOTE" 2>/dev/null
@@ -217,15 +231,20 @@ doctor() {
     echo
     echo "3. its IPC target is reachable"
     shown=""
-    for form in 1 2 3; do
+    for form in 1 2 3 4; do
         case $form in
             1) shown=$(qs -c "$CONFIG" ipc show 2>&1) ;;
             2) shown=$(qs ipc -c "$CONFIG" show 2>&1) ;;
             3) shown=$(qs ipc show 2>&1) ;;
+            4) _id=$(qs list --all -j 2>/dev/null \
+                     | sed -n 's/.*"id"[^"]*"\([^"]*\)".*/\1/p' | head -n1)
+               shown=$([ -n "$_id" ] && qs -i "$_id" ipc show 2>&1) ;;
         esac
         # shellcheck disable=SC2181
         if [ $? -eq 0 ] && printf '%s' "$shown" | grep -q "$TARGET"; then
             grn "   ok  target '$TARGET' is listening (selector form $form)"
+            [ "$form" = 4 ] && dim "       only by instance id — naming the config finds nothing,"
+            [ "$form" = 4 ] && dim "       which is the fallback the keybinds also rely on"
             break
         fi
         shown=""

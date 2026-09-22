@@ -330,14 +330,18 @@ Every shell keybind in `hyprland.lua` runs the IPC call itself — the
 command is written out in the config, not handed to a script:
 
 ```sh
-{ qs -c hyprshell ipc call shell toggleLauncher \
-  || qs ipc -c hyprshell call shell toggleLauncher \
-  || qs ipc call shell toggleLauncher; } >>"$XDG_RUNTIME_DIR/hyprshell-bind.log" 2>&1
+qs -c hyprshell ipc call shell toggleLauncher     # and three fallbacks
 ```
 
-which lands on the `IpcHandler` in `shell.qml`. All three forms are tried
-because Quickshell has moved its config selector between releases and the
-config cannot know which build is installed; the first that answers wins.
+which lands on the `IpcHandler` in `shell.qml`. Three spellings of "the
+instance running *this* config" are tried, because which one a build accepts
+has moved between Quickshell releases. If all three come back **"No running
+instances for ~/.config/quickshell/hyprshell/shell.qml"** while the shell is
+plainly running — the config-to-instance lookup missing an instance that is
+right there — a fourth asks for every instance Quickshell knows about and
+calls the first by its id. That one does not go through the lookup at all.
+It is last because it would also reach a Quickshell running a different
+config, which only matters if you run two.
 
 Two other routes were tried and dropped. Global shortcuts
 (`hyprland-global-shortcuts-v1`) need a Quickshell built with the protocol,
@@ -368,8 +372,9 @@ hyprshellctl trace
 
 - a line ending `-> 0` — the call went through. If nothing happened on
   screen, the shell received it and chose to do nothing.
-- a line ending `-> 1` — the shell refused the call or was not reachable,
-  and the `qs` errors logged above it say which.
+- a line ending `-> 1` — every route failed. The `qs` errors above the line
+  say why, and beneath it the shortcut writes down what it could see at that
+  moment: whether a `qs` process was running, and what Quickshell listed.
 - **no line at all** — the bind never fired. That is the key or the
   modifier, not the shell: check `hyprctl binds`, and Settings → Keybinds →
   *Test it* will tell you what your Windows key actually sends.

@@ -61,27 +61,51 @@ end
 -- Tracing: Hyprland sends a spawned command's output to /dev/null, so a
 -- failing shortcut is completely silent — which is most of why this took so
 -- long to pin down. Each shortcut appends what it tried and the status it
--- got to $XDG_RUNTIME_DIR/hyprshell-bind.log. A line there with a non-zero
--- status is the shell refusing the call; no line at all means the bind
--- never fired, which is a keyboard or modifier problem, not a shell one.
--- The file lives on tmpfs and is gone at reboot. Set this to false to stop.
+-- got to $XDG_RUNTIME_DIR/hyprshell-bind.log, and on failure it also writes
+-- down what it could see of the shell at that moment, which is what turns
+-- "it didn't work" into something answerable. `hyprshellctl trace` prints
+-- it. The file is on tmpfs and gone at reboot. Set this to false to stop.
 local traceBinds = true
 local bindLog = '"$XDG_RUNTIME_DIR/hyprshell-bind.log"'
 
 local function shell(fn, arg)
     local call = fn .. (arg and (" " .. arg) or "")
-    local cmd = "{ qs -c hyprshell ipc call shell " .. call
+
+    -- Ways to reach the running shell, in order of precision.
+    --
+    -- The first three name the config and let Quickshell find the instance
+    -- that belongs to it; which of those three spellings a build accepts has
+    -- moved between releases, so all are tried.
+    --
+    -- The fourth does not go through that lookup at all. It asks for every
+    -- instance Quickshell knows about and calls the first by its id. That
+    -- covers the case the log here caught: the shell running, and
+    -- `ipc call` still answering "No running instances for
+    -- ~/.config/quickshell/hyprshell/shell.qml" — the instance is there, the
+    -- config-to-instance lookup is what missed it. It is last because it
+    -- would also hit a Quickshell running a different config, which only
+    -- matters if you run two.
+    local byId = [[{ i=$(qs list --all -j 2>/dev/null ]]
+        .. [[| sed -n 's/.*"id"[^"]*"\([^"]*\)".*/\1/p' | head -n1); ]]
+        .. [[test -n "$i" && qs -i "$i" ipc call shell ]] .. call .. "; }"
+
+    local try = "{ qs -c hyprshell ipc call shell " .. call
         .. " || qs ipc -c hyprshell call shell " .. call
-        .. " || qs ipc call shell " .. call .. "; }"
+        .. " || qs ipc call shell " .. call
+        .. " || " .. byId .. "; }"
 
     if not traceBinds then
-        return cmd .. " >/dev/null 2>&1"
+        return try .. " >/dev/null 2>&1"
     end
 
-    -- $? is the group's status, read before anything else can change it.
-    return cmd .. " >>" .. bindLog .. " 2>&1; "
+    -- $? is read straight into s, before anything else can change it.
+    local facts = "{ echo \"  qs=$(command -v qs) display=$WAYLAND_DISPLAY\"; "
+        .. [[echo "  running: $(pgrep -x qs | tr '\n' ' ')"; ]]
+        .. "qs list --all 2>&1 | sed 's/^/  /'; } >>" .. bindLog .. " 2>&1"
+
+    return try .. " >>" .. bindLog .. " 2>&1; s=$?; "
         .. 'printf "%s %s -> %s\\n" "$(date +%T)" ' .. "'" .. call .. "' "
-        .. '"$?" >>' .. bindLog
+        .. '"$s" >>' .. bindLog .. '; test "$s" = 0 || ' .. facts
 end
 
 -------------------------------
@@ -418,6 +442,14 @@ hl.window_rule({
 --
 -- pcall, because a missing file is the normal case on a fresh install and
 -- should not take the whole config down with it.
+--
+-- The generated file calls back into `shell` above rather than carrying its
+-- own copy of that command. One definition means a rebound shortcut cannot
+-- drift from the default it replaced — which it did once already, when the
+-- generated file shadowed working binds with a worse version of the same
+-- thing.
+_G.hyprshellCall = shell
+
 do
     local home = os.getenv("HOME") or ""
     local generated = home .. "/.config/hypr/binds.lua"
