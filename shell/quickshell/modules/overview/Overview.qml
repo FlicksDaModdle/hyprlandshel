@@ -159,7 +159,7 @@ PanelWindow {
                                             width: Math.min(implicitWidth, thumb.width - 44)
                                             elide: Text.ElideRight
                                             text: Config.Apps.labelFor(thumb.modelData.cls)
-                                            font.pixelSize: 10.5
+                                            font.pixelSize: 11
                                             font.weight: Font.DemiBold
                                             color: Config.Appearance.ink2
                                         }

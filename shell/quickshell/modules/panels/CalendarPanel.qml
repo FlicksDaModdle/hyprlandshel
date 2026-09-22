@@ -131,7 +131,7 @@ PanelSurface {
                 StyledText {
                     anchors.centerIn: parent
                     text: parent.modelData
-                    font.pixelSize: 10.5
+                    font.pixelSize: 11
                     font.weight: Font.DemiBold
                     // Weekend columns sit back a step.
                     color: (parent.index === 0 || parent.index === 6)

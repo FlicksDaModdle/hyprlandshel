@@ -94,7 +94,7 @@ PanelSurface {
                         anchors.rightMargin: 11
                         anchors.verticalCenter: parent.verticalCenter
                         text: entry.modelData.k
-                        font.pixelSize: 10.5
+                        font.pixelSize: 11
                         font.weight: Font.Normal
                         color: entryHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink3
                     }

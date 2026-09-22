@@ -87,6 +87,16 @@ Variants {
             y: layer.panelTop
         }
 
+        // The bar's window menu hangs under its button rather than at the
+        // right gutter, so it reads as belonging to it.
+        WindowMenuPanel {
+            visible: Config.UiState.windowMenuOpen
+            screenWidth: layer.width
+            screenHeight: layer.height
+            x: Math.max(8, Math.min(Config.UiState.windowMenuX, layer.width - width - 8))
+            y: layer.panelTop
+        }
+
         // The context menu opens at the pointer, nudged back on screen if
         // it would run off the right or bottom edge.
         DesktopMenu {

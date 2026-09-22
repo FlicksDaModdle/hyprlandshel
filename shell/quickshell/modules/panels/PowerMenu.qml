@@ -48,7 +48,7 @@ PanelSurface {
             anchors.rightMargin: 14
             anchors.verticalCenter: parent.verticalCenter
             text: Services.SysInfo.user
-            font.pixelSize: 10.5
+            font.pixelSize: 11
             font.weight: Font.Normal
             color: Config.Appearance.ink3
         }
@@ -106,7 +106,7 @@ PanelSurface {
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: entry.modelData.n
-                        font.pixelSize: 12.5
+                        font.pixelSize: 13
                     }
                 }
 
@@ -115,7 +115,7 @@ PanelSurface {
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
                     text: entry.modelData.k
-                    font.pixelSize: 10.5
+                    font.pixelSize: 11
                     font.weight: Font.Normal
                     color: Config.Appearance.ink3
                 }
@@ -150,7 +150,7 @@ PanelSurface {
             anchors.leftMargin: 14
             anchors.verticalCenter: parent.verticalCenter
             text: "Uptime " + Services.SysInfo.uptimeLabel
-            font.pixelSize: 10.5
+            font.pixelSize: 11
             font.weight: Font.Normal
             color: Config.Appearance.ink3
         }
@@ -161,7 +161,7 @@ PanelSurface {
             anchors.verticalCenter: parent.verticalCenter
             text: Services.SysInfo.compositorVersion
                   ? "Hyprland " + Services.SysInfo.compositorVersion : "Hyprland"
-            font.pixelSize: 10.5
+            font.pixelSize: 11
             font.weight: Font.Normal
             color: Config.Appearance.ink3
         }

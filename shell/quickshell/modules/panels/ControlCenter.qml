@@ -102,7 +102,7 @@ PanelSurface {
                         anchors.verticalCenter: parent.verticalCenter
                         text: Config.Appearance.theme === "auto" ? "Auto"
                             : (Config.Appearance.dark ? "Dark" : "Light")
-                        font.pixelSize: 11.5
+                        font.pixelSize: 12
                         font.weight: Font.DemiBold
                     }
                 }
@@ -204,7 +204,7 @@ PanelSurface {
 
                             StyledText {
                                 text: tile.modelData.n
-                                font.pixelSize: 11.5
+                                font.pixelSize: 12
                                 font.weight: Font.DemiBold
                                 color: tile.modelData.on ? Config.Appearance.onAccent : Config.Appearance.ink
                             }
@@ -212,7 +212,7 @@ PanelSurface {
                                 width: parent.width
                                 elide: Text.ElideRight
                                 text: tile.modelData.s
-                                font.pixelSize: 10.5
+                                font.pixelSize: 11
                                 font.weight: Font.Normal
                                 opacity: tile.modelData.on ? 0.75 : 1
                                 color: tile.modelData.on ? Config.Appearance.onAccent : Config.Appearance.ink3
@@ -262,7 +262,7 @@ PanelSurface {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: sliderRow.modelData.n
-                                font.pixelSize: 11.5
+                                font.pixelSize: 12
                                 color: Config.Appearance.ink2
                             }
                         }
@@ -271,7 +271,7 @@ PanelSurface {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             text: sliderRow.modelData.label
-                            font.pixelSize: 11.5
+                            font.pixelSize: 12
                             font.weight: Font.DemiBold
                         }
                     }
@@ -345,7 +345,7 @@ PanelSurface {
                              : "Wi-Fi is off")
                           : (Services.Bluetooth.powered
                              ? Services.Bluetooth.pairedCount + " paired" : "Bluetooth is off")
-                    font.pixelSize: 10.5
+                    font.pixelSize: 11
                     font.weight: Font.Normal
                     color: Config.Appearance.ink3
                 }

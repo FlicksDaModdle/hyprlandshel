@@ -256,7 +256,7 @@ WlSessionLock {
                             anchors.horizontalCenter: parent.horizontalCenter
                             height: 14
                             text: surface.status || (pam.message && pam.messageIsError ? pam.message : "")
-                            font.pixelSize: 11.5
+                            font.pixelSize: 12
                             font.weight: Font.Normal
                             color: surface.failed ? Config.Appearance.accent : Config.Appearance.ink3
                         }
@@ -283,7 +283,7 @@ WlSessionLock {
                             anchors.verticalCenter: parent.verticalCenter
                             text: surface.hasBattery
                                   ? Math.round(surface.battery.percentage * 100) + "%" : ""
-                            font.pixelSize: 11.5
+                            font.pixelSize: 12
                             color: Config.Appearance.ink3
                         }
                     }
@@ -300,7 +300,7 @@ WlSessionLock {
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: Services.Network.label
-                            font.pixelSize: 11.5
+                            font.pixelSize: 12
                             color: Config.Appearance.ink3
                         }
                     }
@@ -320,7 +320,7 @@ WlSessionLock {
                             text: Services.Notifications.count
                                   + (Services.Notifications.count === 1
                                      ? " notification" : " notifications")
-                            font.pixelSize: 11.5
+                            font.pixelSize: 12
                             color: Config.Appearance.ink3
                         }
                     }

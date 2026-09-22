@@ -131,7 +131,7 @@ PanelSurface {
                     StyledText {
                         visible: Config.Appearance.grouping === "App" && group.modelData.entries.length > 1
                         text: group.modelData.app + " · " + group.modelData.entries.length
-                        font.pixelSize: 10.5
+                        font.pixelSize: 11
                         font.weight: Font.DemiBold
                         font.capitalization: Font.AllUppercase
                         font.letterSpacing: 0.8

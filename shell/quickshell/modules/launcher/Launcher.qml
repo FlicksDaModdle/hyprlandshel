@@ -299,7 +299,7 @@ PanelWindow {
                         onTextChanged: launcher.query = text
                         color: Config.Appearance.ink
                         font.family: Config.Appearance.fontFamily
-                        font.pixelSize: 12.5
+                        font.pixelSize: 13
                         selectByMouse: true
                         selectionColor: Config.Appearance.accent
                         selectedTextColor: Config.Appearance.onAccent
@@ -328,7 +328,7 @@ PanelWindow {
                             anchors.verticalCenter: parent.verticalCenter
                             visible: searchInput.text === ""
                             text: "Search apps and commands"
-                            font.pixelSize: 12.5
+                            font.pixelSize: 13
                             font.weight: Font.Normal
                             color: Config.Appearance.ink3
                         }
@@ -384,7 +384,7 @@ PanelWindow {
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "Pinned"
-                            font.pixelSize: 10.5
+                            font.pixelSize: 11
                             font.weight: Font.DemiBold
                             font.capitalization: Font.AllUppercase
                             font.letterSpacing: 0.85
@@ -409,7 +409,7 @@ PanelWindow {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "All apps"
-                                font.pixelSize: 10.5
+                                font.pixelSize: 11
                                 font.weight: Font.DemiBold
                                 color: allHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
                             }
@@ -481,7 +481,7 @@ PanelWindow {
                                     horizontalAlignment: Text.AlignHCenter
                                     elide: Text.ElideRight
                                     text: gridItem.modelData.label
-                                    font.pixelSize: 10.5
+                                    font.pixelSize: 11
                                 }
                             }
 
@@ -552,7 +552,7 @@ PanelWindow {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "Recommended"
-                                font.pixelSize: 10.5
+                                font.pixelSize: 11
                                 font.weight: Font.DemiBold
                                 font.capitalization: Font.AllUppercase
                                 font.letterSpacing: 0.85
@@ -565,7 +565,7 @@ PanelWindow {
                             anchors.rightMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
                             text: "recent"
-                            font.pixelSize: 10.5
+                            font.pixelSize: 11
                             color: Config.Appearance.ink3
                         }
                     }
@@ -635,7 +635,7 @@ PanelWindow {
                                             width: parent.width
                                             elide: Text.ElideRight
                                             text: launcher.relativeTime(recentItem.modelData.modified)
-                                            font.pixelSize: 9.5
+                                            font.pixelSize: 10
                                             font.weight: Font.Normal
                                             color: Config.Appearance.ink3
                                         }
@@ -670,7 +670,7 @@ PanelWindow {
                         anchors.leftMargin: 16
                         anchors.verticalCenter: parent.verticalCenter
                         text: launcher.listTitle
-                        font.pixelSize: 12.5
+                        font.pixelSize: 13
                         font.weight: Font.DemiBold
                     }
 
@@ -814,7 +814,7 @@ PanelWindow {
                             anchors.rightMargin: 12
                             anchors.verticalCenter: parent.verticalCenter
                             text: resultRow.selected ? "return" : ""
-                            font.pixelSize: 10.5
+                            font.pixelSize: 11
                             font.weight: Font.DemiBold
                             color: Config.Appearance.onAccent
                         }
@@ -839,7 +839,7 @@ PanelWindow {
                     wrapMode: Text.WordWrap
                     text: "No matches — press enter to run \u201C" + launcher.query.trim()
                           + "\u201D as a command"
-                    font.pixelSize: 12.5
+                    font.pixelSize: 13
                     color: Config.Appearance.ink3
                 }
             }
@@ -889,7 +889,7 @@ PanelWindow {
                             spacing: 3
                             StyledText {
                                 text: Services.SysInfo.user
-                                font.pixelSize: 11.5
+                                font.pixelSize: 12
                                 font.weight: Font.DemiBold
                             }
                             Rectangle {

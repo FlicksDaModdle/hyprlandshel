@@ -46,7 +46,7 @@ Item {
             width: parent.width
             wrapMode: Text.WordWrap
             text: root.spec.s || ""
-            font.pixelSize: 11.5
+            font.pixelSize: 12
             font.weight: Font.Normal
             color: Config.Appearance.ink3
         }
@@ -393,7 +393,7 @@ Item {
                 width: 44
                 horizontalAlignment: Text.AlignRight
                 text: root.spec.label
-                font.pixelSize: 12.5
+                font.pixelSize: 13
                 font.weight: Font.DemiBold
                 color: Config.Appearance.ink2
             }
@@ -414,7 +414,7 @@ Item {
                 id: actionLabel
                 anchors.centerIn: parent
                 text: root.spec.label
-                font.pixelSize: 11.5
+                font.pixelSize: 12
                 font.weight: Font.DemiBold
                 color: Config.Appearance.onAccent
             }
@@ -429,7 +429,7 @@ Item {
 
         StyledText {
             text: root.spec.value !== undefined ? root.spec.value : ""
-            font.pixelSize: 12.5
+            font.pixelSize: 13
             font.weight: Font.DemiBold
             color: Config.Appearance.ink2
         }

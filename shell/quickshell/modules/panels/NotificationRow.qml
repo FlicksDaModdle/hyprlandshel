@@ -107,7 +107,7 @@ Rectangle {
                           ? Services.Notifications.relativeTime(
                                 Services.Notifications.timeOf(root.notification))
                           : ""
-                    font.pixelSize: 10.5
+                    font.pixelSize: 11
                     font.weight: Font.Normal
                     color: Config.Appearance.ink3
                 }
@@ -117,7 +117,7 @@ Rectangle {
                 width: parent.width
                 visible: text !== ""
                 text: root.notification ? root.notification.summary : ""
-                font.pixelSize: 12.5
+                font.pixelSize: 13
                 font.weight: Font.DemiBold
                 wrapMode: Text.WordWrap
                 maximumLineCount: 2
@@ -128,7 +128,7 @@ Rectangle {
                 width: parent.width
                 visible: text !== ""
                 text: root.notification ? root.notification.body : ""
-                font.pixelSize: 12.5
+                font.pixelSize: 13
                 font.weight: Font.Normal
                 color: Config.Appearance.ink2
                 wrapMode: Text.WordWrap

@@ -51,7 +51,7 @@ Item {
                     id: segLabel
                     anchors.centerIn: parent
                     text: root.labelOf(seg.modelData)
-                    font.pixelSize: 11.5
+                    font.pixelSize: 12
                     font.weight: Font.DemiBold
                     color: seg.active ? Config.Appearance.onAccent : Config.Appearance.ink2
                 }

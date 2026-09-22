@@ -131,12 +131,10 @@ Variants {
                 }
             }
 
-            // The mockup's per-app File/Edit/View menu bar assumes a global
-            // menu protocol, which Wayland has no equivalent of — nothing on
-            // Hyprland exports its menus. What *is* real at this level is the
-            // compositor's own window actions, so that's what this menu
-            // offers, under the same affordance.
-            WindowMenu {
+            // Stands where the mockup's per-app menu bar does; see
+            // WindowMenuButton.qml for why it carries window actions instead
+            // of File/Edit/View. The menu itself is drawn by PanelLayer.
+            WindowMenuButton {
                 anchors.verticalCenter: parent.verticalCenter
                 barWindow: bar
             }
@@ -149,7 +147,7 @@ Variants {
                 width: Math.min(implicitWidth, Math.max(0, bar.width - left.x - right.width - 420))
                 elide: Text.ElideRight
                 text: Services.Compositor.activeTitle
-                font.pixelSize: 11.5
+                font.pixelSize: 12
                 font.weight: Font.Normal
                 color: Config.Appearance.ink3
             }
@@ -202,7 +200,7 @@ Variants {
                         id: badge
                         anchors.centerIn: parent
                         text: Services.Notifications.count
-                        font.pixelSize: 10.5
+                        font.pixelSize: 11
                         font.weight: Font.Bold
                         color: Config.Appearance.onAccent
                     }
@@ -231,7 +229,7 @@ Variants {
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: Services.Network.label
-                        font.pixelSize: 11.5
+                        font.pixelSize: 12
                         color: Config.Appearance.ink2
                         elide: Text.ElideRight
                         width: Math.min(implicitWidth, 120)
@@ -251,7 +249,7 @@ Variants {
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: Services.Audio.muted ? "muted" : Services.Audio.volumePercent + "%"
-                        font.pixelSize: 11.5
+                        font.pixelSize: 12
                         font.weight: Font.DemiBold
                         color: Config.Appearance.ink2
                     }
@@ -292,7 +290,7 @@ Variants {
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: bar.batteryPercent + "%"
-                        font.pixelSize: 11.5
+                        font.pixelSize: 12
                         font.weight: Font.DemiBold
                         color: Config.Appearance.ink2
                     }
@@ -310,7 +308,7 @@ Variants {
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: bar.timeText
-                    font.pixelSize: 12.5
+                    font.pixelSize: 13
                     font.weight: Font.DemiBold
                     color: Config.Appearance.ink
                 }

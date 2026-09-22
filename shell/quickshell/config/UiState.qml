@@ -20,6 +20,7 @@ Singleton {
     property bool calendarOpen: false
     property bool powerOpen: false
     property bool desktopMenuOpen: false
+    property bool windowMenuOpen: false
 
     // Settings is a real toplevel window, not a shell panel, so it isn't
     // part of the exclusive group — it can stay open behind a dropdown.
@@ -30,11 +31,15 @@ Singleton {
     property real desktopMenuX: 0
     property real desktopMenuY: 0
 
+    // Left edge of the bar's Window button, so its menu can hang under it.
+    property real windowMenuX: 0
+
     // Control center drill-down: "", "Wi-Fi" or "Bluetooth".
     property string ccExpanded: ""
 
     readonly property bool anyPanelOpen: controlCenterOpen || notificationsOpen
                                          || calendarOpen || powerOpen || desktopMenuOpen
+                                         || windowMenuOpen
 
     function closeAll() {
         launcherOpen = false;
@@ -44,6 +49,7 @@ Singleton {
         calendarOpen = false;
         powerOpen = false;
         desktopMenuOpen = false;
+        windowMenuOpen = false;
         ccExpanded = "";
     }
 
@@ -61,6 +67,15 @@ Singleton {
     function toggleNotifications() { toggle("notifications"); }
     function toggleCalendar() { toggle("calendar"); }
     function togglePower() { toggle("power"); }
+
+    function toggleWindowMenu(x) {
+        const was = windowMenuOpen;
+        closeAll();
+        if (!was) {
+            windowMenuX = x;
+            windowMenuOpen = true;
+        }
+    }
 
     function openDesktopMenu(x, y) {
         closeAll();

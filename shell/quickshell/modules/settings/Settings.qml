@@ -85,7 +85,7 @@ FloatingWindow {
 
                     StyledText {
                         text: group.modelData.label
-                        font.pixelSize: 10.5
+                        font.pixelSize: 11
                         font.weight: Font.DemiBold
                         font.capitalization: Font.AllUppercase
                         font.letterSpacing: 1.2
@@ -146,7 +146,7 @@ FloatingWindow {
                                 StyledText {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: entry.modelData
-                                    font.pixelSize: 12.5
+                                    font.pixelSize: 13
                                 }
                             }
 
@@ -186,7 +186,7 @@ FloatingWindow {
                 width: parent.width
                 wrapMode: Text.WordWrap
                 text: settings.paneMeta[settings.pane].note
-                font.pixelSize: 12.5
+                font.pixelSize: 13
                 font.weight: Font.Normal
                 color: Config.Appearance.ink3
                 topPadding: 4
@@ -236,7 +236,7 @@ FloatingWindow {
                                 id: keyLabel
                                 anchors.centerIn: parent
                                 text: bind.modelData.k
-                                font.pixelSize: 11.5
+                                font.pixelSize: 12
                                 font.weight: Font.DemiBold
                                 color: Config.Appearance.ink2
                             }

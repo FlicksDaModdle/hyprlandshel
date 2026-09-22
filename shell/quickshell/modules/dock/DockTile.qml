@@ -72,7 +72,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.showLabel
             text: root.label
-            font.pixelSize: 11.5
+            font.pixelSize: 12
             font.weight: Font.DemiBold
         }
     }

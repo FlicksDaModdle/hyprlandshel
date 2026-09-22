@@ -87,7 +87,7 @@ Item {
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: Config.Apps.labelFor(task.modelData.cls)
-                        font.pixelSize: 12.5
+                        font.pixelSize: 13
                         color: Config.Appearance.ink
                     }
 
