@@ -595,11 +595,31 @@ PanelWindow {
               s: "One control for the whole panel. Everything — the panel, "
                  + "the tiles, the icons — scales together, so it keeps its "
                  + "proportions instead of being stretched." },
-            { n: "Overall size", s: "Drag until it looks right",
+            { n: "Overall size", s: "Everything at once — the panel, the "
+                 + "tiles, the icons and the type, in proportion",
               type: "slider", min: 70, max: 220, unit: "%",
               value: A.launcherSize, set: v => A.launcherSize = v },
-            { n: "Opens at", s: "What that comes out to", type: "info",
-              value: A.launcherWidth + " × " + A.launcherHeight + " px" },
+
+            { type: "header", n: "Stretch",
+              s: "Optional, on top of the size above. These change one "
+                 + "dimension and leave the content alone." },
+            { n: "Wider", s: "Extra width, spent on more columns rather than "
+                 + "more space between the same tiles",
+              type: "slider", min: 100, max: 200, unit: "%",
+              value: A.launcherWide, set: v => A.launcherWide = v },
+            { n: "Taller", s: "Extra height. The user row stays at the bottom, "
+                 + "so this is room for results, not a gap under them.",
+              type: "slider", min: 100, max: 200, unit: "%",
+              value: A.launcherTall, set: v => A.launcherTall = v },
+            { n: "Icon size", s: "The glyph inside each tile, without "
+                 + "changing the tile",
+              type: "slider", min: 50, max: 200, unit: "%",
+              value: A.launcherIconScale, set: v => A.launcherIconScale = v },
+            { n: "Opens at", s: "What all of the above comes out to",
+              type: "info",
+              value: A.launcherWidth + " × " + A.launcherHeight + " px, "
+                     + A.launcherColumns + " columns, "
+                     + A.launcherIconSize + " px icons" },
 
             { type: "header", n: "Text", s: "" },
             { n: "Entry names", s: "App and command names in the grid and results",

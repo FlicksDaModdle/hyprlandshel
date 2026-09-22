@@ -146,6 +146,13 @@ Singleton {
             // control.
             property int launcherSize: 145            // 70-220 % of the base
 
+            // Optional, on top of the overall size. These stretch the panel
+            // in one direction without touching the other or the content:
+            // the type and the padding stay put, the room around them grows.
+            property int launcherWide: 100             // 100-200 % width
+            property int launcherTall: 100             // 100-200 % height
+            property int launcherIconScale: 100        // 50-200 % glyph
+
             // How much of the window shows through a dropdown or the colour
             // picker. 0 is fully opaque.
             property int menuTranslucency: 8          // 0-60 %
@@ -240,6 +247,9 @@ Singleton {
     property alias fontHinting: prefs.fontHinting
 
     property alias launcherSize: prefs.launcherSize
+    property alias launcherWide: prefs.launcherWide
+    property alias launcherTall: prefs.launcherTall
+    property alias launcherIconScale: prefs.launcherIconScale
 
     // The shape everything is scaled from, at 100%.
     readonly property var launcherBase: ({ w: 620, h: 500, tile: 60, icon: 22,
@@ -251,11 +261,23 @@ Singleton {
     function launcherScaled(px) {
         return Math.round(px * Math.max(40, launcherSize) / 100);
     }
-    readonly property int launcherWidth: launcherScaled(launcherBase.w)
-    readonly property int launcherHeight: launcherScaled(launcherBase.h)
+    function launcherStretch(n) { return Math.max(50, Math.min(220, n)) / 100; }
+
+    readonly property int launcherWidth:
+        Math.round(launcherScaled(launcherBase.w) * launcherStretch(launcherWide))
+    readonly property int launcherHeight:
+        Math.round(launcherScaled(launcherBase.h) * launcherStretch(launcherTall))
     readonly property int launcherTileSize: launcherScaled(launcherBase.tile)
-    readonly property int launcherIconSize: launcherScaled(launcherBase.icon)
-    readonly property int launcherColumns: launcherBase.cols
+    readonly property int launcherIconSize:
+        Math.round(launcherScaled(launcherBase.icon)
+                   * launcherStretch(launcherIconScale))
+
+    // Extra width becomes extra columns rather than extra padding: a wider
+    // start menu should hold more apps per row, not the same four with more
+    // air between them.
+    readonly property int launcherColumns:
+        Math.max(3, Math.min(10,
+            Math.round(launcherBase.cols * launcherStretch(launcherWide))))
 
     property alias menuTranslucency: prefs.menuTranslucency
     property alias menuBlur: prefs.menuBlur
