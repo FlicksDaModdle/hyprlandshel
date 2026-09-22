@@ -29,7 +29,7 @@ Singleton {
     // binds reach it; `exec` launches one of the configured apps; `dsp` is a
     // raw Hyprland dispatcher instead.
     readonly property var actions: [
-        { key: "launcher",    n: "Open launcher",        def: "SUPER + Super_L",   ipc: "toggleLauncher", release: true },
+        { key: "launcher",    n: "Open launcher",        def: "Super_L",           ipc: "toggleLauncher", release: true },
         { key: "overview",    n: "Overview",             def: "SUPER + Tab",       ipc: "toggleOverview" },
         { key: "control",     n: "Control center",       def: "SUPER + C",         ipc: "toggleControlCenter" },
         { key: "notes",       n: "Notification center",  def: "SUPER + N",         ipc: "toggleNotifications" },
@@ -76,11 +76,10 @@ Singleton {
 
     function withModKey(accel) {
         if (!accel || modKey === "SUPER") return accel;
-        let out = accel.replace(/\bSUPER\b/g, modKey);
-        if (tapKeys["SUPER"] && out.indexOf(tapKeys["SUPER"]) !== -1) {
-            out = out.replace(tapKeys["SUPER"], tapKeys[modKey] || tapKeys["SUPER"]);
-        }
-        return out;
+        // A tap bind is the bare key, so it is replaced outright rather than
+        // having its modifier swapped: picking Alt means tapping Alt.
+        if (accel === tapKeys["SUPER"]) return tapKeys[modKey] || accel;
+        return accel.replace(/\bSUPER\b/g, modKey);
     }
 
     function accelFor(key) {
@@ -100,7 +99,7 @@ Singleton {
     function displayAccel(key) {
         const accel = boundAccel(key);
         for (const mod in tapKeys) {
-            if (accel === mod + " + " + tapKeys[mod]) return "Tap " + mod;
+            if (accel === tapKeys[mod]) return "Tap " + mod;
         }
         return accel;
     }

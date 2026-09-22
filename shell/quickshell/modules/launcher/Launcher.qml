@@ -54,6 +54,17 @@ Variants {
         readonly property int gridColumns: Math.max(3, Config.Appearance.launcherColumns)
         readonly property real gridTile: Config.Appearance.launcherTileSize
         readonly property real gridIcon: Config.Appearance.launcherIconSize
+
+        // One size control means one zoom, applied to every measurement in
+        // this file — padding, row heights, gaps, icon glyphs and text.
+        //
+        // Scaling only the panel and the tiles was the obvious half of the
+        // job and looked wrong: a bigger box with the same small search
+        // field, the same small type and more empty space between them. The
+        // shape is right at 100%; what it needed was to be the same shape,
+        // larger.
+        readonly property real zoom: Math.max(40, Config.Appearance.launcherSize) / 100
+        function z(px) { return Math.round(px * zoom); }
         readonly property real dockOffset: Config.Appearance.dockEdgeGap
                                            + Config.Appearance.dockPanelBreadth + 12
 
@@ -297,7 +308,12 @@ Variants {
             // as tall as its contents and the setting only ever capped it.
             //
             // Clamped to the screen so a large value can't push it off the top.
-            height: Math.max(body.implicitHeight,
+            // The footer is anchored to the bottom rather than carried at the
+            // end of the column, so the user row is grounded there whatever
+            // the content does and the slack falls between the two — which
+            // is what a Start menu looks like. Its height is added back here
+            // because it is no longer part of body.implicitHeight.
+            height: Math.max(body.implicitHeight + footer.height,
                              Math.min(launcher.panelHeight,
                                       launcher.height - launcher.dockOffset - 24))
 
@@ -322,20 +338,22 @@ Variants {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
+                anchors.bottom: footer.top
+                clip: true
 
                 // ── search ────────────────────────────────────────────────────
                 Item {
                     width: parent.width
-                    height: 50
+                    height: launcher.z(50)
 
                     Rectangle {
                         id: searchBox
                         anchors.left: parent.left
-                        anchors.leftMargin: 10
+                        anchors.leftMargin: launcher.z(10)
                         anchors.right: escChip.left
-                        anchors.rightMargin: 8
+                        anchors.rightMargin: launcher.z(8)
                         anchors.verticalCenter: parent.verticalCenter
-                        height: 32
+                        height: launcher.z(32)
                         radius: Config.Appearance.rSm
                         color: Config.Appearance.hover
                         border.width: searchInput.activeFocus ? 2 : 1
@@ -346,10 +364,10 @@ Variants {
                         MonoIcon {
                             id: searchIcon
                             anchors.left: parent.left
-                            anchors.leftMargin: 11
+                            anchors.leftMargin: launcher.z(11)
                             anchors.verticalCenter: parent.verticalCenter
                             name: "search"
-                            size: 15
+                            size: launcher.z(15)
                             inkColor: searchInput.activeFocus
                                       ? Config.Appearance.accent : Config.Appearance.ink3
                             monochrome: true
@@ -358,9 +376,9 @@ Variants {
                         TextInput {
                             id: searchInput
                             anchors.left: searchIcon.right
-                            anchors.leftMargin: 8
+                            anchors.leftMargin: launcher.z(8)
                             anchors.right: parent.right
-                            anchors.rightMargin: 10
+                            anchors.rightMargin: launcher.z(10)
                             anchors.verticalCenter: parent.verticalCenter
                             clip: true
 
@@ -368,7 +386,7 @@ Variants {
                             onTextChanged: launcher.query = text
                             color: Config.Appearance.ink
                             font.family: Config.Appearance.fontFamily
-                            font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize)
+                            font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherTitleSize))
                             selectByMouse: true
                             selectionColor: Config.Appearance.accent
                             selectedTextColor: Config.Appearance.onAccent
@@ -402,7 +420,7 @@ Variants {
                                 text: Config.UiState.appPickerFor !== ""
                                       ? "Choose an application for this dock slot"
                                       : "Search apps and commands"
-                                font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize)
+                                font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherTitleSize))
                                 font.weight: Font.Normal
                                 color: Config.Appearance.ink3
                             }
@@ -412,10 +430,10 @@ Variants {
                     Rectangle {
                         id: escChip
                         anchors.right: parent.right
-                        anchors.rightMargin: 10
+                        anchors.rightMargin: launcher.z(10)
                         anchors.verticalCenter: parent.verticalCenter
                         width: escLabel.implicitWidth + 16
-                        height: 26
+                        height: launcher.z(26)
                         radius: Config.Appearance.rSm
                         color: escHover.hovered ? Config.Appearance.sel : Config.Appearance.hover
 
@@ -423,7 +441,7 @@ Variants {
                             id: escLabel
                             anchors.centerIn: parent
                             text: "ESC"
-                            font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize - 1)
+                            font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize - 1))
                             font.weight: Font.DemiBold
                             color: Config.Appearance.ink3
                         }
@@ -441,24 +459,24 @@ Variants {
                     // Section header
                     Item {
                         width: parent.width
-                        height: 32
+                        height: launcher.z(32)
 
                         Row {
                             anchors.left: parent.left
-                            anchors.leftMargin: 10
+                            anchors.leftMargin: launcher.z(10)
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: 8
+                            spacing: launcher.z(8)
 
                             Rectangle {
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 14
-                                height: 2
+                                width: launcher.z(14)
+                                height: launcher.z(2)
                                 color: Config.Appearance.accent
                             }
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "Pinned"
-                                font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
+                                font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize))
                                 font.weight: Font.DemiBold
                                 font.capitalization: Font.AllUppercase
                                 font.letterSpacing: 0.85
@@ -468,10 +486,10 @@ Variants {
 
                         Rectangle {
                             anchors.right: parent.right
-                            anchors.rightMargin: 10
+                            anchors.rightMargin: launcher.z(10)
                             anchors.verticalCenter: parent.verticalCenter
                             width: allRow.implicitWidth + 20
-                            height: 25
+                            height: launcher.z(25)
                             radius: Config.Appearance.rSm
                             color: allHover.hovered ? Config.Appearance.accent : Config.Appearance.hover
                             Behavior on color { ColorAnimation { duration: 140 } }
@@ -479,18 +497,18 @@ Variants {
                             Row {
                                 id: allRow
                                 anchors.centerIn: parent
-                                spacing: 6
+                                spacing: launcher.z(6)
                                 StyledText {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: "All apps"
-                                    font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
+                                    font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize))
                                     font.weight: Font.DemiBold
                                     color: allHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
                                 }
                                 MonoIcon {
                                     anchors.verticalCenter: parent.verticalCenter
                                     name: "chevronRight"
-                                    size: 12
+                                    size: launcher.z(12)
                                     inkColor: allHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
                                     monochrome: true
                                 }
@@ -505,7 +523,7 @@ Variants {
                         x: 10
                         width: parent.width - 20
                         columns: launcher.gridColumns
-                        spacing: 2
+                        spacing: launcher.z(2)
 
                         Repeater {
                             model: launcher.pageItems
@@ -534,7 +552,7 @@ Variants {
 
                                 Column {
                                     anchors.centerIn: parent
-                                    spacing: 6
+                                    spacing: launcher.z(6)
 
                                     Rectangle {
                                         anchors.horizontalCenter: parent.horizontalCenter
@@ -559,7 +577,7 @@ Variants {
                                         horizontalAlignment: Text.AlignHCenter
                                         elide: Text.ElideRight
                                         text: gridItem.modelData.label
-                                        font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
+                                        font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize))
                                     }
                                 }
 
@@ -596,7 +614,7 @@ Variants {
 
                         Row {
                             anchors.centerIn: parent
-                            spacing: 6
+                            spacing: launcher.z(6)
                             visible: launcher.pageCount > 1
 
                             Repeater {
@@ -605,8 +623,8 @@ Variants {
                                 Rectangle {
                                     required property int index
                                     width: launcher.page === index ? 16 : 5
-                                    height: 5
-                                    radius: 3
+                                    height: launcher.z(5)
+                                    radius: launcher.z(3)
                                     color: launcher.page === index
                                            ? Config.Appearance.accent : Config.Appearance.div
                                     Behavior on width { NumberAnimation { duration: 160 } }
@@ -629,24 +647,24 @@ Variants {
 
                         Item {
                             width: parent.width
-                            height: 32
+                            height: launcher.z(32)
 
                             Row {
                                 anchors.left: parent.left
-                                anchors.leftMargin: 10
+                                anchors.leftMargin: launcher.z(10)
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 8
+                                spacing: launcher.z(8)
 
                                 Rectangle {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 14
-                                    height: 2
+                                    width: launcher.z(14)
+                                    height: launcher.z(2)
                                     color: Config.Appearance.accent
                                 }
                                 StyledText {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: "Recommended"
-                                    font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
+                                    font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize))
                                     font.weight: Font.DemiBold
                                     font.capitalization: Font.AllUppercase
                                     font.letterSpacing: 0.85
@@ -656,10 +674,10 @@ Variants {
 
                             StyledText {
                                 anchors.right: parent.right
-                                anchors.rightMargin: 10
+                                anchors.rightMargin: launcher.z(10)
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "recent"
-                                font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
+                                font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize))
                                 color: Config.Appearance.ink3
                             }
                         }
@@ -668,8 +686,8 @@ Variants {
                             x: 10
                             width: parent.width - 20
                             columns: 2
-                            spacing: 1
-                            bottomPadding: 6
+                            spacing: launcher.z(1)
+                            bottomPadding: launcher.z(6)
 
                             Repeater {
                                 model: launcher.recentItems
@@ -679,7 +697,7 @@ Variants {
                                     required property var modelData
 
                                     width: (parent.width - parent.spacing) / 2
-                                    height: 36
+                                    height: launcher.z(36)
 
                                     Rectangle {
                                         anchors.fill: parent
@@ -690,16 +708,16 @@ Variants {
 
                                     Row {
                                         anchors.left: parent.left
-                                        anchors.leftMargin: 7
+                                        anchors.leftMargin: launcher.z(7)
                                         anchors.right: parent.right
-                                        anchors.rightMargin: 7
+                                        anchors.rightMargin: launcher.z(7)
                                         anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 8
+                                        spacing: launcher.z(8)
 
                                         Rectangle {
                                             anchors.verticalCenter: parent.verticalCenter
-                                            width: 22
-                                            height: 22
+                                            width: launcher.z(22)
+                                            height: launcher.z(22)
                                             radius: Config.Appearance.rSm
                                             color: Config.Appearance.hover
                                             border.width: 1
@@ -708,7 +726,7 @@ Variants {
                                             MonoIcon {
                                                 anchors.centerIn: parent
                                                 name: launcher.iconForFile(recentItem.modelData.name)
-                                                size: 12
+                                                size: launcher.z(12)
                                                 inkColor: Config.Appearance.ink2
                                                 accentColor: Config.Appearance.accent
                                             }
@@ -717,19 +735,19 @@ Variants {
                                         Column {
                                             anchors.verticalCenter: parent.verticalCenter
                                             width: parent.width - 30
-                                            spacing: 1
+                                            spacing: launcher.z(1)
 
                                             StyledText {
                                                 width: parent.width
                                                 elide: Text.ElideRight
                                                 text: recentItem.modelData.name
-                                                font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
+                                                font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize))
                                             }
                                             StyledText {
                                                 width: parent.width
                                                 elide: Text.ElideRight
                                                 text: launcher.relativeTime(recentItem.modelData.modified)
-                                                font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize - 1)
+                                                font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize - 1))
                                                 font.weight: Font.Normal
                                                 color: Config.Appearance.ink3
                                             }
@@ -757,42 +775,42 @@ Variants {
 
                     Item {
                         width: parent.width
-                        height: 40
+                        height: launcher.z(40)
 
                         StyledText {
                             anchors.left: parent.left
-                            anchors.leftMargin: 16
+                            anchors.leftMargin: launcher.z(16)
                             anchors.verticalCenter: parent.verticalCenter
                             text: launcher.listTitle
-                            font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize)
+                            font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherTitleSize))
                             font.weight: Font.DemiBold
                         }
 
                         Rectangle {
                             anchors.right: parent.right
-                            anchors.rightMargin: 10
+                            anchors.rightMargin: launcher.z(10)
                             anchors.verticalCenter: parent.verticalCenter
                             visible: launcher.showAll && !launcher.searching
                             width: backRow.implicitWidth + 22
-                            height: 28
+                            height: launcher.z(28)
                             radius: Config.Appearance.rSm
                             color: backHover.hovered ? Config.Appearance.sel : Config.Appearance.hover
 
                             Row {
                                 id: backRow
                                 anchors.centerIn: parent
-                                spacing: 7
+                                spacing: launcher.z(7)
                                 MonoIcon {
                                     anchors.verticalCenter: parent.verticalCenter
                                     name: "chevronLeft"
-                                    size: 13
+                                    size: launcher.z(13)
                                     inkColor: Config.Appearance.ink2
                                     monochrome: true
                                 }
                                 StyledText {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: "Back to pinned"
-                                    font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
+                                    font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize))
                                     font.weight: Font.DemiBold
                                     color: Config.Appearance.ink2
                                 }
@@ -814,7 +832,7 @@ Variants {
                         height: Math.min(Math.max(140, launcher.panelHeight - 204),
                                          Math.max(64, contentHeight))
                         clip: true
-                        spacing: 1
+                        spacing: launcher.z(1)
                         boundsBehavior: Flickable.StopAtBounds
                         model: launcher.appResults
                         currentIndex: launcher.selectedIndex
@@ -832,7 +850,7 @@ Variants {
                             readonly property bool selected: launcher.selectedIndex === index
 
                             width: results.width
-                            height: 43
+                            height: launcher.z(43)
 
                             Rectangle {
                                 anchors.fill: parent
@@ -844,16 +862,16 @@ Variants {
 
                             Row {
                                 anchors.left: parent.left
-                                anchors.leftMargin: 10
+                                anchors.leftMargin: launcher.z(10)
                                 anchors.right: hint.left
-                                anchors.rightMargin: 8
+                                anchors.rightMargin: launcher.z(8)
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 11
+                                spacing: launcher.z(11)
 
                                 Rectangle {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 27
-                                    height: 27
+                                    width: launcher.z(27)
+                                    height: launcher.z(27)
                                     radius: Config.Appearance.rSm
                                     color: resultRow.selected
                                            ? Qt.rgba(1, 1, 1, 0.22) : Config.Appearance.hover
@@ -862,8 +880,8 @@ Variants {
                                     // glyph for the shell's own commands.
                                     IconImage {
                                         anchors.centerIn: parent
-                                        width: 15
-                                        height: 15
+                                        width: launcher.z(15)
+                                        height: launcher.z(15)
                                         visible: source !== ""
                                         source: resultRow.modelData.appIcon || ""
                                     }
@@ -872,7 +890,7 @@ Variants {
                                         anchors.centerIn: parent
                                         visible: (resultRow.modelData.appIcon || "") === ""
                                         name: resultRow.modelData.icon || "square"
-                                        size: 14
+                                        size: launcher.z(14)
                                         inkColor: resultRow.selected
                                                   ? Config.Appearance.onAccent : Config.Appearance.ink
                                         accentColor: resultRow.selected
@@ -883,13 +901,13 @@ Variants {
                                 Column {
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: parent.width - 38
-                                    spacing: 2
+                                    spacing: launcher.z(2)
 
                                     StyledText {
                                         width: parent.width
                                         elide: Text.ElideRight
                                         text: resultRow.modelData.label
-                                        font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize - 1)
+                                        font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherTitleSize - 1))
                                         font.weight: Font.DemiBold
                                         color: resultRow.selected
                                                ? Config.Appearance.onAccent : Config.Appearance.ink
@@ -898,7 +916,7 @@ Variants {
                                         width: parent.width
                                         elide: Text.ElideRight
                                         text: resultRow.modelData.cat || ""
-                                        font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize - 1)
+                                        font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize - 1))
                                         font.weight: Font.Normal
                                         opacity: resultRow.selected ? 0.8 : 1
                                         color: resultRow.selected
@@ -910,10 +928,10 @@ Variants {
                             StyledText {
                                 id: hint
                                 anchors.right: parent.right
-                                anchors.rightMargin: 12
+                                anchors.rightMargin: launcher.z(12)
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: resultRow.selected ? "return" : ""
-                                font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherMetaSize)
+                                font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize))
                                 font.weight: Font.DemiBold
                                 color: Config.Appearance.onAccent
                             }
@@ -931,102 +949,18 @@ Variants {
                     StyledText {
                         visible: launcher.appResults.length === 0
                         width: parent.width
-                        leftPadding: 16
-                        rightPadding: 16
-                        topPadding: 14
-                        bottomPadding: 22
+                        leftPadding: launcher.z(16)
+                        rightPadding: launcher.z(16)
+                        topPadding: launcher.z(14)
+                        bottomPadding: launcher.z(22)
                         wrapMode: Text.WordWrap
                         text: "No matches — press enter to run \u201C" + launcher.query.trim()
                               + "\u201D as a command"
-                        font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize)
+                        font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherTitleSize))
                         color: Config.Appearance.ink3
                     }
                 }
 
-                // ── footer ────────────────────────────────────────────────────
-                Rectangle {
-                    width: parent.width
-                    height: 40
-                    color: Config.Appearance.hover
-
-                    Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 7
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: userRow.implicitWidth + 14
-                        height: 30
-                        radius: Config.Appearance.rSm
-                        color: userHover.hovered ? Config.Appearance.sel : "transparent"
-
-                        Row {
-                            id: userRow
-                            anchors.left: parent.left
-                            anchors.leftMargin: 3
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 9
-
-                            Rectangle {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 21
-                                height: 21
-                                radius: 11
-                                color: Config.Appearance.accent
-
-                                MonoIcon {
-                                    anchors.centerIn: parent
-                                    name: "user"
-                                    size: 11
-                                    inkColor: Config.Appearance.onAccent
-                                    monochrome: true
-                                }
-                            }
-
-                            Column {
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 3
-                                StyledText {
-                                    text: Services.SysInfo.user
-                                    font.pixelSize: Config.Appearance.fs(Config.Appearance.launcherTitleSize - 1)
-                                    font.weight: Font.DemiBold
-                                }
-                                Rectangle {
-                                    width: parent.width
-                                    height: 2
-                                    color: Config.Appearance.accent
-                                }
-                            }
-                        }
-
-                        HoverHandler { id: userHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: { launcher.close(); Config.UiState.togglePower(); } }
-                    }
-
-                    // Power shortcut, mirroring the bar's own.
-                    Rectangle {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 28
-                        height: 28
-                        radius: Config.Appearance.rSm
-                        color: powerHover.hovered ? Config.Appearance.accent : "transparent"
-
-                        MonoIcon {
-                            anchors.centerIn: parent
-                            name: "power"
-                            size: 15
-                            inkColor: powerHover.hovered
-                                      ? Config.Appearance.onAccent : Config.Appearance.ink2
-                            monochrome: true
-                        }
-
-                        HoverHandler { id: powerHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: { launcher.close(); Config.UiState.togglePower(); } }
-                    }
-                }
-            }
         }
 
         // ── keyboard navigation ───────────────────────────────────────────────
@@ -1045,6 +979,94 @@ Variants {
                     next = Math.min(pageItems.length - 1, next - count);
                 }
             }
+
+            // ── footer ────────────────────────────────────────────────────
+        Rectangle {
+            id: footer
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: launcher.z(40)
+            color: Config.Appearance.hover
+
+                Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.leftMargin: launcher.z(7)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: userRow.implicitWidth + 14
+                    height: launcher.z(30)
+                    radius: Config.Appearance.rSm
+                    color: userHover.hovered ? Config.Appearance.sel : "transparent"
+
+                    Row {
+                        id: userRow
+                        anchors.left: parent.left
+                        anchors.leftMargin: launcher.z(3)
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: launcher.z(9)
+
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: launcher.z(21)
+                            height: launcher.z(21)
+                            radius: launcher.z(11)
+                            color: Config.Appearance.accent
+
+                            MonoIcon {
+                                anchors.centerIn: parent
+                                name: "user"
+                                size: launcher.z(11)
+                                inkColor: Config.Appearance.onAccent
+                                monochrome: true
+                            }
+                        }
+
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: launcher.z(3)
+                            StyledText {
+                                text: Services.SysInfo.user
+                                font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherTitleSize - 1))
+                                font.weight: Font.DemiBold
+                            }
+                            Rectangle {
+                                width: parent.width
+                                height: launcher.z(2)
+                                color: Config.Appearance.accent
+                            }
+                        }
+                    }
+
+                    HoverHandler { id: userHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { launcher.close(); Config.UiState.togglePower(); } }
+                }
+
+                // Power shortcut, mirroring the bar's own.
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.rightMargin: launcher.z(10)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: launcher.z(28)
+                    height: launcher.z(28)
+                    radius: Config.Appearance.rSm
+                    color: powerHover.hovered ? Config.Appearance.accent : "transparent"
+
+                    MonoIcon {
+                        anchors.centerIn: parent
+                        name: "power"
+                        size: launcher.z(15)
+                        inkColor: powerHover.hovered
+                                  ? Config.Appearance.onAccent : Config.Appearance.ink2
+                        monochrome: true
+                    }
+
+                    HoverHandler { id: powerHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { launcher.close(); Config.UiState.togglePower(); } }
+                }
+            }
+        }
             selectedIndex = Math.max(0, Math.min(count - 1, next));
         }
     }

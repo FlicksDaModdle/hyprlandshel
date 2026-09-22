@@ -364,21 +364,32 @@ than something to infer.
 
 ## Opening the launcher with Super
 
-Tapping Super on its own opens it. A bare modifier cannot be a keybind, so
-this is a *release* bind on the Super key with Super held — it fires when
-you let go.
+Tapping Super on its own opens it. A bare modifier cannot be an ordinary
+bind, so this is a *release* bind on the Super key — it fires when you let
+go.
 
-The usual objection is that it would also fire at the end of `SUPER`+`C`.
-It does not: Hyprland shadows a release bind whose key took part in a chord
-(`shadowBinds`, `src/keybinds/Manager.cpp`), so a combination suppresses the
-tap. If it ever misbehaves on your keyboard, delete the two `Super_L` /
-`Super_R` binds in `hyprland.lua` and uncomment the `SUPER + SPACE` line
-directly beneath them.
+It is written as the bare key, `hl.bind("Super_L", …, { release = true })`,
+not `"SUPER + Super_L"`. On current Hyprland the two are identical: Super_L
+is in `SIDED_MODIFIER_NAMES`, so naming it sets the SUPER bit in the mask as
+well as binding the key (`CBind::make`, `src/keybinds/Bind.cpp`). They differ
+on a build without that list, where the `SUPER +` form needs the modifier to
+already be set at the instant Super itself is pressed — the bare key does not
+care either way.
 
-Changing the modifier in Settings → Keybinds moves the tap with it: pick Alt
-and the tap becomes `Alt_L`, not Alt-held-plus-Windows-key. Rebinding the
-launcher to an ordinary chord drops the release flag, which is right — a
-chord should fire on the way down.
+It does not fire at the end of `SUPER`+`C`: Hyprland shadows a release bind
+whose key took part in a chord (`shadowBinds`, same file).
+
+`SUPER` + `SPACE` is still bound as well, so there is always a way in. Delete
+that line in `hyprland.lua` once the tap is working for you.
+
+If tapping Super does nothing, `hyprshellctl doctor` step 5 says whether
+Hyprland took the bind at all, which splits the two possible faults: the
+build rejected the key name (`hyprctl configerrors` will say so), or the bind
+is registered and not matching.
+
+Changing the modifier in Settings → Keybinds moves the tap: pick Alt and it
+becomes `Alt_L`. Rebinding the launcher to an ordinary chord drops the
+release flag, which is right — a chord should fire on the way down.
 
 ## When a shortcut does nothing
 

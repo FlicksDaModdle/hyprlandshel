@@ -324,25 +324,28 @@ hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
 
 -- The launcher, on Super by itself.
 --
--- A bare modifier cannot be a bind on its own, so this is a *release* bind
--- on the Super key with Super held: it fires when you let the key go.
+-- A bare modifier cannot be an ordinary bind, so this is a *release* bind on
+-- the Super key: it fires when you let the key go.
 --
--- The usual objection is that it would also fire at the end of SUPER+C, and
--- on old Hyprland it did. It does not now: the keybind manager shadows a
--- release bind whose key was pressed as part of a chord (shadowBinds in
--- src/keybinds/Manager.cpp), so a combination suppresses the tap.
+-- Written as the key alone rather than "SUPER + Super_L". On current
+-- Hyprland the two are identical — Super_L is in SIDED_MODIFIER_NAMES, so
+-- naming it sets the SUPER bit in the mask as well as binding the key
+-- (CBind::make, src/keybinds/Bind.cpp). Where they differ is a build that
+-- does not have that list: there "SUPER + Super_L" wants the SUPER modifier
+-- to already be set at the moment Super itself is pressed, which is exactly
+-- the thing that varies, and the bare key does not care either way.
 --
--- Super_R is bound too, because a right Super behaves like a different key
--- and there is no reason for it to do nothing.
+-- It does not fire at the end of SUPER+C: Hyprland shadows a release bind
+-- whose key took part in a chord (shadowBinds, same file).
 --
--- If this ever misbehaves on your keyboard, delete the two binds and
--- uncomment the chord underneath.
-hl.bind("SUPER + Super_L", hl.dsp.exec_cmd(shell("toggleLauncher")),
-    { release = true })
-hl.bind("SUPER + Super_R", hl.dsp.exec_cmd(shell("toggleLauncher")),
-    { release = true })
+-- `hyprctl binds | grep -A4 Super_L` shows whether it registered at all, and
+-- `hyprshellctl doctor` reports the same thing in one line.
+hl.bind("Super_L", hl.dsp.exec_cmd(shell("toggleLauncher")), { release = true })
+hl.bind("Super_R", hl.dsp.exec_cmd(shell("toggleLauncher")), { release = true })
 
--- hl.bind("SUPER + SPACE", hl.dsp.exec_cmd(shell("toggleLauncher")))
+-- Kept until the tap above is confirmed working on your keyboard, so there
+-- is always a way to open the launcher. Delete this line once it is.
+hl.bind("SUPER + SPACE", hl.dsp.exec_cmd(shell("toggleLauncher")))
 
 -- Shell surfaces — routed into Quickshell over its IPC socket.
 hl.bind(mainMod .. " + Tab",         hl.dsp.exec_cmd(shell("toggleOverview")))
