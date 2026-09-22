@@ -102,6 +102,63 @@ Singleton {
         signalKitty();
     }
 
+    // ── text rendering ────────────────────────────────────────────────────
+    // Subpixel order and hinting are fontconfig's to decide, not Qt's, and
+    // fontconfig is read by every application on the session. So this writes
+    // a snippet into the user's own conf.d rather than trying to do
+    // something Qt-only: getting it right here fixes the whole desktop, and
+    // getting it wrong in one app would be worse than useless.
+    //
+    // It only writes when there is something to say. With the setting left
+    // at "" the file is emptied, which puts fontconfig back to whatever it
+    // decided by itself.
+    readonly property string fontconfDir: (Quickshell.env("XDG_CONFIG_HOME")
+                                           || (Quickshell.env("HOME") + "/.config"))
+                                          + "/fontconfig/conf.d"
+
+    readonly property string subpixel: Config.Appearance.subpixel
+    readonly property bool hinting: Config.Appearance.fontHinting
+
+    readonly property string fontconfWanted: {
+        if (subpixel === "") return "";
+        const rgba = subpixel === "none" ? "none" : subpixel;
+        return '<?xml version="1.0"?>\n'
+            + '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n'
+            + "<!-- Written by the shell: Settings \u2192 Fonts \u2192 Text rendering.\n"
+            + "     Delete this file, or set the subpixel order back to\n"
+            + "     \"Leave alone\", to hand the decision back to fontconfig. -->\n"
+            + "<fontconfig>\n"
+            + "  <match target=\"font\">\n"
+            + '    <edit name="rgba" mode="assign"><const>' + rgba + "</const></edit>\n"
+            + '    <edit name="antialias" mode="assign"><bool>true</bool></edit>\n'
+            + '    <edit name="hinting" mode="assign"><bool>'
+            + (hinting ? "true" : "false") + "</bool></edit>\n"
+            + '    <edit name="hintstyle" mode="assign"><const>'
+            + (hinting ? "hintslight" : "hintnone") + "</const></edit>\n"
+            + "  </match>\n"
+            + "</fontconfig>\n";
+    }
+
+    FileView {
+        id: fontconf
+        // 99- so it wins over a distribution's defaults, which are lower.
+        path: root.fontconfDir + "/99-hyprshell-text.conf"
+        preload: true
+        printErrors: false
+        atomicWrites: true
+    }
+
+    // Applications read fontconfig when they start, so this only reaches
+    // things launched afterwards — including this shell. Nothing here can
+    // change that, and pretending otherwise would be worse than saying so in
+    // the settings row.
+    function applyFontconf() {
+        if (fontconf.text() === fontconfWanted) return;
+        fontconf.setText(fontconfWanted);
+    }
+
+    onFontconfWantedChanged: applyFontconf()
+
     // Lets `qs ipc call shell syncTheming` force it, which is handy right
     // after installing the kitty config into a session that's already up —
     // there the file may have appeared since startup, or be right on disk
@@ -113,5 +170,7 @@ Singleton {
         include.reload();
         include.setText(wanted);
         signalKitty();
+        fontconf.reload();
+        fontconf.setText(fontconfWanted);
     }
 }

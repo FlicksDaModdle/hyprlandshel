@@ -11,6 +11,18 @@ Text {
     color: Config.Appearance.ink
     textFormat: Text.PlainText
 
+    // Native rasterising hints stems onto the pixel grid, which is what
+    // makes small text look sharp rather than soft. Qt's default distance
+    // field is smoother under arbitrary transforms and blurrier standing
+    // still, and a shell is almost entirely small text standing still.
+    //
+    // Settable because it is the wrong choice under a fractional scale: a
+    // natively rendered glyph cannot be resampled, so it lands between
+    // pixels instead of on them.
+    renderType: Config.Appearance.textNative ? Text.NativeRendering
+                                             : Text.QtRendering
+
+
     Component.onCompleted: {
         // Tabular numerals stop the clock, percentages and counts shuffling
         // width as their digits change.

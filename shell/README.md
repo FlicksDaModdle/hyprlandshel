@@ -362,6 +362,24 @@ watcher's pid, the shell's pid, and whether Quickshell's own IPC socket for
 that pid exists. That makes "is anything listening" a fact to read rather
 than something to infer.
 
+## Opening the launcher with Super
+
+Tapping Super on its own opens it. A bare modifier cannot be a keybind, so
+this is a *release* bind on the Super key with Super held — it fires when
+you let go.
+
+The usual objection is that it would also fire at the end of `SUPER`+`C`.
+It does not: Hyprland shadows a release bind whose key took part in a chord
+(`shadowBinds`, `src/keybinds/Manager.cpp`), so a combination suppresses the
+tap. If it ever misbehaves on your keyboard, delete the two `Super_L` /
+`Super_R` binds in `hyprland.lua` and uncomment the `SUPER + SPACE` line
+directly beneath them.
+
+Changing the modifier in Settings → Keybinds moves the tap with it: pick Alt
+and the tap becomes `Alt_L`, not Alt-held-plus-Windows-key. Rebinding the
+launcher to an ordinary chord drops the release flag, which is right — a
+chord should fire on the way down.
+
 ## When a shortcut does nothing
 
 Hyprland sends a spawned command's output to `/dev/null`, so a failing
@@ -408,6 +426,30 @@ the path a shortcut takes — the binds contain the whole command themselves.
 The shell also still registers each shortcut as `hyprshell:<name>` over
 `hyprland-global-shortcuts-v1`, so anything else on the session can dispatch
 `global, hyprshell:launcher`. Nothing here depends on it.
+
+## Text rendering, and the one file written outside this shell
+
+Settings → Fonts → Text rendering has three controls:
+
+- **Rasteriser.** *Sharp* hands glyphs to the platform's font engine, which
+  hints each stem onto the pixel grid. *Smooth* is Qt Quick's default
+  distance-field renderer: softer standing still, but it survives arbitrary
+  scaling, which Sharp does not. On a display at 125% or 150%, Smooth is the
+  better-looking of the two.
+- **Subpixel order.** Your panel's stripe order.
+- **Hinting.**
+
+The last two are fontconfig's decision, not Qt's, and fontconfig is read by
+every application on the session — so they are written to
+`~/.config/fontconfig/conf.d/99-hyprshell-text.conf` rather than applied
+Qt-only. Each application picks the change up when it next starts, this
+shell included. Set the order back to *Leave alone*, or delete that file, to
+hand the decision back to fontconfig.
+
+**On OLED, grayscale is usually right.** Subpixel antialiasing assumes three
+stripes in a straight row. OLED panels are commonly WRGB or a pentile
+diamond, so a renderer that assumes RGB paints colour fringes along every
+edge. Grayscale gives up a little apparent sharpness and gets rid of them.
 
 ## Why the menus frost rather than blur the desktop
 

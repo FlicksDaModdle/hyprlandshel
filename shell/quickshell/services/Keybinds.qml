@@ -29,7 +29,7 @@ Singleton {
     // binds reach it; `exec` launches one of the configured apps; `dsp` is a
     // raw Hyprland dispatcher instead.
     readonly property var actions: [
-        { key: "launcher",    n: "Open launcher",        def: "SUPER + SPACE",     ipc: "toggleLauncher" },
+        { key: "launcher",    n: "Open launcher",        def: "SUPER + Super_L",   ipc: "toggleLauncher", release: true },
         { key: "overview",    n: "Overview",             def: "SUPER + Tab",       ipc: "toggleOverview" },
         { key: "control",     n: "Control center",       def: "SUPER + C",         ipc: "toggleControlCenter" },
         { key: "notes",       n: "Notification center",  def: "SUPER + N",         ipc: "toggleNotifications" },
@@ -65,9 +65,22 @@ Singleton {
     // needing each one re-recorded.
     readonly property string modKey: Config.Appearance.modKey || "SUPER"
 
+    // The keysym each modifier sends on its own, for the tap binds. Changing
+    // the modifier has to move the key too: "ALT + Super_L" would be Alt
+    // held while tapping the Windows key, which is not what anyone means by
+    // "tap the modifier".
+    readonly property var tapKeys: ({
+        "SUPER": "Super_L", "ALT": "Alt_L",
+        "CTRL": "Control_L", "HYPER": "Hyper_L"
+    })
+
     function withModKey(accel) {
         if (!accel || modKey === "SUPER") return accel;
-        return accel.replace(/\bSUPER\b/g, modKey);
+        let out = accel.replace(/\bSUPER\b/g, modKey);
+        if (tapKeys["SUPER"] && out.indexOf(tapKeys["SUPER"]) !== -1) {
+            out = out.replace(tapKeys["SUPER"], tapKeys[modKey] || tapKeys["SUPER"]);
+        }
+        return out;
     }
 
     function accelFor(key) {
@@ -81,6 +94,16 @@ Singleton {
     function boundAccel(key) { return withModKey(accelFor(key)); }
 
     function isCustom(key) { return !!overrides()[key]; }
+
+    // "SUPER + Super_L" is how Hyprland spells "tap Super", and is not how
+    // anyone wants to read it in a settings row.
+    function displayAccel(key) {
+        const accel = boundAccel(key);
+        for (const mod in tapKeys) {
+            if (accel === mod + " + " + tapKeys[mod]) return "Tap " + mod;
+        }
+        return accel;
+    }
 
     function setAccel(key, accel) {
         const o = overrides();
@@ -164,7 +187,12 @@ Singleton {
             if (a.ipc) d = ipcCall(a.ipc, a.arg);
             else if (a.exec) d = "hl.dsp.exec_cmd(apps." + a.exec + ")";
             else d = a.dsp;   // a native dispatcher, verbatim
-            lines.push("hl.bind(" + luaStr(accel) + ", " + d + ")   -- " + a.n);
+            // The launcher's default is a tap on the modifier, which is a
+            // release bind. Rebinding it to an ordinary chord drops that
+            // flag, which is right: a chord should fire on the way down.
+            const opts = (a.release && !isCustom(a.key))
+                       ? ", { release = true }" : "";
+            lines.push("hl.bind(" + luaStr(accel) + ", " + d + opts + ")   -- " + a.n);
             emitted++;
         }
         if (emitted === 0) lines.push("-- (nothing overridden)");

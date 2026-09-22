@@ -15,10 +15,44 @@ import Quickshell.Hyprland
 Singleton {
     id: root
 
+    // Workspaces, from Quickshell's Hyprland connection when it is
+    // delivering and from hyprctl when it is not.
+    //
+    // The fallback is not paranoia. When that connection is not up there are
+    // no events either, so nothing ever tells the bar that the workspace
+    // changed: the pills sit on whatever was true when the shell started and
+    // clicking one appears to do nothing, because the dispatch works and the
+    // display never moves. A shell that quietly stops reflecting the
+    // compositor is worse than one that polls.
     readonly property var workspaces: {
-        const list = Hyprland.workspaces.values.filter(w => w && w.id > 0);
-        list.sort((a, b) => a.id - b.id);
-        return list;
+        const live = Hyprland.workspaces.values.filter(w => w && w.id > 0);
+        if (live.length > 0) {
+            live.sort((a, b) => a.id - b.id);
+            return live;
+        }
+        return polledWorkspaces;
+    }
+
+    property var polledWorkspaces: []
+
+    Process {
+        id: wsProc
+        command: ["hyprctl", "-j", "workspaces"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                let parsed;
+                try { parsed = JSON.parse(text); } catch (e) { return; }
+                if (!Array.isArray(parsed)) return;
+                const out = parsed.filter(w => w && w.id > 0).map(w => ({
+                    id: w.id,
+                    name: w.name || String(w.id),
+                    urgent: false,
+                    windows: w.windows || 0
+                }));
+                out.sort((a, b) => a.id - b.id);
+                root.polledWorkspaces = out;
+            }
+        }
     }
 
     readonly property var monitors: Hyprland.monitors.values
@@ -189,11 +223,41 @@ Singleton {
         onTriggered: {
             clientsProc.running = true;
             activeProc.running = true;
-            if (!root.ipcReady) activeWsProc.running = true;
+            activeWsProc.running = true;
+            if (!root.ipcReady) wsProc.running = true;
         }
     }
 
     function refresh() { debounce.restart(); }
+
+    // Without Quickshell's Hyprland connection there is no event stream, so
+    // the only way to notice that something changed is to look. This runs
+    // only in that case, and stops the moment the connection comes up.
+    Timer {
+        id: poll
+        interval: 700
+        repeat: true
+        running: !root.ipcReady
+        onTriggered: {
+            activeWsProc.running = true;
+            wsProc.running = true;
+            clientsProc.running = true;
+        }
+    }
+
+    // A dispatch of our own is the one moment we know something is about to
+    // change, whether or not an event will arrive to say so. Long enough for
+    // the compositor to have acted, short enough not to be seen.
+    Timer {
+        id: actionSettle
+        interval: 120
+        onTriggered: {
+            activeWsProc.running = true;
+            wsProc.running = true;
+            clientsProc.running = true;
+            activeProc.running = true;
+        }
+    }
 
     // Monitor state is Quickshell's, not ours, and it only re-reads it on a
     // compositor event. Changing a mode or scale through hl.monitor doesn't
@@ -266,6 +330,7 @@ Singleton {
     function focusWorkspace(id) {
         dispatch("workspace " + id);
         refresh();
+        actionSettle.restart();
     }
 
     function focusClient(address) {

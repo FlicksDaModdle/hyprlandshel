@@ -115,12 +115,38 @@ Singleton {
             property int launcherTitleSize: 13        // launcher entry names
             property int launcherMetaSize: 11         // launcher categories and hints
 
-            // Launcher geometry
-            property int launcherWidth: 720
-            property int launcherHeight: 560
-            property int launcherTileSize: 70
-            property int launcherIconSize: 26
-            property int launcherColumns: 4
+            // How glyphs are rasterised.
+            //
+            // Qt Quick's default is a distance field: one texture per glyph,
+            // scaled and rotated freely, and slightly soft at the small
+            // sizes a shell is made of. "native" hands rasterising to the
+            // platform's font engine, which hints stems onto the pixel grid
+            // — noticeably crisper, at the cost of looking wrong under a
+            // fractional scale, because it cannot be resampled.
+            property bool textNative: true
+
+            // Subpixel order, written to fontconfig for every app, not just
+            // this one: "" leaves your existing setting alone, "none" is
+            // grayscale antialiasing, and rgb/bgr/vrgb/vbgr name the stripe
+            // order of the panel.
+            //
+            // Grayscale is the right answer on most OLED panels: their
+            // subpixels are not in a straight RGB row (WRGB, or a pentile
+            // diamond), so a renderer that assumes one paints colour fringes
+            // onto every edge.
+            property string subpixel: ""
+            property bool fontHinting: true
+
+            // Launcher geometry: a layout and one size, not five numbers.
+            //
+            // The layout picks the shape — how many columns, and the
+            // proportions that go with them — and the size scales the whole
+            // thing at that shape. Width and height are no longer set
+            // independently, because every pair that was not the layout's
+            // own ratio looked wrong, and picking them apart was work with
+            // no good answer at the end of it.
+            property string launcherLayout: "standard"
+            property int launcherSize: 125            // 70-200 % of the layout
 
             // How much of the window shows through a dropdown or the colour
             // picker. 0 is fully opaque.
@@ -211,11 +237,41 @@ Singleton {
     property alias launcherTitleSize: prefs.launcherTitleSize
     property alias launcherMetaSize: prefs.launcherMetaSize
 
-    property alias launcherWidth: prefs.launcherWidth
-    property alias launcherHeight: prefs.launcherHeight
-    property alias launcherTileSize: prefs.launcherTileSize
-    property alias launcherIconSize: prefs.launcherIconSize
-    property alias launcherColumns: prefs.launcherColumns
+    property alias textNative: prefs.textNative
+    property alias subpixel: prefs.subpixel
+    property alias fontHinting: prefs.fontHinting
+
+    property alias launcherLayout: prefs.launcherLayout
+    property alias launcherSize: prefs.launcherSize
+
+    // The layouts. Each is a whole shape: its own column count and the
+    // proportions that suit it, at 100%. `standard` is the one the mockup
+    // draws, and its 9:7 is what the others are judged against.
+    readonly property var launcherLayouts: ({
+        "compact":  { w: 620,  h: 500, tile: 60, icon: 22, cols: 4,
+                      n: "Compact",  d: "Fewer, tighter tiles" },
+        "standard": { w: 720,  h: 560, tile: 70, icon: 26, cols: 4,
+                      n: "Standard", d: "The proportions in the design" },
+        "wide":     { w: 1000, h: 560, tile: 76, icon: 28, cols: 6,
+                      n: "Wide",     d: "Two more columns, same height" },
+        "tall":     { w: 640,  h: 740, tile: 72, icon: 27, cols: 3,
+                      n: "Tall",     d: "Narrow and deep, for a portrait screen" }
+    })
+
+    readonly property var launcherShape:
+        launcherLayouts[launcherLayout] || launcherLayouts["standard"]
+
+    // Everything the launcher measures itself by, derived. Nothing else in
+    // the shell had to change: these are the same property names it always
+    // read, they are just no longer settable one at a time.
+    function launcherScaled(px) {
+        return Math.round(px * Math.max(40, launcherSize) / 100);
+    }
+    readonly property int launcherWidth: launcherScaled(launcherShape.w)
+    readonly property int launcherHeight: launcherScaled(launcherShape.h)
+    readonly property int launcherTileSize: launcherScaled(launcherShape.tile)
+    readonly property int launcherIconSize: launcherScaled(launcherShape.icon)
+    readonly property int launcherColumns: launcherShape.cols
 
     property alias menuTranslucency: prefs.menuTranslucency
     property alias menuBlur: prefs.menuBlur

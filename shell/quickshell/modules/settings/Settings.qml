@@ -591,34 +591,26 @@ PanelWindow {
         ];
 
         case "Launcher": return [
-            { type: "header", n: "Preset",
-              s: "A starting point — every value below stays adjustable after" },
-            { n: "Size preset", s: "Compact fits a laptop; Spacious suits a large "
-                 + "display; Full is nearly a fullscreen launcher",
+            { type: "header", n: "Layout",
+              s: "The shape of the panel — how many columns, and the "
+                 + "proportions that go with them" },
+            { n: "Layout", s: settings.launcherLayoutHint,
               type: "seg",
-              options: [{ label: "Compact",  value: "compact" },
-                        { label: "Default",  value: "default" },
-                        { label: "Spacious", value: "spacious" },
-                        { label: "Full",     value: "full" }],
-              value: settings.launcherPreset,
-              set: v => settings.applyLauncherPreset(v) },
+              options: settings.launcherLayoutOptions,
+              value: A.launcherLayout,
+              set: v => A.launcherLayout = v },
 
-            { type: "header", n: "Size", s: "The start menu's own geometry" },
-            { n: "Width", s: "How wide the panel opens", type: "slider",
-              min: 420, max: 2200, unit: "px", value: A.launcherWidth,
-              set: v => A.launcherWidth = v },
-            { n: "Height", s: "Maximum height — it shrinks to fit less content",
-              type: "slider", min: 320, max: 1600, unit: "px", value: A.launcherHeight,
-              set: v => A.launcherHeight = v },
-            { n: "Tile size", s: "Each pinned app's square in the grid", type: "slider",
-              min: 48, max: 200, unit: "px", value: A.launcherTileSize,
-              set: v => A.launcherTileSize = v },
-            { n: "Icon size", s: "The glyph inside each tile", type: "slider",
-              min: 14, max: 80, unit: "px", value: A.launcherIconSize,
-              set: v => A.launcherIconSize = v },
-            { n: "Columns", s: "Tiles per row — page size follows from it",
-              type: "slider", min: 2, max: 10, unit: "", value: A.launcherColumns,
-              set: v => A.launcherColumns = v },
+            { type: "header", n: "Size",
+              s: "One control for the whole panel. Width, height, tiles and "
+                 + "icons all scale together, so the layout keeps its "
+                 + "proportions instead of being stretched." },
+            { n: "Overall size", s: "100% is the layout at the size the design "
+                 + "draws it", type: "slider", min: 70, max: 200, unit: "%",
+              value: A.launcherSize, set: v => A.launcherSize = v },
+            { n: "Opens at", s: "What the two above come out to",
+              type: "info",
+              value: A.launcherWidth + " × " + A.launcherHeight + " px, "
+                     + A.launcherColumns + " columns" },
 
             { type: "header", n: "Text", s: "" },
             { n: "Entry names", s: "App and command names in the grid and results",
@@ -671,7 +663,7 @@ PanelWindow {
                     s: Services.Keybinds.isCustom(a.key)
                        ? "Changed from " + a.def : "Default",
                     type: "keybind",
-                    value: Services.Keybinds.accelFor(a.key),
+                    value: Services.Keybinds.displayAccel(a.key),
                     set: v => Services.Keybinds.setAccel(a.key, v)
                 });
             }
@@ -703,6 +695,46 @@ PanelWindow {
             { n: "Monospaced", s: "Clock digits, the hex field in the colour "
                  + "picker, and the terminal's own config",
               type: "info", value: A.monoFamily },
+
+            { type: "header", n: "Text rendering",
+              s: "How glyphs are drawn onto pixels, which is most of what "
+                 + "makes text look sharp or soft" },
+            { n: "Rasteriser", s: "Sharp hints each stem onto the pixel grid. "
+                 + "Smooth is Qt's default and survives fractional scaling, "
+                 + "which Sharp does not — on a display at 125% or 150%, "
+                 + "Smooth is the better-looking of the two.",
+              type: "seg",
+              options: [{ label: "Sharp",  value: "sharp" },
+                        { label: "Smooth", value: "smooth" }],
+              value: A.textNative ? "sharp" : "smooth",
+              set: v => A.textNative = (v === "sharp") },
+            { n: "Subpixel order", s: "Your panel's stripe order. Grayscale is "
+                 + "right for most OLEDs: their subpixels are not in a "
+                 + "straight RGB row, so colour antialiasing fringes every "
+                 + "edge. Written to fontconfig for every app, and picked up "
+                 + "when each one next starts.",
+              type: "seg",
+              options: [{ label: "Leave alone", value: "" },
+                        { label: "Grayscale",   value: "none" },
+                        { label: "RGB",         value: "rgb" },
+                        { label: "BGR",         value: "bgr" }],
+              value: A.subpixel, set: v => A.subpixel = v },
+            { n: "Vertical panels", s: "Set the order above for a display whose "
+                 + "subpixels stack instead of sitting side by side",
+              type: "seg",
+              options: [{ label: "Horizontal", value: "" },
+                        { label: "VRGB",       value: "vrgb" },
+                        { label: "VBGR",       value: "vbgr" }],
+              value: (A.subpixel === "vrgb" || A.subpixel === "vbgr") ? A.subpixel : "",
+              set: v => { if (v !== "") A.subpixel = v;
+                          else if (A.subpixel === "vrgb" || A.subpixel === "vbgr")
+                              A.subpixel = "rgb"; } },
+            { n: "Hinting", s: "Nudges stems onto whole pixels. Off is truer to "
+                 + "the typeface's own shapes and slightly blurrier.",
+              type: "toggle", value: A.fontHinting, set: v => A.fontHinting = v },
+            { n: "Written to", s: "Delete this file, or set the order back to "
+                 + "Leave alone, to hand the decision back to fontconfig",
+              type: "info", value: "fontconfig/conf.d/99-hyprshell-text.conf" },
 
             { type: "header", n: "Sizes in use",
               s: "What each one comes out at with the scale above applied" },
@@ -1059,40 +1091,19 @@ PanelWindow {
     readonly property string displayPick: displayPickRaw !== ""
         ? displayPickRaw : Services.Compositor.focusedMonitorName
 
-    // ── launcher presets ──────────────────────────────────────────────────
-    // Whole-shape starting points rather than one dimension at a time. The
-    // reported value is whichever preset the current numbers match exactly,
-    // so it reads "Custom" the moment you move a slider.
-    readonly property var launcherPresets: ({
-        compact:  { w: 520,  h: 420,  tile: 56,  icon: 20, cols: 4, title: 12, meta: 10 },
-        "default":{ w: 720,  h: 560,  tile: 70,  icon: 26, cols: 4, title: 13, meta: 11 },
-        spacious: { w: 1000, h: 720,  tile: 96,  icon: 34, cols: 5, title: 15, meta: 12 },
-        full:     { w: 1600, h: 1000, tile: 120, icon: 44, cols: 7, title: 16, meta: 13 }
-    })
-
-    readonly property string launcherPreset: {
-        const A = Config.Appearance;
-        for (const k in launcherPresets) {
-            const p = launcherPresets[k];
-            if (p.w === A.launcherWidth && p.h === A.launcherHeight
-                && p.tile === A.launcherTileSize && p.icon === A.launcherIconSize
-                && p.cols === A.launcherColumns && p.title === A.launcherTitleSize
-                && p.meta === A.launcherMetaSize) return k;
-        }
-        return "custom";
+    // ── launcher layout ───────────────────────────────────────────────────
+    // The table lives in Appearance so the launcher and this window read one
+    // definition; these only turn it into rows.
+    readonly property var launcherLayoutOptions: {
+        const out = [];
+        const t = Config.Appearance.launcherLayouts;
+        for (const k in t) out.push({ label: t[k].n, value: k });
+        return out;
     }
 
-    function applyLauncherPreset(name) {
-        const p = launcherPresets[name];
-        if (!p) return;
-        const A = Config.Appearance;
-        A.launcherWidth = p.w;
-        A.launcherHeight = p.h;
-        A.launcherTileSize = p.tile;
-        A.launcherIconSize = p.icon;
-        A.launcherColumns = p.cols;
-        A.launcherTitleSize = p.title;
-        A.launcherMetaSize = p.meta;
+    readonly property string launcherLayoutHint: {
+        const shape = Config.Appearance.launcherShape;
+        return shape ? shape.d : "";
     }
 
     // ── display helpers ───────────────────────────────────────────────────

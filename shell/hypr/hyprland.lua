@@ -325,26 +325,27 @@ hl.bind(mainMod .. " + SHIFT + P",   hl.dsp.exec_cmd(dispatch("pin")))
 hl.bind(mainMod .. " + P",           hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
 
--- The launcher. An ordinary chord, using only the dispatcher forms that
--- Hyprland's own example config uses.
+-- The launcher, on Super by itself.
 --
--- There was a tap-to-open here that passed a Lua *function* to hl.bind and
--- called hl.dispatch from inside it. Neither appears anywhere in upstream's
--- example config, and every Super bind in this file was wrapped in it — so
--- when it turned out not to work, it did not break the tap, it broke all of
--- them at once. Tap-to-open is not worth that; if Hyprland grows a real tap
--- bind it can come back.
-hl.bind("SUPER + SPACE", hl.dsp.exec_cmd(shell("toggleLauncher")))
+-- A bare modifier cannot be a bind on its own, so this is a *release* bind
+-- on the Super key with Super held: it fires when you let the key go.
+--
+-- The usual objection is that it would also fire at the end of SUPER+C, and
+-- on old Hyprland it did. It does not now: the keybind manager shadows a
+-- release bind whose key was pressed as part of a chord (shadowBinds in
+-- src/keybinds/Manager.cpp), so a combination suppresses the tap.
+--
+-- Super_R is bound too, because a right Super behaves like a different key
+-- and there is no reason for it to do nothing.
+--
+-- If this ever misbehaves on your keyboard, delete the two binds and
+-- uncomment the chord underneath.
+hl.bind("SUPER + Super_L", hl.dsp.exec_cmd(shell("toggleLauncher")),
+    { release = true })
+hl.bind("SUPER + Super_R", hl.dsp.exec_cmd(shell("toggleLauncher")),
+    { release = true })
 
--- Tap Super on its own to open the launcher. Uncomment to try it.
---
--- It is a release bind on the Super key itself, which is the only way
--- Hyprland can express "the modifier, by itself". It is off by default
--- because a release bind on a modifier also fires at the end of a chord on
--- many setups — so SUPER+C would open the control center and then the
--- launcher on top of it. Worth trying, not worth defaulting to.
--- hl.bind("SUPER + Super_L", hl.dsp.exec_cmd(shell("toggleLauncher")),
---     { release = true })
+-- hl.bind("SUPER + SPACE", hl.dsp.exec_cmd(shell("toggleLauncher")))
 
 -- Shell surfaces — routed into Quickshell over its IPC socket.
 hl.bind(mainMod .. " + Tab",         hl.dsp.exec_cmd(shell("toggleOverview")))
