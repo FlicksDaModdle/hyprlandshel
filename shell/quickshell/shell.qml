@@ -34,19 +34,14 @@ ShellRoot {
     Settings {}
     Lock {}
 
-    // Singletons are created lazily on first use, but several have to be
-    // alive whether or not a surface is showing them right now — the
-    // notification server must accept notifications with the center closed,
-    // and the pollers behind the bar need to have started. Touching them
-    // once here brings them all up with the shell.
-    Component.onCompleted: {
-        const started = [
-            Services.Notifications, Services.Compositor, Services.Audio,
-            Services.Brightness, Services.Network, Services.Bluetooth,
-            Services.NightLight, Services.SysInfo, Services.Session
-        ];
-        Services.Compositor.refresh();
-    }
+    // No Component.onCompleted here: QML will not attach one to ShellRoot.
+    //
+    // It also isn't needed. Singletons build on first reference, and Bar.qml
+    // reads Notifications, Compositor, Audio, Network, Bluetooth, Brightness
+    // and NightLight while laying out its own status area — so everything
+    // that has to be live from startup is built by the bar. Session is only
+    // reached when you pick something from the power menu, which is exactly
+    // when it should come up.
 
     // ── IPC ───────────────────────────────────────────────────────────────
     // Reached from Hyprland keybinds via `qs ipc call shell <fn>`

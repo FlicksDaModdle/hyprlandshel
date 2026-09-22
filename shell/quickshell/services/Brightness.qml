@@ -27,6 +27,9 @@ Singleton {
 
     Process {
         id: query
+        // Runs immediately so `available` is known before anything reads it;
+        // Component.onCompleted does not attach to a Singleton.
+        running: true
         command: ["brightnessctl", "-m"]
         stdout: StdioCollector {
             onStreamFinished: {
@@ -70,8 +73,6 @@ Singleton {
         repeat: true
         onTriggered: query.running = true
     }
-
-    Component.onCompleted: query.running = true
 
     function set(v) {
         if (!available) return;

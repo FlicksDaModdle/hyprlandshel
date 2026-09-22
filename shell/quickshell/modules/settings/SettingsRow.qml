@@ -346,7 +346,9 @@ Item {
                     monochrome: true
                 }
 
-                readonly property var palette: [
+                // Not `palette`: QQuickItem already has one, and shadowing it
+                // makes the engine warn about overriding a base member.
+                readonly property var hues: [
                     "#3b6ef5", "#1f9d6b", "#8b5cf6", "#d97706", "#db2777", "#0891b2"
                 ]
 
@@ -356,7 +358,7 @@ Item {
                         if (Config.Appearance.accentIndex !== -1) {
                             Config.Appearance.accentIndex = -1;
                         } else {
-                            const hues = customSwatch.palette;
+                            const hues = customSwatch.hues;
                             const at = hues.indexOf(String(Config.Appearance.customAccent));
                             Config.Appearance.customAccent = hues[(at + 1) % hues.length];
                         }

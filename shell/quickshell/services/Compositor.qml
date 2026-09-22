@@ -143,7 +143,14 @@ Singleton {
         }
     }
 
-    Component.onCompleted: refresh()
+    // Primes the window list once the singleton is built; from then on
+    // refreshes ride Hyprland's event stream. A zero-interval Timer rather
+    // than Component.onCompleted, which QML will not attach to a Singleton.
+    Timer {
+        interval: 0
+        running: true
+        onTriggered: root.refresh()
+    }
 
     // ── actions ───────────────────────────────────────────────────────────
 
