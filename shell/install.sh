@@ -261,8 +261,8 @@ if [ -n "${WAYLAND_DISPLAY:-}" ]; then
         *)         warn "QT_QPA_PLATFORM" "is '${QT_QPA_PLATFORM}' — no layer shell, so no bar/dock/wallpaper"
                    printf '      the installed hyprland.lua launches the shell with\n'
                    printf '      QT_QPA_PLATFORM=wayland regardless, so this only bites a shell\n'
-                   printf '      you start by hand. To start one here:\n'
-                   printf '          QT_QPA_PLATFORM=wayland qs -c hyprshell\n'
+                   printf '      you start by hand. Use run.sh, which sets it for you:\n'
+                   printf '          %s/run.sh\n' "$QS_DIR" 
                    printf '      To find what sets it: grep -rn QT_QPA_PLATFORM ~/.profile\n'
                    printf '          ~/.bashrc ~/.zshrc ~/.zshenv /etc/environment 2>/dev/null\n' ;;
     esac
@@ -279,8 +279,9 @@ else
         for _i in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr"/*; do
             [ -d "$_i" ] && printf '          %s\n' "$(basename -- "$_i")"
         done
-        printf '      so this terminal was started outside that session. Start the\n'
-        printf '      shell from one inside it, or export the signature above.\n'
+        printf '      so this terminal was started outside that session. run.sh\n'
+        printf '      finds the live one and exports it for you:\n'
+        printf '          %s/run.sh\n' "$QS_DIR"
     else
         printf '      and no Hyprland instance is running at all.\n'
     fi
@@ -359,6 +360,9 @@ mkdir -p "$(dirname "$QS_DIR")" || die "could not create $(dirname "$QS_DIR")"
 backup "$QS_DIR"
 cp -r -- "$SRC/quickshell" "$QS_DIR" || die "could not copy the Quickshell tree to $QS_DIR"
 printf '  installed %s\n' "$QS_DIR"
+
+cp -- "$SRC/run.sh" "$QS_DIR/run.sh" 2>/dev/null && chmod +x "$QS_DIR/run.sh" \
+    && printf '  installed %s/run.sh\n' "$QS_DIR"
 
 # theme.json lives *inside* the tree that was just moved aside, so without
 # this every preference you have set would be lost to a reinstall. It is your

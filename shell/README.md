@@ -16,6 +16,8 @@ shell/
     colors-light.conf      The 16 ANSI colours, light
     colors-dark.conf       The 16 ANSI colours, dark
     hyprshell-colors.conf  Which of the two is live (the shell rewrites this)
+  run.sh                   Launch by hand from any terminal, with the
+                           environment the shell needs
   quickshell/
     shell.qml              Entry point: every surface, plus the IPC handler
                            Hyprland's keybinds call into
@@ -90,8 +92,19 @@ cp -r shell/quickshell ~/.config/quickshell/hyprshell
 `hyprland.lua` autostarts the shell (`qs -c hyprshell`) and routes its
 keybinds into it over Quickshell's IPC socket, so the directory name matters.
 
-Run `qs -c hyprshell` in a terminal the first time, so any errors are visible
-before you hand the session over to it.
+Run it in a terminal the first time, so any errors are visible before you
+hand the session over to it — but use the installed launcher, not `qs`
+directly:
+
+```sh
+~/.config/quickshell/hyprshell/run.sh
+```
+
+It forces `QT_QPA_PLATFORM=wayland` and, if the terminal was started outside
+the Hyprland session, finds the live instance and exports its signature. Both
+are things the shell cannot work without and neither is obvious when missing
+— see the troubleshooting section below. Hyprland's own autostart sets them,
+so `run.sh` is only for launching by hand.
 
 > **If you already have `~/.config/hypr/hyprland.conf`**, move it aside before
 > logging out. Hyprland loads one config file, and which one wins with both a
@@ -261,7 +274,7 @@ on the command line, so this only bites a shell you launch by hand from a
 terminal whose profile pins the variable. Either way:
 
 ```sh
-QT_QPA_PLATFORM=wayland qs -c hyprshell
+~/.config/quickshell/hyprshell/run.sh    # sets it for you
 grep -rn QT_QPA_PLATFORM ~/.profile ~/.bashrc ~/.zshrc ~/.zshenv /etc/environment
 ```
 
@@ -276,8 +289,11 @@ echo $HYPRLAND_INSTANCE_SIGNATURE     # empty is the problem
 ls $XDG_RUNTIME_DIR/hypr              # instances that are actually running
 ```
 
-Start the shell from a terminal inside the Hyprland session, or export the
-signature yourself before running `qs`.
+Start the shell from a terminal inside the Hyprland session, or let `run.sh`
+find the live instance and export the signature for you. It refuses, with a
+reason, when there is no live instance to find — this is a Hyprland shell,
+and the workspaces, window menu, overview and keybinds are all the
+compositor's over its IPC. Nothing replaces that on another compositor.
 
 `./shell/install.sh --check` reports both, as the user running it.
 
