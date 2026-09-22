@@ -172,7 +172,20 @@ doctor() {
         grn "   ok  $(pgrep -x qs | tr '\n' ' ')"
     else
         red "   no  nothing is running"
-        dim "       start it: ~/.config/quickshell/hyprshell/run.sh"
+        dim "       start it: $QS_DIR/run.sh"
+        # A config that fails to load leaves no process and no message on
+        # screen — the reason is only in the log it wrote on the way down.
+        # Nobody finds that by themselves, so show the tail of the newest.
+        newest=""
+        for f in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/quickshell/by-id/*/log.qslog; do
+            [ -f "$f" ] || continue
+            [ -z "$newest" ] || [ "$f" -nt "$newest" ] && newest=$f
+        done
+        if [ -n "$newest" ]; then
+            echo
+            dim "       last run's log ($newest):"
+            qs log "$newest" 2>/dev/null | tail -n 12 | sed 's/^/       /'
+        fi
         return 1
     fi
 

@@ -46,20 +46,24 @@ ShellRoot {
     // call the IpcHandler below through hyprshellctl instead, which works on
     // every build. These stay for everything else that might want them.
     //
-    // Through a Loader with a URL, not an import: importing a module this
-    // build may not have would stop the shell from starting rather than
-    // leaving the shortcuts unregistered.
-    Loader {
+    // Loaded from a URL rather than imported, because importing a module
+    // this build may not have would stop the whole shell from starting
+    // instead of just leaving the shortcuts unregistered.
+    //
+    // Quickshell's own LazyLoader, not QtQuick's Loader: this file does not
+    // import QtQuick (nothing else in it is visual), and a QtQuick Loader
+    // here is a hard "Loader is not a type" at load — which is exactly what
+    // it was. LazyLoader is a plain QObject from Quickshell, takes the same
+    // source URL, and holds a Scope perfectly well.
+    //
+    // A build without the protocol logs Quickshell's own warning naming the
+    // missing type and carries on with item left null. Nothing else in the
+    // shell touches it, and the keybinds do not go this way, so that is the
+    // end of it.
+    LazyLoader {
         id: shortcuts
         source: "modules/shortcuts/GlobalShortcuts.qml"
-        onStatusChanged: {
-            if (status === Loader.Error) {
-                console.info("Shell: global shortcuts not registered — this "
-                             + "Quickshell was built without "
-                             + "HYPRLAND_GLOBAL_SHORTCUTS. Keybinds are "
-                             + "unaffected; they go through hyprshellctl.");
-            }
-        }
+        loading: true
     }
 
     // ── surfaces ──────────────────────────────────────────────────────────
