@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Widgets
 import "../../config" as Config
 import "../../services" as Services
 import "../common"

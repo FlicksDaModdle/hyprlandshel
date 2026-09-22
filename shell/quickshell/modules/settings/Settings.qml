@@ -1,7 +1,6 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
-import Quickshell.Widgets
 import Quickshell.Services.UPower
 import Quickshell.Services.Pipewire
 import "../../config" as Config

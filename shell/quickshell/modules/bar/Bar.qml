@@ -24,7 +24,11 @@ Variants {
         id: bar
         required property var modelData
 
-        screen: modelData
+        // Variants applies modelData after this binding is first evaluated,
+        // so it sees undefined once on the way up. null is the same thing to
+        // setScreen (use the default) and doesn't warn; the binding
+        // re-evaluates to the real screen the moment modelData lands.
+        screen: modelData ?? null
         color: "transparent"
 
         anchors.top: true

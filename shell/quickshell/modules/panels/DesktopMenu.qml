@@ -51,7 +51,9 @@ PanelSurface {
                 height: modelData.rule ? 41 : 36
 
                 Rectangle {
-                    visible: entry.modelData.rule
+                    // Most entries have no `rule` key at all, so this is
+                    // undefined rather than false — and `visible` is a bool.
+                    visible: entry.modelData.rule === true
                     anchors.top: parent.top
                     anchors.topMargin: 2
                     width: parent.width

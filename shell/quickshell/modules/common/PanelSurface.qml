@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell.Widgets
 import "../../config" as Config
 
 // The chrome every dropdown panel shares: translucent sheet, hairline edge,
@@ -7,14 +6,22 @@ import "../../config" as Config
 // puts on the control center, notifications, calendar, power menu and
 // launcher alike.
 //
-// Children go in the default slot and are clipped to the rounded corners.
-// The edge and seam are drawn above them, so a panel that runs content to
-// the very top (a full-bleed header row) still gets a clean border.
+// Children go in the default slot. The edge and seam are drawn above them,
+// so a panel that runs content to the very top (a full-bleed header row)
+// still gets a clean border.
 //
-// Deliberately no `default property alias`: redeclaring the default property
-// would also capture this file's own children and try to reparent them into
-// the alias target.
-ClippingRectangle {
+// This was a Quickshell ClippingRectangle, which clips children to the
+// *rounded* corners rather than to the bounding box. It was dropped: that
+// type needs Qt 6.7 and a compiled shader, and on a build where the shader
+// doesn't load you get its internal mask instead of the panel — a white box
+// with a red smear in it, which is exactly what it did. A plain Rectangle
+// has no such dependency.
+//
+// The corner clipping is not missed. Every panel insets its content from the
+// edge and none of them paints a background into a corner, so there is
+// nothing for the arcs to cut. If one ever does, give that child its own
+// topLeftRadius / topRightRadius to match.
+Rectangle {
     id: root
 
     // Length of the solid accent run before it fades into the seam tint.
@@ -23,11 +30,15 @@ ClippingRectangle {
 
     radius: Config.Appearance.rPanel
     color: Config.Appearance.panel
+    clip: true
 
     Rectangle {
         anchors.fill: parent
         z: 100
-        radius: parent.radius
+        // parent used to be the ClippingRectangle's internal content item,
+        // which has no radius — so this read undefined and QML warned on
+        // every panel at startup.
+        radius: root.radius
         color: "transparent"
         border.width: 1
         border.color: Config.Appearance.edge
