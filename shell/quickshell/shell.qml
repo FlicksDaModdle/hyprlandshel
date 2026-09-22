@@ -20,6 +20,13 @@ import "modules/lock"
 // keybinds assume that name.
 ShellRoot {
 
+    // Theming has no surface of its own, so no surface below would reference
+    // it — and Quickshell builds a singleton on first reference, so without
+    // this it would never be constructed and the terminal would never follow
+    // the shell's theme. Root-object bindings are evaluated when the component
+    // completes, so this reference is the thing that starts it.
+    readonly property bool terminalThemed: Services.Theming.kittyPresent
+
     // ── surfaces ──────────────────────────────────────────────────────────
     // Ordered background to foreground, though each one sets its own
     // layer-shell layer and the compositor does the actual stacking.
@@ -85,6 +92,10 @@ ShellRoot {
 
         // Do not disturb
         function toggleDnd(): void { Services.Notifications.toggleDnd(); }
+
+        // Re-push the theme to the terminal. Useful straight after installing
+        // the kitty config into a session that is already running.
+        function syncTheming(): void { Services.Theming.resync(); }
 
         // Windows
         function showDesktop(): void { Services.Compositor.toggleShowDesktop(); }

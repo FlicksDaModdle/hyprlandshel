@@ -11,6 +11,11 @@ counts your notifications, and the Wi-Fi tile turns your radio off.
 shell/
   hypr/
     hyprland.lua           Hyprland 0.55+ Lua config (compositor + keybinds)
+  kitty/
+    kitty.conf             Terminal chrome matched to the mockup's window
+    colors-light.conf      The 16 ANSI colours, light
+    colors-dark.conf       The 16 ANSI colours, dark
+    hyprshell-colors.conf  Which of the two is live (the shell rewrites this)
   quickshell/
     shell.qml              Entry point: every surface, plus the IPC handler
                            Hyprland's keybinds call into
@@ -31,6 +36,7 @@ shell/
       Notifications.qml    The org.freedesktop.Notifications server
       Session.qml          Lock / suspend / reboot / log out / reload
       SysInfo.qml          Host, CPU, memory, disk, uptime, compositor
+      Theming.qml          Follows the theme out into kitty
     modules/
       background/          The desktop ground + its right-click menu
       bar/                 Top bar: workspaces, window menu, tasks, tray,
@@ -101,6 +107,7 @@ so; with no `nmcli` the Wi-Fi readout goes quiet.
 
 | Used for | Needs |
 | --- | --- |
+| The themed terminal | `kitty` |
 | Wi-Fi tile, network pane | `nmcli` (NetworkManager) |
 | Bluetooth tile and pane | `bluetoothctl` (BlueZ) |
 | Brightness slider and keys | `brightnessctl` |
@@ -113,8 +120,9 @@ so; with no `nmcli` the Wi-Fi readout goes quiet.
 | Wallpaper picker | `zenity` or `kdialog` |
 
 Text is Inter throughout; install an `inter-font` / `fonts-inter` package.
+Monospaced text — in the shell and in the terminal — is JetBrains Mono.
 
-The pinned apps in `config/Apps.qml` assume `foot`, `nautilus`, `firefox`,
+The pinned apps in `config/Apps.qml` assume `kitty`, `nautilus`, `firefox`,
 `neovide`, `obsidian` and `ncmpcpp`, with `match` patterns covering the
 common alternatives. Edit `exec` and `match` to what you actually run —
 `match` is tested against each window's Hyprland class.
@@ -167,6 +175,42 @@ from the dock or `super + ,` restores exactly where you were.
 
 Shell panes write `theme.json` as you drag; device panes act on the system
 through PipeWire, UPower, `nmcli`, `bluetoothctl` and `hyprctl keyword`.
+
+**Terminal.** kitty, configured to match the mockup's terminal window: its
+16/18/20 padding, its airy 1.62 line height, no client decoration (Hyprland
+draws the 12px rounding and the accent focus border), and a flat tab bar that
+stays hidden until there's a second tab.
+
+The sixteen ANSI colours are generated rather than picked, laid out on one
+shared OKLCH lightness scale — the same method as the shell's own design
+tokens — so a green and a blue at the same step read as the same visual
+weight. Red sits at the design accent's exact hue and chroma; every other hue
+is pulled back to roughly a third less chroma, so the accent stays the only
+loud colour on screen. Every normal colour clears WCAG AA against the
+background and the brights clear 6.5:1.
+
+Red deliberately does *not* follow your chosen accent. An ANSI colour should
+mean what it says, and a blue accent must not make error text blue. The accent
+drives the cursor, the selection, links and the bead before the active tab
+title instead — which is kitty's nearest equivalent of the focus bead on the
+mockup's window title bar.
+
+Changing the theme in Settings recolours kitty windows that are already open.
+`services/Theming.qml` rewrites the one-line include in
+`~/.config/kitty/hyprshell-colors.conf` and sends kitty `SIGUSR1`, which is
+kitty's own config reload — so nothing has to be enabled on kitty's side and
+`allow_remote_control` stays off. A kitty that isn't running is simply not
+signalled and picks the right palette up when it next starts. Installing the
+kitty config into a session that's already up needs one nudge:
+
+```sh
+qs -c hyprshell ipc call shell syncTheming
+```
+
+None of it depends on the shell: the palette files are plain kitty includes,
+so editing that one line by hand works standalone. A reinstall never resets
+your choice — `install.sh` backs up an existing `kitty.conf` but leaves
+`hyprshell-colors.conf` alone.
 
 **Lock screen.** A Wayland session-lock surface authenticating against PAM.
 The compositor guarantees nothing behind it is visible and nothing else takes

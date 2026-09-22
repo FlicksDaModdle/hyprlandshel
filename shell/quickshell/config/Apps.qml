@@ -12,12 +12,12 @@ Singleton {
     id: root
 
     readonly property var pinned: [
-        { key: "appTerm",     label: "Terminal", icon: "terminal",   exec: ["foot"],     match: /^(foot|kitty|alacritty|wezterm|org\.wezfurlong\.wezterm)$/i },
+        { key: "appTerm",     label: "Terminal", icon: "terminal",   exec: ["kitty"],    match: /^(kitty|foot|alacritty|wezterm|org\.wezfurlong\.wezterm)$/i },
         { key: "appFiles",    label: "Files",    icon: "folder",     exec: ["nautilus"], match: /^(org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$/i },
         { key: "appWeb",      label: "Web",      icon: "globe",      exec: ["firefox"],  match: /^(firefox.*|chromium|google-chrome.*|brave-browser|zen.*)$/i },
         { key: "appCode",     label: "Code",     icon: "code",       exec: ["neovide"],  match: /^(neovide|code|code-oss|codium|dev\.zed\.Zed|jetbrains-.*)$/i },
         { key: "appNotes",    label: "Notes",    icon: "stickyNote", exec: ["obsidian"], match: /^(obsidian|org\.gnome\.TextEditor|logseq)$/i },
-        { key: "appMusic",    label: "Music",    icon: "music",      exec: ["footclient", "-e", "ncmpcpp"], match: /^(ncmpcpp|spotify|org\.gnome\.Rhythmbox3|io\.bassi\.Amberol)$/i },
+        { key: "appMusic",    label: "Music",    icon: "music",      exec: ["kitty", "-e", "ncmpcpp"], match: /^(ncmpcpp|spotify|org\.gnome\.Rhythmbox3|io\.bassi\.Amberol)$/i },
         { key: "appSettings", label: "Settings", icon: "settings",   exec: [],           match: /^$/ }
     ]
 

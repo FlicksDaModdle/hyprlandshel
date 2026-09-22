@@ -38,6 +38,7 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 HYPR_DIR="$CONFIG_HOME/hypr"
 QS_DIR="$CONFIG_HOME/quickshell/hyprshell"
+KITTY_DIR="$CONFIG_HOME/kitty"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 MODE=install
@@ -206,6 +207,15 @@ else
     add_pkg "$(pkg inter-font fonts-inter rsms-inter-fonts inter-fonts)"
 fi
 
+# Not conditional on kitty: this is Appearance.monoFamily too, so the shell's
+# own monospaced text wants it whether or not the terminal is installed.
+if command -v fc-list >/dev/null 2>&1 && fc-list 2>/dev/null | grep -qi 'jetbrains mono'; then
+    ok "JetBrains Mono" "monospaced text in the shell and the terminal"
+else
+    warn "JetBrains Mono" "falls back to the system monospace"
+    add_pkg "$(pkg ttf-jetbrains-mono fonts-jetbrains-mono jetbrains-mono-fonts jetbrains-mono-fonts)"
+fi
+
 head1 "Optional — each one only affects the feature named"
 need nmcli         optional "Wi-Fi tile, Network pane"   networkmanager network-manager NetworkManager NetworkManager
 need bluetoothctl  optional "Bluetooth tile and pane"    bluez-utils bluez bluez bluez
@@ -215,6 +225,7 @@ need slurp         optional "screenshot region picker"   slurp slurp slurp slurp
 need wl-copy       optional "screenshot to clipboard"    wl-clipboard wl-clipboard wl-clipboard wl-clipboard
 need notify-send   optional "screenshot confirmations"   libnotify libnotify-bin libnotify libnotify-tools
 need playerctl     optional "media transport keys"       playerctl playerctl playerctl playerctl
+need kitty         optional "the themed terminal"        kitty kitty kitty kitty
 need hypridle      optional "idle timeout to lock"       hypridle "" "" ""
 need loginctl      optional "suspend, reboot, power off" systemd systemd systemd systemd
 
@@ -263,6 +274,10 @@ if [ -e "$HYPR_DIR/hyprland.conf" ]; then warn "hyprland.conf" "exists — see t
                                      else ok   "hyprland.conf" "not present"; fi
 if [ -e "$QS_DIR" ]; then warn "quickshell/hyprshell" "exists — would be backed up"
                      else ok   "quickshell/hyprshell" "not present"; fi
+if command -v kitty >/dev/null 2>&1; then
+    if [ -e "$KITTY_DIR/kitty.conf" ]; then warn "kitty.conf" "exists — would be backed up"
+                                       else ok   "kitty.conf" "not present"; fi
+fi
 
 if [ "$MODE" = check ]; then
     head1 "Check only — nothing was changed."
@@ -279,6 +294,9 @@ fi
 # ── confirm ──────────────────────────────────────────────────────────────────
 head1 "About to install"
 printf '  %s  <- the Quickshell tree\n' "$QS_DIR"
+if command -v kitty >/dev/null 2>&1; then
+    printf '  %s  <- kitty.conf and the two palettes\n' "$KITTY_DIR"
+fi
 if [ "$MODE" = shell-only ]; then
     printf '  %s(your Hyprland config is left alone)%s\n' "$DIM" "$RST"
 else
@@ -305,6 +323,20 @@ mkdir -p "$(dirname "$QS_DIR")" || die "could not create $(dirname "$QS_DIR")"
 backup "$QS_DIR"
 cp -r -- "$SRC/quickshell" "$QS_DIR" || die "could not copy the Quickshell tree to $QS_DIR"
 printf '  installed %s\n' "$QS_DIR"
+
+if command -v kitty >/dev/null 2>&1; then
+    mkdir -p "$KITTY_DIR" || die "could not create $KITTY_DIR"
+    backup "$KITTY_DIR/kitty.conf"
+    for f in kitty.conf colors-light.conf colors-dark.conf hyprshell-colors.conf; do
+        # hyprshell-colors.conf is the live palette pointer the shell rewrites;
+        # keep an existing one so a reinstall doesn't reset your theme.
+        if [ "$f" = hyprshell-colors.conf ] && [ -e "$KITTY_DIR/$f" ]; then continue; fi
+        cp -- "$SRC/kitty/$f" "$KITTY_DIR/$f" || die "could not copy $f to $KITTY_DIR"
+    done
+    printf '  installed %s/kitty.conf and its palettes\n' "$KITTY_DIR"
+    # Recolour any kitty already running.
+    pkill -USR1 -x kitty 2>/dev/null || true
+fi
 
 if [ "$MODE" != shell-only ]; then
     mkdir -p "$HYPR_DIR" || die "could not create $HYPR_DIR"

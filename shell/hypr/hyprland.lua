@@ -23,7 +23,7 @@ hl.monitor({
 -- Edit these to match what's actually installed. Quickshell's dock reads
 -- the same set from quickshell/config/Apps.qml — keep the two in sync.
 
-local terminal    = "foot"
+local terminal    = "kitty"
 local fileManager = "nautilus"
 local browser     = "firefox"
 
@@ -275,6 +275,15 @@ hl.window_rule({
     name  = "suppress-maximize-events",
     match = { class = ".*" },
     suppress_event = "maximize",
+})
+
+-- kitty's background_opacity only reads as the mockup's translucent sheet if
+-- there is a blurred desktop behind it. shell/kitty/colors-*.conf set the
+-- alpha; this makes it mean something.
+hl.window_rule({
+    name  = "blur-kitty",
+    match = { class = "^(kitty)$" },
+    blur  = true,
 })
 
 hl.window_rule({
