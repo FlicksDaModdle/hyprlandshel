@@ -1,6 +1,7 @@
 pragma Singleton
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Services.Pipewire
 import "../config" as Config
 
@@ -55,15 +56,71 @@ Singleton {
     }
 
     function toggleMute() {
-        if (!ready) return;
-        sink.audio.muted = !sink.audio.muted;
-        Config.UiState.showOsd("volume", volume, sink.audio.muted);
+        if (ready) {
+            sink.audio.muted = !sink.audio.muted;
+            Config.UiState.showOsd("volume", volume, sink.audio.muted);
+            return;
+        }
+        fallbackMuted = !fallbackMuted;
+        fallbackRun({ wp: "set-mute @DEFAULT_AUDIO_SINK@ toggle",
+                      pa: "set-sink-mute @DEFAULT_SINK@ toggle" });
+        Config.UiState.showOsd("volume", fallbackVolume, fallbackMuted);
+    }
+
+    // ── fallback ──────────────────────────────────────────────────────────
+    // PipeWire's node is only live while Quickshell has it bound, and it can
+    // be null — no default sink yet, a session where the binding never comes
+    // up. The old code returned early in that case, which meant the volume
+    // keys did nothing *and* showed no OSD, so there was no sign anything had
+    // happened at all. wpctl (wireplumber) or pactl does the job instead, and
+    // the OSD shows either way.
+    property bool fallbackUsed: false
+    property real fallbackVolume: 0
+    property bool fallbackMuted: false
+
+    Process { id: volProc }
+
+    Process {
+        id: volQuery
+        stdout: StdioCollector {
+            onStreamFinished: {
+                // wpctl prints: "Volume: 0.45" or "Volume: 0.45 [MUTED]"
+                const m = /Volume:\s*([\d.]+)(\s*\[MUTED\])?/.exec(text);
+                if (!m) return;
+                root.fallbackVolume = parseFloat(m[1]);
+                root.fallbackMuted = !!m[2];
+                root.fallbackUsed = true;
+            }
+        }
+    }
+
+    function fallbackRun(args) {
+        volProc.running = false;
+        volProc.command = ["sh", "-c",
+            "if command -v wpctl >/dev/null 2>&1; then wpctl " + args.wp
+            + "; elif command -v pactl >/dev/null 2>&1; then pactl " + args.pa + "; fi"];
+        volProc.running = true;
+        volQuery.command = ["sh", "-c",
+            "command -v wpctl >/dev/null 2>&1 && wpctl get-volume @DEFAULT_AUDIO_SINK@"];
+        volQuery.running = true;
     }
 
     function step(delta) {
-        if (!ready) return;
-        setVolume(volume + delta);
-        Config.UiState.showOsd("volume", sink.audio.volume, sink.audio.muted);
+        const pct = Math.round(Math.abs(delta) * 100);
+        if (ready) {
+            setVolume(volume + delta);
+            Config.UiState.showOsd("volume", sink.audio.volume, sink.audio.muted);
+            return;
+        }
+        const dir = delta > 0 ? "+" : "-";
+        fallbackRun({
+            // -l caps software boost at 100%, matching setVolume's own clamp.
+            wp: "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ " + pct + "%" + dir,
+            pa: "set-sink-volume @DEFAULT_SINK@ " + dir + pct + "%"
+        });
+        const shown = Math.max(0, Math.min(1, fallbackVolume + delta));
+        fallbackVolume = shown;
+        Config.UiState.showOsd("volume", shown, fallbackMuted);
     }
 
     function setInputVolume(v) {
@@ -71,9 +128,14 @@ Singleton {
     }
 
     function toggleInputMute() {
-        if (!sourceReady) return;
-        source.audio.muted = !source.audio.muted;
-        Config.UiState.showOsd("mic", inputVolume, source.audio.muted);
+        if (sourceReady) {
+            source.audio.muted = !source.audio.muted;
+            Config.UiState.showOsd("mic", inputVolume, source.audio.muted);
+            return;
+        }
+        fallbackRun({ wp: "set-mute @DEFAULT_AUDIO_SOURCE@ toggle",
+                      pa: "set-source-mute @DEFAULT_SOURCE@ toggle" });
+        Config.UiState.showOsd("mic", 0, true);
     }
 
     function setDefaultSink(node) {

@@ -43,10 +43,14 @@ Item {
             radius: root.radius
             color: root.fillColor
 
-            // A rounded fill at tiny widths collapses into a lozenge; square
-            // off the right edge so it reads as a level, not a pill.
+            // A rounded fill at tiny widths collapses into a lozenge, so the
+            // right edge is squared off to read as a level rather than a
+            // pill. Not at the top of the range though: there the fill and
+            // the track end together, and squaring it leaves a flat corner
+            // sticking out of the trough's rounded one.
             Rectangle {
                 visible: parent.width > root.radius
+                         && parent.width < track.width - 0.5
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom

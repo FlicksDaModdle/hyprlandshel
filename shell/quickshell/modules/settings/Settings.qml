@@ -62,6 +62,7 @@ PanelWindow {
         "Bluetooth":     { icon: "bluetooth", group: "System", note: "Radio state, paired devices and discovery." },
         "Sound":         { icon: "volume",    group: "System", note: "Output and input levels and the active device." },
         "Power":         { icon: "battery",   group: "System", note: "Power profile, idle timing and battery care." },
+        "Hyprland":      { icon: "grid",      group: "System", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
         "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
         "Appearance":    { icon: "palette",   group: "Shell",  note: "Theme, accent, translucency and geometry. Every change repaints the shell live." },
         "Bar":           { icon: "layout",    group: "Shell",  note: "The top bar: height, clock, tray and the task list." },
@@ -76,7 +77,8 @@ PanelWindow {
     // Settings *for*; the shell's own appearance is the thing you set once.
     readonly property var paneGroups: [
         { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
-                                   "Network", "Bluetooth", "Sound", "Power", "About"] },
+                                   "Network", "Bluetooth", "Sound", "Power",
+                                   "Hyprland", "About"] },
         { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Launcher",
                                    "Notifications", "Fonts", "Keybinds"] }
     ]
@@ -588,26 +590,41 @@ PanelWindow {
         ];
 
         case "Launcher": return [
+            { type: "header", n: "Preset",
+              s: "A starting point — every value below stays adjustable after" },
+            { n: "Size preset", s: "Compact fits a laptop; Spacious suits a large "
+                 + "display; Full is nearly a fullscreen launcher",
+              type: "seg",
+              options: [{ label: "Compact",  value: "compact" },
+                        { label: "Default",  value: "default" },
+                        { label: "Spacious", value: "spacious" },
+                        { label: "Full",     value: "full" }],
+              value: settings.launcherPreset,
+              set: v => settings.applyLauncherPreset(v) },
+
             { type: "header", n: "Size", s: "The start menu's own geometry" },
             { n: "Width", s: "How wide the panel opens", type: "slider",
-              min: 520, max: 1200, unit: "px", value: A.launcherWidth,
+              min: 420, max: 2200, unit: "px", value: A.launcherWidth,
               set: v => A.launcherWidth = v },
-            { n: "Height", s: "How tall the panel opens", type: "slider",
-              min: 400, max: 900, unit: "px", value: A.launcherHeight,
+            { n: "Height", s: "Maximum height — it shrinks to fit less content",
+              type: "slider", min: 320, max: 1600, unit: "px", value: A.launcherHeight,
               set: v => A.launcherHeight = v },
             { n: "Tile size", s: "Each pinned app's square in the grid", type: "slider",
-              min: 56, max: 120, unit: "px", value: A.launcherTileSize,
+              min: 48, max: 200, unit: "px", value: A.launcherTileSize,
               set: v => A.launcherTileSize = v },
-            { n: "Columns", s: "Tiles per row — fewer means larger tiles fit",
-              type: "slider", min: 3, max: 8, unit: "", value: A.launcherColumns,
+            { n: "Icon size", s: "The glyph inside each tile", type: "slider",
+              min: 14, max: 80, unit: "px", value: A.launcherIconSize,
+              set: v => A.launcherIconSize = v },
+            { n: "Columns", s: "Tiles per row — page size follows from it",
+              type: "slider", min: 2, max: 10, unit: "", value: A.launcherColumns,
               set: v => A.launcherColumns = v },
 
             { type: "header", n: "Text", s: "" },
             { n: "Entry names", s: "App and command names in the grid and results",
-              type: "slider", min: 9, max: 20, unit: "px", value: A.launcherTitleSize,
+              type: "slider", min: 8, max: 26, unit: "px", value: A.launcherTitleSize,
               set: v => A.launcherTitleSize = v },
             { n: "Secondary text", s: "Categories, hints and the section headings",
-              type: "slider", min: 8, max: 18, unit: "px", value: A.launcherMetaSize,
+              type: "slider", min: 7, max: 22, unit: "px", value: A.launcherMetaSize,
               set: v => A.launcherMetaSize = v }
         ];
 
@@ -782,6 +799,75 @@ PanelWindow {
                 value: Services.NightLight.temperature,
                 set: v => Services.NightLight.setTemperature(v) });
             return rows;
+        }
+
+        case "Hyprland": {
+            const push = () => Services.Devices.applyFrame();
+            return [
+            { type: "header", n: "Layout", s: "How windows are tiled and spaced" },
+            { n: "Tiling layout", s: "dwindle splits the focused window; master keeps "
+                 + "one large window with a stack beside it",
+              type: "seg",
+              options: [{ label: "Dwindle", value: "dwindle" },
+                        { label: "Master", value: "master" }],
+              value: A.hyprLayout, set: v => { A.hyprLayout = v; push(); } },
+            { n: "Inner gap", s: "Between tiled windows", type: "slider",
+              min: 0, max: 40, unit: "px", value: A.gapsIn,
+              set: v => { A.gapsIn = v; push(); } },
+            { n: "Outer gap", s: "Between windows and the screen edge", type: "slider",
+              min: 0, max: 80, unit: "px", value: A.gapsOut,
+              set: v => { A.gapsOut = v; push(); } },
+            { n: "Focus follows mouse", s: "Moving the pointer over a window focuses it",
+              type: "toggle", value: A.hyprFocusFollowsMouse,
+              set: v => { A.hyprFocusFollowsMouse = v; push(); } },
+
+            { type: "header", n: "Frame", s: "Borders and corners on real windows" },
+            { n: "Corner rounding", s: "Hyprland's own window rounding — separate from "
+                 + "the shell's, which is in Appearance",
+              type: "slider", min: 0, max: 24, unit: "px", value: A.hyprRounding,
+              set: v => { A.hyprRounding = v; push(); } },
+            { n: "Border width", s: "Thickness of the focus highlight", type: "slider",
+              min: 0, max: 8, unit: "px", value: A.borderSize,
+              set: v => { A.borderSize = v; push(); } },
+            { n: "Highlight follows accent",
+              s: "The focused window's border takes the shell's accent colour",
+              type: "toggle", value: A.borderFollowsAccent,
+              set: v => { A.borderFollowsAccent = v; push(); } },
+            { n: "Inactive opacity", s: "How solid unfocused windows are",
+              type: "slider", min: 40, max: 100, unit: "%",
+              value: A.hyprInactiveOpacity,
+              set: v => { A.hyprInactiveOpacity = v; push(); } },
+
+            { type: "header", n: "Effects", s: "Costs GPU time; turn down on a laptop" },
+            { n: "Blur behind windows", s: "Applies to anything translucent, including "
+                 + "the terminal and the shell's own panels",
+              type: "toggle", value: A.hyprBlur,
+              set: v => { A.hyprBlur = v; push(); } },
+            { n: "Blur size", s: "Radius of each blur pass", type: "slider",
+              min: 1, max: 12, unit: "", value: A.hyprBlurSize,
+              set: v => { A.hyprBlurSize = v; push(); } },
+            { n: "Blur passes", s: "More passes is smoother and more expensive",
+              type: "slider", min: 1, max: 5, unit: "", value: A.hyprBlurPasses,
+              set: v => { A.hyprBlurPasses = v; push(); } },
+            { n: "Window shadows", s: "Drop shadow under floating windows",
+              type: "toggle", value: A.hyprShadow,
+              set: v => { A.hyprShadow = v; push(); } },
+
+            { type: "header", n: "The config file",
+              s: "Anything not here is edited by hand and read on the next reload" },
+            { n: "hyprland.lua", s: "Everything above is applied over it at runtime; "
+                 + "the file itself is the source of truth at login",
+              type: "info", value: "~/.config/hypr" },
+            { n: "Open in your editor", s: "Uses $EDITOR in a terminal",
+              type: "action", label: "Edit",
+              set: () => Quickshell.execDetached(["sh", "-c",
+                  "cd \"$HOME/.config/hypr\" && "
+                  + "${TERMINAL:-kitty} -e ${EDITOR:-nano} hyprland.lua"]) },
+            { n: "Reload hyprland.lua", s: "Re-reads the file, discarding runtime "
+                 + "overrides — the shell re-applies its own straight after",
+              type: "action", label: "Reload",
+              set: () => { Services.Compositor.reloadConfig(); } }
+            ];
         }
 
         case "Network": return [
@@ -1063,6 +1149,42 @@ PanelWindow {
         const m = Math.floor((seconds % 3600) / 60);
         if (h > 0) return h + " h " + m + " m";
         return m + " m";
+    }
+
+    // ── launcher presets ──────────────────────────────────────────────────
+    // Whole-shape starting points rather than one dimension at a time. The
+    // reported value is whichever preset the current numbers match exactly,
+    // so it reads "Custom" the moment you move a slider.
+    readonly property var launcherPresets: ({
+        compact:  { w: 520,  h: 420,  tile: 56,  icon: 20, cols: 4, title: 12, meta: 10 },
+        "default":{ w: 720,  h: 560,  tile: 70,  icon: 26, cols: 4, title: 13, meta: 11 },
+        spacious: { w: 1000, h: 720,  tile: 96,  icon: 34, cols: 5, title: 15, meta: 12 },
+        full:     { w: 1600, h: 1000, tile: 120, icon: 44, cols: 7, title: 16, meta: 13 }
+    })
+
+    readonly property string launcherPreset: {
+        const A = Config.Appearance;
+        for (const k in launcherPresets) {
+            const p = launcherPresets[k];
+            if (p.w === A.launcherWidth && p.h === A.launcherHeight
+                && p.tile === A.launcherTileSize && p.icon === A.launcherIconSize
+                && p.cols === A.launcherColumns && p.title === A.launcherTitleSize
+                && p.meta === A.launcherMetaSize) return k;
+        }
+        return "custom";
+    }
+
+    function applyLauncherPreset(name) {
+        const p = launcherPresets[name];
+        if (!p) return;
+        const A = Config.Appearance;
+        A.launcherWidth = p.w;
+        A.launcherHeight = p.h;
+        A.launcherTileSize = p.tile;
+        A.launcherIconSize = p.icon;
+        A.launcherColumns = p.cols;
+        A.launcherTitleSize = p.title;
+        A.launcherMetaSize = p.meta;
     }
 
     // ── display helpers ───────────────────────────────────────────────────

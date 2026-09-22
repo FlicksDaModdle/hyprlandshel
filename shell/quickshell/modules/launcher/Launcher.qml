@@ -39,6 +39,7 @@ PanelWindow {
     readonly property real panelHeight: Config.Appearance.launcherHeight
     readonly property int gridColumns: Math.max(3, Config.Appearance.launcherColumns)
     readonly property real gridTile: Config.Appearance.launcherTileSize
+    readonly property real gridIcon: Config.Appearance.launcherIconSize
     readonly property real dockOffset: Config.Appearance.dockEdgeGap
                                        + Config.Appearance.dockPanelBreadth + 12
 
@@ -514,15 +515,17 @@ PanelWindow {
 
                                 Rectangle {
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    width: 30
-                                    height: 30
+                                    // Follows the icon-size setting, with the
+                                    // plate sized around it.
+                                    width: Math.round(launcher.gridIcon * 1.15)
+                                    height: width
                                     radius: Config.Appearance.rSm
                                     color: Config.Appearance.hover
 
                                     MonoIcon {
                                         anchors.centerIn: parent
                                         name: gridItem.modelData.icon
-                                        size: 16
+                                        size: Math.round(launcher.gridIcon * 0.62)
                                         inkColor: Config.Appearance.ink
                                         accentColor: Config.Appearance.accent
                                     }

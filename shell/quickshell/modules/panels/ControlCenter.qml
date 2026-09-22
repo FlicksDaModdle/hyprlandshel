@@ -268,14 +268,14 @@ PanelSurface {
 
                             MonoIcon {
                                 anchors.verticalCenter: parent.verticalCenter
-                                name: sliderRow.modelData.icon
+                                name: root.sliderIcon(sliderRow.modelData)
                                 size: 15
                                 inkColor: Config.Appearance.ink2
                                 monochrome: true
                             }
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: sliderRow.modelData.n
+                                text: root.sliderName(sliderRow.modelData)
                                 font.pixelSize: Config.Appearance.fs(12)
                                 color: Config.Appearance.ink2
                             }
@@ -284,7 +284,7 @@ PanelSurface {
                         StyledText {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            text: sliderRow.modelData.label
+                            text: root.sliderLabel(sliderRow.modelData)
                             font.pixelSize: Config.Appearance.fs(12)
                             font.weight: Font.DemiBold
                         }
@@ -294,8 +294,8 @@ PanelSurface {
                         width: parent.width
                         trough: 20
                         radius: 10
-                        value: sliderRow.modelData.value
-                        onMoved: v => sliderRow.modelData.set(v)
+                        value: root.sliderValue(sliderRow.modelData)
+                        onMoved: v => root.sliderSet(sliderRow.modelData, v)
                     }
                 }
             }
@@ -627,26 +627,52 @@ PanelSurface {
         }
     ]
 
+    // The slider list is deliberately just keys, not built objects.
+    //
+    // A model that carries the live value rebuilds whenever that value
+    // changes — and setting the volume changes it. The Repeater then
+    // destroys and recreates every delegate, including the one being
+    // dragged, which takes its mouse grab with it. That is why these felt
+    // different from the ones in Settings.
+    //
+    // Keys only change when a device appears or disappears. The delegates
+    // read the live values through the functions below, and a property read
+    // inside a called function still registers as a binding dependency, so
+    // they stay live.
     readonly property var sliders: {
-        const out = [{
-            n: "Volume", icon: Services.Audio.icon,
-            value: Services.Audio.volume,
-            label: Services.Audio.muted ? "muted" : Services.Audio.volumePercent + "%",
-            set: v => Services.Audio.setVolume(v)
-        }];
-        if (Services.Brightness.available) out.push({
-            n: "Brightness", icon: "sun",
-            value: Services.Brightness.value,
-            label: Services.Brightness.percent + "%",
-            set: v => Services.Brightness.set(v)
-        });
-        if (Services.Audio.sourceReady) out.push({
-            n: "Microphone", icon: Services.Audio.inputMuted ? "micOff" : "mic",
-            value: Services.Audio.inputVolume,
-            label: Services.Audio.inputMuted ? "muted" : Services.Audio.inputPercent + "%",
-            set: v => Services.Audio.setInputVolume(v)
-        });
+        const out = ["volume"];
+        if (Services.Brightness.available) out.push("brightness");
+        if (Services.Audio.sourceReady) out.push("mic");
         return out;
+    }
+
+    function sliderName(k) {
+        return k === "volume" ? "Volume" : (k === "brightness" ? "Brightness" : "Microphone");
+    }
+
+    function sliderIcon(k) {
+        if (k === "volume") return Services.Audio.icon;
+        if (k === "brightness") return "sun";
+        return Services.Audio.inputMuted ? "micOff" : "mic";
+    }
+
+    function sliderValue(k) {
+        if (k === "volume") return Services.Audio.volume;
+        if (k === "brightness") return Services.Brightness.value;
+        return Services.Audio.inputVolume;
+    }
+
+    function sliderLabel(k) {
+        if (k === "volume")
+            return Services.Audio.muted ? "muted" : Services.Audio.volumePercent + "%";
+        if (k === "brightness") return Services.Brightness.percent + "%";
+        return Services.Audio.inputMuted ? "muted" : Services.Audio.inputPercent + "%";
+    }
+
+    function sliderSet(k, v) {
+        if (k === "volume") Services.Audio.setVolume(v);
+        else if (k === "brightness") Services.Brightness.set(v);
+        else Services.Audio.setInputVolume(v);
     }
 
     readonly property var expandedEntries: {

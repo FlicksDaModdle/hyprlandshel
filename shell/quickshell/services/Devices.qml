@@ -70,8 +70,22 @@ Singleton {
                 gaps_in: prefs.gapsIn,
                 gaps_out: prefs.gapsOut,
                 border_size: prefs.borderSize,
+                layout: prefs.hyprLayout,
                 col: col
-            }
+            },
+            decoration: {
+                rounding: prefs.hyprRounding,
+                // Hyprland's inactive opacity is a fraction, the setting is a
+                // percentage — nobody wants to type 0.92 into a slider.
+                inactive_opacity: Math.max(0.4, Math.min(1, prefs.hyprInactiveOpacity / 100)),
+                blur: {
+                    enabled: prefs.hyprBlur,
+                    size: prefs.hyprBlurSize,
+                    passes: prefs.hyprBlurPasses
+                },
+                shadow: { enabled: prefs.hyprShadow }
+            },
+            input: { follow_mouse: prefs.hyprFocusFollowsMouse ? 1 : 0 }
         };
     }
 
@@ -122,6 +136,18 @@ Singleton {
     // defaults over the user's saved values, which is worse than not
     // applying at all.
     property bool applied: false
+
+    // hyprctl reload discards every runtime override, so everything the
+    // shell owns goes back on afterwards.
+    Connections {
+        target: Services.Compositor
+        function onConfigReloaded() {
+            if (!root.applied) return;
+            root.applyInput();
+            root.applyFrame();
+            root.applyDisplays();
+        }
+    }
 
     Timer {
         interval: 1500

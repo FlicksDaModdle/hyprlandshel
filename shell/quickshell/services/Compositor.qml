@@ -389,6 +389,23 @@ Singleton {
     // set without restating the rest of the category.
     function setConfig(tree) { evalLua("hl.config(" + luaTable(tree) + ")"); }
 
+    // Re-reads hyprland.lua, which throws away every runtime override. The
+    // shell puts its own back afterwards, or the Settings window would show
+    // values the compositor no longer has.
+    Process { id: reloadProc }
+    function reloadConfig() {
+        reloadProc.running = false;
+        reloadProc.command = ["hyprctl", "reload"];
+        reloadProc.running = true;
+        reapply.restart();
+    }
+    Timer {
+        id: reapply
+        interval: 1200
+        onTriggered: root.configReloaded()
+    }
+    signal configReloaded()
+
     // hl.monitor({ output=, mode=, position=, scale= }). Fields left out keep
     // whatever the monitor already has.
     function setMonitor(spec) { evalLua("hl.monitor(" + luaTable(spec) + ")"); }

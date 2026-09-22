@@ -107,6 +107,7 @@ Singleton {
             property int launcherWidth: 720
             property int launcherHeight: 560
             property int launcherTileSize: 70
+            property int launcherIconSize: 26
             property int launcherColumns: 4
 
             // How much of the window shows through a dropdown or the colour
@@ -114,11 +115,21 @@ Singleton {
             property int menuTranslucency: 8          // 0-60 %
             property bool menuBlur: true              // frost what's behind a popup
 
-            // Hyprland window frame
+            // Hyprland window frame and behaviour
             property int gapsIn: 4
             property int gapsOut: 8
             property int borderSize: 1
             property bool borderFollowsAccent: true
+            property int hyprRounding: 12
+            property bool hyprBlur: true
+            property int hyprBlurSize: 4
+            property int hyprBlurPasses: 2
+            property bool hyprShadow: true
+            property int hyprAnimSpeed: 100          // 25-300 %
+            property bool hyprAnimEnabled: true
+            property string hyprLayout: "dwindle"    // dwindle | master
+            property int hyprInactiveOpacity: 100    // 40-100 %
+            property bool hyprFocusFollowsMouse: true
 
             // Notifications
             property bool dnd: false
@@ -189,6 +200,7 @@ Singleton {
     property alias launcherWidth: prefs.launcherWidth
     property alias launcherHeight: prefs.launcherHeight
     property alias launcherTileSize: prefs.launcherTileSize
+    property alias launcherIconSize: prefs.launcherIconSize
     property alias launcherColumns: prefs.launcherColumns
 
     property alias menuTranslucency: prefs.menuTranslucency
@@ -198,6 +210,16 @@ Singleton {
     property alias gapsOut: prefs.gapsOut
     property alias borderSize: prefs.borderSize
     property alias borderFollowsAccent: prefs.borderFollowsAccent
+    property alias hyprRounding: prefs.hyprRounding
+    property alias hyprBlur: prefs.hyprBlur
+    property alias hyprBlurSize: prefs.hyprBlurSize
+    property alias hyprBlurPasses: prefs.hyprBlurPasses
+    property alias hyprShadow: prefs.hyprShadow
+    property alias hyprAnimSpeed: prefs.hyprAnimSpeed
+    property alias hyprAnimEnabled: prefs.hyprAnimEnabled
+    property alias hyprLayout: prefs.hyprLayout
+    property alias hyprInactiveOpacity: prefs.hyprInactiveOpacity
+    property alias hyprFocusFollowsMouse: prefs.hyprFocusFollowsMouse
     property alias dnd: prefs.dnd
     property alias badges: prefs.badges
     property alias grouping: prefs.grouping
