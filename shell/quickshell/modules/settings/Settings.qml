@@ -23,88 +23,22 @@ import "../icons"
 // Every row acts on the live system and, where it's a shell preference,
 // persists to theme.json immediately. There's no Apply button because there's
 // nothing to apply: the shell repaints as you drag.
-// One surface per monitor, of which exactly one is mapped.
+// Two kinds of window, one set of panes.
 //
-// This was a single PanelWindow with no `screen`, so the compositor put it
-// on one output and there it stayed — there was no second surface for it to
-// move onto, which is why it could not be dragged to another display.
-// Now every screen has one, `settingsScreen` decides which is live, and
-// dragging past an edge hands the window to the neighbour.
-Variants {
-    model: Quickshell.screens
+// Floating is the default and what the mockup draws: a layer-shell surface
+// with our own title bar, above the desktop, movable between monitors.
+//
+// Tiled is an ordinary toplevel, so Hyprland treats Settings like any other
+// application — it takes a slot in the layout and obeys your window rules
+// and binds. The shell already sets QT_WAYLAND_DISABLE_WINDOWDECORATION, so
+// Qt draws no title bar of its own and the chrome is still the designed one.
+//
+// Both mount the same SettingsFrame, and everything below is shared.
+Scope {
+    id: root
 
-PanelWindow {
-    id: settings
-    required property var modelData
-
-    screen: modelData ?? null
-
-    // "" means follow the focused monitor, which is what a freshly opened
-    // window should do; once dragged across, it stays where it was put.
-    readonly property bool isMine: Config.UiState.settingsScreen === ""
-        ? Services.Compositor.isFocusedScreen(modelData)
-        : (modelData && modelData.name === Config.UiState.settingsScreen)
-
-    visible: Config.UiState.settingsOpen && isMine
-    color: "transparent"
-    exclusiveZone: 0
-
-    anchors.top: true
-    anchors.bottom: true
-    anchors.left: true
-    anchors.right: true
-
-    WlrLayershell.namespace: "quickshell:panel"
-    WlrLayershell.layer: WlrLayer.Top
-    // Needs real keyboard focus: the sliders have type-in numeric fields.
-    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-
-    // Only the window itself takes input; the rest of the desktop stays live.
-    mask: Region { item: frame }
-
-    // Dragging past a screen edge hands the window to the monitor next door.
-    //
-    // Each surface only covers its own output, so x is always screen-local:
-    // crossing the boundary means switching which surface is mapped and
-    // re-entering from the opposite side, not letting x run past the width.
-    function moveTo(x, y) {
-        const mons = Services.Compositor.monitors || [];
-        const here = modelData ? modelData.name : "";
-
-        if (mons.length > 1 && frame) {
-            // Ordered left to right by their real position in the layout.
-            const ordered = mons.slice().sort((a, b) => a.x - b.x);
-            const at = ordered.findIndex(m => m.name === here);
-
-            if (x + frame.width > settings.width + 8 && at >= 0 && at < ordered.length - 1) {
-                Config.UiState.settingsScreen = ordered[at + 1].name;
-                // Re-enter just inside the left edge of the new screen.
-                Config.UiState.settingsX = 8;
-                Config.UiState.settingsY = y;
-                return;
-            }
-            if (x < -8 && at > 0) {
-                Config.UiState.settingsScreen = ordered[at - 1].name;
-                Config.UiState.settingsX = Math.max(
-                    8, (ordered[at - 1].width || settings.width) - frame.width - 8);
-                Config.UiState.settingsY = y;
-                return;
-            }
-        }
-
-        Config.UiState.settingsX = x;
-        Config.UiState.settingsY = y;
-    }
-
+    readonly property bool tiled: Config.Appearance.settingsTiled
     readonly property string pane: Config.UiState.settingsPane
-    readonly property bool maximised: Config.UiState.settingsMaximized
-
-    readonly property real normalWidth: 900
-    readonly property real normalHeight: 596
-    // Maximised fills the work area, leaving the bar and dock reachable.
-    readonly property real workTop: Config.Appearance.barHeight + 8
-    readonly property real workBottom: settings.height - 8
-        - (Config.Appearance.dockLeft ? 0 : Config.Appearance.dockPanelBreadth + Config.Appearance.dockEdgeGap)
 
     readonly property var paneMeta: ({
         "Display":       { icon: "monitor",   group: "System", note: "Every connected display, with its own resolution, refresh rate and scale." },
@@ -136,355 +70,133 @@ PanelWindow {
                                    "Notifications", "Fonts", "Keybinds"] }
     ]
 
-    // ══ the window ═══════════════════════════════════════════════════════
-    PanelSurface {
-        id: frame
-        showSeam: false
-        color: Config.Appearance.sheet
-        radius: Config.Appearance.rWin
 
-        width: settings.maximised ? settings.width - 16 : settings.normalWidth
-        height: settings.maximised
-                ? Math.max(320, settings.workBottom - settings.workTop)
-                : settings.normalHeight
+    // ══ floating ═════════════════════════════════════════════════════════
+    // One surface per monitor, of which exactly one is mapped.
+    //
+    // This was a single PanelWindow with no `screen`, so the compositor put
+    // it on one output and there it stayed — there was no second surface for
+    // it to move onto, which is why it could not be dragged to another
+    // display. Now every screen has one, `settingsScreen` decides which is
+    // live, and dragging past an edge hands the window to the neighbour.
+    Variants {
+        model: Quickshell.screens
 
-        // -1 means "not placed yet", so it opens centred.
-        x: settings.maximised ? 8
-           : (Config.UiState.settingsX >= 0
-              ? Math.max(0, Math.min(settings.width - width, Config.UiState.settingsX))
-              : Math.round((settings.width - width) / 2))
-        y: settings.maximised ? settings.workTop
-           : (Config.UiState.settingsY >= 0
-              ? Math.max(Config.Appearance.barHeight,
-                         Math.min(settings.height - height, Config.UiState.settingsY))
-              : Math.round((settings.height - height) / 2))
+        PanelWindow {
+            id: win
+            required property var modelData
 
-        Behavior on width  { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-        Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+            screen: modelData ?? null
 
-        // ── title bar ─────────────────────────────────────────────────────
-        Item {
-            id: titleBar
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            height: 40
+            // "" means follow the focused monitor, which is what a freshly opened
+            // window should do; once dragged across, it stays where it was put.
+            readonly property bool isMine: Config.UiState.settingsScreen === ""
+                ? Services.Compositor.isFocusedScreen(modelData)
+                : (modelData && modelData.name === Config.UiState.settingsScreen)
 
-            // Drag to move, double click to maximise — the mockup's own
-            // `cursor: grab` title bar.
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: settings.maximised ? Qt.ArrowCursor : Qt.OpenHandCursor
-                property real pressX: 0
-                property real pressY: 0
-
-                onPressed: mouse => { pressX = mouse.x; pressY = mouse.y; }
-                onPositionChanged: mouse => {
-                    if (!pressed || settings.maximised) return;
-                    const p = mapToItem(null, mouse.x, mouse.y);
-                    settings.moveTo(Math.round(p.x - pressX),
-                                    Math.round(p.y - pressY));
-                }
-                onDoubleClicked: Config.UiState.settingsMaximized = !settings.maximised
-            }
-
-            Row {
-                anchors.left: parent.left
-                anchors.leftMargin: 14
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 11
-
-                // Focus bead, accent because this window is the focused one
-                // whenever it is up.
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 3
-                    height: 16
-                    radius: 2
-                    color: Config.Appearance.accent
-                }
-
-                MonoIcon {
-                    anchors.verticalCenter: parent.verticalCenter
-                    name: "settings"
-                    size: 15
-                    inkColor: Config.Appearance.ink2
-                    accentColor: Config.Appearance.accent
-                }
-
-                StyledText {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Settings"
-                    font.pixelSize: Config.Appearance.fs(13)
-                    font.weight: Font.DemiBold
-                    font.letterSpacing: 0.13
-                }
-
-                StyledText {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "quickshell · live"
-                    font.pixelSize: Config.Appearance.fs(12)
-                    font.weight: Font.Normal
-                    color: Config.Appearance.ink3
-                }
-            }
-
-            Row {
-                anchors.right: parent.right
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-
-                Repeater {
-                    model: [
-                        { glyph: "minus",  danger: false, act: () => Config.UiState.minimiseSettings() },
-                        { glyph: "square", danger: false, act: () => Config.UiState.settingsMaximized = !settings.maximised },
-                        { glyph: "x",      danger: true,  act: () => Config.UiState.closeSettings() }
-                    ]
-
-                    Rectangle {
-                        id: winBtn
-                        required property var modelData
-                        width: 28
-                        height: 28
-                        radius: Config.Appearance.rSm
-                        color: !btnArea.containsMouse ? "transparent"
-                             : (modelData.danger ? Config.Appearance.accent : Config.Appearance.hover)
-
-                        MonoIcon {
-                            anchors.centerIn: parent
-                            name: winBtn.modelData.glyph
-                            size: 13
-                            inkColor: btnArea.containsMouse && winBtn.modelData.danger
-                                      ? Config.Appearance.onAccent : Config.Appearance.ink2
-                            monochrome: true
-                        }
-
-                        MouseArea {
-                            id: btnArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: winBtn.modelData.act()
-                        }
-                    }
-                }
-            }
-
-            Rectangle {
-                anchors.bottom: parent.bottom
-                width: parent.width
-                height: 1
-                color: Config.Appearance.rule
-            }
-        }
-
-        // Anything that has to float above the rows lives here: dropdown
-        // menus and the colour picker. Inside the window so it moves with it,
-        // but outside the pane's Flickable, which clips — a menu opened on a
-        // row near the bottom was being cut in half by it, and later rows
-        // painted straight over the top of it.
-        Item {
-            id: popupLayer
-            anchors.fill: parent
-            z: 900
-            // Click-through except where a popup actually is; the popups add
-            // their own input handling.
-            enabled: children.length > 0
-
-            // A popup positions itself with mapToItem, which is a function
-            // call — QML cannot know when its answer changes, so a binding
-            // using it evaluates once, before layout has happened, and then
-            // never again. That is how they ended up drawn nowhere near
-            // their control. Reading these makes those bindings re-evaluate
-            // whenever anything that moves a row has moved.
-            readonly property real scrollY: paneFlick.contentY
-            readonly property string pane: settings.pane
-
-            // What a popup frosts: the pane behind it. It is a sibling of
-            // this overlay, not an ancestor, so sampling it is safe.
-            readonly property Item backdrop: paneFlick
-        }
-
-        // ── sidebar ───────────────────────────────────────────────────────
-        Rectangle {
-            id: sidebar
-            anchors.left: parent.left
-            anchors.top: titleBar.bottom
-            anchors.bottom: parent.bottom
-            width: 212
+            visible: Config.UiState.settingsOpen && isMine && !root.tiled
             color: "transparent"
+            exclusiveZone: 0
 
-            Rectangle {
-                anchors.right: parent.right
-                width: 1
-                height: parent.height
-                color: Config.Appearance.rule
-            }
+            anchors.top: true
+            anchors.bottom: true
+            anchors.left: true
+            anchors.right: true
 
-            // Scrollable. With fourteen panes the list is taller than the
-            // window at its default height, and a fixed Column would simply
-            // clip the last entry with nothing to say so.
-            Flickable {
-                id: sidebarFlick
-                anchors.fill: parent
-                anchors.rightMargin: 1
-                contentHeight: sidebarColumn.implicitHeight + 16
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                flickableDirection: Flickable.VerticalFlick
+            WlrLayershell.namespace: "quickshell:panel"
+            WlrLayershell.layer: WlrLayer.Top
+            // Needs real keyboard focus: the sliders have type-in numeric fields.
+            WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-                Column {
-                    id: sidebarColumn
-                    x: 8
-                    y: 8
-                    width: sidebarFlick.width - 16
-                    spacing: 0
+            // Only the window itself takes input; the rest of the desktop stays live.
+            mask: Region { item: frame }
 
-                    Repeater {
-                        model: settings.paneGroups
+            // The host contract SettingsFrame reads.
+            readonly property bool tiled: false
 
-                        Column {
-                            id: group
-                            required property var modelData
-                            width: parent.width
-                            spacing: 1
-                            bottomPadding: 6
+            // Dragging past a screen edge hands the window to the monitor next door.
+            //
+            // Each surface only covers its own output, so x is always screen-local:
+            // crossing the boundary means switching which surface is mapped and
+            // re-entering from the opposite side, not letting x run past the width.
+            function moveTo(x, y) {
+                const mons = Services.Compositor.monitors || [];
+                const here = modelData ? modelData.name : "";
 
-                            StyledText {
-                                text: group.modelData.label
-                                font.pixelSize: Config.Appearance.fs(11)
-                                font.weight: Font.DemiBold
-                                font.capitalization: Font.AllUppercase
-                                font.letterSpacing: 1.2
-                                color: Config.Appearance.ink3
-                                leftPadding: 10
-                                topPadding: 8
-                                bottomPadding: 8
-                            }
+                if (mons.length > 1 && frame) {
+                    // Ordered left to right by their real position in the layout.
+                    const ordered = mons.slice().sort((a, b) => a.x - b.x);
+                    const at = ordered.findIndex(m => m.name === here);
 
-                            Repeater {
-                                model: group.modelData.items
-
-                                Item {
-                                    id: entry
-                                    required property var modelData
-                                    readonly property bool active: settings.pane === modelData
-
-                                    width: group.width
-                                    height: 34
-
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: Config.Appearance.rSm
-                                        color: entry.active ? Config.Appearance.sel
-                                             : (entryArea.containsMouse ? Config.Appearance.hover : "transparent")
-                                        Behavior on color { ColorAnimation { duration: 120 } }
-                                    }
-
-                                    Rectangle {
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.bottom: parent.bottom
-                                        anchors.leftMargin: 10
-                                        anchors.rightMargin: 10
-                                        anchors.bottomMargin: 3
-                                        height: 2
-                                        radius: 1
-                                        color: Config.Appearance.accent
-                                        opacity: entry.active ? 1 : 0
-                                        Behavior on opacity { NumberAnimation { duration: 180 } }
-                                    }
-
-                                    Row {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 10
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        anchors.verticalCenterOffset: -1
-                                        spacing: 10
-
-                                        MonoIcon {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            name: settings.paneMeta[entry.modelData].icon
-                                            size: 15
-                                            inkColor: entry.active ? Config.Appearance.accent : Config.Appearance.ink2
-                                            monochrome: true
-                                        }
-                                        StyledText {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: entry.modelData
-                                            font.pixelSize: Config.Appearance.fs(13)
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        id: entryArea
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: Config.UiState.settingsPane = entry.modelData
-                                    }
-                                }
-                            }
-                        }
+                    if (x + frame.width > win.width + 8 && at >= 0 && at < ordered.length - 1) {
+                        Config.UiState.settingsScreen = ordered[at + 1].name;
+                        // Re-enter just inside the left edge of the new screen.
+                        Config.UiState.settingsX = 8;
+                        Config.UiState.settingsY = y;
+                        return;
+                    }
+                    if (x < -8 && at > 0) {
+                        Config.UiState.settingsScreen = ordered[at - 1].name;
+                        Config.UiState.settingsX = Math.max(
+                            8, (ordered[at - 1].width || win.width) - frame.width - 8);
+                        Config.UiState.settingsY = y;
+                        return;
                     }
                 }
+
+                Config.UiState.settingsX = x;
+                Config.UiState.settingsY = y;
             }
-        }
 
-        // ── pane ──────────────────────────────────────────────────────────
-        Flickable {
-            id: paneFlick
-            anchors.left: sidebar.right
-            anchors.right: parent.right
-            anchors.top: titleBar.bottom
-            anchors.bottom: parent.bottom
-            contentHeight: paneColumn.implicitHeight + 40
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            // Vertical only. Otherwise a sideways drag on a slider is read
-            // as a flick and the pane takes the grab off the control.
-            flickableDirection: Flickable.VerticalFlick
+            readonly property bool maximised: Config.UiState.settingsMaximized
 
-            Column {
-                id: paneColumn
-                x: 24
-                y: 20
-                width: parent.width - 48
-                spacing: 0
+            readonly property real normalWidth: 900
+            readonly property real normalHeight: 596
+            // Maximised fills the work area, leaving the bar and dock reachable.
+            readonly property real workTop: Config.Appearance.barHeight + 8
+            readonly property real workBottom: win.height - 8
+                - (Config.Appearance.dockLeft ? 0 : Config.Appearance.dockPanelBreadth + Config.Appearance.dockEdgeGap)
 
-                StyledText {
-                    text: settings.pane
-                    font.pixelSize: Config.Appearance.fs(17)
-                    font.weight: Font.Bold
-                }
 
-                StyledText {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text: settings.paneMeta[settings.pane].note
-                    font.pixelSize: Config.Appearance.fs(13)
-                    font.weight: Font.Normal
-                    color: Config.Appearance.ink3
-                    topPadding: 4
-                    bottomPadding: 12
-                }
-
-                Repeater {
-                    model: settings.rows
-                    SettingsRow {
-                        required property var modelData
-                        width: paneColumn.width
-                        spec: modelData
-                        // Popups reparent themselves here so they are neither
-                        // clipped by the scrolling pane nor painted over by
-                        // the rows that come after them.
-                        overlay: popupLayer
-                    }
-                }
+            SettingsFrame {
+                id: frame
+                host: win
+                app: root
             }
         }
     }
+
+    // ══ tiled ════════════════════════════════════════════════════════════
+    FloatingWindow {
+        id: toplevel
+
+        visible: Config.UiState.settingsOpen && !Config.UiState.locked && root.tiled
+        title: "Settings"
+        color: Config.Appearance.sheet
+
+        implicitWidth: 900
+        implicitHeight: 620
+
+        // The host contract SettingsFrame reads. Tiled, the compositor owns
+        // the geometry, so the parts about placing a window of our own are
+        // constants that nothing acts on.
+        readonly property bool tiled: true
+        readonly property bool maximised: false
+        readonly property real normalWidth: width
+        readonly property real normalHeight: height
+        readonly property real workTop: 0
+        readonly property real workBottom: height
+        function moveTo(x, y) {}
+
+        // No anchors.fill: the frame already takes its size and position
+        // from the host, and setting both would have QML resolve a conflict
+        // it warns about rather than one of them simply winning.
+        SettingsFrame {
+            host: toplevel
+            app: root
+        }
+    }
+
 
     // ══ pane contents ════════════════════════════════════════════════════
 
@@ -512,6 +224,20 @@ PanelWindow {
         switch (pane) {
 
         case "Appearance": return [
+            { type: "header", n: "This window",
+              s: "How Settings itself is put on screen" },
+            { n: "Window mode",
+              s: "Floating is the design's own window: it sits above the "
+                 + "desktop with the title bar you see here, and you can drag "
+                 + "it between monitors. Tiled makes it an ordinary "
+                 + "application window, so Hyprland gives it a slot in the "
+                 + "layout and your window binds work on it.",
+              type: "seg",
+              options: [{ label: "Floating", value: "floating" },
+                        { label: "Tiled",    value: "tiled" }],
+              value: A.settingsTiled ? "tiled" : "floating",
+              set: v => A.settingsTiled = (v === "tiled") },
+
             { n: "Theme", s: "Light, dark, or follow the clock after sunset", type: "seg",
               options: [{ label: "Light", value: "light" }, { label: "Dark", value: "dark" }, { label: "Auto", value: "auto" }],
               value: A.theme, set: v => A.theme = v },
@@ -535,7 +261,7 @@ PanelWindow {
               options: ["Warm", "Neutral", "Cool"], value: A.tint, set: v => A.tint = v },
             { n: "Wallpaper image", s: A.wallpaper !== "" ? A.wallpaper : "Using the tinted gradient",
               type: "action", label: A.wallpaper !== "" ? "Clear" : "Choose…",
-              set: () => { if (A.wallpaper !== "") A.wallpaper = ""; else settings.pickWallpaper(); } }
+              set: () => { if (A.wallpaper !== "") A.wallpaper = ""; else root.pickWallpaper(); } }
         ];
 
         case "Bar": return [
@@ -654,8 +380,8 @@ PanelWindow {
                 s: "Press the key you want to use as Super. This reports what the "
                    + "keyboard actually sent, which is the answer to the row above.",
                 type: "keybind", probe: true,
-                value: settings.modProbe,
-                set: v => settings.modProbe = v || "—" });
+                value: root.modProbe,
+                set: v => root.modProbe = v || "—" });
 
             rows.push({
                 type: "header", n: "Shell",
@@ -783,7 +509,7 @@ PanelWindow {
             // scrolled through twenty-odd rows to reach the second one, and
             // it got worse with each display. The picker costs one row and
             // the rest of the pane is only ever about the screen you chose.
-            const m = mons.find(x => x.name === settings.displayPick) || mons[0];
+            const m = mons.find(x => x.name === root.displayPick) || mons[0];
             const ipc = m.lastIpcObject || ({});
             const pxW = ipc.width || m.width || 0;
             const pxH = ipc.height || m.height || 0;
@@ -799,7 +525,7 @@ PanelWindow {
                     options: mons.map(x => ({
                         label: x.name + (x.focused ? " ·" : ""), value: x.name })),
                     value: m.name,
-                    set: v => settings.displayPickRaw = v });
+                    set: v => root.displayPickRaw = v });
             }
 
             rows.push({ type: "header", n: m.name,
@@ -838,23 +564,23 @@ PanelWindow {
                 type: resList.length > 1 ? "menu" : "info",
                 options: resList,
                 value: curRes,
-                set: v => settings.applyMode(m.name, v,
-                                             settings.nearestRate(byRes[v] || [], rate)) });
+                set: v => root.applyMode(m.name, v,
+                                             root.nearestRate(byRes[v] || [], rate)) });
 
             // Labels go out, labels come back — the menu hands back the
             // string it displayed. So the label is looked up in the list it
             // came from rather than parsed: a rate is really 164.836 Hz and a
             // scale really 1.333333, and re-reading "165 Hz" or "133%" would
             // send a value the panel does not have.
-            const rateLabels = rateList.map(r => settings.formatHz(r));
+            const rateLabels = rateList.map(r => root.formatHz(r));
             rows.push({ n: "Refresh rate", s: rateList.length > 1
                     ? "Rates available at " + curRes
                     : "Only one rate at this resolution",
                 type: rateList.length > 1 ? "menu" : "info",
                 options: rateLabels,
-                value: settings.formatHz(rate),
+                value: root.formatHz(rate),
                 set: v => { const k = rateLabels.indexOf(v);
-                            if (k >= 0) settings.applyMode(m.name, curRes, rateList[k]); } });
+                            if (k >= 0) root.applyMode(m.name, curRes, rateList[k]); } });
 
             // A menu, not a slider. Hyprland rejects any scale that doesn't
             // divide the mode into whole logical pixels, and says so only in
@@ -869,7 +595,7 @@ PanelWindow {
                 options: scaleLabels,
                 value: Math.round(scale * 100) + "%",
                 set: v => { const k = scaleLabels.indexOf(v);
-                            if (k >= 0) settings.applyScale(m.name, scales[k]); } });
+                            if (k >= 0) root.applyScale(m.name, scales[k]); } });
 
             rows.push({ n: "Adaptive sync", s: "VRR while a fullscreen client is focused",
                 type: "toggle", value: (ipc.vrr || 0) !== 0,
@@ -1076,8 +802,8 @@ PanelWindow {
                             options: [{ label: "Saver",       value: "saver" },
                                       { label: "Balanced",    value: "balanced" },
                                       { label: "Performance", value: "performance" }],
-                            value: settings.powerProfileName,
-                            set: v => settings.setPowerProfile(v) });
+                            value: root.powerProfileName,
+                            set: v => root.setPowerProfile(v) });
 
             rows.push({ type: "header", n: "Battery",
                         s: hasBattery ? "" : "No battery — this is a desktop" });
@@ -1464,5 +1190,4 @@ PanelWindow {
             + " || kdialog --getopenfilename \"$HOME/Pictures\" 2>/dev/null); "
             + "[ -n \"$f\" ] && qs -c hyprshell ipc call shell setWallpaper \"$f\""]);
     }
-}
 }

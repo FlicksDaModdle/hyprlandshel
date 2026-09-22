@@ -465,6 +465,29 @@ hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" })
 Note that switching workspace is `hl.dsp.focus`. There is a `workspace`
 subtable, but it is for renaming and moving workspaces, not entering them.
 
+## The Settings window, floating or tiled
+
+Settings → Appearance → Window mode switches between two kinds of window
+that show the same panes:
+
+- **Floating** (the default) is a layer-shell surface: the title bar you see
+  is the shell's own, it sits above the desktop, and it can be dragged
+  between monitors.
+- **Tiled** is an ordinary toplevel, so Hyprland gives it a slot in the
+  layout and your window binds and rules apply to it like any other
+  application.
+
+Both mount `SettingsFrame.qml`, which is the chrome — title bar, sidebar,
+scroll area, geometry — and reads everything it shows from `Settings.qml`.
+The host provides `width`, `height`, `tiled`, `maximised`, `normalWidth`,
+`normalHeight`, `workTop`, `workBottom` and `moveTo(x, y)`; tiled, the
+compositor owns the geometry and the last few are constants nothing acts on.
+
+Tiled mode works because the shell sets `QT_WAYLAND_DISABLE_WINDOWDECORATION`
+for the session, so Qt draws no title bar of its own and the chrome is still
+the designed one. The window carries Quickshell's app id, `org.quickshell`,
+which is what a Hyprland window rule would match on.
+
 ## Text rendering, and the one file written outside this shell
 
 Settings → Fonts → Text rendering has three controls:

@@ -155,6 +155,11 @@ Singleton {
 
             // How much of the window shows through a dropdown or the colour
             // picker. 0 is fully opaque.
+            // Settings as a floating layer-shell surface (the design's own
+            // window, above everything, movable between monitors) or as an
+            // ordinary toplevel the compositor tiles like any other app.
+            property bool settingsTiled: false
+
             property int menuTranslucency: 8          // 0-60 %
             property bool menuBlur: true              // frost what's behind a popup
 
@@ -279,6 +284,7 @@ Singleton {
         Math.max(3, Math.min(10,
             Math.round(launcherBase.cols * launcherStretch(launcherWide))))
 
+    property alias settingsTiled: prefs.settingsTiled
     property alias menuTranslucency: prefs.menuTranslucency
     property alias menuBlur: prefs.menuBlur
 
