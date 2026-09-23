@@ -8,7 +8,7 @@ set(CMAKE_AUTOMOC ON)
 # 6.2 is the floor on purpose: everything here is core QtQuick, and pinning
 # higher would rule out distributions that are otherwise perfectly able to
 # run it.
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Qml Quick)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Qml Quick DBus)
 
 qt_standard_project_setup(REQUIRES 6.2)
 
@@ -37,6 +37,7 @@ target_link_libraries(hyprshell-backend PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6:
 
 qt_add_executable(hyprshell-files
     src/main.cpp
+    src/filemanager1.cpp src/filemanager1.h
 )
 
 # The QML is a resource rather than files on disk, so the installed binary
@@ -82,7 +83,8 @@ qt_add_qml_module(hyprshell-files
 target_include_directories(hyprshell-files PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 target_link_libraries(hyprshell-files
-    PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick hyprshell-backendplugin)
+    PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::DBus
+            hyprshell-backendplugin)
 
 include(GNUInstallDirs)
 
@@ -94,10 +96,22 @@ include(GNUInstallDirs)
 # launching through the desktop entry (an application menu, a launcher's
 # search results, xdg-open on a folder) finds nothing, while typing the same
 # name in a terminal works. An absolute path has no such ambiguity.
+# D-Bus activation for org.freedesktop.FileManager1.
+#
+# Without this, "show in file manager" only reaches this program when it
+# already happens to be running; with it, the bus starts one. The Exec is
+# absolute for the same reason the desktop entry's is — the bus daemon's
+# PATH is the session's, not an interactive shell's.
+configure_file(org.freedesktop.FileManager1.service.in
+               ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.FileManager1.service @ONLY)
+
 configure_file(hyprshell-files.desktop.in
                ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files.desktop @ONLY)
 
 install(TARGETS hyprshell-files
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.FileManager1.service
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
+
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files.desktop
         DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)

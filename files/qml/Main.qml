@@ -49,6 +49,28 @@ Window {
                                         ? startPath : FilesService.home)
     }
 
+    // "Show in file manager", from anywhere on the desktop. Several paths
+    // at once is legal and means several windows to a real file manager;
+    // this one window takes the first and ignores the rest, which is
+    // honest about what it can do rather than opening one and pretending.
+    Connections {
+        target: FileManager1
+        function onShowFolders(paths) {
+            if (paths.length > 0) { files.reveal(paths[0], true); win.requestActivate(); }
+        }
+        function onShowItems(paths) {
+            if (paths.length > 0) { files.reveal(paths[0], false); win.requestActivate(); }
+        }
+        function onShowItemProperties(paths) {
+            if (paths.length === 0) return;
+            files.reveal(paths[0], false);
+            win.requestActivate();
+            // The sheet needs the entry, which only exists once the
+            // listing has come back.
+            files.pendingProperties = files.svc.basename(paths[0]);
+        }
+    }
+
     FilesFrame {
         anchors.fill: parent
         host: win

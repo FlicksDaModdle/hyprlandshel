@@ -562,6 +562,25 @@ Variants {
                             selectionColor: Config.Appearance.accent
                             selectedTextColor: Config.Appearance.inkOnAccent
 
+                            // Super closes it again.
+                            //
+                            // The compositor's own bind cannot: this
+                            // surface takes keyboard focus exclusively
+                            // while it is up, so Hyprland never sees the
+                            // key that opened it being pressed a second
+                            // time. The launcher has to answer for itself.
+                            // Meta_L and Meta_R both, and on release to
+                            // match the bindr that opens it — on press it
+                            // would close the moment you reached for a
+                            // Super combination.
+                            Keys.onReleased: event => {
+                                if (event.key === Qt.Key_Super_L
+                                    || event.key === Qt.Key_Super_R
+                                    || event.key === Qt.Key_Meta) {
+                                    event.accepted = true;
+                                    launcher.close();
+                                }
+                            }
                             Keys.onEscapePressed: {
                                 if (launcher.query !== "") { launcher.query = ""; text = ""; }
                                 else if (launcher.showAll) launcher.showAll = false;

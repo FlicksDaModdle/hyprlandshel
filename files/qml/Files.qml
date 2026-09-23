@@ -91,6 +91,40 @@ QtObject {
         return here === prev ? "" : here;
     }
 
+    // Go to where something lives and pick it out, which is what every
+    // desktop means by "show this in a file manager". A folder is opened
+    // rather than revealed — nobody asking to see a folder wants its
+    // parent — unless it is what was explicitly asked for.
+    function reveal(path, asFolder) {
+        if (!path) return;
+        if (asFolder) { root.go(path); return; }
+        const dir = root.svc.parent(path);
+        const name = root.svc.basename(path);
+        root.go(dir);
+        // The listing arrives asynchronously, so the selection waits for
+        // it rather than being set against the folder we just left.
+        root.pendingSelect = name;
+    }
+
+    // Set by reveal(), consumed the next time a listing lands.
+    property string pendingSelect: ""
+    // Likewise for ShowItemProperties, which wants the sheet open on it.
+    property string pendingProperties: ""
+    onEntriesChanged: {
+        const wantSel = root.pendingSelect;
+        const wantProps = root.pendingProperties;
+        if (wantSel === "" && wantProps === "") return;
+        root.pendingSelect = "";
+        root.pendingProperties = "";
+        const find = n => root.entries.find(e => e.name === n) || null;
+        const sel = find(wantSel || wantProps);
+        if (sel) {
+            root.selection = [sel.name];
+            root.anchor = sel.name;
+            if (wantProps !== "") root.propertiesFor = sel;
+        }
+    }
+
     // Typing a letter with no field focused jumps to the next entry
     // starting with it, which is how a file list has always behaved.
     property string typeAhead: ""

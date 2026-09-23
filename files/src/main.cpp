@@ -7,6 +7,9 @@
 #include <QFileInfo>
 #include <QUrl>
 #include <QImage>
+#include <QDBusConnection>
+
+#include "filemanager1.h"
 
 // Hyprshell Files: the shell's file manager, as its own application.
 //
@@ -37,12 +40,26 @@ int main(int argc, char *argv[]) {
         if (info.exists()) { startPath = info.absolutePath(); break; }
     }
 
+    // org.freedesktop.FileManager1, so "Open Containing Folder" in a
+    // browser and "Show in file manager" anywhere else reach this rather
+    // than whatever else registered it. Attached before the engine loads
+    // so a call that arrives during startup is queued rather than missed.
+    FileManager1 fileManager;
+    const bool fmOwned = fileManager.attach();
+    if (!fmOwned) {
+        qInfo("org.freedesktop.FileManager1 is held by another program; "
+              "\"show in file manager\" will keep going there. Close it, or "
+              "stop it starting, and run this again.");
+    }
+
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("startPath"), startPath);
     // The URL form rather than loadFromModule(), which arrived in 6.5: this
     // builds against 6.2, and the resource path is what that call resolves
     // to anyway.
     engine.addImportPath(QStringLiteral("qrc:/"));
+    engine.rootContext()->setContextProperty(QStringLiteral("FileManager1"),
+                                             &fileManager);
     engine.load(QUrl(QStringLiteral("qrc:/Hyprshell/qml/Main.qml")));
     if (engine.rootObjects().isEmpty()) return 1;
 
@@ -55,7 +72,14 @@ int main(int argc, char *argv[]) {
     if (!shot.isEmpty()) {
         auto *w = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
         if (w) {
-            QTimer::singleShot(1500, &app, [w, shot] {
+            // How long to wait before grabbing. Settable because the
+            // interesting states are the ones something else has to put
+            // the window into first — a D-Bus call arriving, a folder
+            // being revealed — and 1500ms is not long enough to send one.
+            bool ok = false;
+            const int delay =
+                qEnvironmentVariableIntValue("HYPRSHELL_FILES_SHOT_DELAY", &ok);
+            QTimer::singleShot(ok && delay > 0 ? delay : 1500, &app, [w, shot] {
                 const QImage img = w->grabWindow();
                 if (img.save(shot)) qWarning("wrote %s", qUtf8Printable(shot));
                 else qWarning("could not write %s", qUtf8Printable(shot));

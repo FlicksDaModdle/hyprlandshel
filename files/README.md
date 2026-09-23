@@ -252,6 +252,26 @@ The headings are a lookup beside the list rather than rows spliced into it
 entry list, and every one of them would otherwise have to learn to step
 over a heading.
 
+## Show in file manager
+
+"Open Containing Folder" in Firefox, "Show in file manager" anywhere else,
+and `gio open` on a selection do not run a command — they call
+`org.freedesktop.FileManager1` over D-Bus. Dolphin and Nautilus register
+it, which is why they kept answering even after this became the default
+handler for `inode/directory`: the MIME default decides who opens a
+*folder*, and that interface decides who is asked to *reveal* something.
+Two questions; the answer had only been given to one.
+
+This registers it now, with the three methods the spec names —
+`ShowFolders`, `ShowItems`, `ShowItemProperties` — and a D-Bus service file
+so the bus can start it when nothing is running. `ShowItems` goes to the
+containing folder and selects the item; `ShowItemProperties` opens the
+sheet on it as well.
+
+If Dolphin or Nautilus is already running it will have taken the name
+first, and this says so on stdout rather than failing quietly — the symptom
+otherwise is "it still opens the wrong thing".
+
 ## The list view's columns
 
 Drag the divider to the left of a heading to resize that column. Name has

@@ -299,8 +299,13 @@ Singleton {
     property alias launcherIconScale: prefs.launcherIconScale
 
     // The shape everything is scaled from, at 100%.
-    readonly property var launcherBase: ({ w: 620, h: 500, tile: 60, icon: 22,
-                                           cols: 4 })
+    // Narrower and taller than the mockup's proportions: at 620x500 with
+    // four columns it was a wide shallow box, and a list of search results
+    // is a column, not a row. Three across and half as tall again reads as
+    // a start menu rather than a strip. Both are still stretchable — Wider
+    // and Taller under Shell -> Launcher.
+    readonly property var launcherBase: ({ w: 480, h: 660, tile: 60, icon: 22,
+                                           cols: 3 })
 
     // Everything the launcher measures itself by, derived. Nothing else in
     // the shell had to change: these are the same property names it always
