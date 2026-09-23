@@ -60,7 +60,14 @@ Two files, and it only ever *reads* the first:
     ~/.config/quickshell/hyprshell/theme.json    the shell's theme, followed live
     ~/.config/hyprshell-files/settings.json      its own
 
-With no shell installed it uses the design's own colours. The window
+With no shell installed it uses the design's own colours.
+
+From `theme.json` it takes `theme` (light / dark / auto), `accent`,
+`customAccent`, `rounding`, `fontScale` and `textNative`. Note that `accent`
+there is an **index** into the shell's four presets, not a colour, with `-1`
+meaning "use `customAccent`" — reading it as a colour is what once turned
+the New button black. Changing the theme in the shell's Settings repaints
+this window without restarting it. The window
 remembers its view, sort order, hidden files, tile size, bookmarks and which
 terminal "Open in terminal" should use.
 

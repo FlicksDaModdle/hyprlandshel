@@ -45,7 +45,37 @@ QtObject {
         return h >= 19 || h < 7;
     }
 
-    readonly property color accent: root.theme.accent || "#ec3013"
+    // A colour from the theme file, or the fallback when it is not one.
+    // Without this a malformed value becomes an invalid QColor, which QML
+    // paints black — and a black accent is indistinguishable from a bug.
+    function validColour(v, fallback) {
+        return (typeof v === "string" && /^#[0-9a-fA-F]{3,8}$/.test(v.trim()))
+               ? v.trim() : fallback;
+    }
+
+    // theme.json stores `accent` as an *index* into this list, not a colour,
+    // with -1 meaning "use customAccent". Reading it as a colour worked only
+    // for index 0, which is falsy and so fell through to the default red;
+    // every other index became color(1), color(2) — invalid, and therefore
+    // a black New button and a grey PLACES heading.
+    //
+    // The presets are the shell's own, each with a light and a dark variant,
+    // because an accent that reads well on paper is too dark on charcoal.
+    readonly property var accentPresets: [
+        { light: "#ec3013", dark: "#ff563c" },
+        { light: "#ae1800", dark: "#e8452b" },
+        { light: "#2d2b2b", dark: "#d7d3d3" },
+        { light: "#7c1405", dark: "#c94b39" }
+    ]
+
+    readonly property color accent: {
+        const idx = root.theme.accent;
+        if (idx === -1) return root.validColour(root.theme.customAccent, "#ec3013");
+        const n = (typeof idx === "number" && idx >= 0)
+                  ? Math.min(Math.floor(idx), root.accentPresets.length - 1) : 0;
+        const preset = root.accentPresets[n];
+        return root.dark ? preset.dark : preset.light;
+    }
 
     readonly property color ground:  dark ? "#201e1d" : "#f3f2f2"
     readonly property color surface: dark ? "#2d2b2b" : "#eae9e9"
@@ -88,7 +118,9 @@ QtObject {
     readonly property real rCard: r
     readonly property real barHeight: 0
 
-    readonly property string fontFamily: root.theme.fontFamily || "Inter"
+    // Not a theme.json key: the shell hardcodes these too. Named here so
+    // there is one place to change them.
+    readonly property string fontFamily: "Inter"
     readonly property real fontScale: root.theme.fontScale || 100
     readonly property real fontFactor: Math.max(75, Math.min(150, fontScale)) / 100
     function fs(px) { return Math.round(px * fontFactor); }
