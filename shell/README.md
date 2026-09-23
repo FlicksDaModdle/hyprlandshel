@@ -679,6 +679,21 @@ beside the dock stopped dismissing it. Reserving space is for windows.
 
 ### Space for the dock
 
+The gap above the dock and the gap below it are the same number, and it is
+Settings → Shell → Dock → Spacing.
+
+Below is geometry — the pill sits `tooltipRoom` down a surface that is
+`tooltipRoom + panelBreadth + edgeGap` tall and anchored to the bottom, so
+what is left under it is the gap. Above is the exclusive zone, which is
+where tiled windows stop. Those two live in different files and used to
+disagree: the zone covered the pill and the bottom gap only, so windows sat
+flush against the dock's top edge while it floated clear of the bottom, and
+it read as mounted on the edge rather than over it. The zone is the pill
+plus *twice* the gap now. `dockgap.js` checks the two come out equal across
+five spacings and three dock sizes, and was written by breaking it first.
+
+
+
 An always-visible dock reserves its strip, so windows tile above it rather
 than under it. An auto-hiding one reserves nothing — a hidden dock holding
 a band of unusable desktop would be the worst of both. Only the pill and

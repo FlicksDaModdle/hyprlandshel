@@ -388,6 +388,12 @@ Scope {
               min: 34, max: 58, unit: "px", value: A.dockTileSize, set: v => A.dockTileSize = v },
             { n: "Icon size", s: "Glyph scale inside the tile — does not resize the dock", type: "slider",
               min: 30, max: 72, unit: "%", value: A.dockIconPct, set: v => A.dockIconPct = v },
+            { n: "Spacing",
+              s: "The gap around the dock — the same above it, between it "
+                 + "and your windows, as below it, between it and the screen "
+                 + "edge. 0 puts it flush against the edge.",
+              type: "slider", min: 0, max: 40, unit: " px",
+              value: A.dockGapPx, set: v => A.dockGapPx = v },
             { n: "Label for active app", s: "Expand the focused app into a labelled pill", type: "toggle",
               value: A.dockLabels, set: v => A.dockLabels = v },
             { n: "Auto-hide", s: "Slide off the screen edge until the pointer reaches it", type: "toggle",

@@ -124,6 +124,7 @@ Singleton {
             property int barBadgeSize: 11             // notification count
             property int dockLabelSize: 12            // dock tooltips and the active label
             property int barIcon: 100                 // 60-180 % of the bar's glyphs
+            property int dockGap: 16                  // 0-40 px around the dock
             // "off" | "layer" | "curve" — see MonoIcon.
             property string iconSmoothing: "layer"
             // The launcher grows out of the dock's pill rather than
@@ -280,6 +281,7 @@ Singleton {
     property alias barBadgeSize: prefs.barBadgeSize
     property alias dockLabelSize: prefs.dockLabelSize
     property alias barIconPct: prefs.barIcon
+    property alias dockGapPx: prefs.dockGap
     property alias iconSmoothing: prefs.iconSmoothing
     property alias launcherMorph: prefs.launcherMorph
     property alias launcherTitleSize: prefs.launcherTitleSize
@@ -525,7 +527,11 @@ Singleton {
     readonly property real dockPadH: 7
     readonly property real dockPadV: 5
     readonly property real dockTileSpacing: 3
-    readonly property real dockEdgeGap: 16
+    // The gap around the dock — between it and the screen edge, and between
+    // it and the windows above it. One number for both: the two being
+    // different is what made the dock look mounted on the bottom edge
+    // rather than floating over it.
+    readonly property real dockEdgeGap: Math.max(0, Math.min(40, dockGapPx))
     readonly property real dockTooltipRoom: 46
     readonly property real dockPanelBreadth: dockTileSize + dockPadV * 2
 

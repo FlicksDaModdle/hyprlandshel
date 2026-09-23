@@ -49,7 +49,14 @@ Variants {
         // too would push every window down by a tooltip's height.
         exclusiveZone: Config.Appearance.dockAutoHide
                        ? 0
-                       : Math.round(panelBreadth + edgeGap)
+                       // Twice the gap: one below the pill, between it and
+                       // the screen edge, and one above it, between it and
+                       // whatever is tiled there. Reserving only the pill
+                       // and the bottom gap put windows flush against the
+                       // dock's top edge while it floated clear of the
+                       // bottom — uneven, and the reason it read as stuck
+                       // to the edge rather than sitting above it.
+                       : Math.round(panelBreadth + edgeGap * 2)
         visible: hasScreen && !Config.UiState.locked
 
         readonly property bool isLeft: Config.Appearance.dockLeft
