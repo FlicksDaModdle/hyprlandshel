@@ -593,9 +593,18 @@ shell looks the same on any machine, and `MonoIcon` draws a whole glyph in
 two or three `Shape`s rather than one per stroke, which matters when the
 dock, launcher and control center are all on screen at once.
 
-A glyph's size is also its stroke weight, since the strokes scale with it.
-Settings drew its chrome at 11–15px, which put the strokes under a pixel
-and made them read as smudges; it is 13–17 now, in the same 28px buttons.
+These are vectors, not bitmaps — `PathSvg` inside a `Shape` — so scaling
+costs nothing and there is no `.svg` file to load. What did cost something
+was the stroke width. At 2 authored units on a 24 grid, a glyph at size S
+draws a stroke of S/12 device pixels: 1.08px at 13, 1.42px at 17. A stroke
+thinner than two pixels lands across two pixel rows at partial coverage and
+reads as a smudge, whatever renderer draws it.
+
+`MonoIcon` compensates, widening the authored stroke as the glyph shrinks so
+every glyph lands 2 device pixels wide at any size, and keeping the authored
+proportion above size 24. Settings' chrome went up with it, from 11–15px to
+17–20 in 30px buttons. `monocheck.sh` asserts the 2px floor across ten sizes
+in both this pack and the file manager's copy.
 
 `MonoIcon` renders an unknown name as nothing at all and reports nothing,
 so `iconcheck.js` asserts that every name the shell and the file manager

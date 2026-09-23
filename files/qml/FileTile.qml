@@ -24,7 +24,7 @@ Item {
 
     // 12 above the plate, 9 between plate and label, 11 below it — the
     // concept's own padding, scaled by the zoom.
-    implicitHeight: Math.round((12 + 44 + 9 + 14 + 11) * zoom)
+    implicitHeight: Math.round((12 + 52 + 9 + 14 + 11) * zoom)
     height: implicitHeight
 
     Rectangle {
@@ -56,8 +56,8 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: Math.round(12 * tile.zoom)
-        width: Math.round(44 * tile.zoom)
-        height: Math.round(44 * tile.zoom)
+        width: Math.round(52 * tile.zoom)
+        height: Math.round(52 * tile.zoom)
         radius: Appearance.rSm
         // The plate follows the row rather than being a fixed surface: it
         // lifts with the selection, which is what gives a picked tile its
@@ -71,9 +71,7 @@ Item {
             anchors.centerIn: parent
             visible: !preview.visible
             name: tile.svc.iconFor(tile.entry)
-            // Same reasoning as the list's: the glyph's size is its
-            // stroke weight, and 19 on a 38 plate drew at 1.6px.
-            size: Math.round(24 * tile.zoom)
+            size: Math.round(30 * tile.zoom)
             inkColor: Appearance.ink2
             accentColor: Appearance.accent
         }

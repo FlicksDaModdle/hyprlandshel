@@ -381,7 +381,7 @@ Item {
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
                     name: "chevronDown"
-                    size: 15
+                    size: 17
                     inkColor: Config.Appearance.ink3
                     monochrome: true
                     rotation: menuRoot.open ? 180 : 0
@@ -508,7 +508,7 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: option.modelData === root.spec.value
                                 name: "check"
-                                size: 14
+                                size: 16
                                 inkColor: Config.Appearance.accent
                                 monochrome: true
                             }
@@ -563,7 +563,7 @@ Item {
                         anchors.centerIn: parent
                         visible: Config.Appearance.accentIndex === swatch.index
                         name: "check"
-                        size: 16
+                        size: 18
                         inkColor: Config.Appearance.dark ? "#201e1d" : "#fff2ef"
                         monochrome: true
                     }
@@ -600,7 +600,7 @@ Item {
                 MonoIcon {
                     anchors.centerIn: parent
                     name: Config.Appearance.accentIndex === -1 ? "check" : "plus"
-                    size: 16
+                    size: 18
                     inkColor: Config.Appearance.onAccent
                     monochrome: true
                 }

@@ -100,7 +100,7 @@ PanelSurface {
             MonoIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "settings"
-                size: 17
+                size: 20
                 inkColor: Config.Appearance.ink2
                 accentColor: Config.Appearance.accent
             }
@@ -138,8 +138,8 @@ PanelSurface {
                 Rectangle {
                     id: winBtn
                     required property var modelData
-                    width: 28
-                    height: 28
+                    width: 30
+                    height: 30
                     radius: Config.Appearance.rSm
                     color: !btnArea.containsMouse ? "transparent"
                          : (modelData.danger ? Config.Appearance.accent : Config.Appearance.hover)
@@ -147,7 +147,7 @@ PanelSurface {
                     MonoIcon {
                         anchors.centerIn: parent
                         name: winBtn.modelData.glyph
-                        size: 15
+                        size: 17
                         inkColor: btnArea.containsMouse && winBtn.modelData.danger
                                   ? Config.Appearance.onAccent : Config.Appearance.ink2
                         monochrome: true
@@ -265,7 +265,7 @@ PanelSurface {
                                 readonly property bool active: frame.app.pane === modelData
 
                                 width: group.width
-                                height: 34
+                                height: 36
 
                                 Rectangle {
                                     anchors.fill: parent
@@ -299,7 +299,7 @@ PanelSurface {
                                     MonoIcon {
                                         anchors.verticalCenter: parent.verticalCenter
                                         name: frame.app.paneMeta[entry.modelData].icon
-                                        size: 17
+                                        size: 20
                                         inkColor: entry.active ? Config.Appearance.accent : Config.Appearance.ink2
                                         monochrome: true
                                     }

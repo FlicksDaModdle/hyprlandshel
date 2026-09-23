@@ -73,7 +73,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: col.active
                         name: header.app.sortReverse ? "chevronDown" : "chevronUp"
-                        size: 13
+                        size: 15
                         inkColor: Appearance.accent
                         monochrome: true
                     }
@@ -109,7 +109,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             visible: header.app.sortBy === "name"
             name: header.app.sortReverse ? "chevronDown" : "chevronUp"
-            size: 13
+            size: 15
             inkColor: Appearance.accent
             monochrome: true
         }

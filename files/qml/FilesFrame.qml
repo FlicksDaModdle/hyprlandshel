@@ -172,7 +172,7 @@ PanelSurface {
             MonoIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "folder"
-                size: 17
+                size: 20
                 inkColor: Appearance.ink2
                 accentColor: Appearance.accent
             }
@@ -217,8 +217,8 @@ PanelSurface {
                 Rectangle {
                     id: winBtn
                     required property var modelData
-                    width: 28
-                    height: 28
+                    width: 30
+                    height: 30
                     radius: Appearance.rSm
                     color: !btnArea.containsMouse ? "transparent"
                          : (modelData.danger ? Appearance.accent : Appearance.hover)
@@ -226,7 +226,7 @@ PanelSurface {
                     MonoIcon {
                         anchors.centerIn: parent
                         name: winBtn.modelData.glyph
-                        size: 15
+                        size: 17
                         inkColor: btnArea.containsMouse && winBtn.modelData.danger
                                   ? Appearance.onAccent : Appearance.ink2
                         monochrome: true
@@ -353,15 +353,15 @@ PanelSurface {
             anchors.left: parent.left
             anchors.leftMargin: 12
             anchors.verticalCenter: parent.verticalCenter
-            width: 28
-            height: 28
+            width: 30
+            height: 30
             radius: Appearance.rSm
             color: sidebarArea.containsMouse ? Appearance.hover : "transparent"
 
             MonoIcon {
                 anchors.centerIn: parent
                 name: "panelsTopLeft"
-                size: 17
+                size: 20
                 inkColor: frame.app.showSidebar ? Appearance.ink2 : Appearance.ink3
                 monochrome: true
             }
@@ -391,8 +391,8 @@ PanelSurface {
                 Rectangle {
                     id: navBtn
                     required property var modelData
-                    width: 28
-                    height: 28
+                    width: 30
+                    height: 30
                     radius: Appearance.rSm
                     color: navArea.containsMouse && navBtn.modelData.on
                            ? Appearance.hover : "transparent"
@@ -400,7 +400,7 @@ PanelSurface {
                     MonoIcon {
                         anchors.centerIn: parent
                         name: navBtn.modelData.glyph
-                        size: 17
+                        size: 20
                         inkColor: navBtn.modelData.on ? Appearance.ink2
                                                       : Appearance.ink3
                         monochrome: true
@@ -428,7 +428,7 @@ PanelSurface {
             anchors.right: searchPill.left
             anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
-            height: 28
+            height: 30
             radius: Appearance.rSm
             // The concept's pill is the hover tint with a hairline around
             // it, not a solid surface — it sits *in* the toolbar rather
@@ -468,7 +468,7 @@ PanelSurface {
                             visible: index > 0
                             anchors.verticalCenter: parent.verticalCenter
                             name: "chevronRight"
-                            size: 13
+                            size: 15
                             inkColor: Appearance.ink3
                             monochrome: true
                         }
@@ -556,7 +556,7 @@ PanelSurface {
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             width: viewButtons.implicitWidth + 6
-            height: 28
+            height: 30
             radius: Appearance.rSm
             color: Appearance.hover
             border.width: 1
@@ -577,8 +577,8 @@ PanelSurface {
                         id: viewBtn
                         required property var modelData
                         readonly property bool on: FilesService.view === modelData.mode
-                        width: 26
-                        height: 22
+                        width: 30
+                        height: 26
                         radius: Appearance.rSm
                         color: on ? Appearance.accent
                              : (viewArea.containsMouse ? Appearance.sel : "transparent")
@@ -588,7 +588,7 @@ PanelSurface {
                         MonoIcon {
                             anchors.centerIn: parent
                             name: viewBtn.modelData.glyph
-                            size: 16
+                            size: 19
                             inkColor: viewBtn.on ? Appearance.onAccent : Appearance.ink2
                             monochrome: true
                         }
@@ -613,8 +613,8 @@ PanelSurface {
             anchors.right: pinButton.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            width: searchField.active || frame.app.filter !== "" ? 172 : 28
-            height: 28
+            width: searchField.active || frame.app.filter !== "" ? 180 : 30
+            height: 30
             radius: Appearance.rSm
             color: searchField.active || frame.app.filter !== ""
                    ? Appearance.surface
@@ -628,7 +628,7 @@ PanelSurface {
                 anchors.leftMargin: searchPill.width > 40 ? 10 : 9
                 anchors.verticalCenter: parent.verticalCenter
                 name: "search"
-                size: 17
+                size: 20
                 inkColor: frame.app.filter !== "" ? Appearance.accent : Appearance.ink3
                 monochrome: true
             }
@@ -707,8 +707,8 @@ PanelSurface {
             anchors.right: viewRow.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            width: 28
-            height: 28
+            width: 30
+            height: 30
             radius: Appearance.rSm
             visible: !frame.app.inTrash && frame.app.cwd !== ""
             color: pinArea.containsMouse ? Appearance.hover : "transparent"
@@ -716,7 +716,7 @@ PanelSurface {
             MonoIcon {
                 anchors.centerIn: parent
                 name: "star"
-                size: 17
+                size: 20
                 inkColor: frame.svc.isBookmarked(frame.app.cwd)
                           ? Appearance.accent : Appearance.ink3
                 monochrome: true
@@ -737,7 +737,7 @@ PanelSurface {
             anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
             width: newRow.implicitWidth + 24
-            height: 28
+            height: 30
             radius: Appearance.rSm
             color: Appearance.accent
             opacity: newArea.containsMouse ? 0.9 : 1
@@ -751,7 +751,7 @@ PanelSurface {
                 MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "plus"
-                    size: 16
+                    size: 18
                     inkColor: Appearance.onAccent
                     monochrome: true
                 }
@@ -794,7 +794,7 @@ PanelSurface {
                 MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "trash"
-                    size: 17
+                    size: 20
                     inkColor: frame.app.confirmingEmpty ? Appearance.onAccent
                                                         : Appearance.ink2
                     monochrome: true

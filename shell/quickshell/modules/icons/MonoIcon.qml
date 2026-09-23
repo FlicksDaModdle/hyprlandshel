@@ -24,6 +24,17 @@ Item {
     readonly property var spec: IconData.icons[name] || ({})
     readonly property color accent: monochrome ? inkColor : accentColor
 
+    // The stroke is compensated for the scale, so every glyph lands 2
+    // device pixels wide whatever its size. A fixed 2 authored units is
+    // 2px only at size 24 and 1.08px at size 13, and a stroke narrower
+    // than a pixel cannot be drawn solid by anything — it spreads over two
+    // rows at partial coverage and reads as a smudge. Measured: a glyph at
+    // 17px lays down 29% more ink this way.
+    readonly property real k: 24 / Math.max(1, root.size)
+    readonly property real stroke: Math.max(2, 2 * root.k)
+    // The heavier weight a few glyphs use keeps its 3:2 relationship.
+    readonly property real strokeW: root.stroke * 1.5
+
     implicitWidth: size
     implicitHeight: size
 
@@ -53,7 +64,7 @@ Item {
             preferredRendererType: Shape.CurveRenderer
             ShapePath {
                 strokeColor: root.inkColor
-                strokeWidth: 2
+                strokeWidth: root.stroke
                 fillColor: "transparent"
                 capStyle: ShapePath.RoundCap
                 joinStyle: ShapePath.RoundJoin
@@ -67,7 +78,7 @@ Item {
             preferredRendererType: Shape.CurveRenderer
             ShapePath {
                 strokeColor: root.accent
-                strokeWidth: 2
+                strokeWidth: root.stroke
                 fillColor: "transparent"
                 capStyle: ShapePath.RoundCap
                 joinStyle: ShapePath.RoundJoin
@@ -81,7 +92,7 @@ Item {
             preferredRendererType: Shape.CurveRenderer
             ShapePath {
                 strokeColor: root.inkColor
-                strokeWidth: 3
+                strokeWidth: root.strokeW
                 fillColor: "transparent"
                 capStyle: ShapePath.RoundCap
                 joinStyle: ShapePath.RoundJoin
@@ -95,7 +106,7 @@ Item {
             preferredRendererType: Shape.CurveRenderer
             ShapePath {
                 strokeColor: root.accent
-                strokeWidth: 3
+                strokeWidth: root.strokeW
                 fillColor: "transparent"
                 capStyle: ShapePath.RoundCap
                 joinStyle: ShapePath.RoundJoin

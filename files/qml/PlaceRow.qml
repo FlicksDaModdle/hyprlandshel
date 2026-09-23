@@ -22,7 +22,7 @@ Item {
         !current && row.place.path !== FilesService.home
         && row.app.cwd.indexOf(row.place.path + "/") === 0
 
-    implicitHeight: 31
+    implicitHeight: 34
     height: implicitHeight
 
     Rectangle {
@@ -56,7 +56,7 @@ Item {
         anchors.leftMargin: 10
         anchors.verticalCenter: parent.verticalCenter
         name: row.place.icon
-        size: 17
+        size: 20
         // Accent, not just brighter ink: the colour is how the concept says
         // "this one", and the rail underneath agrees with it.
         inkColor: row.current ? Appearance.accent
@@ -100,15 +100,15 @@ Item {
         anchors.right: fill.right
         anchors.rightMargin: 6
         anchors.verticalCenter: parent.verticalCenter
-        width: 19
-        height: 19
+        width: 21
+        height: 21
         radius: Appearance.rSm
         color: removeArea.containsMouse ? Appearance.accent : Appearance.sel
 
         MonoIcon {
             anchors.centerIn: parent
             name: "x"
-            size: 13
+            size: 15
             inkColor: removeArea.containsMouse ? Appearance.onAccent : Appearance.ink2
             monochrome: true
         }

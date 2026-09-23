@@ -53,7 +53,7 @@ Item {
             MonoIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: badge.lead ? badge.svc.iconFor(badge.lead) : "file"
-                size: 19
+                size: 22
                 inkColor: Appearance.ink2
                 accentColor: Appearance.accent
             }

@@ -157,11 +157,43 @@ and "can I run this" are not the same question. `iconcheck.js` asserts that
 every name the tables ask for exists in the pack, because `MonoIcon` draws
 an unknown name as nothing at all and says nothing about it.
 
-The glyph's size is also its weight — the strokes are 2 units on a 24 grid,
-so they scale with it. At 14px they came out at 1.2px and read as grey
-suggestions, which is why the list draws at 18 in a 30px plate and the grid
-at 24 in a 44px plate. The chrome had the same problem at 11–15px and is
-now 13–17, in the same 28px buttons.
+### Why they are not SVG files
+
+They are vectors already. Every glyph is SVG path data — `PathSvg` inside a
+`QtQuick.Shapes.Shape` — rasterised by Qt at whatever size it is asked for.
+There is no bitmap anywhere and nothing to lose by scaling. Loading the same
+paths from `.svg` files through `Image` would change nothing about sharpness
+and would cost two things worth keeping: the ink/accent split, which lets a
+glyph follow the theme's accent live, and the pre-merging that draws a whole
+glyph in two or three `Shape`s instead of one per stroke.
+
+So the softness was never the format. It was the stroke width:
+
+    stroke in device pixels  =  2 units × size / 24  =  size / 12
+
+At size 13 that is 1.08 pixels, at 17 it is 1.42. A stroke thinner than two
+pixels cannot be drawn solid by any renderer — it lands across two pixel
+rows at partial coverage, so instead of a line you get two grey half-lines.
+That is what "low quality" looked like, and no amount of vector purity
+fixes it.
+
+`MonoIcon` now compensates: the authored stroke widens as the glyph shrinks,
+so every glyph lands **2 device pixels** wide whatever its size, and keeps
+the authored proportion above size 24 where that is already thicker.
+Measured on the same glyph at the same 17px, that is 29% more ink on the
+screen. It also asks for `Shape.CurveRenderer`, which antialiases curves
+analytically in the shader rather than triangulating them — set from JS
+behind a guard, because naming that property is a load error on Qt below
+6.6 and this still has to run there.
+
+`monocheck.sh` asserts the 2px floor across ten sizes in both copies of the
+pack, and that every `Shape` asks for the curve renderer.
+
+### Sizes
+
+With the stroke fixed, the sizes went up too: the list draws its glyph at 22
+in a 34px plate on a 46px row, the grid at 30 in a 52px plate, the sidebar
+at 20, and the chrome at 15–20 in 30px buttons.
 
 The view switch used `layout` for its list mode — four blocks of different
 sizes, which beside `grid`'s four blocks made a segmented control whose two

@@ -14,8 +14,8 @@ Item {
     readonly property bool selected: row.app.isSelected(row.entry.name)
     readonly property bool renaming: row.app.renaming === row.entry.name
 
-    // 6px of padding above and below a 30px plate.
-    implicitHeight: 42
+    // 6px of padding above and below a 34px plate.
+    implicitHeight: 46
     height: implicitHeight
 
     Rectangle {
@@ -43,8 +43,8 @@ Item {
         anchors.left: parent.left
         anchors.leftMargin: 14
         anchors.verticalCenter: parent.verticalCenter
-        width: 30
-        height: 30
+        width: 34
+        height: 34
         radius: Appearance.rSm
         color: row.selected ? Appearance.sel : Appearance.hover
         border.width: 1
@@ -53,10 +53,7 @@ Item {
         MonoIcon {
             anchors.centerIn: parent
             name: row.svc.iconFor(row.entry)
-            // The strokes are 2 units on a 24 grid, so the glyph's size is
-            // also its weight: at 14 they came out at 1.2px and read as
-            // grey suggestions. 18 puts them back on a pixel and a half.
-            size: 18
+            size: 22
             inkColor: Appearance.ink2
             accentColor: Appearance.accent
         }

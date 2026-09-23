@@ -170,7 +170,7 @@ PanelSurface {
                         MonoIcon {
                             anchors.verticalCenter: parent.verticalCenter
                             name: item.modelData.icon
-                            size: 16
+                            size: 18
                             inkColor: rowHover.hovered ? Appearance.onAccent
                                                        : Appearance.ink
                             accentColor: rowHover.hovered ? Appearance.onAccent
