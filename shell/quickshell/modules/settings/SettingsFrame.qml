@@ -100,7 +100,14 @@ PanelSurface {
             MonoIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "settings"
-                size: 20
+                // 23, not the 20 the folder beside it in Files uses: these two
+                // glyphs are the same nominal size but not the same optical
+                // size. Measured at 20, the folder's ink is 16x14 device
+                // pixels and the sliders' is 16x11 — a fifth shorter, and in
+                // a title bar where everything is centred on one baseline
+                // the height is what you read. At 23 it measures 17x13,
+                // within a pixel of the folder on both axes.
+                size: 23
                 inkColor: Config.Appearance.ink2
                 accentColor: Config.Appearance.accent
             }

@@ -250,6 +250,26 @@ Grabs the window once the first frame has settled, writes the PNG and exits.
 This is how the screenshots in this repository are made, and how a rendering
 problem gets looked at from a terminal.
 
+## "Could NOT find WrapVulkanHeaders"
+
+Qt 6 Gui asks CMake for the Vulkan headers whether or not anything uses
+them, and prints this when they are absent. Nothing here touches Vulkan.
+On most builds of Qt the line is a status message and the build carries on
+— verified by removing the headers, configuring (exit 0), building, and
+running the result. On a Qt that marks the dependency required it stops the
+configure instead, and the message looks identical either way, so
+`install.sh` now tells you which one you are looking at.
+
+Installing them settles it in both cases:
+
+    sudo pacman -S --needed vulkan-headers      # Arch
+    sudo apt install libvulkan-dev              # Debian, Ubuntu
+    sudo dnf install vulkan-headers             # Fedora
+    sudo zypper install vulkan-devel            # openSUSE
+
+`Could NOT find XKB` from the same configure is the same kind of line and
+needs nothing.
+
 ## If a keybind launches nothing
 
 Almost always PATH. `install.sh` puts the binary in `~/.local/bin` by
