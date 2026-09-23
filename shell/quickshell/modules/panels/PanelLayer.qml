@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Wayland
 import "../../config" as Config
 import "../../services" as Services
+import "../common"
 
 // One overlay surface per monitor hosting every bar dropdown: control
 // center, notifications, calendar, power menu and the desktop context menu.

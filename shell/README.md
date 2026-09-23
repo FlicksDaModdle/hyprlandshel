@@ -695,6 +695,22 @@ showed as a square of unpainted space while it caught up, and the last
 tile's hover fill sat flush against the boundary where it clipped. All
 three were the same cause.
 
+### Why a missing import is its own check
+
+`reachcheck.py`. QML resolves an unqualified type from the file's own
+directory plus each unqualified `import "path"`, so a component added to
+`modules/common` and used somewhere that never imported that directory
+kills the shell at load with "X is not a type". That shipped once, with
+`Entrance`.
+
+`qmlparse.py` cannot catch it. It runs Qt's real parser, but Quickshell's
+own types are not installed in the repository, so "is not a type" has to be
+ignored there or every file fails. `reachcheck.py` looks only at types that
+*are* a .qml file in this repository — which Quickshell's are not — so it
+has nothing to ignore and no false positives to tune. It is
+regression-tested by deleting that import and watching it name the file,
+the type, and the directory the type actually lives in.
+
 ### When a glyph is missing
 
 Run the icon sheet on the machine that shows it:
