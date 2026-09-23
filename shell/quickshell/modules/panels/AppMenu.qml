@@ -28,7 +28,7 @@ PanelSurface {
 
     // The Settings tile is the shell's own and has no application behind it,
     // so re-pointing or unpinning it would just break the dock.
-    readonly property bool isShellTile: key === "appSettings"
+    readonly property bool isShellTile: Config.Apps.isShellTile(key)
 
     readonly property var entries: {
         const out = [];

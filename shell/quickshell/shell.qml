@@ -13,6 +13,7 @@ import "modules/notifications"
 import "modules/overview"
 import "modules/osd"
 import "modules/settings"
+import "modules/files"
 import "modules/lock"
 
 // Entry point. Run as `qs -c hyprshell` (this directory should live at
@@ -89,6 +90,7 @@ ShellRoot {
     Overview {}
     Osd {}
     Settings {}
+    Files {}
     Lock {}
 
     // No Component.onCompleted here: QML will not attach one to ShellRoot.
@@ -123,6 +125,7 @@ ShellRoot {
         function togglePower(): void { Services.Commands.run("togglePower"); }
         function closePanels(): void { Services.Commands.run("closePanels"); }
         function openSettings(pane: string): void { Services.Commands.run("openSettings " + pane); }
+        function openFiles(path: string): void { Services.Commands.run("openFiles " + path); }
 
         // Appearance
         function toggleTheme(): void { Services.Commands.run("toggleTheme"); }

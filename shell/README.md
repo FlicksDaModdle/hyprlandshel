@@ -33,6 +33,7 @@ shell/
       Bluetooth.qml        bluetoothctl: radio, paired devices, scanning
       Brightness.qml       brightnessctl backlight, debounced
       Compositor.qml       Hyprland workspaces, windows and their geometry
+      Files.qml            Directory listing and file operations, through gio
       Kvantum.qml          Generates a Kvantum widget theme from the palette
       Network.qml          nmcli: Wi-Fi, access points, VPN, IP
       NightLight.qml       hyprsunset / wlsunset colour temperature
@@ -49,6 +50,7 @@ shell/
                            segmented control, bar button, styled text)
       dock/                The floating dock and its tiles
       icons/               The bespoke 24×24 monoline pack + its renderer
+      files/               The file manager
       launcher/            Start menu / Launchpad hybrid
       lock/                Session lock with PAM authentication
       notifications/       Banner toasts
@@ -489,6 +491,50 @@ Tiled mode works because the shell sets `QT_WAYLAND_DISABLE_WINDOWDECORATION`
 for the session, so Qt draws no title bar of its own and the chrome is still
 the designed one. The window carries Quickshell's app id, `org.quickshell`,
 which is what a Hyprland window rule would match on.
+
+## The file manager
+
+`Super + E`. It is the concept's own file manager, written in QML like the
+rest of the shell rather than borrowed from one: places sidebar with item
+counts, pill breadcrumb, grid and list views, a bookmarks section, and a
+status bar. Selection is marked the way the design marks it — a quiet fill
+with an accent rule under it.
+
+**Why not theme an existing one.** Kvantum decides how a widget is painted,
+not what widgets exist or where they sit. The concept isn't Dolphin with
+different colours, it is a different layout, so no amount of styling gets
+there. Writing the window is the only route that does.
+
+**What it does not write itself.** Everything that changes the disk goes
+through `gio` — the GIO/GVfs library GTK file managers are built on:
+
+    gio trash     gio copy    gio move    gio rename
+    gio mkdir     gio open    gio monitor
+
+So deleting means the real freedesktop trash, restorable from here or from
+any other file manager, rather than `rm`. `gio monitor` is the same
+GFileMonitor Nautilus uses, so files something else creates appear without a
+refresh. Paths are passed as their own argv entries and never interpolated
+into a shell string.
+
+**Listing is `find`, not `gio list`.** `gio list` prints one line per file,
+which cannot represent a filename containing a newline — it splits it across
+two lines, and a line-based reader invents a file that does not exist.
+`find -printf ... \0` gives NUL-terminated records with the name last, so
+every legal filename survives. The item counts beside each place count
+characters from `-printf .` rather than lines, for the same reason.
+
+Keys: `Ctrl+A` select all, `Ctrl+C`/`X`/`V` copy, cut and paste, `Ctrl+H`
+hidden files, `Ctrl+L` type a path, `F2` rename, `Delete` to trash,
+`Backspace` up, `Enter` open, `Escape` clear the selection then close.
+
+Settings → Files has the window mode, the view, tile size, sorting and the
+bookmarks. `Super + Shift + E` still opens whatever `fileManager` in
+`hyprland.lua` names, if you want a second opinion.
+
+**Not in this version:** thumbnails for anything but images, drag and drop,
+and mounting removable or network volumes. Images preview themselves, at the
+size actually drawn.
 
 ## Theming KDE applications
 

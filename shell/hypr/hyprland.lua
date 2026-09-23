@@ -304,7 +304,11 @@ local mainMod = "SUPER"
 
 -- Apps
 hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(terminal))
-hl.bind(mainMod .. " + E",      hl.dsp.exec_cmd(fileManager))
+-- The shell's own file manager, not an external one: it is the design's
+-- window and it is already running inside the shell. `fileManager` above is
+-- still what a "open this folder" action outside the shell would use.
+hl.bind(mainMod .. " + E",      hl.dsp.exec_cmd(shell("openFiles")))
+hl.bind(mainMod .. " + SHIFT + E", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(browser))
 
 -- Window management

@@ -54,6 +54,9 @@ Singleton {
         "togglePower":         () => Config.UiState.togglePower(),
         "closePanels":         () => Config.UiState.closeAll(),
         "openSettings":        arg => Config.UiState.openSettings(arg || "Appearance"),
+        // No argument opens wherever it was last, which for a fresh shell
+        // is home — see Files.qml.
+        "openFiles":           arg => Config.UiState.openFiles(arg || ""),
 
         // Appearance
         "toggleTheme":         () => Config.Appearance.toggleTheme(),

@@ -194,6 +194,11 @@ Variants {
             // In picker mode the launcher is being used to fill a dock slot, so
             // an entry is a choice rather than something to start.
             if (Config.UiState.appPickerFor !== "") { assignToSlot(item); return; }
+            if (Config.Apps.isShellTile(item.key)) {
+                Services.Commands.run(Config.Apps.shellTiles[item.key]);
+                close();
+                return;
+            }
             if (item.kind === "command") runCommand(item.key);
             else if (item.kind === "desktop" && item.entry) item.entry.execute();
             else if (item.exec && item.exec.length > 0) Quickshell.execDetached(item.exec);

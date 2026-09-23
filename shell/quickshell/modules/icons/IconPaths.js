@@ -161,6 +161,20 @@ var icons = {
         ink: "M9.5 7.5V5H14.5V7.5 M6.5 7.5L7.5 19.5H16.5L17.5 7.5",
         acc: "M4.5 7.5H19.5"
     },
+
+    // Added for the file manager: the house its sidebar opens in, the glyph
+    // for a video file, and the mark for a bookmarked folder.
+    star: {
+        ink: "M12 4L14.5 9.3L20.3 10.1L16.1 14.1L17.1 19.8L12 17.1L6.9 19.8L7.9 14.1L3.7 10.1L9.5 9.3Z"
+    },
+    home: {
+        ink: "M4 10.5L12 4L20 10.5V19.5H4Z",
+        acc: "M9.5 19.5V13.5H14.5V19.5"
+    },
+    film: {
+        ink: join(rrect(3.5, 5, 17, 14, 2), "M8 5V19 M16 19V5"),
+        acc: "M3.5 12H20.5"
+    },
     lock: {
         ink: join("M8 10.5V7.5A4 4 0 0 1 16 7.5V10.5", rrect(4.5, 10.5, 15, 9, 2)),
         dots: [{ cx: 12, cy: 15, r: 1.5, c: "acc" }]

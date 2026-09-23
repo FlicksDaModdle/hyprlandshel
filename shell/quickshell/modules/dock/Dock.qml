@@ -160,7 +160,10 @@ Variants {
                 Services.Compositor.focusClient(next.address);
                 return;
             }
-            if (app.key === "appSettings") { Config.UiState.openSettings(); return; }
+            if (Config.Apps.isShellTile(app.key)) {
+                Services.Commands.run(Config.Apps.shellTiles[app.key]);
+                return;
+            }
             if (app.exec && app.exec.length > 0) Quickshell.execDetached(app.exec);
         }
 
@@ -181,7 +184,10 @@ Variants {
     }
 
     function launchNew(app) {
-            if (app.key === "appSettings") { Config.UiState.openSettings(); return; }
+            if (Config.Apps.isShellTile(app.key)) {
+                Services.Commands.run(Config.Apps.shellTiles[app.key]);
+                return;
+            }
             if (app.exec && app.exec.length > 0) Quickshell.execDetached(app.exec);
         }
 

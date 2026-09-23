@@ -100,9 +100,20 @@ Singleton {
 
     function resetPinned() { Config.Appearance.dockPinned = ""; }
 
+    // Pinned entries that are the shell's own windows rather than programs
+    // to spawn. They carry no exec; this maps them to the command that
+    // opens them, so the dock, the launcher and the tile menu do not each
+    // keep their own list of which keys are special.
+    readonly property var shellTiles: ({
+        "appSettings": "openSettings",
+        "appFiles":    "openFiles"
+    })
+
+    function isShellTile(key) { return !!shellTiles[key]; }
+
     readonly property var defaultPinned: [
         { key: "appTerm",     label: "Terminal", icon: "terminal",   exec: ["kitty"],    match: /^(kitty|foot|alacritty|wezterm|org\.wezfurlong\.wezterm)$/i },
-        { key: "appFiles",    label: "Files",    icon: "folder",     exec: ["nautilus"], match: /^(org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$/i },
+        { key: "appFiles",    label: "Files",    icon: "folder",     exec: [],           match: /^(org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$/i },
         { key: "appWeb",      label: "Web",      icon: "globe",      exec: ["firefox"],  match: /^(firefox.*|chromium|google-chrome.*|brave-browser|zen.*)$/i },
         { key: "appCode",     label: "Code",     icon: "code",       exec: ["neovide"],  match: /^(neovide|code|code-oss|codium|dev\.zed\.Zed|jetbrains-.*)$/i },
         { key: "appNotes",    label: "Notes",    icon: "stickyNote", exec: ["obsidian"], match: /^(obsidian|org\.gnome\.TextEditor|logseq)$/i },

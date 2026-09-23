@@ -25,7 +25,7 @@ QS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/$CONFIG"
 # Every command in Commands.qml's table. `:arg` marks one that takes a
 # value; doctor skips those rather than guessing what to pass.
 COMMANDS='toggleLauncher toggleOverview toggleControlCenter toggleNotifications
-toggleCalendar togglePower closePanels openSettings:arg toggleTheme cycleTheme
+toggleCalendar togglePower closePanels openSettings:arg openFiles:arg toggleTheme cycleTheme
 setTheme:arg setWallpaper:arg setAccent:arg lock reloadShell toggleDnd
 syncTheming showDesktop volumeUp volumeDown volumeMute micMute
 brightnessUp brightnessDown'

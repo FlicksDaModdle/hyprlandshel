@@ -139,6 +139,21 @@ Singleton {
             // being rewritten.
             property bool kvantumTheme: false
 
+            // ── the file manager ──────────────────────────────────────────
+            // Its window, the same choice Settings has.
+            property bool filesTiled: false
+            // "grid" | "list" — the design's two view buttons.
+            property string filesView: "grid"
+            property string filesSortBy: "name"
+            property bool filesSortReverse: false
+            property bool filesShowHidden: false
+            // Tile size in the grid, as a percentage of the design's own.
+            property int filesIconSize: 100
+            // Folders pinned into the sidebar, newline separated — the
+            // design's own DOTFILES section. A list rather than a set
+            // because the order you added them in is the order you want.
+            property string filesBookmarks: ""
+
             // Subpixel order, written to fontconfig for every app, not just
             // this one: "" leaves your existing setting alone, "none" is
             // grayscale antialiasing, and rgb/bgr/vrgb/vbgr name the stripe
@@ -302,6 +317,13 @@ Singleton {
             Math.round(launcherBase.cols * launcherStretch(launcherWide))))
 
     property alias settingsTiled: prefs.settingsTiled
+    property alias filesTiled: prefs.filesTiled
+    property alias filesView: prefs.filesView
+    property alias filesSortBy: prefs.filesSortBy
+    property alias filesSortReverse: prefs.filesSortReverse
+    property alias filesShowHidden: prefs.filesShowHidden
+    property alias filesIconSize: prefs.filesIconSize
+    property alias filesBookmarks: prefs.filesBookmarks
     property alias menuTranslucency: prefs.menuTranslucency
     property alias menuBlur: prefs.menuBlur
 
