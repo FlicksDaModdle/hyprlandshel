@@ -257,7 +257,7 @@ PanelSurface {
         anchors.left: parent.left
         anchors.top: titleBar.bottom
         anchors.bottom: statusBar.top
-        width: frame.app.showSidebar ? 232 : 0
+        width: frame.app.showSidebar ? 192 : 0
         visible: width > 0
         clip: true
 
@@ -265,8 +265,8 @@ PanelSurface {
 
         Flickable {
             anchors.fill: parent
-            anchors.topMargin: 14
-            contentHeight: places.implicitHeight + 24
+            anchors.topMargin: 4
+            contentHeight: places.implicitHeight + 16
             clip: true
             boundsBehavior: Flickable.StopAtBounds
 
@@ -276,12 +276,13 @@ PanelSurface {
                 spacing: 2
 
                 StyledText {
-                    x: 20
+                    x: 18
                     text: "PLACES"
-                    font.pixelSize: Appearance.fs(10)
-                    font.weight: Font.Bold
-                    font.letterSpacing: 1.1
-                    color: Appearance.accent
+                    font.pixelSize: Appearance.fs(10.5)
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.26
+                    color: Appearance.ink3
+                    topPadding: 8
                     bottomPadding: 6
                 }
 
@@ -301,14 +302,14 @@ PanelSurface {
                 // Hidden entirely when there is nothing in it, rather than
                 // sitting there as an empty heading.
                 StyledText {
-                    x: 20
+                    x: 18
                     visible: frame.svc.bookmarks.length > 0
-                    text: "BOOKMARKS"
-                    font.pixelSize: Appearance.fs(10)
-                    font.weight: Font.Bold
-                    font.letterSpacing: 1.1
+                    text: "DOTFILES"
+                    font.pixelSize: Appearance.fs(10.5)
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.26
                     color: Appearance.ink3
-                    topPadding: 14
+                    topPadding: 10
                     bottomPadding: 6
                 }
 
@@ -341,7 +342,7 @@ PanelSurface {
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.top: titleBar.bottom
-        height: 68
+        height: 48
 
         // Putting the sidebar away, for a narrow window.
         Rectangle {
@@ -349,15 +350,15 @@ PanelSurface {
             anchors.left: parent.left
             anchors.leftMargin: 12
             anchors.verticalCenter: parent.verticalCenter
-            width: 30
-            height: 30
+            width: 28
+            height: 28
             radius: Appearance.rSm
             color: sidebarArea.containsMouse ? Appearance.hover : "transparent"
 
             MonoIcon {
                 anchors.centerIn: parent
                 name: "panelsTopLeft"
-                size: 16
+                size: 14
                 inkColor: frame.app.showSidebar ? Appearance.ink2 : Appearance.ink3
                 monochrome: true
             }
@@ -387,8 +388,8 @@ PanelSurface {
                 Rectangle {
                     id: navBtn
                     required property var modelData
-                    width: 30
-                    height: 30
+                    width: 28
+                    height: 28
                     radius: Appearance.rSm
                     color: navArea.containsMouse && navBtn.modelData.on
                            ? Appearance.hover : "transparent"
@@ -396,7 +397,7 @@ PanelSurface {
                     MonoIcon {
                         anchors.centerIn: parent
                         name: navBtn.modelData.glyph
-                        size: 16
+                        size: 14
                         inkColor: navBtn.modelData.on ? Appearance.ink2
                                                       : Appearance.ink3
                         monochrome: true
@@ -424,9 +425,14 @@ PanelSurface {
             anchors.right: searchPill.left
             anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
-            height: 40
+            height: 28
             radius: Appearance.rSm
-            color: Appearance.surface
+            // The concept's pill is the hover tint with a hairline around
+            // it, not a solid surface — it sits *in* the toolbar rather
+            // than on top of it.
+            color: Appearance.hover
+            border.width: 1
+            border.color: Appearance.rule
 
             MouseArea {
                 anchors.fill: parent
@@ -438,11 +444,11 @@ PanelSurface {
                 id: crumbRow
                 visible: !crumbEdit.active
                 anchors.left: parent.left
-                anchors.leftMargin: 14
+                anchors.leftMargin: 11
                 anchors.right: parent.right
-                anchors.rightMargin: 14
+                anchors.rightMargin: 11
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
+                spacing: 5
 
                 Repeater {
                     model: frame.app.inTrash
@@ -459,15 +465,15 @@ PanelSurface {
                             visible: index > 0
                             anchors.verticalCenter: parent.verticalCenter
                             name: "chevronRight"
-                            size: 13
+                            size: 11
                             inkColor: Appearance.ink3
                             monochrome: true
                         }
 
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: crumbLabel.implicitWidth + 14
-                            height: 26
+                            width: crumbLabel.implicitWidth + 10
+                            height: 22
                             radius: Appearance.rSm
                             color: crumbArea.containsMouse ? Appearance.hover : "transparent"
 
@@ -475,7 +481,7 @@ PanelSurface {
                                 id: crumbLabel
                                 anchors.centerIn: parent
                                 text: modelData.label
-                                font.pixelSize: Appearance.fs(13)
+                                font.pixelSize: Appearance.fs(11.5)
                                 // Where you are, by path rather than by
                                 // counting children: a Repeater is itself
                                 // one of its parent's children, so an index
@@ -517,12 +523,12 @@ PanelSurface {
 
                 visible: active
                 anchors.left: parent.left
-                anchors.leftMargin: 14
+                anchors.leftMargin: 11
                 anchors.right: parent.right
-                anchors.rightMargin: 14
+                anchors.rightMargin: 11
                 anchors.verticalCenter: parent.verticalCenter
                 font.family: Appearance.fontFamily
-                font.pixelSize: Appearance.fs(13)
+                font.pixelSize: Appearance.fs(11.5)
                 color: Appearance.ink
                 selectionColor: Appearance.accent
                 selectedTextColor: Appearance.onAccent
@@ -538,43 +544,59 @@ PanelSurface {
         }
 
         // Grid / list, then New — the design's own pair.
-        Row {
+        // One segmented control rather than two loose buttons: the tinted
+        // container with a hairline is what makes the pair read as a single
+        // choice, and it matches the breadcrumb beside it.
+        Rectangle {
             id: viewRow
             anchors.right: newButton.left
-            anchors.rightMargin: 12
+            anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 4
+            width: viewButtons.implicitWidth + 6
+            height: 28
+            radius: Appearance.rSm
+            color: Appearance.hover
+            border.width: 1
+            border.color: Appearance.rule
 
-            Repeater {
-                model: [
-                    { glyph: "grid",   mode: "grid" },
-                    { glyph: "layout", mode: "list" }
-                ]
+            Row {
+                id: viewButtons
+                anchors.centerIn: parent
+                spacing: 2
 
-                Rectangle {
-                    id: viewBtn
-                    required property var modelData
-                    readonly property bool on: FilesService.view === modelData.mode
-                    width: 38
-                    height: 34
-                    radius: Appearance.rSm
-                    color: on ? Appearance.accent
-                         : (viewArea.containsMouse ? Appearance.hover : "transparent")
+                Repeater {
+                    model: [
+                        { glyph: "grid",   mode: "grid" },
+                        { glyph: "layout", mode: "list" }
+                    ]
 
-                    MonoIcon {
-                        anchors.centerIn: parent
-                        name: viewBtn.modelData.glyph
-                        size: 16
-                        inkColor: viewBtn.on ? Appearance.onAccent : Appearance.ink2
-                        monochrome: true
-                    }
+                    Rectangle {
+                        id: viewBtn
+                        required property var modelData
+                        readonly property bool on: FilesService.view === modelData.mode
+                        width: 26
+                        height: 22
+                        radius: Appearance.rSm
+                        color: on ? Appearance.accent
+                             : (viewArea.containsMouse ? Appearance.sel : "transparent")
 
-                    MouseArea {
-                        id: viewArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: FilesService.view = viewBtn.modelData.mode
+                        Behavior on color { ColorAnimation { duration: 160 } }
+
+                        MonoIcon {
+                            anchors.centerIn: parent
+                            name: viewBtn.modelData.glyph
+                            size: 13
+                            inkColor: viewBtn.on ? Appearance.onAccent : Appearance.ink2
+                            monochrome: true
+                        }
+
+                        MouseArea {
+                            id: viewArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: FilesService.view = viewBtn.modelData.mode
+                        }
                     }
                 }
             }
@@ -588,8 +610,8 @@ PanelSurface {
             anchors.right: pinButton.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            width: searchField.active || frame.app.filter !== "" ? 180 : 34
-            height: 34
+            width: searchField.active || frame.app.filter !== "" ? 172 : 28
+            height: 28
             radius: Appearance.rSm
             color: searchField.active || frame.app.filter !== ""
                    ? Appearance.surface
@@ -603,7 +625,7 @@ PanelSurface {
                 anchors.leftMargin: searchPill.width > 40 ? 10 : 9
                 anchors.verticalCenter: parent.verticalCenter
                 name: "search"
-                size: 16
+                size: 14
                 inkColor: frame.app.filter !== "" ? Appearance.accent : Appearance.ink3
                 monochrome: true
             }
@@ -669,12 +691,21 @@ PanelSurface {
         // Pin this folder into the sidebar. A star rather than a menu item,
         // because it is a toggle and it should show its state.
         Rectangle {
+            id: toolbarRule
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: Appearance.rule
+        }
+
+        Rectangle {
             id: pinButton
             anchors.right: viewRow.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            width: 34
-            height: 34
+            width: 28
+            height: 28
             radius: Appearance.rSm
             visible: !frame.app.inTrash && frame.app.cwd !== ""
             color: pinArea.containsMouse ? Appearance.hover : "transparent"
@@ -682,7 +713,7 @@ PanelSurface {
             MonoIcon {
                 anchors.centerIn: parent
                 name: "star"
-                size: 16
+                size: 14
                 inkColor: frame.svc.isBookmarked(frame.app.cwd)
                           ? Appearance.accent : Appearance.ink3
                 monochrome: true
@@ -700,10 +731,10 @@ PanelSurface {
         Rectangle {
             id: newButton
             anchors.right: parent.right
-            anchors.rightMargin: 16
+            anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
-            width: newRow.implicitWidth + 30
-            height: 38
+            width: newRow.implicitWidth + 24
+            height: 28
             radius: Appearance.rSm
             color: Appearance.accent
             opacity: newArea.containsMouse ? 0.9 : 1
@@ -712,12 +743,12 @@ PanelSurface {
             Row {
                 id: newRow
                 anchors.centerIn: parent
-                spacing: 6
+                spacing: 7
 
                 MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "plus"
-                    size: 15
+                    size: 14
                     inkColor: Appearance.onAccent
                     monochrome: true
                 }
@@ -725,7 +756,7 @@ PanelSurface {
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "New"
-                    font.pixelSize: Appearance.fs(13)
+                    font.pixelSize: Appearance.fs(11.5)
                     font.weight: Font.DemiBold
                     color: Appearance.onAccent
                 }
@@ -869,7 +900,10 @@ PanelSurface {
         Flickable {
             id: flick
             anchors.fill: parent
-            anchors.margins: 16
+            anchors.leftMargin: frame.app.view === "grid" ? 12 : 0
+            anchors.rightMargin: frame.app.view === "grid" ? 12 : 0
+            anchors.topMargin: frame.app.view === "grid" ? 12 : 0
+            anchors.bottomMargin: 0
             contentHeight: frame.app.view === "grid" ? grid.implicitHeight : list.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
@@ -878,9 +912,13 @@ PanelSurface {
                 id: grid
                 visible: frame.app.view === "grid"
                 width: parent.width
+                // The concept lays five across a 884px area, so a cell is
+                // about 168 wide. Fixing the cell rather than the column
+                // count keeps that airiness and still reflows: five at the
+                // concept's size, more on a wider window.
                 columns: Math.max(1, Math.floor(width / tileWidth))
-                readonly property real tileWidth: Math.round(140 * FilesService.iconSize / 100)
-                spacing: 0
+                readonly property real tileWidth: Math.round(168 * FilesService.iconSize / 100)
+                spacing: 4
 
                 // The waiting-to-be-named folder sits first, as a tile you
                 // type into, so a new folder never appears unnamed.
@@ -1099,7 +1137,7 @@ PanelSurface {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 34
+        height: 32
 
         Rectangle {
             anchors.top: parent.top
@@ -1110,12 +1148,13 @@ PanelSurface {
 
         StyledText {
             anchors.left: parent.left
-            anchors.leftMargin: 16
+            anchors.leftMargin: 14
             anchors.verticalCenter: parent.verticalCenter
             anchors.right: freeLabel.left
             anchors.rightMargin: 12
             elide: Text.ElideRight
-            font.pixelSize: Appearance.fs(12)
+            font.pixelSize: Appearance.fs(11)
+            font.weight: Font.Normal
             color: frame.svc.lastError ? Appearance.accent : Appearance.ink3
             text: {
                 if (frame.svc.lastError) return frame.svc.lastError;
@@ -1138,10 +1177,11 @@ PanelSurface {
         StyledText {
             id: freeLabel
             anchors.right: parent.right
-            anchors.rightMargin: 16
+            anchors.rightMargin: 14
             anchors.verticalCenter: parent.verticalCenter
             text: frame.svc.freeSpace
-            font.pixelSize: Appearance.fs(12)
+            font.pixelSize: Appearance.fs(11)
+            font.weight: Font.Normal
             color: Appearance.ink3
         }
     }

@@ -22,26 +22,30 @@ Item {
     // literally shrink the tile rather than size its contents.
     readonly property real zoom: FilesService.iconSize / 100
 
-    implicitHeight: Math.round(118 * zoom)
+    // 12 above the plate, 9 between plate and label, 11 below it — the
+    // concept's own padding, scaled by the zoom.
+    implicitHeight: Math.round((12 + 38 + 9 + 14 + 11) * zoom)
     height: implicitHeight
 
     Rectangle {
         id: fill
         anchors.fill: parent
-        anchors.margins: 4
         radius: Appearance.rSm
         color: tile.selected ? Appearance.sel
              : (area.containsMouse ? Appearance.hover : "transparent")
 
+        // Inset from both edges and lifted off the bottom, so it marks the
+        // tile rather than underlining it.
         Rectangle {
             visible: tile.selected
             anchors.bottom: parent.bottom
+            anchors.bottomMargin: 3
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.leftMargin: 4
-            anchors.rightMargin: 4
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
             height: 2
-            radius: 1
+            radius: 2
             color: Appearance.accent
         }
     }
@@ -51,18 +55,23 @@ Item {
         id: plate
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
-        anchors.topMargin: Math.round(14 * tile.zoom)
-        width: Math.round(58 * tile.zoom)
-        height: Math.round(52 * tile.zoom)
+        anchors.topMargin: Math.round(12 * tile.zoom)
+        width: Math.round(38 * tile.zoom)
+        height: Math.round(38 * tile.zoom)
         radius: Appearance.rSm
-        color: Appearance.surface
+        // The plate follows the row rather than being a fixed surface: it
+        // lifts with the selection, which is what gives a picked tile its
+        // weight without a second colour.
+        color: tile.selected ? Appearance.sel : Appearance.hover
+        border.width: 1
+        border.color: Appearance.rule
         clip: true
 
         MonoIcon {
             anchors.centerIn: parent
             visible: !preview.visible
             name: tile.svc.iconFor(tile.entry)
-            size: Math.round(24 * tile.zoom)
+            size: Math.round(19 * tile.zoom)
             inkColor: Appearance.ink2
             accentColor: Appearance.accent
         }
@@ -94,18 +103,19 @@ Item {
         id: label
         visible: !tile.renaming
         anchors.top: plate.bottom
-        anchors.topMargin: 8
+        anchors.topMargin: Math.round(9 * tile.zoom)
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.leftMargin: 8
         anchors.rightMargin: 8
         text: tile.entry.name
         horizontalAlignment: Text.AlignHCenter
+        // One line, elided. Two wrapped lines made the tiles different
+        // heights and the grid stopped reading as a grid.
         elide: Text.ElideMiddle
-        maximumLineCount: 2
-        wrapMode: Text.Wrap
-        font.pixelSize: Appearance.fs(12)
-        font.weight: tile.selected ? Font.DemiBold : Font.Medium
+        maximumLineCount: 1
+        font.pixelSize: Appearance.fs(11)
+        font.weight: Font.Medium
         color: tile.entry.broken ? Appearance.ink3 : Appearance.ink
     }
 

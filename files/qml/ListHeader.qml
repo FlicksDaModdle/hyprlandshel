@@ -13,12 +13,13 @@ Item {
     required property var app
 
     // What each column is worth. Name takes whatever is left.
-    readonly property real sizeWidth: 88
-    readonly property real typeWidth: 124
+    // The concept's own column widths, and a Type column beside them.
+    readonly property real sizeWidth: 96
+    readonly property real typeWidth: 116
     readonly property real timeWidth: 104
     readonly property real gutter: 14
 
-    implicitHeight: 30
+    implicitHeight: 32
     height: implicitHeight
 
     Rectangle {
@@ -61,9 +62,10 @@ Item {
 
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: col.modelData.label
-                        font.pixelSize: Appearance.fs(11)
-                        font.weight: col.active ? Font.DemiBold : Font.Medium
+                        text: col.modelData.label.toUpperCase()
+                        font.pixelSize: Appearance.fs(10.5)
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: 1.05
                         color: col.active ? Appearance.ink : Appearance.ink3
                     }
 
@@ -90,15 +92,16 @@ Item {
     // Name, on the left, where the rows put it.
     Row {
         anchors.left: parent.left
-        anchors.leftMargin: 41
+        anchors.leftMargin: 14
         anchors.verticalCenter: parent.verticalCenter
         spacing: 3
 
         StyledText {
             anchors.verticalCenter: parent.verticalCenter
-            text: "Name"
-            font.pixelSize: Appearance.fs(11)
-            font.weight: header.app.sortBy === "name" ? Font.DemiBold : Font.Medium
+            text: "NAME"
+            font.pixelSize: Appearance.fs(10.5)
+            font.weight: Font.DemiBold
+            font.letterSpacing: 1.05
             color: header.app.sortBy === "name" ? Appearance.ink : Appearance.ink3
         }
 

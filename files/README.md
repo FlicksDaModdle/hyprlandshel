@@ -113,10 +113,25 @@ copy path, duplicate, rename, trash, delete permanently, properties; and on
 the folder, new folder, new file, paste, open in terminal, bookmark, select
 all, invert, hidden files.
 
+## Measurements
+
+The window follows the concept's own numbers rather than approximating
+them: a 192px sidebar, a 48px toolbar ruled off from the view, 28px
+controls, a breadcrumb that is the hover tint with a hairline rather than a
+solid fill, the view switch as one segmented group, 38px icon plates with a
+1px inset rule, 11px tile labels on one line, and a 32px status bar.
+
+Selection is marked the way the concept marks it — a rule inset 10px from
+each side and lifted 3px off the bottom, over a quiet fill. Not a
+full-width underline, which reads as a divider between rows rather than a
+mark on one. In the list the fill carries it alone, since every row there
+is already ruled.
+
 ## The list view
 
 Click a column heading to sort by it, click it again to reverse. Name, Size,
-Type and Modified. In the trash the columns are replaced by where each thing
+Type and Modified — the concept has three, and Type is the one addition,
+styled to match. In the trash the columns are replaced by where each thing
 came from, because that is the only question worth asking about something
 you have deleted.
 

@@ -14,59 +14,69 @@ Item {
     readonly property bool selected: row.app.isSelected(row.entry.name)
     readonly property bool renaming: row.app.renaming === row.entry.name
 
-    implicitHeight: 34
+    // 8px of padding above and below a 26px plate.
+    implicitHeight: 42
     height: implicitHeight
 
     Rectangle {
         id: fill
         anchors.fill: parent
-        anchors.bottomMargin: 1
-        radius: Appearance.rSm
         color: row.selected ? Appearance.sel
              : (area.containsMouse ? Appearance.hover : "transparent")
 
+        // A hairline under every row, not only the selected one: the
+        // concept rules the list, and the selection is carried by the fill
+        // alone. A rail here as well would have been two marks for one
+        // thing.
         Rectangle {
-            visible: row.selected
             anchors.bottom: parent.bottom
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.leftMargin: 4
-            anchors.rightMargin: 4
-            height: 2
-            radius: 1
-            color: Appearance.accent
+            width: parent.width
+            height: 1
+            color: Appearance.rule
         }
     }
 
-    MonoIcon {
-        id: glyph
+    // The same plate the grid gives a file, at row size — which is what
+    // stops the two views looking like different applications.
+    Rectangle {
+        id: plate
         anchors.left: parent.left
-        anchors.leftMargin: 10
+        anchors.leftMargin: 14
         anchors.verticalCenter: parent.verticalCenter
-        name: row.svc.iconFor(row.entry)
-        size: 17
-        inkColor: Appearance.ink2
-        accentColor: Appearance.accent
+        width: 26
+        height: 26
+        radius: Appearance.rSm
+        color: row.selected ? Appearance.sel : Appearance.hover
+        border.width: 1
+        border.color: Appearance.rule
+
+        MonoIcon {
+            anchors.centerIn: parent
+            name: row.svc.iconFor(row.entry)
+            size: 14
+            inkColor: Appearance.ink2
+            accentColor: Appearance.accent
+        }
     }
 
     StyledText {
         id: name
         visible: !row.renaming
-        anchors.left: glyph.right
+        anchors.left: plate.right
         anchors.leftMargin: 11
         anchors.right: sizeLabel.left
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
         text: row.entry.name
         elide: Text.ElideMiddle
-        font.pixelSize: Appearance.fs(13)
-        font.weight: row.selected ? Font.DemiBold : Font.Medium
+        font.pixelSize: Appearance.fs(12)
+        font.weight: Font.Medium
         color: row.entry.broken ? Appearance.ink3 : Appearance.ink
     }
 
     NameField {
         visible: row.renaming
-        anchors.left: glyph.right
+        anchors.left: plate.right
         anchors.leftMargin: 9
         anchors.verticalCenter: parent.verticalCenter
         width: 260
@@ -89,8 +99,9 @@ Item {
         horizontalAlignment: Text.AlignRight
         width: row.app.inTrash ? 0 : row.sizeWidth
         visible: !row.app.inTrash
-        text: row.entry.dir ? "--" : row.svc.humanSize(row.entry.size)
-        font.pixelSize: Appearance.fs(12)
+        text: row.entry.dir ? "—" : row.svc.humanSize(row.entry.size)
+        font.pixelSize: Appearance.fs(11)
+        font.weight: Font.Normal
         color: Appearance.ink3
     }
 
@@ -103,7 +114,8 @@ Item {
         visible: !row.app.inTrash
         elide: Text.ElideRight
         text: row.svc.typeLabel(row.entry)
-        font.pixelSize: Appearance.fs(12)
+        font.pixelSize: Appearance.fs(11)
+        font.weight: Font.Normal
         color: Appearance.ink3
     }
 
@@ -122,7 +134,8 @@ Item {
                  ? row.svc.pretty(row.svc.parent(row.svc.trashOrigins[row.entry.name]))
                  : "")
               : row.svc.humanTime(row.entry.mtime)
-        font.pixelSize: Appearance.fs(12)
+        font.pixelSize: Appearance.fs(11)
+        font.weight: Font.Normal
         color: Appearance.ink3
     }
 
