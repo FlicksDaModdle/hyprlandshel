@@ -242,6 +242,14 @@ PORTALEOF
     printf '  %s  systemctl --user restart xdg-desktop-portal%s\n' "$DIM" "$RST"
 fi
 
+# Firefox has to be told to ask at all. Its own GTK dialog is the default
+# for an unsandboxed build — widget.use-xdg-desktop-portal.file-picker is
+# 2, "auto", which means the portal only when sandboxed. At 2 none of the
+# above is ever consulted, and the dialog that opens is Firefox's own.
+# Not written for you: prefs.js belongs to the browser, and editing it
+# under a running Firefox is undone the moment it exits.
+warn "firefox" "about:config → widget.use-xdg-desktop-portal.file-picker → 1"
+
 # Where xdg-desktop-portal looks for backends at all.
 #
 # It reads the list from XDG_DATA_DIRS, whose default is /usr/local/share
@@ -297,6 +305,8 @@ cat <<EOF
   browsers put up when saving or attaching (the FileChooser portal). Both
   start it on demand through the session bus — there is nothing to leave
   running.
+
+  If a dialog still opens in something else:  ./portal-doctor.sh
 
   It follows the shell's theme.json when that is installed, and keeps its
   own settings in \$XDG_CONFIG_HOME/hyprshell-files/settings.json.

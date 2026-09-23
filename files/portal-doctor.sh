@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+#
+# Why is a file dialog still not this one?
+#
+# Between pressing "Open" in a browser and a dialog appearing there are
+# six separate things that each have to be true, and all but one of them
+# fail silently — the dialog opens, it is simply someone else's. This
+# walks the chain and says which link is broken.
+#
+#   ./portal-doctor.sh
+#
+# Not `set -e`: every check here is allowed to come back negative, and
+# that is the point of running it.
+
+set -u
+
+if [ -t 1 ]; then
+    BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GRN=$'\033[32m'
+    YEL=$'\033[33m'; RST=$'\033[0m'
+else
+    BOLD=; DIM=; RED=; GRN=; YEL=; RST=
+fi
+ok()   { printf '  %s✓%s %s\n' "$GRN" "$RST" "$1"; }
+bad()  { printf '  %s✗%s %s\n' "$RED" "$RST" "$1"; BROKEN=$((BROKEN + 1)); }
+warn() { printf '  %s•%s %s\n' "$YEL" "$RST" "$1"; }
+note() { printf '    %s%s%s\n' "$DIM" "$1" "$RST"; }
+head1(){ printf '\n%s%s%s\n' "$BOLD" "$1" "$RST"; }
+
+BROKEN=0
+
+# ── 1. the browser has to ask ────────────────────────────────────────────
+#
+# Firefox's own GTK dialog is the default on a plain desktop:
+# widget.use-xdg-desktop-portal.file-picker is 2, "auto", which means the
+# portal only for sandboxed builds. Set to 1 it always asks, and only
+# then does anything below this line matter.
+head1 "Does the browser ask the portal at all?"
+FFPREF=widget.use-xdg-desktop-portal.file-picker
+FOUND=
+for prefs in "$HOME"/.mozilla/firefox/*/prefs.js "$HOME"/.mozilla/firefox/*/user.js \
+             "$HOME"/snap/firefox/common/.mozilla/firefox/*/prefs.js \
+             "$HOME"/.var/app/org.mozilla.firefox/.mozilla/firefox/*/prefs.js; do
+    [ -r "$prefs" ] || continue
+    line=$(grep -h "$FFPREF" "$prefs" 2>/dev/null | tail -1)
+    [ -n "$line" ] || continue
+    FOUND=yes
+    case "$line" in
+        *", 1)"*) ok "firefox: $FFPREF is 1  ${DIM}($(basename "$(dirname "$prefs")"))${RST}" ;;
+        *", 0)"*) bad "firefox: $FFPREF is 0 — it will never use a portal"
+                  note "about:config → $FFPREF → 1" ;;
+        *)        bad "firefox: $FFPREF is ${line##*, }"
+                  note "2 is \"auto\", which for an unsandboxed Firefox means its own GTK dialog."
+                  note "about:config → $FFPREF → 1" ;;
+    esac
+done
+if [ -z "$FOUND" ]; then
+    bad "firefox: $FFPREF is not set, so it defaults to 2 (\"auto\")"
+    note "An unsandboxed Firefox reads that as \"use my own GTK dialog\", and"
+    note "never asks the portal. about:config → $FFPREF → 1, then restart it."
+    note "Nothing else below can take effect until this is 1."
+fi
+
+# ── 2. the backend has to be installed where the portal looks ────────────
+head1 "Is the backend where xdg-desktop-portal looks?"
+DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+MINE=
+IFS=: read -ra DLIST <<< "$DIRS"
+for d in "${DLIST[@]}"; do
+    [ -f "$d/xdg-desktop-portal/portals/hyprshell.portal" ] || continue
+    MINE="$d/xdg-desktop-portal/portals/hyprshell.portal"
+    break
+done
+if [ -n "$MINE" ]; then
+    ok "hyprshell.portal: $MINE"
+else
+    bad "hyprshell.portal is not on XDG_DATA_DIRS"
+    note "XDG_DATA_DIRS=$DIRS"
+    for d in "$HOME/.local/share" /usr/local/share /usr/share; do
+        [ -f "$d/xdg-desktop-portal/portals/hyprshell.portal" ] \
+            && note "it is installed at $d/... — that prefix is not on the list"
+    done
+    note "./install.sh writes an environment.d file for this; it needs a re-login."
+fi
+
+# UseIn has to match the session, or the file is read and discarded.
+if [ -n "$MINE" ]; then
+    USEIN=$(sed -n 's/^UseIn=//p' "$MINE" | tr -d ' ')
+    DESK="${XDG_CURRENT_DESKTOP:-}"
+    if [ -z "$DESK" ]; then
+        warn "XDG_CURRENT_DESKTOP is unset — the portal cannot match UseIn=$USEIN"
+    elif printf '%s' ":$DESK:" | grep -qi ":${USEIN%%;*}:"; then
+        ok "UseIn=$USEIN matches XDG_CURRENT_DESKTOP=$DESK"
+    else
+        bad "UseIn=$USEIN does not match XDG_CURRENT_DESKTOP=$DESK"
+        note "Edit UseIn= in $MINE to name this desktop."
+    fi
+fi
+
+# ── 3. and the bus has to be able to start it ────────────────────────────
+head1 "Can the bus start it?"
+SVC=org.freedesktop.impl.portal.desktop.hyprshell
+SVCFILE=
+for d in "${DLIST[@]}" "$HOME/.local/share"; do
+    [ -f "$d/dbus-1/services/$SVC.service" ] && { SVCFILE="$d/dbus-1/services/$SVC.service"; break; }
+done
+if [ -n "$SVCFILE" ]; then
+    ok "service file: $SVCFILE"
+    EXEC=$(sed -n 's/^Exec=//p' "$SVCFILE" | cut -d' ' -f1)
+    if [ -x "$EXEC" ]; then ok "it points at $EXEC"
+    else bad "it points at $EXEC, which is not there"; fi
+else
+    bad "no D-Bus service file for $SVC"
+    note "Run ./install.sh — without this the bus cannot start the backend on demand."
+fi
+
+if command -v gdbus >/dev/null 2>&1; then
+    if timeout 10 gdbus call --session --dest "$SVC" \
+         --object-path /org/freedesktop/portal/desktop \
+         --method org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1; then
+        ok "the bus started it and it answered"
+        XML=$(timeout 10 gdbus introspect --session --dest "$SVC" \
+              --object-path /org/freedesktop/portal/desktop 2>/dev/null)
+        MISS=
+        for m in OpenFile SaveFile SaveFiles; do
+            printf '%s' "$XML" | grep -q "$m(" || MISS="$MISS $m"
+        done
+        if [ -z "$MISS" ]; then ok "it exports OpenFile, SaveFile and SaveFiles"
+        else bad "it is missing:$MISS"; fi
+    else
+        bad "the bus could not start $SVC"
+        note "Try it by hand and read what it says:  hyprshell-files --portal"
+    fi
+else
+    warn "gdbus is not installed, so the backend could not be called (glib2)"
+fi
+
+# ── 4. and the portal has to choose it ───────────────────────────────────
+head1 "Is it the one chosen for file dialogs?"
+KEY=org.freedesktop.impl.portal.FileChooser
+CONF=
+for c in "${XDG_CONFIG_HOME:-$HOME/.config}/xdg-desktop-portal/$(printf '%s' "${XDG_CURRENT_DESKTOP:-hyprland}" | cut -d: -f1 | tr '[:upper:]' '[:lower:]')-portals.conf" \
+         "${XDG_CONFIG_HOME:-$HOME/.config}/xdg-desktop-portal/portals.conf"; do
+    [ -r "$c" ] && { CONF="$c"; break; }
+done
+if [ -z "$CONF" ]; then
+    bad "no portals.conf — whichever backend answers first wins, and several may"
+    note "./install.sh writes one."
+else
+    LINE=$(grep -h "^[[:space:]]*$KEY[[:space:]]*=" "$CONF" | tail -1)
+    case "$LINE" in
+        *=hyprshell*) ok "$CONF: $LINE" ;;
+        "")           bad "$CONF names no backend for file dialogs"
+                      note "Add:  $KEY=hyprshell" ;;
+        *)            bad "$CONF: $LINE"
+                      note "Change it to:  $KEY=hyprshell" ;;
+    esac
+fi
+
+# Which other backends are installed, because that is what it is losing to.
+OTHERS=
+for d in "${DLIST[@]}"; do
+    [ -d "$d/xdg-desktop-portal/portals" ] || continue
+    for p in "$d"/xdg-desktop-portal/portals/*.portal; do
+        [ -r "$p" ] || continue
+        grep -q "$KEY" "$p" || continue
+        b=$(basename "$p" .portal)
+        [ "$b" = hyprshell ] || OTHERS="$OTHERS $b"
+    done
+done
+[ -n "$OTHERS" ] && note "others offering file dialogs:$OTHERS"
+
+# ── 5. and it has to have been read ──────────────────────────────────────
+head1 "Has xdg-desktop-portal read any of this?"
+if command -v systemctl >/dev/null 2>&1 \
+   && systemctl --user is-active xdg-desktop-portal >/dev/null 2>&1; then
+    SINCE=$(systemctl --user show -p ActiveEnterTimestamp --value xdg-desktop-portal)
+    ok "xdg-desktop-portal is running ${DIM}(since $SINCE)${RST}"
+    if [ -n "$CONF" ] && [ "$CONF" -nt /proc/$(systemctl --user show -p MainPID --value xdg-desktop-portal 2>/dev/null)/stat ] 2>/dev/null; then
+        bad "the config is newer than the running process — it has not read it"
+        note "systemctl --user restart xdg-desktop-portal"
+    fi
+else
+    warn "xdg-desktop-portal is not running as a user unit here"
+fi
+
+head1 "The one test that settles it"
+cat <<TESTEOF
+  Ask the *frontend* portal for a dialog, exactly as a browser would.
+  Whatever opens is what a browser would get:
+
+    gdbus call --session --dest org.freedesktop.portal.Desktop \\
+      --object-path /org/freedesktop/portal/desktop \\
+      --method org.freedesktop.portal.FileChooser.OpenFile \\
+      "" "Test" "{}"
+
+  If that opens Files and the browser does not, the browser is not asking
+  the portal — check 1 above.
+TESTEOF
+
+if [ "$BROKEN" -gt 0 ]; then
+    printf '\n%s%d link(s) broken.%s\n' "$RED" "$BROKEN" "$RST"
+    exit 1
+fi
+printf '\n%sEvery link checks out.%s\n' "$GRN" "$RST"
