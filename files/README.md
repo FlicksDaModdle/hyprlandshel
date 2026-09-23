@@ -109,6 +109,24 @@ Installing to a prefix already on PATH avoids the question entirely:
 
     ./install.sh --prefix /usr/local     # needs write access there
 
+## "Could not register app ID"
+
+    qt.qpa.services: Failed to register with host portal
+    QDBusError(... "App info not found for 'hyprshell-files'")
+
+Harmless. Qt tells the desktop portal which application it is so that file
+choosers and notifications can attribute themselves; the portal answers that
+it has no record of one by that name. The window opens and everything works
+regardless — it is a line on stderr, not a failure.
+
+It goes away once the desktop entry is somewhere the portal looks and the
+database has been refreshed, which `install.sh` does:
+
+    update-desktop-database ~/.local/share/applications
+
+Some portal builds only consult the system directories, in which case
+installing with `--prefix /usr/local` silences it and nothing else changes.
+
 ## Not in this version
 
 Thumbnails for anything but images, mounting removable or network volumes,
