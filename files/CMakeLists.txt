@@ -80,7 +80,19 @@ target_link_libraries(hyprshell-files
     PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick hyprshell-backendplugin)
 
 include(GNUInstallDirs)
+
+# The desktop entry's Exec is written as an absolute path, not a bare name.
+#
+# A bare name is resolved against PATH, and the PATH that matters is the one
+# the *compositor* was started with — not the one an interactive shell has.
+# Installing to ~/.local/bin, which is the default here, means anything
+# launching through the desktop entry (an application menu, a launcher's
+# search results, xdg-open on a folder) finds nothing, while typing the same
+# name in a terminal works. An absolute path has no such ambiguity.
+configure_file(hyprshell-files.desktop.in
+               ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files.desktop @ONLY)
+
 install(TARGETS hyprshell-files
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES hyprshell-files.desktop
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files.desktop
         DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
