@@ -58,7 +58,7 @@ Item {
         anchors.leftMargin: 10
         anchors.verticalCenter: parent.verticalCenter
         name: pending.app.creatingFile ? "file" : "folder"
-        size: 17
+        size: 19
         inkColor: Appearance.ink2
         accentColor: Appearance.accent
     }

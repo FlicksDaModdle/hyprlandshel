@@ -56,7 +56,7 @@ Scope {
         "Dock":          { icon: "dock",      group: "Shell",  note: "The dock: position, size, labels and auto-hide." },
         "Notifications": { icon: "bell",      group: "Shell",  note: "Banner behaviour, badge counts and how the center stacks items." },
         "Launcher":      { icon: "search",    group: "Shell",  note: "Size of the start menu, its grid, and its text." },
-        "Fonts":         { icon: "file",      group: "Shell",  note: "Every typeface the shell uses, and one scale over all of them." },
+        "Fonts":         { icon: "font",      group: "Shell",  note: "Every typeface the shell uses, and one scale over all of them." },
         "Keybinds":      { icon: "keyboard",  group: "Shell",  note: "Hyprland bindings this shell listens for." }
     })
 

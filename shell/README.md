@@ -585,6 +585,23 @@ still not the concept's file manager. Kvantum decides how widgets are drawn;
 it cannot move Dolphin's toolbar, replace its sidebar or change its icons,
 because those are Dolphin's layout rather than its style.
 
+## The icon pack
+
+`modules/icons/IconPaths.js` — a 24-unit grid, a 2-unit ink stroke, and
+zero or more accent elements. Nothing comes from an icon theme, so the
+shell looks the same on any machine, and `MonoIcon` draws a whole glyph in
+two or three `Shape`s rather than one per stroke, which matters when the
+dock, launcher and control center are all on screen at once.
+
+A glyph's size is also its stroke weight, since the strokes scale with it.
+Settings drew its chrome at 11–15px, which put the strokes under a pixel
+and made them read as smudges; it is 13–17 now, in the same 28px buttons.
+
+`MonoIcon` renders an unknown name as nothing at all and reports nothing,
+so `iconcheck.js` asserts that every name the shell and the file manager
+ask for exists in their pack — including the ones that only appear as a
+bare string in a pane's `icon:` field.
+
 ## Text rendering, and the one file written outside this shell
 
 Settings → Fonts → Text rendering has three controls:

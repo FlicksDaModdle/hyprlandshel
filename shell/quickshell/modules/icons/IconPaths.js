@@ -343,6 +343,19 @@ var icons = {
     },
     eye: {
         ink: join("M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6Z", circle(12, 12, 3))
+    },
+
+    // Shared with the file manager's copy of this pack, so the two do not
+    // drift. The file-kind glyphs it adds on top stay over there.
+    list: {
+        ink: "M9 6.5H20 M9 12H20 M9 17.5H20",
+        dots: [{ cx: 4.75, cy: 6.5, r: 1.4, c: "ink" },
+               { cx: 4.75, cy: 12, r: 1.4, c: "ink" },
+               { cx: 4.75, cy: 17.5, r: 1.4, c: "ink" }]
+    },
+    font: {
+        ink: "M6.5 16.5L11.25 5.5L16 16.5 M8.4 12.75H14.1",
+        acc: "M5 20H19"
     }
 };
 

@@ -405,6 +405,19 @@ var icons = {
         ink: "M6.5 16.5L11.25 5.5L16 16.5 M8.4 12.75H14.1",
         acc: "M5 20H19"
     },
+    // Rows with their bullets. The view switch used `layout` for its list
+    // mode, four blocks of different sizes, which at 16px was four blobs
+    // beside `grid`'s four blobs — a segmented control whose two options
+    // looked the same. The concept draws it that way too; this is a
+    // deliberate departure, on the grounds that a control you cannot read
+    // is not a design decision worth keeping.
+    list: {
+        ink: "M9 6.5H20 M9 12H20 M9 17.5H20",
+        dots: [{ cx: 4.75, cy: 6.5, r: 1.4, c: "ink" },
+               { cx: 4.75, cy: 12, r: 1.4, c: "ink" },
+               { cx: 4.75, cy: 17.5, r: 1.4, c: "ink" }]
+    },
+
     // A bound book, for the things that are read rather than run.
     book: {
         ink: join(rrect(5, 3.5, 14, 17, 1.75), "M12 8.5H16"),

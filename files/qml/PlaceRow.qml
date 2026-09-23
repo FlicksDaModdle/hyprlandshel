@@ -56,7 +56,7 @@ Item {
         anchors.leftMargin: 10
         anchors.verticalCenter: parent.verticalCenter
         name: row.place.icon
-        size: 15
+        size: 17
         // Accent, not just brighter ink: the colour is how the concept says
         // "this one", and the rail underneath agrees with it.
         inkColor: row.current ? Appearance.accent
@@ -108,7 +108,7 @@ Item {
         MonoIcon {
             anchors.centerIn: parent
             name: "x"
-            size: 11
+            size: 13
             inkColor: removeArea.containsMouse ? Appearance.onAccent : Appearance.ink2
             monochrome: true
         }

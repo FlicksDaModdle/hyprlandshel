@@ -100,7 +100,7 @@ PanelSurface {
             MonoIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "settings"
-                size: 15
+                size: 17
                 inkColor: Config.Appearance.ink2
                 accentColor: Config.Appearance.accent
             }
@@ -147,7 +147,7 @@ PanelSurface {
                     MonoIcon {
                         anchors.centerIn: parent
                         name: winBtn.modelData.glyph
-                        size: 13
+                        size: 15
                         inkColor: btnArea.containsMouse && winBtn.modelData.danger
                                   ? Config.Appearance.onAccent : Config.Appearance.ink2
                         monochrome: true
@@ -299,7 +299,7 @@ PanelSurface {
                                     MonoIcon {
                                         anchors.verticalCenter: parent.verticalCenter
                                         name: frame.app.paneMeta[entry.modelData].icon
-                                        size: 15
+                                        size: 17
                                         inkColor: entry.active ? Config.Appearance.accent : Config.Appearance.ink2
                                         monochrome: true
                                     }

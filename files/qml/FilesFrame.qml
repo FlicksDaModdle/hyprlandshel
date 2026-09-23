@@ -172,7 +172,7 @@ PanelSurface {
             MonoIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "folder"
-                size: 15
+                size: 17
                 inkColor: Appearance.ink2
                 accentColor: Appearance.accent
             }
@@ -226,7 +226,7 @@ PanelSurface {
                     MonoIcon {
                         anchors.centerIn: parent
                         name: winBtn.modelData.glyph
-                        size: 13
+                        size: 15
                         inkColor: btnArea.containsMouse && winBtn.modelData.danger
                                   ? Appearance.onAccent : Appearance.ink2
                         monochrome: true
@@ -361,7 +361,7 @@ PanelSurface {
             MonoIcon {
                 anchors.centerIn: parent
                 name: "panelsTopLeft"
-                size: 14
+                size: 17
                 inkColor: frame.app.showSidebar ? Appearance.ink2 : Appearance.ink3
                 monochrome: true
             }
@@ -400,7 +400,7 @@ PanelSurface {
                     MonoIcon {
                         anchors.centerIn: parent
                         name: navBtn.modelData.glyph
-                        size: 14
+                        size: 17
                         inkColor: navBtn.modelData.on ? Appearance.ink2
                                                       : Appearance.ink3
                         monochrome: true
@@ -468,7 +468,7 @@ PanelSurface {
                             visible: index > 0
                             anchors.verticalCenter: parent.verticalCenter
                             name: "chevronRight"
-                            size: 11
+                            size: 13
                             inkColor: Appearance.ink3
                             monochrome: true
                         }
@@ -570,7 +570,7 @@ PanelSurface {
                 Repeater {
                     model: [
                         { glyph: "grid",   mode: "grid" },
-                        { glyph: "layout", mode: "list" }
+                        { glyph: "list",   mode: "list" }
                     ]
 
                     Rectangle {
@@ -588,7 +588,7 @@ PanelSurface {
                         MonoIcon {
                             anchors.centerIn: parent
                             name: viewBtn.modelData.glyph
-                            size: 13
+                            size: 16
                             inkColor: viewBtn.on ? Appearance.onAccent : Appearance.ink2
                             monochrome: true
                         }
@@ -628,7 +628,7 @@ PanelSurface {
                 anchors.leftMargin: searchPill.width > 40 ? 10 : 9
                 anchors.verticalCenter: parent.verticalCenter
                 name: "search"
-                size: 14
+                size: 17
                 inkColor: frame.app.filter !== "" ? Appearance.accent : Appearance.ink3
                 monochrome: true
             }
@@ -716,7 +716,7 @@ PanelSurface {
             MonoIcon {
                 anchors.centerIn: parent
                 name: "star"
-                size: 14
+                size: 17
                 inkColor: frame.svc.isBookmarked(frame.app.cwd)
                           ? Appearance.accent : Appearance.ink3
                 monochrome: true
@@ -751,7 +751,7 @@ PanelSurface {
                 MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "plus"
-                    size: 14
+                    size: 16
                     inkColor: Appearance.onAccent
                     monochrome: true
                 }
@@ -794,7 +794,7 @@ PanelSurface {
                 MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "trash"
-                    size: 15
+                    size: 17
                     inkColor: frame.app.confirmingEmpty ? Appearance.onAccent
                                                         : Appearance.ink2
                     monochrome: true

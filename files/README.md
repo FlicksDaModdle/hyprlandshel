@@ -160,7 +160,14 @@ an unknown name as nothing at all and says nothing about it.
 The glyph's size is also its weight — the strokes are 2 units on a 24 grid,
 so they scale with it. At 14px they came out at 1.2px and read as grey
 suggestions, which is why the list draws at 18 in a 30px plate and the grid
-at 24 in a 44px plate.
+at 24 in a 44px plate. The chrome had the same problem at 11–15px and is
+now 13–17, in the same 28px buttons.
+
+The view switch used `layout` for its list mode — four blocks of different
+sizes, which beside `grid`'s four blocks made a segmented control whose two
+options looked identical. The concept draws it that way too; it is a `list`
+glyph here instead, on the grounds that a control you cannot read is not a
+design decision worth keeping.
 
 ## Measurements
 
