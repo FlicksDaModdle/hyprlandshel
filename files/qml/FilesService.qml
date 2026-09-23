@@ -1,8 +1,6 @@
 pragma Singleton
 import QtQuick
-import Quickshell
-import Quickshell.Io
-import "../config" as Config
+import Hyprshell.Backend
 
 // The file manager's engine.
 //
@@ -23,7 +21,7 @@ import "../config" as Config
 //
 // Nothing here holds the current directory: a window does, because there can
 // be more than one. This is stateless apart from the clipboard.
-Singleton {
+QtObject {
     id: root
 
     // What a cut or copy left for the next paste.
@@ -36,7 +34,64 @@ Singleton {
     // manager that silently fails to copy is worse than no file manager.
     property string lastError: ""
 
-    readonly property string home: Quickshell.env("HOME") || "/home"
+    readonly property string home: Sys.home()
+
+    // ── settings ──────────────────────────────────────────────────────────
+    // The file manager's own, kept beside the application rather than in
+    // the shell's theme.json, which this only ever reads.
+    readonly property string settingsPath:
+        Sys.configDir() + "/hyprshell-files/settings.json"
+
+    property var prefs: ({})
+    property bool loadingPrefs: false
+
+    function pref(key, fallback) {
+        const v = root.prefs[key];
+        return v === undefined ? fallback : v;
+    }
+
+    function setPref(key, value) {
+        if (root.loadingPrefs) return;
+        const next = {};
+        for (const k in root.prefs) next[k] = root.prefs[k];
+        next[key] = value;
+        root.prefs = next;
+        Sys.writeFile(root.settingsPath, JSON.stringify(next, null, 2) + "\n");
+    }
+
+    // Plain properties filled from the file once, not bindings on it: a
+    // binding to pref() would depend on `prefs`, and saving replaces
+    // `prefs`, so each change would feed itself.
+    property string view: "grid"
+    property string sortBy: "name"
+    property bool sortReverse: false
+    property bool showHidden: false
+    property int iconSize: 100
+    property string bookmarksRaw: ""
+    property string terminal: "kitty"
+
+    onViewChanged:         setPref("view", view)
+    onSortByChanged:       setPref("sortBy", sortBy)
+    onSortReverseChanged:  setPref("sortReverse", sortReverse)
+    onShowHiddenChanged:   setPref("showHidden", showHidden)
+    onIconSizeChanged:     setPref("iconSize", iconSize)
+    onBookmarksRawChanged: setPref("bookmarks", bookmarksRaw)
+
+    function loadPrefs() {
+        const text = Sys.readFile(root.settingsPath);
+        let p = {};
+        if (text) { try { p = JSON.parse(text) || {}; } catch (e) { p = {}; } }
+        root.prefs = p;
+        root.loadingPrefs = true;
+        root.view = pref("view", "grid");
+        root.sortBy = pref("sortBy", "name");
+        root.sortReverse = pref("sortReverse", false);
+        root.showHidden = pref("showHidden", false);
+        root.iconSize = pref("iconSize", 100);
+        root.bookmarksRaw = pref("bookmarks", "");
+        root.terminal = pref("terminal", "kitty");
+        root.loadingPrefs = false;
+    }
 
     // ── listing ───────────────────────────────────────────────────────────
     // One record per entry: type, dereferenced type, size, mtime, name.
@@ -246,17 +301,9 @@ Singleton {
     // relocatable — a German session has ~/Bilder, not ~/Pictures.
     property var places: []
 
-    FileView {
-        id: userDirs
-        path: (Quickshell.env("XDG_CONFIG_HOME") || (root.home + "/.config")) + "/user-dirs.dirs"
-        preload: true
-        printErrors: false
-        onLoaded: root.buildPlaces()
-        onLoadFailed: root.buildPlaces()
-    }
 
     function buildPlaces() {
-        const text = userDirs.text() || "";
+        const text = Sys.readFile(root.home + "/.config/user-dirs.dirs") || "";
         const dirs = {};
         for (const line of text.split("\n")) {
             const m = /^\s*XDG_([A-Z_]+)_DIR\s*=\s*"(.*)"\s*$/.exec(line);
@@ -284,24 +331,21 @@ Singleton {
         root.refreshCounts();
     }
 
-    Component.onCompleted: buildPlaces()
+    Component.onCompleted: { loadPrefs(); buildPlaces(); }
 
     // The item counts beside each place. One process for all of them, and
     // only counted once per open — a count that updates per keystroke would
     // mean walking every one of those directories on every change.
     property var placeCounts: ({})
 
-    Process {
-        id: countProc
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const counts = {};
-                const lines = text.trim().split("\n");
-                const paths = countProc.forPaths || [];
-                for (let i = 0; i < paths.length && i < lines.length; i++)
-                    counts[paths[i]] = parseInt(lines[i], 10) || 0;
-                root.placeCounts = counts;
-            }
+    property Proc countProc: Proc {
+        onFinished: (code, out, err) => {
+            const counts = {};
+            const lines = out.trim().split("\n");
+            const paths = countProc.forPaths || [];
+            for (let i = 0; i < paths.length && i < lines.length; i++)
+                counts[paths[i]] = parseInt(lines[i], 10) || 0;
+            root.placeCounts = counts;
         }
         // Which paths this run asked about, so the numbers can be matched
         // back to them by position rather than re-derived from `places`,
@@ -330,7 +374,7 @@ Singleton {
     // path can contain anything except a newline and a NUL, so there is no
     // separator to escape.
     readonly property var bookmarks: {
-        const raw = Config.Appearance.filesBookmarks || "";
+        const raw = root.bookmarksRaw || "";
         const out = [];
         for (const line of raw.split("\n")) {
             const p = line.trim();
@@ -346,7 +390,7 @@ Singleton {
         const out = root.bookmarks.slice();
         const at = out.indexOf(path);
         if (at >= 0) out.splice(at, 1); else out.push(path);
-        Config.Appearance.filesBookmarks = out.join("\n");
+        root.bookmarksRaw = out.join("\n");
         root.refreshCounts();
     }
 
@@ -358,7 +402,8 @@ Singleton {
     // Hyprland session it often is not. The spec is two directories, so
     // this reads them.
     readonly property string trashDir:
-        (Quickshell.env("XDG_DATA_HOME") || (root.home + "/.local/share")) + "/Trash"
+        Sys.env("XDG_DATA_HOME") !== "" ? Sys.env("XDG_DATA_HOME") + "/Trash"
+                                        : root.home + "/.local/share/Trash"
     readonly property string trashFiles: trashDir + "/files"
     readonly property string trashInfo: trashDir + "/info"
 
@@ -368,13 +413,12 @@ Singleton {
     // a small ini beside it; Path is URL-encoded per the spec.
     property var trashOrigins: ({})
 
-    Process {
-        id: trashInfoProc
-        stdout: StdioCollector {
-            onStreamFinished: {
+    property Proc trashInfoProc: Proc {
+        onFinished: (code, out, err) => {
+            {
                 const map = {};
                 // One record per file: name, then its original path.
-                for (const rec of text.split("\0")) {
+                for (const rec of out.split("\0")) {
                     if (!rec) continue;
                     const cut = rec.indexOf("\n");
                     if (cut < 0) continue;
@@ -435,15 +479,12 @@ Singleton {
     // ── free space ────────────────────────────────────────────────────────
     property string freeSpace: ""
 
-    Process {
-        id: dfProc
-        stdout: StdioCollector {
-            onStreamFinished: {
-                // `df -B1 --output=avail` is one number and a header.
-                const lines = text.trim().split("\n");
-                const n = parseInt(lines[lines.length - 1], 10);
-                root.freeSpace = isNaN(n) ? "" : root.humanSize(n) + " free";
-            }
+    property Proc dfProc: Proc {
+        onFinished: (code, out, err) => {
+            // `df -B1 --output=avail` is one number and a header.
+            const lines = out.trim().split("\n");
+            const n = parseInt(lines[lines.length - 1], 10);
+            root.freeSpace = isNaN(n) ? "" : root.humanSize(n) + " free";
         }
     }
 
@@ -461,18 +502,17 @@ Singleton {
 
     property string pendingDir: ""
 
-    Process {
-        id: action
-        stderr: StdioCollector {
-            onStreamFinished: {
-                const t = text.trim();
-                if (t) root.lastError = t.replace(/^gio:\s*/, "");
+    property Proc action: Proc {
+        onFinished: (code, out, err) => {
+            const t = String(err || "").trim();
+            if (code === 0) {
+                root.lastError = "";
+            } else {
+                // Whatever the tool said, minus its own name at the front.
+                root.lastError = t ? t.split("\n")[0].replace(/^(gio|cp|mv|rm):\s*/, "")
+                                   : "That didn't work";
+                root.failed(root.lastError);
             }
-        }
-        onExited: code => {
-            if (code === 0) root.lastError = "";
-            else if (!root.lastError) root.lastError = "That didn't work";
-            if (root.lastError) root.failed(root.lastError);
             root.changed(root.pendingDir);
             root.refreshCounts();
         }
@@ -536,7 +576,7 @@ Singleton {
     // The system clipboard, for "copy path". wl-copy reads the text from
     // stdin rather than argv, so a path containing anything at all — a
     // newline included — survives the trip.
-    Process { id: clipProc }
+    property Proc clipProc: Proc {}
 
     function copyPathToClipboard(paths) {
         if (!paths || !paths.length) return;
@@ -569,7 +609,7 @@ Singleton {
     // depend on the first one's exit status. The path is still $1, not
     // interpolated, so a filename remains only a filename.
     function open(path) {
-        Quickshell.execDetached(["sh", "-c",
+        Sys.execDetached(["sh", "-c",
             'gio open -- "$1" 2>/dev/null || xdg-open "$1" 2>/dev/null || '
             + 'handlr open "$1" 2>/dev/null || mimeopen -n "$1" 2>/dev/null',
             "open-file", path]);
@@ -579,15 +619,17 @@ Singleton {
     // Nothing here ships a picker of its own; these are the ones desktops
     // actually provide, tried in turn.
     function openWith(path) {
-        Quickshell.execDetached(["sh", "-c",
+        Sys.execDetached(["sh", "-c",
             'mimeopen -a "$1" 2>/dev/null || handlr launch "$1" 2>/dev/null || '
             + 'exo-open "$1" 2>/dev/null || gio open -- "$1"',
             "open-with", path]);
     }
 
     function openTerminal(dir) {
-        const term = Config.Apps.execFor("appTerm") || "kitty";
-        Quickshell.execDetached(["sh", "-c",
+        // No dock table to ask in a standalone app, so the terminal is a
+        // setting of its own, defaulting to what the shell ships with.
+        const term = root.terminal;
+        Sys.execDetached(["sh", "-c",
             'cd "$1" && exec ' + term, "open-term", dir]);
     }
 }

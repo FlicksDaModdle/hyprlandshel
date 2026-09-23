@@ -159,34 +159,6 @@ Singleton {
         settingsOpen = true;
     }
 
-    // ── the file manager ──────────────────────────────────────────────────
-    // Same shape as Settings: its own window rather than a panel, so it is
-    // outside the exclusive group and can sit behind a dropdown.
-    property bool filesOpen: false
-    property string filesScreen: ""
-    property real filesX: -1
-    property real filesY: -1
-    property bool filesMaximized: false
-    // Where it should open. Empty means "wherever it was", and the window
-    // falls back to home the first time.
-    property string filesPath: ""
-
-    function minimiseFiles() { filesOpen = false; }
-
-    function closeFiles() {
-        filesOpen = false;
-        filesMaximized = false;
-        filesX = -1;
-        filesY = -1;
-    }
-
-    function openFiles(path) {
-        closeAll();
-        if (path) filesPath = path;
-        if (!filesOpen) filesScreen = "";
-        filesOpen = true;
-    }
-
     // ── session lock ──────────────────────────────────────────────────────
     // The shell draws its own lock screen (modules/lock), so locking is a
     // state flip rather than launching hyprlock. Nothing may dismiss this
@@ -196,7 +168,6 @@ Singleton {
     function lock() {
         closeAll();
         settingsOpen = false;
-        filesOpen = false;
         locked = true;
     }
 

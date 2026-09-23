@@ -33,7 +33,6 @@ shell/
       Bluetooth.qml        bluetoothctl: radio, paired devices, scanning
       Brightness.qml       brightnessctl backlight, debounced
       Compositor.qml       Hyprland workspaces, windows and their geometry
-      Files.qml            Directory listing and file operations, through gio
       Kvantum.qml          Generates a Kvantum widget theme from the palette
       Network.qml          nmcli: Wi-Fi, access points, VPN, IP
       NightLight.qml       hyprsunset / wlsunset colour temperature
@@ -50,7 +49,6 @@ shell/
                            segmented control, bar button, styled text)
       dock/                The floating dock and its tiles
       icons/               The bespoke 24×24 monoline pack + its renderer
-      files/               The file manager
       launcher/            Start menu / Launchpad hybrid
       lock/                Session lock with PAM authentication
       notifications/       Banner toasts
@@ -494,81 +492,22 @@ which is what a Hyprland window rule would match on.
 
 ## The file manager
 
-`Super + E`. It is the concept's own file manager, written in QML like the
-rest of the shell rather than borrowed from one: places sidebar with item
-counts, pill breadcrumb, grid and list views, a bookmarks section, and a
-status bar. Selection is marked the way the design marks it — a quiet fill
-with an accent rule under it.
+`Super + E`. It is not part of this shell: it is a separate application,
+`hyprshell-files`, in `../files`. The shell only launches it.
 
-**Why not theme an existing one.** Kvantum decides how a widget is painted,
-not what widgets exist or where they sit. The concept isn't Dolphin with
-different colours, it is a different layout, so no amount of styling gets
-there. Writing the window is the only route that does.
+That is deliberate. A file manager is an ordinary window — the compositor
+should tile it, focus it and apply window rules to it like anything else,
+and a drag out of it should reach other applications. A shell surface is
+none of those things, and a layer-shell surface is not a drag source at all.
+So the window moved out, keeping the same QML, the same icon pack and the
+same treatment of a selected thing.
 
-**What it does not write itself.** Deleting, watching, opening and renaming
-go through `gio` — the GIO/GVfs library GTK file managers are built on:
+It follows this shell's `theme.json`, so it matches the desktop without
+being part of it, and keeps its own settings in
+`~/.config/hyprshell-files/`. See `../files/README.md`.
 
-    gio trash     gio rename    gio mkdir    gio open    gio monitor
-
-So deleting means the real freedesktop trash, restorable from here or from
-any other file manager, rather than `rm`, and `gio monitor` is the same
-GFileMonitor Nautilus uses, so files something else creates appear without a
-refresh.
-
-Copy and move are `cp -a` and `mv`, not `gio copy` and `gio move`, for two
-reasons that only showed up under test. `gio copy` refuses a directory
-outright — "Can't recursively copy directory" — so pasting a folder did not
-work at all, and there is no recursive flag. And neither gio verb has a
-conflict policy fit for a window: the default overwrites silently, and `-i`
-prompts on a terminal that does not exist, so it would hang.
-`--backup=numbered` keeps whatever was there as `name.~1~` and asks nobody.
-
-Paths are passed as their own argv entries and never interpolated into a
-shell string, so a file named `; rm -rf ~` is only ever a name — which is
-tested, by creating one and trashing it.
-
-**Listing is `find`, not `gio list`.** `gio list` prints one line per file,
-which cannot represent a filename containing a newline — it splits it across
-two lines, and a line-based reader invents a file that does not exist.
-`find -printf ... \0` gives NUL-terminated records with the name last, so
-every legal filename survives. The item counts beside each place count
-characters from `-printf .` rather than lines, for the same reason.
-
-Right-click a file for open / open with / cut / copy / copy path / rename /
-trash, and the empty space for new folder, paste, open in terminal,
-bookmark and hidden files. In the trash the menu offers restore instead.
-
-Drag a file onto a folder to move it there, or out of the window to hand it
-to another application as `text/uri-list`. Dropping files *into* the window
-copies them in. Dragging works in tiled mode; a floating window is a
-layer-shell surface, which is not an ordinary drag source, so drags out of
-it may not reach other applications.
-
-Keys: `Ctrl+A` select all, `Ctrl+C`/`X`/`V` copy, cut and paste, `Ctrl+H`
-hidden files, `Ctrl+L` type a path, `F2` rename, `Delete` to trash,
-`Backspace` up, `Enter` open, `Escape` clear the selection then close.
-
-**Opening a file** tries `gio open`, then `xdg-open`, then `handlr` and
-`mimeopen`. One is not enough: `gio open` reads glib's own
-default-application table and can come back having done nothing on a
-session with no portal running, while `xdg-open` falls through
-desktop-specific openers to its own generic handling.
-
-It opens **tiled** by default, unlike Settings — a file manager is a window
-you work in beside other windows, and tiled is also the mode where dragging
-files out to other applications works. Settings → Files switches it.
-
-Settings → Files has the window mode, the view, tile size, sorting and the
-bookmarks. `Super + Shift + E` still opens whatever `fileManager` in
-`hyprland.lua` names, if you want a second opinion.
-
-Image thumbnails load only for tiles on screen. A folder of screenshots
-would otherwise decode every full-resolution PNG in it the moment you opened
-the folder, for the sake of the handful actually visible.
-
-**Not in this version:** thumbnails for anything but images, mounting
-removable or network volumes, tabs, split panes, search, and an archive
-extractor.
+`Super + Shift + E` still opens whatever `fileManager` names in
+`hyprland.lua`, if you want a second opinion.
 
 ## Theming KDE applications
 

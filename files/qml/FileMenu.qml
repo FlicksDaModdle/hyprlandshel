@@ -1,9 +1,5 @@
 import QtQuick
-import Quickshell
-import "../../config" as Config
-import "../../services" as Services
-import "../common"
-import "../icons"
+import Hyprshell
 
 // The right-click menu, for a file, for several files, or for the empty
 // space of the folder itself.
@@ -16,7 +12,7 @@ PanelSurface {
     id: menu
 
     required property var app
-    readonly property var svc: Services.Files
+    readonly property var svc: FilesService
 
     // What was right-clicked: an entry, or null for the background.
     property var target: null
@@ -97,11 +93,11 @@ PanelSurface {
                           ? "Remove bookmark" : "Bookmark this folder",
                        icon: "star",
                        run: () => menu.svc.toggleBookmark(menu.app.cwd) });
-            out.push({ n: Config.Appearance.filesShowHidden
+            out.push({ n: FilesService.showHidden
                           ? "Hide hidden files" : "Show hidden files",
                        icon: "eye", rule: true,
-                       run: () => Config.Appearance.filesShowHidden =
-                                  !Config.Appearance.filesShowHidden });
+                       run: () => FilesService.showHidden =
+                                  !FilesService.showHidden });
             out.push({ n: "Files settings", icon: "settings",
                        run: () => Config.UiState.openSettings("Files") });
         }
@@ -131,7 +127,7 @@ PanelSurface {
                     anchors.topMargin: 2
                     width: parent.width
                     height: 1
-                    color: Config.Appearance.rule
+                    color: Appearance.rule
                 }
 
                 Rectangle {
@@ -139,8 +135,8 @@ PanelSurface {
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     height: 36
-                    radius: Config.Appearance.rPill
-                    color: rowHover.hovered ? Config.Appearance.accent : "transparent"
+                    radius: Appearance.rPill
+                    color: rowHover.hovered ? Appearance.accent : "transparent"
 
                     Row {
                         anchors.left: parent.left
@@ -152,17 +148,17 @@ PanelSurface {
                             anchors.verticalCenter: parent.verticalCenter
                             name: item.modelData.icon
                             size: 14
-                            inkColor: rowHover.hovered ? Config.Appearance.onAccent
-                                                       : Config.Appearance.ink
-                            accentColor: rowHover.hovered ? Config.Appearance.onAccent
-                                                          : Config.Appearance.accent
+                            inkColor: rowHover.hovered ? Appearance.onAccent
+                                                       : Appearance.ink
+                            accentColor: rowHover.hovered ? Appearance.onAccent
+                                                          : Appearance.accent
                         }
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: item.modelData.n
-                            font.pixelSize: Config.Appearance.fs(12)
-                            color: rowHover.hovered ? Config.Appearance.onAccent
-                                                    : Config.Appearance.ink
+                            font.pixelSize: Appearance.fs(12)
+                            color: rowHover.hovered ? Appearance.onAccent
+                                                    : Appearance.ink
                         }
                     }
 

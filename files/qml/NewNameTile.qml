@@ -1,7 +1,5 @@
 import QtQuick
-import "../../config" as Config
-import "../common"
-import "../icons"
+import Hyprshell
 
 // The new folder, before it has a name. It sits in the view as a tile or a
 // row like any other, with the name field already focused — so a folder is
@@ -19,7 +17,7 @@ Item {
     property bool gridView: true
 
     implicitHeight: pending.gridView
-                    ? Math.round(118 * Config.Appearance.filesIconSize / 100)
+                    ? Math.round(118 * FilesService.iconSize / 100)
                     : 34
     height: implicitHeight
 
@@ -27,8 +25,8 @@ Item {
         anchors.fill: parent
         anchors.margins: pending.gridView ? 4 : 0
         anchors.bottomMargin: pending.gridView ? 4 : 1
-        radius: Config.Appearance.rSm
-        color: Config.Appearance.hover
+        radius: Appearance.rSm
+        color: Appearance.hover
     }
 
     // Grid: the plate, with the field under it.
@@ -37,18 +35,18 @@ Item {
         visible: pending.gridView
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
-        anchors.topMargin: Math.round(14 * Config.Appearance.filesIconSize / 100)
-        width: Math.round(58 * Config.Appearance.filesIconSize / 100)
-        height: Math.round(52 * Config.Appearance.filesIconSize / 100)
-        radius: Config.Appearance.rSm
-        color: Config.Appearance.surface
+        anchors.topMargin: Math.round(14 * FilesService.iconSize / 100)
+        width: Math.round(58 * FilesService.iconSize / 100)
+        height: Math.round(52 * FilesService.iconSize / 100)
+        radius: Appearance.rSm
+        color: Appearance.surface
 
         MonoIcon {
             anchors.centerIn: parent
             name: "folder"
-            size: Math.round(24 * Config.Appearance.filesIconSize / 100)
-            inkColor: Config.Appearance.ink2
-            accentColor: Config.Appearance.accent
+            size: Math.round(24 * FilesService.iconSize / 100)
+            inkColor: Appearance.ink2
+            accentColor: Appearance.accent
         }
     }
 
@@ -61,8 +59,8 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         name: "folder"
         size: 17
-        inkColor: Config.Appearance.ink2
-        accentColor: Config.Appearance.accent
+        inkColor: Appearance.ink2
+        accentColor: Appearance.accent
     }
 
     NameField {

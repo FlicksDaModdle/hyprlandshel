@@ -1,8 +1,5 @@
 import QtQuick
-import "../../config" as Config
-import "../../services" as Services
-import "../common"
-import "../icons"
+import Hyprshell
 
 // One file in the list view: glyph, name, size, and when it changed. The
 // trash shows where a thing came from instead of its size, because that is
@@ -13,7 +10,7 @@ Item {
     required property var entry
     required property var app
 
-    readonly property var svc: Services.Files
+    readonly property var svc: FilesService
     readonly property bool selected: row.app.isSelected(row.entry.name)
     readonly property bool renaming: row.app.renaming === row.entry.name
 
@@ -24,9 +21,9 @@ Item {
         id: fill
         anchors.fill: parent
         anchors.bottomMargin: 1
-        radius: Config.Appearance.rSm
-        color: row.selected ? Config.Appearance.sel
-             : (area.containsMouse ? Config.Appearance.hover : "transparent")
+        radius: Appearance.rSm
+        color: row.selected ? Appearance.sel
+             : (area.containsMouse ? Appearance.hover : "transparent")
 
         Rectangle {
             visible: row.selected
@@ -37,7 +34,7 @@ Item {
             anchors.rightMargin: 4
             height: 2
             radius: 1
-            color: Config.Appearance.accent
+            color: Appearance.accent
         }
     }
 
@@ -48,8 +45,8 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         name: row.svc.iconFor(row.entry)
         size: 17
-        inkColor: Config.Appearance.ink2
-        accentColor: Config.Appearance.accent
+        inkColor: Appearance.ink2
+        accentColor: Appearance.accent
     }
 
     StyledText {
@@ -62,9 +59,9 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         text: row.entry.name
         elide: Text.ElideMiddle
-        font.pixelSize: Config.Appearance.fs(13)
+        font.pixelSize: Appearance.fs(13)
         font.weight: row.selected ? Font.DemiBold : Font.Medium
-        color: row.entry.broken ? Config.Appearance.ink3 : Config.Appearance.ink
+        color: row.entry.broken ? Appearance.ink3 : Appearance.ink
     }
 
     NameField {
@@ -88,8 +85,8 @@ Item {
         width: row.app.inTrash ? 0 : 74
         visible: !row.app.inTrash
         text: row.entry.dir ? "--" : row.svc.humanSize(row.entry.size)
-        font.pixelSize: Config.Appearance.fs(12)
-        color: Config.Appearance.ink3
+        font.pixelSize: Appearance.fs(12)
+        color: Appearance.ink3
     }
 
     StyledText {
@@ -105,8 +102,8 @@ Item {
                  ? row.svc.pretty(row.svc.parent(row.svc.trashOrigins[row.entry.name]))
                  : "")
               : row.svc.humanTime(row.entry.mtime)
-        font.pixelSize: Config.Appearance.fs(12)
-        color: Config.Appearance.ink3
+        font.pixelSize: Appearance.fs(12)
+        color: Appearance.ink3
     }
 
     property bool dropTarget: false
@@ -126,10 +123,10 @@ Item {
     Rectangle {
         visible: row.dropTarget
         anchors.fill: fill
-        radius: Config.Appearance.rSm
+        radius: Appearance.rSm
         color: "transparent"
         border.width: 2
-        border.color: Config.Appearance.accent
+        border.color: Appearance.accent
     }
 
     MouseArea {

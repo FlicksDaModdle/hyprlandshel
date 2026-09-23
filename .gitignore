@@ -2,3 +2,8 @@
 # `git bundle create` because pushing to the remote is blocked. It is a copy
 # of what is already in .git, so it does not belong in a commit.
 *.bundle
+
+# CMake's build tree for files/. Generated, machine-specific, and rebuilt by
+# files/install.sh.
+build/
+CMakeFiles/

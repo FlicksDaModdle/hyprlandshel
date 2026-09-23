@@ -1,9 +1,5 @@
 import QtQuick
-import Quickshell
-import "../../config" as Config
-import "../../services" as Services
-import "../common"
-import "../icons"
+import Hyprshell
 
 // The file manager's chrome, independent of which kind of window it is
 // mounted in. See Files.qml.
@@ -20,11 +16,11 @@ PanelSurface {
     required property var host
     required property var app
 
-    readonly property var svc: Services.Files
+    readonly property var svc: FilesService
 
     showSeam: false
-    color: Config.Appearance.sheet
-    radius: Config.Appearance.rWin
+    color: Appearance.sheet
+    radius: Appearance.rWin
 
     width: frame.host.tiled ? frame.host.width
            : (frame.host.maximised ? frame.host.width - 16 : frame.host.normalWidth)
@@ -41,7 +37,7 @@ PanelSurface {
     y: frame.host.tiled ? 0
        : (frame.host.maximised ? frame.host.workTop
           : (Config.UiState.filesY >= 0
-             ? Math.max(Config.Appearance.barHeight,
+             ? Math.max(Appearance.barHeight,
                         Math.min(frame.host.height - height, Config.UiState.filesY))
              : Math.round((frame.host.height - height) / 2)))
 
@@ -59,7 +55,7 @@ PanelSurface {
         if (ctrl && event.key === Qt.Key_C) { frame.svc.copyToClipboard(frame.app.selectedPaths()); event.accepted = true; return; }
         if (ctrl && event.key === Qt.Key_X) { frame.svc.cut(frame.app.selectedPaths()); event.accepted = true; return; }
         if (ctrl && event.key === Qt.Key_V) { frame.app.pasteHere(); event.accepted = true; return; }
-        if (ctrl && event.key === Qt.Key_H) { Config.Appearance.filesShowHidden = !Config.Appearance.filesShowHidden; event.accepted = true; return; }
+        if (ctrl && event.key === Qt.Key_H) { FilesService.showHidden = !FilesService.showHidden; event.accepted = true; return; }
         if (ctrl && event.key === Qt.Key_L) { crumbEdit.begin(); event.accepted = true; return; }
 
         switch (event.key) {
@@ -133,21 +129,21 @@ PanelSurface {
                 width: 3
                 height: 16
                 radius: 2
-                color: Config.Appearance.accent
+                color: Appearance.accent
             }
 
             MonoIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "folder"
                 size: 15
-                inkColor: Config.Appearance.ink2
-                accentColor: Config.Appearance.accent
+                inkColor: Appearance.ink2
+                accentColor: Appearance.accent
             }
 
             StyledText {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Files"
-                font.pixelSize: Config.Appearance.fs(13)
+                font.pixelSize: Appearance.fs(13)
                 font.weight: Font.DemiBold
                 font.letterSpacing: 0.13
             }
@@ -156,9 +152,9 @@ PanelSurface {
             StyledText {
                 anchors.verticalCenter: parent.verticalCenter
                 text: frame.app.inTrash ? "Trash" : frame.svc.basename(frame.app.cwd)
-                font.pixelSize: Config.Appearance.fs(12)
+                font.pixelSize: Appearance.fs(12)
                 font.weight: Font.Normal
-                color: Config.Appearance.ink3
+                color: Appearance.ink3
                 elide: Text.ElideRight
                 width: Math.min(implicitWidth, 220)
             }
@@ -187,16 +183,16 @@ PanelSurface {
                     required property var modelData
                     width: 28
                     height: 28
-                    radius: Config.Appearance.rSm
+                    radius: Appearance.rSm
                     color: !btnArea.containsMouse ? "transparent"
-                         : (modelData.danger ? Config.Appearance.accent : Config.Appearance.hover)
+                         : (modelData.danger ? Appearance.accent : Appearance.hover)
 
                     MonoIcon {
                         anchors.centerIn: parent
                         name: winBtn.modelData.glyph
                         size: 13
                         inkColor: btnArea.containsMouse && winBtn.modelData.danger
-                                  ? Config.Appearance.onAccent : Config.Appearance.ink2
+                                  ? Appearance.onAccent : Appearance.ink2
                         monochrome: true
                     }
 
@@ -215,7 +211,7 @@ PanelSurface {
             anchors.bottom: parent.bottom
             width: parent.width
             height: 1
-            color: Config.Appearance.rule
+            color: Appearance.rule
         }
     }
 
@@ -242,10 +238,10 @@ PanelSurface {
                 StyledText {
                     x: 20
                     text: "PLACES"
-                    font.pixelSize: Config.Appearance.fs(10)
+                    font.pixelSize: Appearance.fs(10)
                     font.weight: Font.Bold
                     font.letterSpacing: 1.1
-                    color: Config.Appearance.accent
+                    color: Appearance.accent
                     bottomPadding: 6
                 }
 
@@ -268,10 +264,10 @@ PanelSurface {
                     x: 20
                     visible: frame.svc.bookmarks.length > 0
                     text: "BOOKMARKS"
-                    font.pixelSize: Config.Appearance.fs(10)
+                    font.pixelSize: Appearance.fs(10)
                     font.weight: Font.Bold
                     font.letterSpacing: 1.1
-                    color: Config.Appearance.ink3
+                    color: Appearance.ink3
                     topPadding: 14
                     bottomPadding: 6
                 }
@@ -295,7 +291,7 @@ PanelSurface {
             anchors.right: parent.right
             width: 1
             height: parent.height
-            color: Config.Appearance.rule
+            color: Appearance.rule
         }
     }
 
@@ -325,16 +321,16 @@ PanelSurface {
                     required property var modelData
                     width: 30
                     height: 30
-                    radius: Config.Appearance.rSm
+                    radius: Appearance.rSm
                     color: navArea.containsMouse && navBtn.modelData.on
-                           ? Config.Appearance.hover : "transparent"
+                           ? Appearance.hover : "transparent"
 
                     MonoIcon {
                         anchors.centerIn: parent
                         name: navBtn.modelData.glyph
                         size: 16
-                        inkColor: navBtn.modelData.on ? Config.Appearance.ink2
-                                                      : Config.Appearance.ink3
+                        inkColor: navBtn.modelData.on ? Appearance.ink2
+                                                      : Appearance.ink3
                         monochrome: true
                         opacity: navBtn.modelData.on ? 1 : 0.4
                     }
@@ -361,8 +357,8 @@ PanelSurface {
             anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
             height: 40
-            radius: Config.Appearance.rSm
-            color: Config.Appearance.surface
+            radius: Appearance.rSm
+            color: Appearance.surface
 
             MouseArea {
                 anchors.fill: parent
@@ -396,7 +392,7 @@ PanelSurface {
                             anchors.verticalCenter: parent.verticalCenter
                             name: "chevronRight"
                             size: 13
-                            inkColor: Config.Appearance.ink3
+                            inkColor: Appearance.ink3
                             monochrome: true
                         }
 
@@ -404,14 +400,14 @@ PanelSurface {
                             anchors.verticalCenter: parent.verticalCenter
                             width: crumbLabel.implicitWidth + 14
                             height: 26
-                            radius: Config.Appearance.rSm
-                            color: crumbArea.containsMouse ? Config.Appearance.hover : "transparent"
+                            radius: Appearance.rSm
+                            color: crumbArea.containsMouse ? Appearance.hover : "transparent"
 
                             StyledText {
                                 id: crumbLabel
                                 anchors.centerIn: parent
                                 text: modelData.label
-                                font.pixelSize: Config.Appearance.fs(13)
+                                font.pixelSize: Appearance.fs(13)
                                 // Where you are, by path rather than by
                                 // counting children: a Repeater is itself
                                 // one of its parent's children, so an index
@@ -421,7 +417,7 @@ PanelSurface {
                                 font.weight: modelData.path === frame.app.cwd
                                              ? Font.DemiBold : Font.Medium
                                 color: modelData.path === frame.app.cwd
-                                       ? Config.Appearance.ink : Config.Appearance.ink2
+                                       ? Appearance.ink : Appearance.ink2
                             }
 
                             MouseArea {
@@ -457,11 +453,11 @@ PanelSurface {
                 anchors.right: parent.right
                 anchors.rightMargin: 14
                 anchors.verticalCenter: parent.verticalCenter
-                font.family: Config.Appearance.fontFamily
-                font.pixelSize: Config.Appearance.fs(13)
-                color: Config.Appearance.ink
-                selectionColor: Config.Appearance.accent
-                selectedTextColor: Config.Appearance.onAccent
+                font.family: Appearance.fontFamily
+                font.pixelSize: Appearance.fs(13)
+                color: Appearance.ink
+                selectionColor: Appearance.accent
+                selectedTextColor: Appearance.onAccent
                 clip: true
 
                 onAccepted: {
@@ -490,18 +486,18 @@ PanelSurface {
                 Rectangle {
                     id: viewBtn
                     required property var modelData
-                    readonly property bool on: Config.Appearance.filesView === modelData.mode
+                    readonly property bool on: FilesService.view === modelData.mode
                     width: 38
                     height: 34
-                    radius: Config.Appearance.rSm
-                    color: on ? Config.Appearance.accent
-                         : (viewArea.containsMouse ? Config.Appearance.hover : "transparent")
+                    radius: Appearance.rSm
+                    color: on ? Appearance.accent
+                         : (viewArea.containsMouse ? Appearance.hover : "transparent")
 
                     MonoIcon {
                         anchors.centerIn: parent
                         name: viewBtn.modelData.glyph
                         size: 16
-                        inkColor: viewBtn.on ? Config.Appearance.onAccent : Config.Appearance.ink2
+                        inkColor: viewBtn.on ? Appearance.onAccent : Appearance.ink2
                         monochrome: true
                     }
 
@@ -510,7 +506,7 @@ PanelSurface {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: Config.Appearance.filesView = viewBtn.modelData.mode
+                        onClicked: FilesService.view = viewBtn.modelData.mode
                     }
                 }
             }
@@ -525,16 +521,16 @@ PanelSurface {
             anchors.verticalCenter: parent.verticalCenter
             width: 34
             height: 34
-            radius: Config.Appearance.rSm
+            radius: Appearance.rSm
             visible: !frame.app.inTrash && frame.app.cwd !== ""
-            color: pinArea.containsMouse ? Config.Appearance.hover : "transparent"
+            color: pinArea.containsMouse ? Appearance.hover : "transparent"
 
             MonoIcon {
                 anchors.centerIn: parent
                 name: "star"
                 size: 16
                 inkColor: frame.svc.isBookmarked(frame.app.cwd)
-                          ? Config.Appearance.accent : Config.Appearance.ink3
+                          ? Appearance.accent : Appearance.ink3
                 monochrome: true
             }
 
@@ -554,8 +550,8 @@ PanelSurface {
             anchors.verticalCenter: parent.verticalCenter
             width: newRow.implicitWidth + 30
             height: 38
-            radius: Config.Appearance.rSm
-            color: Config.Appearance.accent
+            radius: Appearance.rSm
+            color: Appearance.accent
             opacity: newArea.containsMouse ? 0.9 : 1
             visible: !frame.app.inTrash
 
@@ -568,16 +564,16 @@ PanelSurface {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "plus"
                     size: 15
-                    inkColor: Config.Appearance.onAccent
+                    inkColor: Appearance.onAccent
                     monochrome: true
                 }
 
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "New"
-                    font.pixelSize: Config.Appearance.fs(13)
+                    font.pixelSize: Appearance.fs(13)
                     font.weight: Font.DemiBold
-                    color: Config.Appearance.onAccent
+                    color: Appearance.onAccent
                 }
             }
 
@@ -598,8 +594,8 @@ PanelSurface {
             anchors.verticalCenter: parent.verticalCenter
             width: emptyRow.implicitWidth + 30
             height: 38
-            radius: Config.Appearance.rSm
-            color: frame.app.confirmingEmpty ? Config.Appearance.accent : Config.Appearance.surface
+            radius: Appearance.rSm
+            color: frame.app.confirmingEmpty ? Appearance.accent : Appearance.surface
             visible: frame.app.inTrash && frame.app.visibleEntries.length > 0
 
             Row {
@@ -611,18 +607,18 @@ PanelSurface {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "trash"
                     size: 15
-                    inkColor: frame.app.confirmingEmpty ? Config.Appearance.onAccent
-                                                        : Config.Appearance.ink2
+                    inkColor: frame.app.confirmingEmpty ? Appearance.onAccent
+                                                        : Appearance.ink2
                     monochrome: true
                 }
 
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: frame.app.confirmingEmpty ? "Delete them permanently?" : "Empty Trash"
-                    font.pixelSize: Config.Appearance.fs(13)
+                    font.pixelSize: Appearance.fs(13)
                     font.weight: Font.DemiBold
-                    color: frame.app.confirmingEmpty ? Config.Appearance.onAccent
-                                                     : Config.Appearance.ink
+                    color: frame.app.confirmingEmpty ? Appearance.onAccent
+                                                     : Appearance.ink
                 }
             }
 
@@ -685,7 +681,7 @@ PanelSurface {
                 visible: frame.app.view === "grid"
                 width: parent.width
                 columns: Math.max(1, Math.floor(width / tileWidth))
-                readonly property real tileWidth: Math.round(140 * Config.Appearance.filesIconSize / 100)
+                readonly property real tileWidth: Math.round(140 * FilesService.iconSize / 100)
                 spacing: 0
 
                 // The waiting-to-be-named folder sits first, as a tile you
@@ -748,8 +744,8 @@ PanelSurface {
             text: frame.app.inTrash ? "The trash is empty"
                 : (frame.app.entries.length > 0 ? "Nothing here but hidden files"
                                                 : "This folder is empty")
-            font.pixelSize: Config.Appearance.fs(13)
-            color: Config.Appearance.ink3
+            font.pixelSize: Appearance.fs(13)
+            color: Appearance.ink3
         }
     }
 
@@ -791,7 +787,7 @@ PanelSurface {
             anchors.top: parent.top
             width: parent.width
             height: 1
-            color: Config.Appearance.rule
+            color: Appearance.rule
         }
 
         StyledText {
@@ -801,8 +797,8 @@ PanelSurface {
             anchors.right: freeLabel.left
             anchors.rightMargin: 12
             elide: Text.ElideRight
-            font.pixelSize: Config.Appearance.fs(12)
-            color: frame.svc.lastError ? Config.Appearance.accent : Config.Appearance.ink3
+            font.pixelSize: Appearance.fs(12)
+            color: frame.svc.lastError ? Appearance.accent : Appearance.ink3
             text: {
                 if (frame.svc.lastError) return frame.svc.lastError;
                 const n = frame.app.visibleEntries.length;
@@ -820,8 +816,8 @@ PanelSurface {
             anchors.rightMargin: 16
             anchors.verticalCenter: parent.verticalCenter
             text: frame.svc.freeSpace
-            font.pixelSize: Config.Appearance.fs(12)
-            color: Config.Appearance.ink3
+            font.pixelSize: Appearance.fs(12)
+            color: Appearance.ink3
         }
     }
 }

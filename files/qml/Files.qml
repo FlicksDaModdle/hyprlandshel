@@ -1,9 +1,6 @@
 import QtQuick
-import Quickshell
-import Quickshell.Io
-import Quickshell.Wayland
-import "../../config" as Config
-import "../../services" as Services
+import Hyprshell
+import Hyprshell.Backend
 
 // The file manager.
 //
@@ -15,11 +12,10 @@ import "../../services" as Services
 //
 // Everything that touches the disk is in services/Files.qml. This holds only
 // what a *window* knows: where it is, what is selected, and how you got here.
-Scope {
+QtObject {
     id: root
 
-    readonly property bool tiled: Config.Appearance.filesTiled
-    readonly property var svc: Services.Files
+        readonly property var svc: FilesService
 
     // ── where we are ──────────────────────────────────────────────────────
     property string cwd: ""
@@ -36,10 +32,10 @@ Scope {
     readonly property bool canUp: cwd !== "/" && cwd !== ""
 
     // ── how it is shown ───────────────────────────────────────────────────
-    readonly property string view: Config.Appearance.filesView          // grid | list
-    readonly property string sortBy: Config.Appearance.filesSortBy      // name | size | modified
-    readonly property bool sortReverse: Config.Appearance.filesSortReverse
-    readonly property bool showHidden: Config.Appearance.filesShowHidden
+    readonly property string view: FilesService.view          // grid | list
+    readonly property string sortBy: FilesService.sortBy      // name | size | modified
+    readonly property bool sortReverse: FilesService.sortReverse
+    readonly property bool showHidden: FilesService.showHidden
 
     // ── what is picked ────────────────────────────────────────────────────
     // Names, not indices: the listing is rebuilt on every change, and an
@@ -74,8 +70,7 @@ Scope {
         root.confirmingEmpty = false;
         root.reload();
         root.svc.checkFree(path);
-        Config.UiState.filesPath = path;
-    }
+            }
 
     function back() {
         if (!canBack) return;
@@ -194,17 +189,11 @@ Scope {
     }
 
     // ── reading the directory ─────────────────────────────────────────────
-    Process {
-        id: lister
-        stdout: StdioCollector {
-            onStreamFinished: {
-                root.entries = root.svc.parseListing(text);
-                root.loading = false;
-                if (root.inTrash) root.svc.readTrashInfo();
-            }
-        }
-        onExited: code => {
+    property Proc lister: Proc {
+        onFinished: (code, out, err) => {
+            root.entries = root.svc.parseListing(out);
             root.loading = false;
+            if (root.inTrash) root.svc.readTrashInfo();
             // A directory that cannot be read is not an error worth a dialog,
             // but it should not look like an empty one either.
             if (code !== 0 && !root.entries.length)
@@ -221,7 +210,7 @@ Scope {
 
     // A change anywhere reloads the directory it happened in, so a paste or
     // a rename shows up without asking.
-    Connections {
+    property Connections svcChanges: Connections {
         target: root.svc
         function onChanged(path) {
             if (!path || path === root.cwd) root.reload();
@@ -235,14 +224,14 @@ Scope {
     // already running does not restart it, so binding the command to cwd
     // would leave the watcher on whichever directory was open first and
     // every later one silently unwatched.
-    Process {
-        id: watch
-        stdout: SplitParser { onRead: settle.restart() }
+    property Proc watch: Proc {
+        streaming: true
+        onLine: settle.restart()
     }
 
     function rewatch() {
         watch.running = false;
-        if (root.cwd === "" || !Config.UiState.filesOpen) return;
+        if (root.cwd === "") return;
         watch.command = ["gio", "monitor", "-d", root.cwd];
         watch.running = true;
     }
@@ -251,101 +240,9 @@ Scope {
 
     // A copy lands as a burst of events; reloading on each one would rebuild
     // the view dozens of times for one paste.
-    Timer {
-        id: settle
+    property Timer settle: Timer {
         interval: 250
         onTriggered: root.reload()
     }
 
-    // ── opening ───────────────────────────────────────────────────────────
-    Connections {
-        target: Config.UiState
-        function onFilesOpenChanged() {
-            root.rewatch();
-            if (!Config.UiState.filesOpen) return;
-            const want = Config.UiState.filesPath || root.svc.home;
-            if (want !== root.cwd || !root.entries.length) root.go(want);
-            else root.reload();
-        }
-    }
-
-    // ── the two windows ───────────────────────────────────────────────────
-    Variants {
-        model: Quickshell.screens
-
-        PanelWindow {
-            id: win
-            required property var modelData
-            screen: modelData ?? null
-
-            // "" means follow the focused monitor, which is what a freshly
-            // opened window should do; once dragged across, it stays put.
-            readonly property bool isMine: Config.UiState.filesScreen === ""
-                ? Services.Compositor.isFocusedScreen(modelData)
-                : (modelData && modelData.name === Config.UiState.filesScreen)
-
-            visible: Config.UiState.filesOpen && isMine && !root.tiled
-                     && !Config.UiState.locked
-            color: "transparent"
-            exclusiveZone: 0
-
-            anchors.top: true
-            anchors.bottom: true
-            anchors.left: true
-            anchors.right: true
-
-            WlrLayershell.namespace: "quickshell:panel"
-            WlrLayershell.layer: WlrLayer.Top
-            // Real keyboard focus: renaming and the new-folder field are
-            // typed into, and so is type-ahead.
-            WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand
-                                                 : WlrKeyboardFocus.None
-
-            // Only the window itself takes clicks; the rest of the screen is
-            // left alone so the desktop underneath still works.
-            mask: Region { item: frame }
-
-            // The host contract FilesFrame reads.
-            readonly property bool tiled: false
-            readonly property bool maximised: Config.UiState.filesMaximized
-            readonly property real normalWidth: Math.min(width - 80, 1040)
-            readonly property real normalHeight: Math.min(height - 120, 660)
-            readonly property real workTop: Config.Appearance.barHeight + 8
-            readonly property real workBottom: height - 8
-            function moveTo(x, y) {
-                Config.UiState.filesX = x;
-                Config.UiState.filesY = y;
-            }
-
-            FilesFrame {
-                id: frame
-                host: win
-                app: root
-            }
-        }
-    }
-
-    FloatingWindow {
-        id: toplevel
-
-        visible: Config.UiState.filesOpen && !Config.UiState.locked && root.tiled
-        title: "Files"
-        color: Config.Appearance.sheet
-
-        implicitWidth: 1040
-        implicitHeight: 660
-
-        readonly property bool tiled: true
-        readonly property bool maximised: false
-        readonly property real normalWidth: width
-        readonly property real normalHeight: height
-        readonly property real workTop: 0
-        readonly property real workBottom: height
-        function moveTo(x, y) {}
-
-        FilesFrame {
-            host: toplevel
-            app: root
-        }
-    }
 }

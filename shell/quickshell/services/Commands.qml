@@ -54,9 +54,12 @@ Singleton {
         "togglePower":         () => Config.UiState.togglePower(),
         "closePanels":         () => Config.UiState.closeAll(),
         "openSettings":        arg => Config.UiState.openSettings(arg || "Appearance"),
-        // No argument opens wherever it was last, which for a fresh shell
-        // is home — see Files.qml.
-        "openFiles":           arg => Config.UiState.openFiles(arg || ""),
+        // The file manager is its own application now, not a surface of the
+        // shell: an ordinary toplevel the compositor tiles and focuses like
+        // anything else, and a real drag source, which a layer-shell
+        // surface is not. An argument is a directory to open.
+        "openFiles":           arg => Quickshell.execDetached(
+                                   arg ? ["hyprshell-files", arg] : ["hyprshell-files"]),
 
         // Appearance
         "toggleTheme":         () => Config.Appearance.toggleTheme(),

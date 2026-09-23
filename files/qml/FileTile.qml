@@ -1,8 +1,5 @@
 import QtQuick
-import "../../config" as Config
-import "../../services" as Services
-import "../common"
-import "../icons"
+import Hyprshell
 
 // One file in the grid: a rounded icon plate with the name under it.
 // Selected is a quiet fill with an accent rule beneath, the same mark the
@@ -13,7 +10,7 @@ Item {
     required property var entry
     required property var app
 
-    readonly property var svc: Services.Files
+    readonly property var svc: FilesService
     // Whether this tile is anywhere near the visible part of the view. A
     // folder of screenshots would otherwise decode every image in it the
     // moment you opened the folder — hundreds of full-resolution PNGs, for
@@ -23,7 +20,7 @@ Item {
     readonly property bool renaming: tile.app.renaming === tile.entry.name
     // Not `scale`: that is Item's own transform, and setting it would
     // literally shrink the tile rather than size its contents.
-    readonly property real zoom: Config.Appearance.filesIconSize / 100
+    readonly property real zoom: FilesService.iconSize / 100
 
     implicitHeight: Math.round(118 * zoom)
     height: implicitHeight
@@ -32,9 +29,9 @@ Item {
         id: fill
         anchors.fill: parent
         anchors.margins: 4
-        radius: Config.Appearance.rSm
-        color: tile.selected ? Config.Appearance.sel
-             : (area.containsMouse ? Config.Appearance.hover : "transparent")
+        radius: Appearance.rSm
+        color: tile.selected ? Appearance.sel
+             : (area.containsMouse ? Appearance.hover : "transparent")
 
         Rectangle {
             visible: tile.selected
@@ -45,7 +42,7 @@ Item {
             anchors.rightMargin: 4
             height: 2
             radius: 1
-            color: Config.Appearance.accent
+            color: Appearance.accent
         }
     }
 
@@ -57,8 +54,8 @@ Item {
         anchors.topMargin: Math.round(14 * tile.zoom)
         width: Math.round(58 * tile.zoom)
         height: Math.round(52 * tile.zoom)
-        radius: Config.Appearance.rSm
-        color: Config.Appearance.surface
+        radius: Appearance.rSm
+        color: Appearance.surface
         clip: true
 
         MonoIcon {
@@ -66,8 +63,8 @@ Item {
             visible: !preview.visible
             name: tile.svc.iconFor(tile.entry)
             size: Math.round(24 * tile.zoom)
-            inkColor: Config.Appearance.ink2
-            accentColor: Config.Appearance.accent
+            inkColor: Appearance.ink2
+            accentColor: Appearance.accent
         }
 
         // Only images, only while on screen, and only at the size actually
@@ -107,9 +104,9 @@ Item {
         elide: Text.ElideMiddle
         maximumLineCount: 2
         wrapMode: Text.Wrap
-        font.pixelSize: Config.Appearance.fs(12)
+        font.pixelSize: Appearance.fs(12)
         font.weight: tile.selected ? Font.DemiBold : Font.Medium
-        color: tile.entry.broken ? Config.Appearance.ink3 : Config.Appearance.ink
+        color: tile.entry.broken ? Appearance.ink3 : Appearance.ink
     }
 
     NameField {
@@ -148,10 +145,10 @@ Item {
     Rectangle {
         visible: tile.dropTarget
         anchors.fill: fill
-        radius: Config.Appearance.rSm
+        radius: Appearance.rSm
         color: "transparent"
         border.width: 2
-        border.color: Config.Appearance.accent
+        border.color: Appearance.accent
     }
 
     MouseArea {

@@ -56,7 +56,6 @@ Scope {
         "Dock":          { icon: "dock",      group: "Shell",  note: "The dock: position, size, labels and auto-hide." },
         "Notifications": { icon: "bell",      group: "Shell",  note: "Banner behaviour, badge counts and how the center stacks items." },
         "Launcher":      { icon: "search",    group: "Shell",  note: "Size of the start menu, its grid, and its text." },
-        "Files":         { icon: "folder",    group: "Shell",  note: "The file manager: its window, how it lists things, and what it shows." },
         "Fonts":         { icon: "file",      group: "Shell",  note: "Every typeface the shell uses, and one scale over all of them." },
         "Keybinds":      { icon: "keyboard",  group: "Shell",  note: "Hyprland bindings this shell listens for." }
     })
@@ -67,7 +66,7 @@ Scope {
         { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
                                    "Network", "Bluetooth", "Sound", "Power",
                                    "Hyprland", "About"] },
-        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Launcher", "Files",
+        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Launcher",
                                    "Notifications", "Fonts", "Keybinds"] }
     ]
 
@@ -347,54 +346,6 @@ Scope {
               value: Config.Apps.pinned.length + " pinned" },
             { n: "Reset pinned apps", s: "Back to the set this shell ships with",
               type: "action", label: "Reset", set: () => Config.Apps.resetPinned() }
-        ];
-
-        case "Files": return [
-            { type: "header", n: "Window",
-              s: "The same choice Settings has: the design's own floating "
-                 + "window, or an ordinary one Hyprland lays out." },
-            { n: "Window mode", s: "Floating sits above the desktop and is "
-                 + "moved by its title bar. Tiled takes a slot in the layout "
-                 + "and obeys your window rules.",
-              type: "seg",
-              options: [{ label: "Floating", value: "floating" },
-                        { label: "Tiled",    value: "tiled" }],
-              value: A.filesTiled ? "tiled" : "floating",
-              set: v => A.filesTiled = (v === "tiled") },
-
-            { type: "header", n: "View", s: "" },
-            { n: "Layout", s: "Which of the two view buttons it opens on",
-              type: "seg",
-              options: [{ label: "Grid", value: "grid" },
-                        { label: "List", value: "list" }],
-              value: A.filesView, set: v => A.filesView = v },
-            { n: "Tile size", s: "The grid's tiles and the icons in them",
-              type: "slider", min: 70, max: 180, unit: "%",
-              value: A.filesIconSize, set: v => A.filesIconSize = v },
-            { n: "Sort by", s: "Folders always come first, whichever this is",
-              type: "seg",
-              options: [{ label: "Name",     value: "name" },
-                        { label: "Size",     value: "size" },
-                        { label: "Modified", value: "modified" }],
-              value: A.filesSortBy, set: v => A.filesSortBy = v },
-            { n: "Reverse order", s: "Z to A, largest first, newest first",
-              type: "toggle", value: A.filesSortReverse,
-              set: v => A.filesSortReverse = v },
-            { n: "Show hidden files", s: "Dotfiles. Ctrl+H toggles it in the "
-                 + "window too.",
-              type: "toggle", value: A.filesShowHidden,
-              set: v => A.filesShowHidden = v },
-
-            { type: "header", n: "Sidebar", s: "" },
-            { n: "Bookmarks", s: "Folders pinned into the sidebar. Add the "
-                 + "one you are in with the star beside the path.",
-              type: "info",
-              value: Services.Files.bookmarks.length === 0 ? "none"
-                     : Services.Files.bookmarks.length
-                       + (Services.Files.bookmarks.length === 1 ? " folder" : " folders") },
-            { n: "Clear bookmarks", s: "Empties the sidebar's bookmark section",
-              type: "action", label: "Clear",
-              set: () => A.filesBookmarks = "" }
         ];
 
         case "Launcher": return [

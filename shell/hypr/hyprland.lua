@@ -304,10 +304,10 @@ local mainMod = "SUPER"
 
 -- Apps
 hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(terminal))
--- The shell's own file manager, not an external one: it is the design's
--- window and it is already running inside the shell. `fileManager` above is
--- still what a "open this folder" action outside the shell would use.
-hl.bind(mainMod .. " + E",      hl.dsp.exec_cmd(shell("openFiles")))
+-- The file manager is its own application, so this launches it directly
+-- rather than going through the shell. `fileManager` at the top of this
+-- file is the second opinion, on SHIFT.
+hl.bind(mainMod .. " + E",      hl.dsp.exec_cmd("hyprshell-files"))
 hl.bind(mainMod .. " + SHIFT + E", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(browser))
 
@@ -454,9 +454,12 @@ hl.window_rule({
 -- are told apart by title. Giving Files a decent opening size matters
 -- because Hyprland only uses it in a floating layout; tiled, the layout
 -- decides and this is ignored.
+-- The file manager. Its own application now, so it carries its own app id
+-- rather than Quickshell's, and the size only applies in a floating layout
+-- — tiled, the layout decides and this is ignored.
 hl.window_rule({
     name  = "hyprshell-files",
-    match = { class = "^(org.quickshell)$", title = "^(Files)$" },
+    match = { class = "^(hyprshell-files)$" },
     size  = { 1100, 700 },
 })
 

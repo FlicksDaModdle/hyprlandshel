@@ -1,8 +1,5 @@
 import QtQuick
-import "../../config" as Config
-import "../../services" as Services
-import "../common"
-import "../icons"
+import Hyprshell
 
 // One row in the places sidebar: glyph, label, and how many things are in
 // it. Selected is a quiet fill with an accent rule under it, which is how
@@ -18,7 +15,7 @@ Item {
     // A place is also "current" for anything inside it, but only the
     // deepest one should light up, or Home would be lit the whole time.
     readonly property bool inside:
-        !current && row.place.path !== Services.Files.home
+        !current && row.place.path !== FilesService.home
         && row.app.cwd.indexOf(row.place.path + "/") === 0
 
     implicitHeight: 38
@@ -29,9 +26,9 @@ Item {
         anchors.fill: parent
         anchors.leftMargin: 12
         anchors.rightMargin: 12
-        radius: Config.Appearance.rSm
-        color: row.current ? Config.Appearance.sel
-             : (area.containsMouse ? Config.Appearance.hover : "transparent")
+        radius: Appearance.rSm
+        color: row.current ? Appearance.sel
+             : (area.containsMouse ? Appearance.hover : "transparent")
 
         Rectangle {
             visible: row.current
@@ -42,7 +39,7 @@ Item {
             anchors.rightMargin: 2
             height: 2
             radius: 1
-            color: Config.Appearance.accent
+            color: Appearance.accent
         }
     }
 
@@ -53,8 +50,8 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         name: row.place.icon
         size: 17
-        inkColor: row.current || row.inside ? Config.Appearance.ink : Config.Appearance.ink2
-        accentColor: Config.Appearance.accent
+        inkColor: row.current || row.inside ? Appearance.ink : Appearance.ink2
+        accentColor: Appearance.accent
     }
 
     StyledText {
@@ -65,9 +62,9 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         text: row.place.label
         elide: Text.ElideRight
-        font.pixelSize: Config.Appearance.fs(13)
+        font.pixelSize: Appearance.fs(13)
         font.weight: row.current ? Font.DemiBold : Font.Medium
-        color: row.current ? Config.Appearance.ink : Config.Appearance.ink2
+        color: row.current ? Appearance.ink : Appearance.ink2
     }
 
     StyledText {
@@ -78,8 +75,8 @@ Item {
         // Undefined until the count comes back, and an empty place shows
         // nothing rather than a nought.
         text: (row.count === undefined || row.count === 0) ? "" : String(row.count)
-        font.pixelSize: Config.Appearance.fs(12)
-        color: Config.Appearance.ink3
+        font.pixelSize: Appearance.fs(12)
+        color: Appearance.ink3
     }
 
     MouseArea {

@@ -1,0 +1,57 @@
+import QtQuick
+import Hyprshell
+import QtQuick.Window
+import Hyprshell.Backend
+
+// The application window.
+//
+// An ordinary Qt toplevel, which is the point of being a separate program:
+// the compositor tiles it, focuses it and applies window rules like any
+// other application, and a drag out of it goes through the normal Wayland
+// data-device rather than a layer-shell surface, which is not a drag source.
+//
+// The decoration is the designed title bar rather than the compositor's —
+// main.cpp asks Qt not to draw one of its own — so moving and maximising go
+// through startSystemMove() and the window's visibility.
+Window {
+    id: win
+
+    width: 1100
+    height: 700
+    minimumWidth: 640
+    minimumHeight: 420
+    visible: true
+    title: files.cwd === "" ? "Files"
+                            : "Files — " + FilesService.pretty(files.cwd)
+    color: "transparent"
+
+    // The host contract FilesFrame reads. In an application the window
+    // manager owns the geometry, so this is the tiled case throughout and
+    // the frame simply fills what it is given.
+    readonly property bool tiled: true
+    readonly property bool maximised: win.visibility === Window.Maximized
+    readonly property real normalWidth: win.width
+    readonly property real normalHeight: win.height
+    readonly property real workTop: 0
+    readonly property real workBottom: win.height
+    function moveTo(x, y) { win.startSystemMove(); }
+    function toggleMaximised() {
+        win.visibility = win.maximised ? Window.Windowed : Window.Maximized;
+    }
+    function minimise() { win.visibility = Window.Minimized; }
+    function close() { Qt.quit(); }
+
+    Files {
+        id: files
+        // `startPath` is set from the command line, so opening a folder from
+        // another application lands in that folder.
+        Component.onCompleted: files.go(startPath && startPath !== ""
+                                        ? startPath : FilesService.home)
+    }
+
+    FilesFrame {
+        anchors.fill: parent
+        host: win
+        app: files
+    }
+}

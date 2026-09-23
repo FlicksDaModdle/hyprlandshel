@@ -1,5 +1,5 @@
 import QtQuick
-import "../../config" as Config
+import Hyprshell
 
 // The field you type a name into — renaming a file, or naming a new folder.
 //
@@ -20,10 +20,10 @@ Rectangle {
 
     implicitHeight: 26
     height: implicitHeight
-    radius: Config.Appearance.rSm
-    color: Config.Appearance.ground
+    radius: Appearance.rSm
+    color: Appearance.ground
     border.width: 1
-    border.color: Config.Appearance.accent
+    border.color: Appearance.accent
 
     onActiveChanged: if (active) begin()
 
@@ -46,11 +46,11 @@ Rectangle {
         anchors.rightMargin: 7
         verticalAlignment: TextInput.AlignVCenter
         horizontalAlignment: field.centred ? TextInput.AlignHCenter : TextInput.AlignLeft
-        font.family: Config.Appearance.fontFamily
-        font.pixelSize: Config.Appearance.fs(12)
-        color: Config.Appearance.ink
-        selectionColor: Config.Appearance.accent
-        selectedTextColor: Config.Appearance.onAccent
+        font.family: Appearance.fontFamily
+        font.pixelSize: Appearance.fs(12)
+        color: Appearance.ink
+        selectionColor: Appearance.accent
+        selectedTextColor: Appearance.onAccent
         clip: true
 
         onAccepted: field.committed(text.trim())
