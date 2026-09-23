@@ -159,25 +159,27 @@ Item {
         drag.target: dragProxy
         onPressed: mouse => {
             if (mouse.button !== Qt.LeftButton) return;
-            if (!row.app.isSelected(row.entry.name))
+
+            // Only claim the item when no modifier is held. Selecting it
+            // here unconditionally is what broke shift-clicking: the press
+            // collapsed the selection to this one row and moved the anchor
+            // onto it, so by the time the click arrived with Shift the
+            // range it extended was from here to here. Ctrl was the same
+            // story. With a modifier down, the press does nothing and the
+            // click below decides.
+            const plain = (mouse.modifiers
+                           & (Qt.ShiftModifier | Qt.ControlModifier)) === 0;
+            if (plain && !row.app.isSelected(row.entry.name))
                 row.app.select(row.entry.name, false);
+
             dragProxy.x = mouse.x;
             dragProxy.y = mouse.y;
             dragProxy.Drag.mimeData = { "text/uri-list": row.app.selectedUris() };
 
-            // What the cursor carries. Without an imageSource a drag has no
-            // picture at all — the file moves, but you are dragging nothing
-            // you can see. Grabbed on press rather than kept around,
-            // because a live grab per tile would cost one render target per
-            // file in the folder.
-            //
-            // The grab is asynchronous and the drag does not begin until
-            // the pointer has moved its threshold, which is the slack this
-            // relies on; if the image is late the drag still works, it is
-            // just briefly invisible.
-            row.grabToImage(function (result) {
-                dragProxy.Drag.imageSource = result.url;
-            });
+            // The picture is DragBadge's, not this delegate's. Grabbing the
+            // delegate gave a neat square in the grid and a full-width
+            // strip in the list, so the same gesture looked like two
+            // different things.
         }
         onReleased: dragProxy.Drag.drop()
 
@@ -198,6 +200,7 @@ Item {
         id: dragProxy
         Drag.active: area.drag.active
         Drag.dragType: Drag.Automatic
+        Drag.imageSource: row.app.dragImage
         Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
     }
 }

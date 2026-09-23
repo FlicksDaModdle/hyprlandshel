@@ -78,8 +78,10 @@ thing you picked, or drag across the empty space to sweep up whatever the
 band touches. `Ctrl+A` selects everything, and the right-click menu will
 invert it.
 
-Dragging carries a picture of what you are dragging, so it is not an
-invisible file moving between windows.
+Dragging carries a picture of what you are dragging: a small chip with the
+file's glyph, its name, and `+n` when there is more than one. The same chip
+in both views — grabbing the delegate itself gave a neat square in the grid
+and a full-width strip in the list, so one gesture looked like two.
 
 ## Keys
 

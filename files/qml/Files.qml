@@ -204,6 +204,9 @@ QtObject {
     // lives.
     property var menuLayer: null
     property var menu: null
+    // The picture a drag carries, produced by DragBadge and bound by the
+    // delegates. Empty until the first selection.
+    property url dragImage: ""
 
     function openMenu(x, y, entry) {
         if (root.menu) root.menu.openAt(x, y, entry);

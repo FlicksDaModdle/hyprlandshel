@@ -979,6 +979,14 @@ PanelSurface {
         frame.app.selection = out;
     }
 
+    // What a drag looks like. Off-screen, grabbed when the selection
+    // changes; see DragBadge.
+    DragBadge {
+        id: dragBadge
+        app: frame.app
+        onImageChanged: frame.app.dragImage = dragBadge.image
+    }
+
     // ── properties ────────────────────────────────────────────────────────
     Properties {
         id: properties
