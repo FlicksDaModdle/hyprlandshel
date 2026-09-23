@@ -38,12 +38,34 @@ PanelSurface {
         if (ctrl && event.key === Qt.Key_V) { frame.app.pasteHere(); event.accepted = true; return; }
         if (ctrl && event.key === Qt.Key_H) { FilesService.showHidden = !FilesService.showHidden; event.accepted = true; return; }
         if (ctrl && event.key === Qt.Key_L) { crumbEdit.begin(); event.accepted = true; return; }
+        if (ctrl && event.key === Qt.Key_F) { searchField.begin(); event.accepted = true; return; }
+        if (ctrl && event.key === Qt.Key_I) { frame.app.showProperties(); event.accepted = true; return; }
+        if (ctrl && event.key === Qt.Key_D) { frame.app.duplicateSelected(); event.accepted = true; return; }
+        if (ctrl && event.key === Qt.Key_N) { frame.app.creatingFolder = true; event.accepted = true; return; }
+        if (ctrl && event.key === Qt.Key_B) { frame.svc.toggleBookmark(frame.app.cwd); event.accepted = true; return; }
+        if (ctrl && (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal)) {
+            frame.app.zoom(10); event.accepted = true; return;
+        }
+        if (ctrl && event.key === Qt.Key_Minus) { frame.app.zoom(-10); event.accepted = true; return; }
+        if (ctrl && event.key === Qt.Key_0) { frame.svc.iconSize = 100; event.accepted = true; return; }
 
         switch (event.key) {
         case Qt.Key_Escape:
-            if (frame.app.confirmingEmpty) frame.app.confirmingEmpty = false;
-            else if (frame.app.selection.length) frame.app.clearSelection();
-            else frame.host.close();
+            // Unwinds, in the order things were put up: a confirmation, the
+            // properties sheet, the filter, the selection, then the window.
+            if (frame.app.confirmingEmpty || frame.app.confirmingDelete) {
+                frame.app.confirmingEmpty = false;
+                frame.app.confirmingDelete = false;
+            } else if (frame.app.propertiesFor) {
+                frame.app.propertiesFor = null;
+            } else if (frame.app.filtering || frame.app.filter !== "") {
+                frame.app.filter = "";
+                frame.app.filtering = false;
+            } else if (frame.app.selection.length) {
+                frame.app.selectNone();
+            } else {
+                frame.host.close();
+            }
             event.accepted = true;
             break;
         case Qt.Key_Backspace:  frame.app.up(); event.accepted = true; break;
@@ -54,10 +76,34 @@ PanelSurface {
             event.accepted = true;
             break;
         case Qt.Key_Delete:
-            if (frame.app.inTrash) frame.app.confirmingEmpty = true;
+            // Shift is the everywhere-convention for "and do not keep it".
+            if (event.modifiers & Qt.ShiftModifier) frame.app.confirmingDelete = true;
+            else if (frame.app.inTrash) frame.app.confirmingEmpty = true;
             else frame.app.trashSelected();
             event.accepted = true;
             break;
+        case Qt.Key_F5:
+            frame.app.reload();
+            event.accepted = true;
+            break;
+        case Qt.Key_Home:
+        case Qt.Key_End: {
+            const list = frame.app.visibleEntries;
+            if (list.length) {
+                const pick = event.key === Qt.Key_Home ? list[0] : list[list.length - 1];
+                if (event.modifiers & Qt.ShiftModifier) frame.app.selectTo(pick.name, false);
+                else frame.app.select(pick.name, false);
+            }
+            event.accepted = true;
+            break;
+        }
+        case Qt.Key_PageUp:
+        case Qt.Key_PageDown: {
+            const per = frame.app.view === "grid" ? grid.columns * 3 : 12;
+            frame.app.moveSelection(event.key === Qt.Key_PageUp ? -per : per);
+            event.accepted = true;
+            break;
+        }
         case Qt.Key_F2:
             if (frame.app.selection.length === 1) frame.app.renaming = frame.app.selection[0];
             event.accepted = true;
@@ -71,6 +117,16 @@ PanelSurface {
         case Qt.Key_Down:
             frame.app.moveSelection(frame.app.view === "grid" ? grid.columns : 1);
             event.accepted = true;
+            break;
+        default:
+            // Anything printable jumps to the next name starting with it,
+            // which is how a file list has always behaved. Modifiers are
+            // excluded so a missed shortcut does not move the selection.
+            if (!ctrl && !(event.modifiers & Qt.AltModifier)
+                && event.text.length === 1 && event.text >= " ") {
+                frame.app.jumpTo(event.text);
+                event.accepted = true;
+            }
             break;
         }
     }
@@ -201,7 +257,11 @@ PanelSurface {
         anchors.left: parent.left
         anchors.top: titleBar.bottom
         anchors.bottom: statusBar.top
-        width: 232
+        width: frame.app.showSidebar ? 232 : 0
+        visible: width > 0
+        clip: true
+
+        Behavior on width { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
 
         Flickable {
             anchors.fill: parent
@@ -283,10 +343,38 @@ PanelSurface {
         anchors.top: titleBar.bottom
         height: 68
 
+        // Putting the sidebar away, for a narrow window.
+        Rectangle {
+            id: sidebarToggle
+            anchors.left: parent.left
+            anchors.leftMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            width: 30
+            height: 30
+            radius: Appearance.rSm
+            color: sidebarArea.containsMouse ? Appearance.hover : "transparent"
+
+            MonoIcon {
+                anchors.centerIn: parent
+                name: "panelsTopLeft"
+                size: 16
+                inkColor: frame.app.showSidebar ? Appearance.ink2 : Appearance.ink3
+                monochrome: true
+            }
+
+            MouseArea {
+                id: sidebarArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: frame.app.showSidebar = !frame.app.showSidebar
+            }
+        }
+
         Row {
             id: navRow
-            anchors.left: parent.left
-            anchors.leftMargin: 16
+            anchors.left: sidebarToggle.right
+            anchors.leftMargin: 4
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
 
@@ -333,7 +421,7 @@ PanelSurface {
             id: crumbPill
             anchors.left: navRow.right
             anchors.leftMargin: 10
-            anchors.right: pinButton.left
+            anchors.right: searchPill.left
             anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
             height: 40
@@ -492,6 +580,92 @@ PanelSurface {
             }
         }
 
+        // Narrowing the folder you are in. Not a search of the disk: the
+        // list simply shrinks as you type, which is what both Nautilus and
+        // Explorer do with the same gesture.
+        Rectangle {
+            id: searchPill
+            anchors.right: pinButton.left
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: searchField.active || frame.app.filter !== "" ? 180 : 34
+            height: 34
+            radius: Appearance.rSm
+            color: searchField.active || frame.app.filter !== ""
+                   ? Appearance.surface
+                   : (searchIconArea.containsMouse ? Appearance.hover : "transparent")
+
+            Behavior on width { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+
+            MonoIcon {
+                id: searchGlyph
+                anchors.left: parent.left
+                anchors.leftMargin: searchPill.width > 40 ? 10 : 9
+                anchors.verticalCenter: parent.verticalCenter
+                name: "search"
+                size: 16
+                inkColor: frame.app.filter !== "" ? Appearance.accent : Appearance.ink3
+                monochrome: true
+            }
+
+            TextInput {
+                id: searchField
+                property bool active: false
+                function begin() {
+                    active = true;
+                    frame.app.filtering = true;
+                    forceActiveFocus();
+                    selectAll();
+                }
+                function finish() {
+                    active = false;
+                    frame.app.filtering = false;
+                    frame.forceActiveFocus();
+                }
+
+                visible: searchPill.width > 40
+                anchors.left: searchGlyph.right
+                anchors.leftMargin: 7
+                anchors.right: parent.right
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                font.family: Appearance.fontFamily
+                font.pixelSize: Appearance.fs(12)
+                color: Appearance.ink
+                selectionColor: Appearance.accent
+                selectedTextColor: Appearance.onAccent
+                clip: true
+                text: frame.app.filter
+                onTextChanged: frame.app.filter = text
+                Keys.onEscapePressed: { text = ""; finish(); }
+                onAccepted: {
+                    // Enter on a filtered list opens the only match, which
+                    // is the point of having narrowed it.
+                    const list = frame.app.visibleEntries;
+                    if (list.length === 1) { finish(); frame.app.activate(list[0]); }
+                    else frame.forceActiveFocus();
+                }
+
+                StyledText {
+                    anchors.fill: parent
+                    visible: searchField.text === ""
+                    verticalAlignment: Text.AlignVCenter
+                    text: "Filter"
+                    font.pixelSize: Appearance.fs(12)
+                    color: Appearance.ink3
+                }
+            }
+
+            MouseArea {
+                id: searchIconArea
+                anchors.fill: parent
+                hoverEnabled: true
+                enabled: !searchField.active && frame.app.filter === ""
+                cursorShape: Qt.PointingHandCursor
+                onClicked: searchField.begin()
+            }
+        }
+
         // Pin this folder into the sidebar. A star rather than a menu item,
         // because it is a toggle and it should show its state.
         Rectangle {
@@ -624,21 +798,65 @@ PanelSurface {
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.top: toolbar.bottom
-        anchors.bottom: statusBar.top
+        anchors.bottom: deleteBar.top
 
         // Clicking the empty space drops the selection, the way every file
-        // manager does; right-clicking it is the folder's own menu.
+        // manager does; right-clicking it is the folder's own menu; and
+        // dragging across it sweeps up whatever it touches.
         MouseArea {
+            id: bandArea
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton | Qt.RightButton
+            hoverEnabled: false
+
+            property real originX: 0
+            property real originY: 0
+            property bool banding: false
+            // Whether the sweep adds to what was already picked.
+            property bool additive: false
+
+            onPressed: mouse => {
+                if (mouse.button !== Qt.LeftButton) return;
+                originX = mouse.x;
+                originY = mouse.y;
+                additive = (mouse.modifiers & Qt.ControlModifier) !== 0;
+                banding = false;
+            }
+
+            onPositionChanged: mouse => {
+                if (!pressed) return;
+                if (!banding
+                    && Math.abs(mouse.x - originX) + Math.abs(mouse.y - originY) < 6) return;
+                banding = true;
+                band.x = Math.min(originX, mouse.x);
+                band.y = Math.min(originY, mouse.y);
+                band.width = Math.abs(mouse.x - originX);
+                band.height = Math.abs(mouse.y - originY);
+                frame.sweep(band, bandArea.additive);
+            }
+
+            onReleased: banding = false
+
             onClicked: mouse => {
+                if (banding) return;
                 if (mouse.button === Qt.RightButton) {
                     const p = mapToItem(menuLayer, mouse.x, mouse.y);
                     frame.app.openMenu(p.x, p.y, null);
                 } else {
-                    frame.app.clearSelection();
+                    frame.app.selectNone();
                 }
             }
+        }
+
+        Rectangle {
+            id: band
+            visible: bandArea.banding
+            z: 50
+            color: Qt.rgba(Appearance.accent.r, Appearance.accent.g,
+                           Appearance.accent.b, 0.14)
+            border.width: 1
+            border.color: Appearance.accent
+            radius: 2
         }
 
         // Anything dropped on the folder's own space lands in the folder.
@@ -667,7 +885,7 @@ PanelSurface {
                 // The waiting-to-be-named folder sits first, as a tile you
                 // type into, so a new folder never appears unnamed.
                 NewNameTile {
-                    visible: frame.app.creatingFolder
+                    visible: frame.app.creatingSomething
                     width: grid.tileWidth
                     app: frame.app
                     gridView: true
@@ -696,8 +914,18 @@ PanelSurface {
                 width: parent.width
                 spacing: 0
 
+                ListHeader {
+                    id: listHeader
+                    width: list.width
+                    app: frame.app
+                    // The trash shows where things came from instead of the
+                    // three columns, so its headings would be lying.
+                    visible: !frame.app.inTrash
+                    height: visible ? implicitHeight : 0
+                }
+
                 NewNameTile {
-                    visible: frame.app.creatingFolder
+                    visible: frame.app.creatingSomething
                     width: list.width
                     app: frame.app
                     gridView: false
@@ -711,6 +939,9 @@ PanelSurface {
                         width: list.width
                         entry: modelData
                         app: frame.app
+                        sizeWidth: listHeader.sizeWidth
+                        typeWidth: listHeader.typeWidth
+                        timeWidth: listHeader.timeWidth
                     }
                 }
             }
@@ -720,13 +951,40 @@ PanelSurface {
         StyledText {
             anchors.centerIn: parent
             visible: !frame.app.loading && frame.app.visibleEntries.length === 0
-                     && !frame.app.creatingFolder
+                     && !frame.app.creatingSomething
             text: frame.app.inTrash ? "The trash is empty"
                 : (frame.app.entries.length > 0 ? "Nothing here but hidden files"
                                                 : "This folder is empty")
             font.pixelSize: Appearance.fs(13)
             color: Appearance.ink3
         }
+    }
+
+    // Which entries a rubber band is over. The delegates are asked where
+    // they are rather than the geometry being recomputed here, so this
+    // stays correct whatever the view is doing with its layout.
+    function sweep(rect, additive) {
+        const container = frame.app.view === "grid" ? grid : list;
+        const picked = [];
+        for (const child of container.children) {
+            if (child.entry === undefined || !child.entry) continue;
+            const top = child.mapToItem(body, 0, 0);
+            if (top.x < rect.x + rect.width && top.x + child.width > rect.x
+                && top.y < rect.y + rect.height && top.y + child.height > rect.y)
+                picked.push(child.entry.name);
+        }
+        if (!additive) { frame.app.selection = picked; return; }
+        const out = frame.app.selection.slice();
+        for (const n of picked) if (out.indexOf(n) < 0) out.push(n);
+        frame.app.selection = out;
+    }
+
+    // ── properties ────────────────────────────────────────────────────────
+    Properties {
+        id: properties
+        app: frame.app
+        x: Math.round((frame.width - width) / 2)
+        y: Math.round((frame.height - height) / 2)
     }
 
     // ── the right-click menu ──────────────────────────────────────────────
@@ -753,6 +1011,78 @@ PanelSurface {
     Component.onCompleted: {
         frame.app.menuLayer = menuLayer;
         frame.app.menu = fileMenu;
+    }
+
+    // Deleting outright is the only thing in here that cannot be undone, so
+    // it is asked for in the window rather than done on the keystroke.
+    Rectangle {
+        id: deleteBar
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.bottom: statusBar.top
+        height: frame.app.confirmingDelete ? 48 : 0
+        visible: height > 0
+        clip: true
+        color: Appearance.accent
+
+        Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+        StyledText {
+            anchors.left: parent.left
+            anchors.leftMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            text: {
+                const n = frame.app.selection.length;
+                return "Delete " + (n === 1 ? "“" + frame.app.selection[0] + "”"
+                                            : n + " items")
+                       + " permanently? This cannot be undone.";
+            }
+            font.pixelSize: Appearance.fs(12)
+            font.weight: Font.DemiBold
+            color: Appearance.onAccent
+            elide: Text.ElideRight
+            width: parent.width - 220
+        }
+
+        Row {
+            anchors.right: parent.right
+            anchors.rightMargin: 14
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+
+            Repeater {
+                model: [
+                    { n: "Cancel", act: () => frame.app.confirmingDelete = false },
+                    { n: "Delete", act: () => frame.app.deleteSelected() }
+                ]
+
+                Rectangle {
+                    id: confirmBtn
+                    required property var modelData
+                    width: 84
+                    height: 30
+                    radius: Appearance.rSm
+                    color: confirmArea.containsMouse
+                           ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.16)
+
+                    StyledText {
+                        anchors.centerIn: parent
+                        text: confirmBtn.modelData.n
+                        font.pixelSize: Appearance.fs(12)
+                        font.weight: Font.DemiBold
+                        color: Appearance.onAccent
+                    }
+
+                    MouseArea {
+                        id: confirmArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: confirmBtn.modelData.act()
+                    }
+                }
+            }
+        }
     }
 
     // ── status bar ────────────────────────────────────────────────────────
@@ -782,11 +1112,18 @@ PanelSurface {
             text: {
                 if (frame.svc.lastError) return frame.svc.lastError;
                 const n = frame.app.visibleEntries.length;
-                const items = n + (n === 1 ? " item" : " items");
+                const filtered = frame.app.filter.trim() !== "";
+                const items = n + (n === 1 ? " item" : " items")
+                              + (filtered ? " matching “" + frame.app.filter.trim() + "”" : "");
                 const sel = frame.app.selection.length;
-                if (sel === 1) return items + " · " + frame.app.selection[0] + " selected";
-                if (sel > 1) return items + " · " + sel + " selected";
-                return items;
+                if (!sel) return items;
+                // The total is bytes of files; a directory's real size is a
+                // walk of the disk, and doing one per selection change
+                // would make picking things slow. Properties will count it.
+                const bytes = frame.app.selectedBytes;
+                const size = bytes > 0 ? " (" + frame.svc.humanSize(bytes) + ")" : "";
+                if (sel === 1) return items + " · " + frame.app.selection[0] + " selected" + size;
+                return items + " · " + sel + " selected" + size;
             }
         }
 

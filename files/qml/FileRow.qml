@@ -76,15 +76,33 @@ Item {
         onCancelled: row.app.renaming = ""
     }
 
+    // The column widths come from the header, so the two cannot drift into
+    // a heading that sits over the wrong column.
+    property real sizeWidth: 88
+    property real typeWidth: 124
+    property real timeWidth: 104
+
     StyledText {
         id: sizeLabel
-        anchors.right: timeLabel.left
-        anchors.rightMargin: 16
+        anchors.right: typeLabel.left
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: Text.AlignRight
-        width: row.app.inTrash ? 0 : 74
+        width: row.app.inTrash ? 0 : row.sizeWidth
         visible: !row.app.inTrash
         text: row.entry.dir ? "--" : row.svc.humanSize(row.entry.size)
+        font.pixelSize: Appearance.fs(12)
+        color: Appearance.ink3
+    }
+
+    StyledText {
+        id: typeLabel
+        anchors.right: timeLabel.left
+        anchors.verticalCenter: parent.verticalCenter
+        horizontalAlignment: Text.AlignRight
+        width: row.app.inTrash ? 0 : row.typeWidth
+        visible: !row.app.inTrash
+        elide: Text.ElideRight
+        text: row.svc.typeLabel(row.entry)
         font.pixelSize: Appearance.fs(12)
         color: Appearance.ink3
     }
@@ -95,8 +113,10 @@ Item {
         anchors.rightMargin: 14
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: Text.AlignRight
-        width: row.app.inTrash ? 280 : 92
+        width: row.app.inTrash ? 280 : row.timeWidth
         elide: Text.ElideLeft
+        // In the trash, where a thing came from is the only question worth
+        // asking about it, so that replaces the three columns.
         text: row.app.inTrash
               ? (row.svc.trashOrigins[row.entry.name]
                  ? row.svc.pretty(row.svc.parent(row.svc.trashOrigins[row.entry.name]))
@@ -144,6 +164,20 @@ Item {
             dragProxy.x = mouse.x;
             dragProxy.y = mouse.y;
             dragProxy.Drag.mimeData = { "text/uri-list": row.app.selectedUris() };
+
+            // What the cursor carries. Without an imageSource a drag has no
+            // picture at all — the file moves, but you are dragging nothing
+            // you can see. Grabbed on press rather than kept around,
+            // because a live grab per tile would cost one render target per
+            // file in the folder.
+            //
+            // The grab is asynchronous and the drag does not begin until
+            // the pointer has moved its threshold, which is the slack this
+            // relies on; if the image is late the drag still works, it is
+            // just briefly invisible.
+            row.grabToImage(function (result) {
+                dragProxy.Drag.imageSource = result.url;
+            });
         }
         onReleased: dragProxy.Drag.drop()
 
@@ -153,7 +187,7 @@ Item {
                 row.app.openMenu(p.x, p.y, row.entry);
                 return;
             }
-            row.app.select(row.entry.name, (mouse.modifiers & Qt.ControlModifier) !== 0);
+            row.app.clickSelect(row.entry.name, mouse.modifiers);
         }
         onDoubleClicked: mouse => {
             if (mouse.button === Qt.LeftButton) row.app.activate(row.entry);

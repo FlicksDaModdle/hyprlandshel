@@ -43,7 +43,7 @@ Item {
 
         MonoIcon {
             anchors.centerIn: parent
-            name: "folder"
+            name: pending.app.creatingFile ? "file" : "folder"
             size: Math.round(24 * FilesService.iconSize / 100)
             inkColor: Appearance.ink2
             accentColor: Appearance.accent
@@ -57,7 +57,7 @@ Item {
         anchors.left: parent.left
         anchors.leftMargin: 10
         anchors.verticalCenter: parent.verticalCenter
-        name: "folder"
+        name: pending.app.creatingFile ? "file" : "folder"
         size: 17
         inkColor: Appearance.ink2
         accentColor: Appearance.accent
@@ -72,10 +72,13 @@ Item {
         anchors.right: pending.gridView ? parent.right : undefined
         anchors.rightMargin: pending.gridView ? 6 : 0
         width: pending.gridView ? undefined : 260
-        start: "New folder"
-        active: pending.app.creatingFolder
+        start: pending.app.creatingFile ? "New file.txt" : "New folder"
+        active: pending.app.creatingSomething
         centred: pending.gridView
-        onCommitted: name => pending.app.createFolder(name)
-        onCancelled: pending.app.creatingFolder = false
+        onCommitted: name => pending.app.createNamed(name)
+        onCancelled: {
+            pending.app.creatingFolder = false;
+            pending.app.creatingFile = false;
+        }
     }
 }

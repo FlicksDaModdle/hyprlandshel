@@ -144,6 +144,7 @@ QtObject {
             let r = 0;
             if (by === "size") r = a.size - b.size;
             else if (by === "modified") r = a.mtime - b.mtime;
+            else if (by === "type") r = root.typeLabel(a).localeCompare(root.typeLabel(b));
             if (r === 0) r = a.name.localeCompare(b.name, undefined, { numeric: true });
             return r * dir;
         });
@@ -282,6 +283,47 @@ QtObject {
     function fileUrl(path) {
         const parts = String(path).split("/").map(encodeURIComponent);
         return "file://" + parts.join("/");
+    }
+
+    // What a file is, in words, for the list view's Type column and the
+    // properties panel. From the extension, like the glyph: asking the
+    // system for a MIME type per file is a process per file.
+    readonly property var extNames: ({
+        txt: "Text", md: "Markdown", rst: "Text", log: "Log",
+        qml: "QML", js: "JavaScript", ts: "TypeScript", py: "Python",
+        sh: "Shell script", bash: "Shell script", zsh: "Shell script",
+        fish: "Shell script", lua: "Lua", c: "C source", h: "C header",
+        cpp: "C++ source", rs: "Rust", go: "Go", java: "Java", rb: "Ruby",
+        php: "PHP", json: "JSON", yaml: "YAML", yml: "YAML", toml: "TOML",
+        xml: "XML", ini: "Configuration", conf: "Configuration",
+        css: "Stylesheet", html: "HTML", nix: "Nix",
+        png: "PNG image", jpg: "JPEG image", jpeg: "JPEG image",
+        gif: "GIF image", webp: "WebP image", svg: "SVG image",
+        bmp: "Bitmap image", ico: "Icon", avif: "AVIF image", tiff: "TIFF image",
+        mp3: "MP3 audio", flac: "FLAC audio", ogg: "Ogg audio", wav: "WAV audio",
+        m4a: "AAC audio", opus: "Opus audio", aac: "AAC audio",
+        mp4: "MP4 video", mkv: "Matroska video", webm: "WebM video",
+        mov: "QuickTime video", avi: "AVI video",
+        zip: "ZIP archive", tar: "Tar archive", gz: "Gzip archive",
+        xz: "XZ archive", zst: "Zstandard archive", bz2: "Bzip2 archive",
+        "7z": "7-Zip archive", rar: "RAR archive",
+        pkg: "Package", deb: "Debian package", rpm: "RPM package",
+        appimage: "AppImage", pdf: "PDF document", desktop: "Shortcut",
+        ttf: "Font", otf: "Font"
+    })
+
+    function typeLabel(entry) {
+        if (!entry) return "";
+        if (entry.dir) return "Folder";
+        if (entry.broken) return "Broken link";
+        const dot = entry.name.lastIndexOf(".");
+        if (dot > 0) {
+            const ext = entry.name.slice(dot + 1).toLowerCase();
+            if (root.extNames[ext]) return root.extNames[ext]
+                                          + (entry.link ? " (link)" : "");
+            return ext.toUpperCase() + " file";
+        }
+        return entry.link ? "Link" : "File";
     }
 
     // Images are shown as themselves. Anything else would need the
@@ -476,6 +518,52 @@ QtObject {
         action.running = true;
     }
 
+    // ── what a thing is ───────────────────────────────────────────────────
+    // Everything the properties panel shows that the listing does not
+    // already know: permissions, owner, link target, and for a folder the
+    // size of what is inside it.
+    //
+    // A folder's size is `du`, which is a walk of the whole tree, so it is
+    // only ever done for the one thing you asked about.
+    property var details: ({})
+    property bool inspecting: false
+
+    property Proc inspectProc: Proc {
+        onFinished: (code, out, err) => {
+            root.inspecting = false;
+            const f = out.split("\u0000");
+            if (f.length < 6) return;
+            root.details = {
+                path: f[0],
+                perms: f[1],
+                owner: f[2] + ":" + f[3],
+                bytes: parseInt(f[4], 10) || 0,
+                target: f[5].trim(),
+                items: parseInt(f[6], 10) || 0
+            };
+        }
+    }
+
+    function inspect(path, isDir) {
+        root.details = ({});
+        root.inspecting = true;
+        // NUL between the fields, because every one of them can contain
+        // whitespace and the last is a path.
+        inspectProc.command = ["sh", "-c",
+            'p="$1"; '
+            + 'printf "%s\\0" "$p" '
+            + '"$(stat -c %A -- "$p" 2>/dev/null)" '
+            + '"$(stat -c %U -- "$p" 2>/dev/null)" '
+            + '"$(stat -c %G -- "$p" 2>/dev/null)" '
+            + '"$(if [ -d "$p" ]; then du -sb -- "$p" 2>/dev/null | cut -f1; '
+            + '   else stat -c %s -- "$p" 2>/dev/null; fi)" '
+            + '"$(readlink -- "$p" 2>/dev/null)" '
+            + '"$(if [ -d "$p" ]; then find "$p" -mindepth 1 -printf . 2>/dev/null | wc -c; '
+            + '   else echo 0; fi)"',
+            "inspect", path];
+        inspectProc.running = true;
+    }
+
     // ── free space ────────────────────────────────────────────────────────
     property string freeSpace: ""
 
@@ -584,6 +672,37 @@ QtObject {
             'printf %s "$1" | wl-copy 2>/dev/null || printf %s "$1" | xclip -selection clipboard 2>/dev/null',
             "copy-path", paths.join("\n")];
         clipProc.running = true;
+    }
+
+    // Deleting outright. The one irreversible thing in here besides
+    // emptying the trash, and the window asks before calling it.
+    function deletePermanently(paths, dir) {
+        if (!paths || !paths.length) return;
+        run(["rm", "-rf", "--"].concat(paths), dir);
+    }
+
+    // A copy beside the original. cp's own --backup names the *existing*
+    // file, which is the wrong way round here, so the name is worked out
+    // first: "a report.pdf" becomes "a report (copy).pdf", then
+    // "a report (copy 2).pdf". The loop stops at 99 rather than spinning.
+    function duplicate(paths, dir) {
+        if (!paths || !paths.length) return;
+        run(["sh", "-c",
+            'for p in "$@"; do '
+            + '  b=${p##*/}; d=${p%/*}; '
+            + '  case "$b" in *.*) stem=${b%.*}; ext=.${b##*.};; *) stem=$b; ext=;; esac; '
+            + '  n=1; '
+            + '  while [ -e "$d/$stem (copy$( [ $n -gt 1 ] && echo " $n" ))$ext" ]; do '
+            + '    n=$((n+1)); [ $n -gt 99 ] && exit 1; done; '
+            + '  cp -a -- "$p" "$d/$stem (copy$( [ $n -gt 1 ] && echo " $n" ))$ext" || exit 1; '
+            + 'done',
+            "duplicate"].concat(paths), dir);
+    }
+
+    // An empty file, the way Explorer's New > Text Document works.
+    function newFile(path) {
+        run(["sh", "-c", '[ -e "$1" ] && exit 1; : > "$1"', "new-file", path],
+            root.parent(path));
     }
 
     function cut(paths) { root.clipboard = { paths: (paths || []).slice(), cut: true }; }

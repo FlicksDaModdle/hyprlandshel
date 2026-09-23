@@ -77,13 +77,21 @@ PanelSurface {
                        run: () => menu.svc.copyToClipboard(menu.app.selectedPaths()) });
             out.push({ n: "Copy path", icon: "code",
                        run: () => menu.svc.copyPathToClipboard(menu.app.selectedPaths()) });
+            out.push({ n: "Duplicate", icon: "plus",
+                       run: () => menu.app.duplicateSelected() });
             out.push({ n: "Rename…", icon: "sliders", rule: true,
                        run: () => { if (menu.count === 1) menu.app.renaming = t.name; } });
             out.push({ n: "Move to trash", icon: "trash",
                        run: () => menu.app.trashSelected() });
+            out.push({ n: "Delete permanently…", icon: "x",
+                       run: () => menu.app.confirmingDelete = true });
+            out.push({ n: "Properties", icon: "info", rule: true,
+                       run: () => menu.app.showProperties() });
         } else {
             out.push({ n: "New folder", icon: "plus",
                        run: () => menu.app.creatingFolder = true });
+            out.push({ n: "New file", icon: "file",
+                       run: () => menu.app.creatingFile = true });
             if (menu.svc.hasClipboard)
                 out.push({ n: "Paste", icon: "download",
                            run: () => menu.app.pasteHere() });
@@ -93,6 +101,10 @@ PanelSurface {
                           ? "Remove bookmark" : "Bookmark this folder",
                        icon: "star",
                        run: () => menu.svc.toggleBookmark(menu.app.cwd) });
+            out.push({ n: "Select all", icon: "check", rule: true,
+                       run: () => menu.app.selectAll() });
+            out.push({ n: "Invert selection", icon: "refresh",
+                       run: () => menu.app.invertSelection() });
             out.push({ n: FilesService.showHidden
                           ? "Hide hidden files" : "Show hidden files",
                        icon: "eye", rule: true,

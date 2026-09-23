@@ -168,6 +168,20 @@ Item {
             dragProxy.x = mouse.x;
             dragProxy.y = mouse.y;
             dragProxy.Drag.mimeData = { "text/uri-list": tile.app.selectedUris() };
+
+            // What the cursor carries. Without an imageSource a drag has no
+            // picture at all — the file moves, but you are dragging nothing
+            // you can see. Grabbed on press rather than kept around,
+            // because a live grab per tile would cost one render target per
+            // file in the folder.
+            //
+            // The grab is asynchronous and the drag does not begin until
+            // the pointer has moved its threshold, which is the slack this
+            // relies on; if the image is late the drag still works, it is
+            // just briefly invisible.
+            tile.grabToImage(function (result) {
+                dragProxy.Drag.imageSource = result.url;
+            });
         }
         onReleased: dragProxy.Drag.drop()
 
@@ -177,7 +191,7 @@ Item {
                 tile.app.openMenu(p.x, p.y, tile.entry);
                 return;
             }
-            tile.app.select(tile.entry.name, (mouse.modifiers & Qt.ControlModifier) !== 0);
+            tile.app.clickSelect(tile.entry.name, mouse.modifiers);
         }
         onDoubleClicked: mouse => {
             if (mouse.button === Qt.LeftButton) tile.app.activate(tile.entry);

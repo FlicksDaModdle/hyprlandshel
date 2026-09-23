@@ -71,13 +71,59 @@ this window without restarting it. The window
 remembers its view, sort order, hidden files, tile size, bookmarks and which
 terminal "Open in terminal" should use.
 
+## Selecting
+
+Click, `Ctrl`-click to add one, `Shift`-click for a range from the last
+thing you picked, or drag across the empty space to sweep up whatever the
+band touches. `Ctrl+A` selects everything, and the right-click menu will
+invert it.
+
+Dragging carries a picture of what you are dragging, so it is not an
+invisible file moving between windows.
+
 ## Keys
 
-`Ctrl+A` select all · `Ctrl+C`/`X`/`V` copy, cut, paste · `Ctrl+H` hidden
-files · `Ctrl+L` type a path · `F2` rename · `Delete` to trash · `Backspace`
-up · `Enter` open · `Escape` clear the selection, then close.
+| | |
+|---|---|
+| `Ctrl+A` | select all |
+| `Ctrl+C` / `X` / `V` | copy, cut, paste |
+| `Ctrl+D` | duplicate |
+| `Ctrl+N` | new folder |
+| `Ctrl+F` | filter this folder |
+| `Ctrl+L` | type a path |
+| `Ctrl+I` | properties |
+| `Ctrl+B` | bookmark this folder |
+| `Ctrl` `+` / `-` / `0` | tile size, and back to normal |
+| `Ctrl+H` | hidden files |
+| `F2` | rename |
+| `F5` | reload |
+| `Delete` | to the trash |
+| `Shift+Delete` | delete permanently, after asking |
+| `Backspace` | up a folder |
+| `Enter` | open |
+| `Home` / `End` | first, last — with `Shift` to extend |
+| `Page Up` / `Down` | a screenful |
+| any letter | jump to the next name starting with it |
+| `Escape` | unwinds: a confirmation, properties, the filter, the selection, the window |
 
-Right-click a file or the folder's empty space for the rest.
+Right-click a file or the folder's empty space for the rest: open with,
+copy path, duplicate, rename, trash, delete permanently, properties; and on
+the folder, new folder, new file, paste, open in terminal, bookmark, select
+all, invert, hidden files.
+
+## The list view
+
+Click a column heading to sort by it, click it again to reverse. Name, Size,
+Type and Modified. In the trash the columns are replaced by where each thing
+came from, because that is the only question worth asking about something
+you have deleted.
+
+## Properties
+
+`Ctrl+I`, or the menu. Type, size, location, modified, permissions, owner,
+and for a symlink what it points at. A folder's size is counted properly —
+`du` over everything inside it, not the size of the directory entry — which
+is why it says "counting…" for a moment on a large one.
 
 ## Seeing it without a display
 

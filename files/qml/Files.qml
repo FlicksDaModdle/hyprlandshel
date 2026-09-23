@@ -15,7 +15,7 @@ import Hyprshell.Backend
 QtObject {
     id: root
 
-        readonly property var svc: FilesService
+    readonly property var svc: FilesService
 
     // ── where we are ──────────────────────────────────────────────────────
     property string cwd: ""
@@ -45,11 +45,42 @@ QtObject {
     // to be typed. Empty means neither is happening.
     property string renaming: ""
     property bool creatingFolder: false
+    property bool creatingFile: false
     property bool confirmingEmpty: false
 
+    // Filtering the folder you are in, the way both Nautilus and Explorer
+    // do it: not a search of the disk, just this directory narrowed as you
+    // type. Empty means everything.
+    property string filter: ""
+    property bool filtering: false
+
+    // What the properties panel is showing, or null.
+    property var propertiesFor: null
+
+    // The sidebar can be put away, for a narrow window.
+    property bool showSidebar: true
+
     readonly property var visibleEntries: {
-        const all = root.showHidden ? root.entries : root.entries.filter(e => !e.hidden);
+        let all = root.showHidden ? root.entries : root.entries.filter(e => !e.hidden);
+        const q = root.filter.trim().toLowerCase();
+        if (q !== "") all = all.filter(e => e.name.toLowerCase().indexOf(q) >= 0);
         return root.svc.sortEntries(all, root.sortBy, root.sortReverse);
+    }
+
+    // Typing a letter with no field focused jumps to the next entry
+    // starting with it, which is how a file list has always behaved.
+    property string typeAhead: ""
+    property var typeAheadClear: Timer {
+        interval: 900
+        onTriggered: root.typeAhead = ""
+    }
+
+    function jumpTo(letters) {
+        root.typeAhead += letters.toLowerCase();
+        root.typeAheadClear.restart();
+        const list = root.visibleEntries;
+        const hit = list.find(e => e.name.toLowerCase().indexOf(root.typeAhead) === 0);
+        if (hit) { root.selection = [hit.name]; root.anchor = hit.name; }
     }
 
     readonly property bool inTrash: root.svc.isTrash(root.cwd)
@@ -65,6 +96,10 @@ QtObject {
         }
         root.cwd = path;
         root.selection = [];
+        root.anchor = "";
+        root.filter = "";
+        root.filtering = false;
+        root.propertiesFor = null;
         root.renaming = "";
         root.creatingFolder = false;
         root.confirmingEmpty = false;
@@ -93,9 +128,15 @@ QtObject {
     }
 
     // ── selection ─────────────────────────────────────────────────────────
+    // Where a shift-range starts. Set by any plain or toggling click, so
+    // shift-clicking extends from the last thing you actually picked rather
+    // than from wherever the selection happens to begin.
+    property string anchor: ""
+
     function isSelected(name) { return root.selection.indexOf(name) >= 0; }
 
     function select(name, add) {
+        root.anchor = name;
         if (!add) { root.selection = [name]; return; }
         const out = root.selection.slice();
         const at = out.indexOf(name);
@@ -103,7 +144,49 @@ QtObject {
         root.selection = out;
     }
 
+    // Shift-click: everything between the anchor and here, in the order the
+    // view is showing them — which is why it works off visibleEntries and
+    // not off the raw listing.
+    function selectTo(name, add) {
+        const list = root.visibleEntries;
+        const to = list.findIndex(e => e.name === name);
+        if (to < 0) return;
+        let from = list.findIndex(e => e.name === root.anchor);
+        if (from < 0) from = to;
+        const lo = Math.min(from, to), hi = Math.max(from, to);
+        const range = list.slice(lo, hi + 1).map(e => e.name);
+        if (!add) { root.selection = range; return; }
+        const out = root.selection.slice();
+        for (const n of range) if (out.indexOf(n) < 0) out.push(n);
+        root.selection = out;
+    }
+
+    // The click handlers all go through here, so the three modifier
+    // combinations behave the same in both views.
+    function clickSelect(name, mods) {
+        if (mods & Qt.ShiftModifier) root.selectTo(name, (mods & Qt.ControlModifier) !== 0);
+        else root.select(name, (mods & Qt.ControlModifier) !== 0);
+    }
+
     function selectAll() { root.selection = root.visibleEntries.map(e => e.name); }
+
+    function selectNone() { root.selection = []; root.anchor = ""; }
+
+    function invertSelection() {
+        const out = [];
+        for (const e of root.visibleEntries) if (!root.isSelected(e.name)) out.push(e.name);
+        root.selection = out;
+    }
+
+    // What the status bar totals. Directories are counted as items, not as
+    // bytes: a recursive size is a walk of the disk, and doing one every
+    // time the selection changes would make selecting things slow.
+    readonly property real selectedBytes: {
+        let n = 0;
+        for (const e of root.visibleEntries)
+            if (root.isSelected(e.name) && !e.dir) n += e.size;
+        return n;
+    }
     function clearSelection() { root.selection = []; }
 
     function selectedPaths() {
@@ -175,13 +258,49 @@ QtObject {
         root.svc.rename(root.svc.join(root.cwd, from), name);
     }
 
-    function createFolder(name) {
+    // One entry point for both, because the tile that names them is one
+    // tile: which of the two it makes is the only difference.
+    function createNamed(name) {
+        const wasFile = root.creatingFile;
         root.creatingFolder = false;
+        root.creatingFile = false;
         if (!name) return;
-        root.svc.makeDirectory(root.svc.join(root.cwd, name));
+        const path = root.svc.join(root.cwd, name);
+        if (wasFile) root.svc.newFile(path);
+        else root.svc.makeDirectory(path);
     }
 
+    readonly property bool creatingSomething: creatingFolder || creatingFile
+
     function pasteHere() { root.svc.paste(root.cwd); }
+
+    function zoom(by) {
+        root.svc.iconSize = Math.max(60, Math.min(220, root.svc.iconSize + by));
+    }
+
+    // Deleting outright rather than to the trash. Asked for twice, because
+    // unlike everything else in here it cannot be undone.
+    property bool confirmingDelete: false
+
+    function deleteSelected() {
+        if (!root.selection.length) return;
+        root.svc.deletePermanently(root.selectedPaths(), root.cwd);
+        root.selection = [];
+        root.confirmingDelete = false;
+    }
+
+    function duplicateSelected() {
+        if (!root.selection.length) return;
+        root.svc.duplicate(root.selectedPaths(), root.cwd);
+    }
+
+    function showProperties() {
+        const names = root.selection;
+        if (!names.length) { root.propertiesFor = null; return; }
+        const e = root.visibleEntries.find(x => x.name === names[names.length - 1]);
+        root.propertiesFor = e || null;
+        if (e) root.svc.inspect(root.svc.join(root.cwd, e.name), e.dir);
+    }
 
     function restoreSelected() {
         for (const name of root.selection) root.svc.restoreFromTrash(name);
