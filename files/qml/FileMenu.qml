@@ -67,9 +67,17 @@ PanelSurface {
             if (!t.dir)
                 out.push({ n: "Open with…", icon: "grid",
                            run: () => menu.svc.openWith(menu.svc.join(menu.app.cwd, t.name)) });
-            if (t.dir)
+            if (t.dir) {
                 out.push({ n: "Open in terminal", icon: "terminal",
                            run: () => menu.svc.openTerminal(menu.svc.join(menu.app.cwd, t.name)) });
+                // Any folder can go in the sidebar, not just the one you
+                // happen to be standing in.
+                const path = menu.svc.join(menu.app.cwd, t.name);
+                out.push({ n: menu.svc.isBookmarked(path)
+                              ? "Remove from sidebar" : "Add to sidebar",
+                           icon: "star",
+                           run: () => menu.svc.toggleBookmark(path) });
+            }
 
             out.push({ n: "Cut", icon: "x", rule: true,
                        run: () => menu.svc.cut(menu.app.selectedPaths()) });
@@ -97,8 +105,11 @@ PanelSurface {
                            run: () => menu.app.pasteHere() });
             out.push({ n: "Open in terminal", icon: "terminal", rule: true,
                        run: () => menu.svc.openTerminal(menu.app.cwd) });
+            // The same words as the per-folder entry above, so the two
+            // ways of doing it do not read as two different features.
             out.push({ n: menu.svc.isBookmarked(menu.app.cwd)
-                          ? "Remove bookmark" : "Bookmark this folder",
+                          ? "Remove this folder from sidebar"
+                          : "Add this folder to sidebar",
                        icon: "star",
                        run: () => menu.svc.toggleBookmark(menu.app.cwd) });
             out.push({ n: "Select all", icon: "check", rule: true,

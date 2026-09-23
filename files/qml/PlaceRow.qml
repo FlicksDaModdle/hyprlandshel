@@ -84,10 +84,42 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         // Undefined until the count comes back, and an empty place shows
         // nothing rather than a nought.
+        visible: !removeBtn.visible
         text: (row.count === undefined || row.count === 0) ? "" : String(row.count)
         font.pixelSize: Appearance.fs(10.5)
         font.weight: Font.DemiBold
         color: Appearance.ink3
+    }
+
+    // Taking a bookmark out again, from the row itself. Only on bookmarks:
+    // the standard places are not yours to remove, and a cross on Home
+    // would be a trap.
+    Rectangle {
+        id: removeBtn
+        visible: row.place.removable === true && (area.containsMouse || removeArea.containsMouse)
+        anchors.right: fill.right
+        anchors.rightMargin: 6
+        anchors.verticalCenter: parent.verticalCenter
+        width: 19
+        height: 19
+        radius: Appearance.rSm
+        color: removeArea.containsMouse ? Appearance.accent : Appearance.sel
+
+        MonoIcon {
+            anchors.centerIn: parent
+            name: "x"
+            size: 11
+            inkColor: removeArea.containsMouse ? Appearance.onAccent : Appearance.ink2
+            monochrome: true
+        }
+
+        MouseArea {
+            id: removeArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: FilesService.toggleBookmark(row.place.path)
+        }
     }
 
     MouseArea {

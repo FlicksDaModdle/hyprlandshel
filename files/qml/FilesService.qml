@@ -134,8 +134,48 @@ QtObject {
         return out;
     }
 
+    // Comparing two names the way a person reads them, so "file2" comes
+    // before "file10".
+    //
+    // Not localeCompare(a, b, {numeric: true}): Qt's JS engine accepts that
+    // third argument and ignores it, falling back to a plain string
+    // compare — which is why a folder of hyprshell(1)…(20).bundle sorted
+    // (1), (10), (11), … (2), (20). It fails silently, so nothing said so.
+    //
+    // Each name is walked in runs of digits and non-digits: two digit runs
+    // compare as numbers, anything else compares as text, case-insensitively
+    // first so "Apple" and "apple" land together rather than all capitals
+    // sorting ahead of all lower case.
+    function compareNames(a, b) {
+        const re = /(\d+|\D+)/g;
+        const A = String(a).match(re) || [];
+        const B = String(b).match(re) || [];
+        const n = Math.min(A.length, B.length);
+        for (let i = 0; i < n; i++) {
+            const x = A[i], y = B[i];
+            const xd = x.charCodeAt(0) >= 48 && x.charCodeAt(0) <= 57;
+            const yd = y.charCodeAt(0) >= 48 && y.charCodeAt(0) <= 57;
+            if (xd && yd) {
+                // Compare as numbers, and when they are equal let the
+                // shorter run win so "01" sorts before "1".
+                const nx = parseInt(x, 10), ny = parseInt(y, 10);
+                if (nx !== ny) return nx < ny ? -1 : 1;
+                // Equal numbers, different spellings: the padded one first,
+                // which is what `ls -v` and `sort -V` both do — 01 before 1,
+                // 010 before 10.
+                if (x.length !== y.length) return x.length > y.length ? -1 : 1;
+            } else {
+                const lx = x.toLowerCase(), ly = y.toLowerCase();
+                if (lx !== ly) return lx < ly ? -1 : 1;
+                if (x !== y) return x < y ? -1 : 1;
+            }
+        }
+        if (A.length !== B.length) return A.length < B.length ? -1 : 1;
+        return 0;
+    }
+
     // Directories first, then by name, the way every file manager does it.
-    // localeCompare so "Ärger" lands next to "Arger" rather than after "Z".
+
     function sortEntries(list, by, reverse) {
         const dir = reverse ? -1 : 1;
         const sorted = (list || []).slice();
@@ -144,8 +184,8 @@ QtObject {
             let r = 0;
             if (by === "size") r = a.size - b.size;
             else if (by === "modified") r = a.mtime - b.mtime;
-            else if (by === "type") r = root.typeLabel(a).localeCompare(root.typeLabel(b));
-            if (r === 0) r = a.name.localeCompare(b.name, undefined, { numeric: true });
+            else if (by === "type") r = root.compareNames(root.typeLabel(a), root.typeLabel(b));
+            if (r === 0) r = root.compareNames(a.name, b.name);
             return r * dir;
         });
         return sorted;
@@ -411,8 +451,7 @@ QtObject {
     }
 
     // ── bookmarks ─────────────────────────────────────────────────────────
-    // The design's DOTFILES section: folders you put in the sidebar
-    // yourself. Kept as a newline-separated list in theme.json, because a
+    // The sidebar's PINNED section: folders you put there yourself. Kept as a newline-separated list in theme.json, because a
     // path can contain anything except a newline and a NUL, so there is no
     // separator to escape.
     readonly property var bookmarks: {

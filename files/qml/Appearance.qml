@@ -92,8 +92,24 @@ QtObject {
     readonly property color sel:   dark ? Qt.rgba(0.973, 0.957, 0.957, 0.14)
                                         : Qt.rgba(0.125, 0.118, 0.114, 0.10)
 
-    readonly property color sheet: dark ? Qt.rgba(0.137, 0.129, 0.125, 1)
-                                        : Qt.rgba(0.980, 0.976, 0.976, 1)
+    // ── translucency ──────────────────────────────────────────────────────
+    // Hyprland blurs behind a window that has transparency in it — that is
+    // what `decoration.blur` does for windows, with no rule needed. So the
+    // blur is not something to switch on here; it is something to stop
+    // preventing, by not painting a fully opaque sheet.
+    //
+    // The amount is the shell's own slider and its own formula, so this
+    // window is exactly as see-through as the shell's panels are, and
+    // setting translucency to 0 makes it solid again.
+    readonly property real translucency: {
+        const v = root.theme.translucency;
+        return (typeof v === "number") ? Math.max(0, Math.min(100, v)) : 50;
+    }
+    readonly property real translucencyFactor: translucency / 100
+    readonly property real sheetAlpha: 1.0 - translucencyFactor * (dark ? 0.24 : 0.20)
+
+    readonly property color sheet: dark ? Qt.rgba(0.137, 0.129, 0.125, sheetAlpha)
+                                        : Qt.rgba(0.980, 0.976, 0.976, sheetAlpha)
     readonly property color panel: sheet
     readonly property color seam:  accent
 

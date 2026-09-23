@@ -63,13 +63,24 @@ Two files, and it only ever *reads* the first:
 With no shell installed it uses the design's own colours.
 
 From `theme.json` it takes `theme` (light / dark / auto), `accent`,
-`customAccent`, `rounding`, `fontScale` and `textNative`. Note that `accent`
+`customAccent`, `rounding`, `fontScale`, `textNative` and `translucency`.
+Note that `accent`
 there is an **index** into the shell's four presets, not a colour, with `-1`
 meaning "use `customAccent`" — reading it as a colour is what once turned
 the New button black. Changing the theme in the shell's Settings repaints
 this window without restarting it. The window
-remembers its view, sort order, hidden files, tile size, bookmarks and which
+remembers its view, sort order, hidden files, tile size, pinned folders and which
 terminal "Open in terminal" should use.
+
+## Blur
+
+The window body is the shell's `sheet` colour, and `translucency` in
+theme.json decides how much of it you can see through — the same slider,
+the same formula, so this window and the shell's panels are the same
+material. Hyprland does the rest: `decoration:blur` in `hyprland.lua` is
+already on, and the compositor blurs behind any window that has
+transparency, so there is no window rule to add. Setting translucency to 0
+makes it solid again and the blur has nothing to work on.
 
 ## Selecting
 
@@ -83,6 +94,16 @@ file's glyph, its name, and `+n` when there is more than one. The same chip
 in both views — grabbing the delegate itself gave a neat square in the grid
 and a full-width strip in the list, so one gesture looked like two.
 
+## The sidebar
+
+PLACES is your XDG user directories, read from `user-dirs.dirs` rather
+than guessed, so a translated or relocated `~/Bilder` appears under its own
+name. PINNED is whatever you put there: right-click a folder and "Add to
+sidebar", or `Ctrl+B` to pin the folder you are in. Take one out again from
+the same menu, or with the × that appears when you hover the row — only on
+pinned rows, because the standard places are not yours to remove. Dropping
+files on any row moves them into that folder.
+
 ## Keys
 
 | | |
@@ -94,7 +115,7 @@ and a full-width strip in the list, so one gesture looked like two.
 | `Ctrl+F` | filter this folder |
 | `Ctrl+L` | type a path |
 | `Ctrl+I` | properties |
-| `Ctrl+B` | bookmark this folder |
+| `Ctrl+B` | put this folder in the sidebar, or take it out |
 | `Ctrl` `+` / `-` / `0` | tile size, and back to normal |
 | `Ctrl+H` | hidden files |
 | `F2` | rename |
@@ -109,8 +130,9 @@ and a full-width strip in the list, so one gesture looked like two.
 | `Escape` | unwinds: a confirmation, properties, the filter, the selection, the window |
 
 Right-click a file or the folder's empty space for the rest: open with,
-copy path, duplicate, rename, trash, delete permanently, properties; and on
-the folder, new folder, new file, paste, open in terminal, bookmark, select
+copy path, duplicate, rename, trash, delete permanently, properties, and on
+a folder, add it to the sidebar; and on the folder's own space, new folder,
+new file, paste, open in terminal, add this folder to the sidebar, select
 all, invert, hidden files.
 
 ## Measurements
@@ -131,7 +153,15 @@ is already ruled.
 
 Click a column heading to sort by it, click it again to reverse. Name, Size,
 Type and Modified — the concept has three, and Type is the one addition,
-styled to match. In the trash the columns are replaced by where each thing
+styled to match.
+
+Names sort the way you would count them: `hyprshell(2).bundle` before
+`hyprshell(10).bundle`, not after it. Qt's JavaScript engine has no
+numeric collation — `localeCompare` accepts the option and ignores it — so
+the comparison is written out: a name is split into runs of digits and
+runs of everything else, digit runs compare as numbers, and equal numbers
+fall back to the padding, so `01` sorts before `1` exactly as `ls -v`
+does. In the trash the columns are replaced by where each thing
 came from, because that is the only question worth asking about something
 you have deleted.
 

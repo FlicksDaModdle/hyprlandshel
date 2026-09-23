@@ -298,13 +298,15 @@ PanelSurface {
                     }
                 }
 
-                // The design's DOTFILES section: whatever you have pinned.
+                // The design's second section: whatever you have pinned.
+                // The concept called it DOTFILES because that is what it
+                // held; now that any folder can go here, it says so.
                 // Hidden entirely when there is nothing in it, rather than
                 // sitting there as an empty heading.
                 StyledText {
                     x: 18
                     visible: frame.svc.bookmarks.length > 0
-                    text: "DOTFILES"
+                    text: "PINNED"
                     font.pixelSize: Appearance.fs(10.5)
                     font.weight: Font.DemiBold
                     font.letterSpacing: 1.26
@@ -320,7 +322,8 @@ PanelSurface {
                         required property var modelData
                         width: places.width
                         place: ({ label: frame.svc.basename(modelData),
-                                  path: modelData, icon: "folder" })
+                                  path: modelData, icon: "folder",
+                                  removable: true })
                         app: frame.app
                         count: frame.svc.placeCounts[modelData]
                     }
