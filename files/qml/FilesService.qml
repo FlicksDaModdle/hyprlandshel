@@ -73,6 +73,13 @@ QtObject {
     // Windows Explorer does. Only applies when sorting by date.
     property bool groupByDate: true
 
+    // The list view's column widths, dragged by their dividers. Name takes
+    // whatever is left, so it is not stored: widening Size narrows Name,
+    // which is what dragging a divider means.
+    property int sizeWidth: 96
+    property int typeWidth: 116
+    property int timeWidth: 104
+
     onViewChanged:         setPref("view", view)
     onSortByChanged:       setPref("sortBy", sortBy)
     onSortReverseChanged:  setPref("sortReverse", sortReverse)
@@ -80,6 +87,9 @@ QtObject {
     onIconSizeChanged:     setPref("iconSize", iconSize)
     onBookmarksRawChanged: setPref("bookmarks", bookmarksRaw)
     onGroupByDateChanged:  setPref("groupByDate", groupByDate)
+    onSizeWidthChanged:    setPref("sizeWidth", sizeWidth)
+    onTypeWidthChanged:    setPref("typeWidth", typeWidth)
+    onTimeWidthChanged:    setPref("timeWidth", timeWidth)
 
     function loadPrefs() {
         const text = Sys.readFile(root.settingsPath);
@@ -95,6 +105,9 @@ QtObject {
         root.bookmarksRaw = pref("bookmarks", "");
         root.terminal = pref("terminal", "kitty");
         root.groupByDate = pref("groupByDate", true);
+        root.sizeWidth = pref("sizeWidth", 96);
+        root.typeWidth = pref("typeWidth", 116);
+        root.timeWidth = pref("timeWidth", 104);
         root.loadingPrefs = false;
     }
 

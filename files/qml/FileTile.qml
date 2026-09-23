@@ -161,6 +161,17 @@ Item {
         border.color: Appearance.accent
     }
 
+    // The whole name. A tile is narrower than a row, so this earns its
+    // keep here more than anywhere: most names of any length are elided.
+    NameTip {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: label.bottom
+        anchors.topMargin: 2
+        label: label
+        hovered: area.containsMouse && !tile.renaming
+        text: tile.entry.name
+    }
+
     MouseArea {
         id: area
         anchors.fill: fill

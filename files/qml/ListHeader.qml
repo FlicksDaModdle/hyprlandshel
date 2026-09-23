@@ -12,12 +12,20 @@ Item {
 
     required property var app
 
-    // What each column is worth. Name takes whatever is left.
-    // The concept's own column widths, and a Type column beside them.
-    readonly property real sizeWidth: 96
-    readonly property real typeWidth: 116
-    readonly property real timeWidth: 104
+    // What each column is worth. Name takes whatever is left, which is why
+    // it has no width of its own: widening Size narrows Name, and that is
+    // what dragging the divider between them means.
+    //
+    // The concept's numbers are the defaults; they are settings now,
+    // dragged by the grips between the headings and kept per window.
+    readonly property real sizeWidth: FilesService.sizeWidth
+    readonly property real typeWidth: FilesService.typeWidth
+    readonly property real timeWidth: FilesService.timeWidth
     readonly property real gutter: 14
+
+    // Enough to still read a heading, and not so much that Name vanishes.
+    readonly property real minCol: 56
+    readonly property real maxCol: 280
 
     implicitHeight: 32
     height: implicitHeight
@@ -81,9 +89,50 @@ Item {
 
                 MouseArea {
                     anchors.fill: parent
+                    anchors.leftMargin: 6
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: header.sortByKey(col.modelData.key)
+                }
+
+                // The divider on this column's left edge, dragged to
+                // resize it. Six pixels wide and reaching past the
+                // heading's own click area, since a two-pixel target is
+                // one nobody finds.
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.leftMargin: -3
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 6
+                    color: grip.containsMouse || grip.pressed
+                           ? Appearance.accent : "transparent"
+                    opacity: grip.pressed ? 1 : 0.5
+
+                    MouseArea {
+                        id: grip
+                        anchors.fill: parent
+                        anchors.margins: -2
+                        hoverEnabled: true
+                        cursorShape: Qt.SizeHorCursor
+                        // No drag target: nothing moves but the column's
+                        // width, which is tracked from the pointer here.
+                        property real startX: 0
+                        property real startW: 0
+                        onPressed: mouse => {
+                            grip.startX = mapToItem(header, mouse.x, 0).x;
+                            grip.startW = col.modelData.w;
+                        }
+                        onPositionChanged: mouse => {
+                            if (!pressed) return;
+                            const now = mapToItem(header, mouse.x, 0).x;
+                            // Dragging the grip left widens the column,
+                            // because the columns are laid out from the
+                            // right edge inwards.
+                            header.setWidth(col.modelData.key,
+                                            grip.startW - (now - grip.startX));
+                        }
+                    }
                 }
             }
         }
@@ -127,6 +176,13 @@ Item {
 
     // Clicking the column you are already sorted by reverses it, which is
     // the behaviour everyone expects and nobody is told.
+    function setWidth(key, w) {
+        const v = Math.round(Math.max(header.minCol, Math.min(header.maxCol, w)));
+        if (key === "size") FilesService.sizeWidth = v;
+        else if (key === "type") FilesService.typeWidth = v;
+        else if (key === "modified") FilesService.timeWidth = v;
+    }
+
     function sortByKey(key) {
         if (FilesService.sortBy === key) FilesService.sortReverse = !FilesService.sortReverse;
         else { FilesService.sortBy = key; FilesService.sortReverse = false; }

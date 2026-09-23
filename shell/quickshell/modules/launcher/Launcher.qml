@@ -40,8 +40,8 @@ Variants {
         readonly property bool hasScreen: !!modelData
         readonly property bool isPrimary: Services.Compositor.isFocusedScreen(modelData)
 
-        readonly property bool wanted:
-            Config.UiState.launcherOpen && !Config.UiState.locked && isPrimary
+        readonly property bool wanted: hasScreen
+            && Config.UiState.launcherOpen && !Config.UiState.locked && isPrimary
         // Stays up while it shrinks back into the dock. Without this the
         // surface goes the instant the flag does and there is no closing
         // animation to see.
@@ -103,6 +103,15 @@ Variants {
         function z(px) { return Math.round(px * zoom); }
         readonly property real dockOffset: Config.Appearance.dockEdgeGap
                                            + Config.Appearance.dockPanelBreadth + 12
+
+        // Where the panel's near edge sits. Growing out of the dock, it
+        // takes the dock's room as well: the pill has faded out by then, so
+        // stopping short of it would leave a band of empty desktop exactly
+        // where the thing you clicked used to be. Without the morph the
+        // dock is still there and the panel clears it, as before.
+        readonly property real nearEdge: Config.Appearance.launcherMorph
+                                         ? Config.Appearance.dockEdgeGap
+                                         : dockOffset
 
         // ── the morph ─────────────────────────────────────────────────────
         // 0 is the dock's pill, 1 is the panel. Everything about the
@@ -432,7 +441,7 @@ Variants {
                 Math.min(Math.max(body.implicitHeight + footer.height,
                                   panel.restingHeight),
                          Math.min(launcher.panelHeight,
-                                  launcher.height - launcher.dockOffset - 24))
+                                  launcher.height - launcher.nearEdge - 24))
             height: launcher.morphing
                     ? Math.round(launcher.lerpY(launcher.pillH, targetHeight))
                     : targetHeight
@@ -452,14 +461,14 @@ Variants {
             // the bottom, beside it when the dock is on the left. Clamped so it
             // can't run off the screen on a narrow monitor.
             readonly property real targetX: launcher.isLeft
-               ? launcher.dockOffset
+               ? launcher.nearEdge
                : Math.max(12, Math.min(launcher.width - targetWidth - 12,
                     Math.round(launcher.width / 2 - targetWidth / 2)))
             readonly property real targetY: launcher.isLeft
                ? Math.max(Config.Appearance.barHeight + 12,
                     Math.min(launcher.height - targetHeight - 12,
                              Math.round(launcher.height / 2 - targetHeight / 2)))
-               : launcher.height - targetHeight - launcher.dockOffset
+               : launcher.height - targetHeight - launcher.nearEdge
 
             x: launcher.morphing ? Math.round(launcher.lerp(launcher.pillX, targetX))
                                  : targetX

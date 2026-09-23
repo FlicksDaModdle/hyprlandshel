@@ -34,7 +34,7 @@ Variants {
         // would land on the default output instead. Two bars on one monitor
         // is what that looks like from the outside.
         readonly property bool hasScreen: !!modelData
-        visible: Config.UiState.anyPanelOpen && isPrimary
+        visible: hasScreen && Config.UiState.anyPanelOpen && isPrimary
         color: "transparent"
         exclusiveZone: 0
 

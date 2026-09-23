@@ -29,6 +29,7 @@ Variants {
         // would land on the default output instead. Two bars on one monitor
         // is what that looks like from the outside.
         readonly property bool hasScreen: !!modelData
+        visible: hasScreen
         color: "transparent"
         exclusiveZone: 0
 

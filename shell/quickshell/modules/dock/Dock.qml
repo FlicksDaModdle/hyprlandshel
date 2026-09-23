@@ -32,8 +32,17 @@ Variants {
         // is what that looks like from the outside.
         readonly property bool hasScreen: !!modelData
         color: "transparent"
-        exclusiveZone: 0
-        visible: !Config.UiState.locked
+        // Windows are kept clear of the dock when it is always there, and
+        // not when it hides — an auto-hiding dock that still reserved its
+        // strip would be a band of unusable desktop with nothing in it.
+        //
+        // Only the pill and its edge gap: the tooltip headroom above it is
+        // part of the surface but not part of the dock, and reserving that
+        // too would push every window down by a tooltip's height.
+        exclusiveZone: Config.Appearance.dockAutoHide
+                       ? 0
+                       : Math.round(panelBreadth + edgeGap)
+        visible: hasScreen && !Config.UiState.locked
 
         readonly property bool isLeft: Config.Appearance.dockLeft
         readonly property real tileSize: Config.Appearance.dockTileSize

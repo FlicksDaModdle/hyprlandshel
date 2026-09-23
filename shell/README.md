@@ -657,6 +657,14 @@ a scale, which makes Hyprland re-enumerate — a surface whose modelData had
 momentarily gone would land on the default output instead. Two bars on one
 monitor is what that looks like.
 
+### Space for the dock
+
+An always-visible dock reserves its strip, so windows tile above it rather
+than under it. An auto-hiding one reserves nothing — a hidden dock holding
+a band of unusable desktop would be the worst of both. Only the pill and
+its edge gap are reserved, not the tooltip headroom above it, which is part
+of the surface but not part of the dock.
+
 ### Idle timers
 
 Settings → Display → "When you leave it alone": screen off, sleep, lock.

@@ -74,6 +74,17 @@ Item {
         color: row.entry.broken ? Appearance.ink3 : Appearance.ink
     }
 
+    // The whole name, when the column was too narrow for it. Anchored to
+    // the label so it sits under the thing it explains.
+    NameTip {
+        anchors.left: name.left
+        anchors.top: name.bottom
+        anchors.topMargin: 2
+        label: name
+        hovered: area.containsMouse && !row.renaming
+        text: row.entry.name
+    }
+
     NameField {
         visible: row.renaming
         anchors.left: plate.right

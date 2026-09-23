@@ -252,6 +252,17 @@ The headings are a lookup beside the list rather than rows spliced into it
 entry list, and every one of them would otherwise have to learn to step
 over a heading.
 
+## The list view's columns
+
+Drag the divider to the left of a heading to resize that column. Name has
+no width of its own — it takes whatever is left — so widening Size narrows
+Name, which is what dragging the divider between them means. Widths are
+kept between 56 and 280 and remembered in settings.json.
+
+Hovering a name that was too long for its column shows the whole thing
+after a moment. Only when it is actually elided: a tooltip repeating a
+name you can already read is noise on every row you pass over.
+
 ## Properties
 
 `Ctrl+I`, or the menu. Type, size, location, modified, permissions, owner,

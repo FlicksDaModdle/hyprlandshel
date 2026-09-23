@@ -36,7 +36,8 @@ Variants {
         readonly property bool hasScreen: !!modelData
         readonly property bool isPrimary: Services.Compositor.isFocusedScreen(modelData)
 
-        visible: Config.UiState.overviewOpen && !Config.UiState.locked && isPrimary
+        visible: hasScreen && Config.UiState.overviewOpen
+                 && !Config.UiState.locked && isPrimary
         color: "transparent"
         exclusiveZone: 0
 
