@@ -89,13 +89,31 @@ Variants {
         property real pillPos: revealed ? pillShownPos : pillHiddenPos
         Behavior on pillPos { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
 
-        anchors.bottom: !isLeft
-        anchors.left: isLeft
-        anchors.top: false
-        anchors.right: false
+        // The surface spans the whole edge and the pill is centred inside
+        // it, rather than the surface being cut to the pill.
+        //
+        // It used to be the pill's exact size, which meant every animation
+        // that changes a tile's width — the active app's label sliding out,
+        // or collapsing when you press show desktop — resized the Wayland
+        // surface on every frame of it. Each of those is a round trip with
+        // the compositor, so the label collapse was visibly coarser than
+        // the tile animation driving it, and the surface's own right edge
+        // showed as a square of unpainted space while it caught up. It also
+        // left the last tile's hover fill flush against the boundary, where
+        // it clipped.
+        //
+        // Nothing here needs the surface to be tight: input is masked to
+        // the pill below, so the slack on either side stays click-through.
+        // Bottom: pinned left, right and bottom, so the width is the
+        // screen's and only the height is ours. Left: pinned top, bottom
+        // and left, so the height is the screen's and only the width is.
+        anchors.bottom: true
+        anchors.left: true
+        anchors.right: !isLeft
+        anchors.top: isLeft
 
-        implicitWidth: isLeft ? windowBreadth : pill.implicitWidth
-        implicitHeight: isLeft ? pill.implicitHeight : windowBreadth
+        implicitWidth: isLeft ? windowBreadth : 0
+        implicitHeight: isLeft ? 0 : windowBreadth
 
         WlrLayershell.namespace: "quickshell:dock"
         WlrLayershell.layer: WlrLayer.Top
@@ -109,11 +127,27 @@ Variants {
         // surface does — otherwise the pointer crosses untracked empty space
         // between the strip and the pill, hover drops, and it retracts
         // mid-approach.
+        // Revealed, this is the pill plus the room its tooltips need and a
+        // margin either side, so the pointer can approach without hover
+        // dropping in untracked space — but not the whole edge of the
+        // screen, which is what "the whole surface" would now mean.
+        // Hidden, it is the thin strip along the edge that brings it back,
+        // and that does span the edge so the pointer finds it anywhere.
+        readonly property real maskPad: 40
         mask: Region {
-            x: 0
-            y: dock.revealed ? 0 : (dock.isLeft ? 0 : dock.height - 3)
-            width: dock.revealed ? dock.width : (dock.isLeft ? 3 : dock.width)
-            height: dock.revealed ? dock.height : (dock.isLeft ? dock.height : 3)
+            x: dock.revealed && !dock.isLeft
+               ? Math.max(0, Math.round(pill.x - dock.maskPad)) : 0
+            y: dock.revealed
+               ? (dock.isLeft ? Math.max(0, Math.round(pill.y - dock.maskPad)) : 0)
+               : (dock.isLeft ? 0 : dock.height - 3)
+            width: dock.revealed
+                   ? (dock.isLeft ? dock.width
+                                  : Math.ceil(pill.width + dock.maskPad * 2))
+                   : (dock.isLeft ? 3 : dock.width)
+            height: dock.revealed
+                    ? (dock.isLeft ? Math.ceil(pill.height + dock.maskPad * 2)
+                                   : dock.height)
+                    : (dock.isLeft ? dock.height : 3)
         }
 
         HoverHandler { id: windowHover }

@@ -615,6 +615,15 @@ auto-hide on, the dock slides out first and the menu grows from it — that
 part was already there, since the dock counts the launcher being open as a
 reason to be revealed.
 
+The motion is three numbers chasing the same target at different rates —
+width over 340ms, height over 460ms, the contents' fade over 260ms after a
+150ms wait. One number would move every edge in lockstep, which is a box
+being scaled. Letting the width arrive first means the shape stretches
+wide, then rises, then settles, and the corner radius travels with it from
+the pill's lozenge to the panel's. Opening, the contents fade in once the
+shape has nearly stopped; closing, they go first, so it never shrinks
+around text you can still read.
+
 How it works: the focused screen's dock publishes its pill's width and
 height to `UiState`, the launcher covers the whole screen so it works the
 position out itself, and one number — `morph`, 0 at the pill and 1 at the
@@ -624,6 +633,20 @@ the panel opens like a shutter and the text does not rewrap twenty times on
 the way up; they fade in over the back half, when there is something to
 see through. The dock's pill fades out as it goes, since two of them on
 screen at once would give it away.
+
+### The dock's surface spans the whole edge
+
+Not the pill. The pill is centred inside it and input is masked to the
+pill plus a margin, so the slack either side stays click-through.
+
+It used to be cut to the pill exactly, which meant every animation that
+changes a tile's width — the active app's label sliding out, or collapsing
+when show desktop is pressed — resized the Wayland surface on every frame.
+Each of those is a round trip with the compositor, so the collapse was
+visibly coarser than the animation driving it, the surface's right edge
+showed as a square of unpainted space while it caught up, and the last
+tile's hover fill sat flush against the boundary where it clipped. All
+three were the same cause.
 
 ### When a glyph is missing
 

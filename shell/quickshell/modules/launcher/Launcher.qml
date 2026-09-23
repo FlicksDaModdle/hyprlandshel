@@ -48,6 +48,20 @@ Variants {
             // Drives the morph too: one handler, because QML keeps only the
             // last handler declared for a signal and silently drops the rest.
             launcher.morph = wanted ? 1 : 0;
+            launcher.morphY = wanted ? 1 : 0;
+            // Closing, the contents go first and quickly: the shape should
+            // look empty before it starts shrinking, not shrink around
+            // text that is still legible.
+            fadeDelay.stop();
+            if (wanted) fadeDelay.restart(); else launcher.morphFade = 0;
+        }
+        // Opening, the fade waits for the shape to be most of the way
+        // there. A Timer rather than a longer easing because the delay
+        // should not stretch the fade itself.
+        Timer {
+            id: fadeDelay
+            interval: 150
+            onTriggered: launcher.morphFade = 1
         }
         Timer { id: linger; interval: 260; onTriggered: launcher.lingering = false }
 
@@ -88,11 +102,32 @@ Variants {
         // panel's shape is this number, so one animation drives the lot.
         readonly property bool morphing: Config.Appearance.launcherMorph
                                          && Config.UiState.dockPillWidth > 0
-        property real morph: 0
+
+        // Three numbers, not one, all chasing the same 0-or-1 target at
+        // different rates. A single number moves every edge in lockstep,
+        // which is a box being scaled; letting the width arrive first and
+        // the height follow means the shape stretches wide, then rises,
+        // and settles — the thing that reads as liquid rather than as a
+        // rectangle interpolating. The content's own fade is third, and
+        // slowest, so it arrives into a shape that has already stopped.
+        property real morph: 0          // width, and the lead
+        property real morphY: 0         // height, half a beat behind
+        property real morphFade: 0      // the contents
+
         Behavior on morph {
-            NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+            NumberAnimation { duration: 340; easing.type: Easing.OutQuint }
         }
-        Component.onCompleted: morph = wanted ? 1 : 0
+        Behavior on morphY {
+            NumberAnimation { duration: 460; easing.type: Easing.OutQuint }
+        }
+        Behavior on morphFade {
+            NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+        }
+        Component.onCompleted: {
+            morph = wanted ? 1 : 0;
+            morphY = morph;
+            morphFade = morph;
+        }
 
         // Where the dock's pill sits, in this window's coordinates. This
         // surface covers the screen, so the sums are the dock's own: the
@@ -107,6 +142,7 @@ Variants {
             : launcher.height - Config.Appearance.dockEdgeGap - pillH
 
         function lerp(a, b) { return a + (b - a) * launcher.morph; }
+        function lerpY(a, b) { return a + (b - a) * launcher.morphY; }
 
         property string query: ""
         property bool showAll: false
@@ -353,7 +389,16 @@ Variants {
             // reflowing every frame — which is both what the effect should
             // look like and the only way the text does not reflow twenty
             // times on the way up.
-            clip: launcher.morphing && launcher.morph < 0.999
+            clip: launcher.morphing
+                  && (launcher.morph < 0.999 || launcher.morphY < 0.999)
+
+            // The corner travels too: the pill is a lozenge and the panel
+            // is a window, and a radius that snaps between them at either
+            // end is the one hard edge in an otherwise soft movement.
+            radius: launcher.morphing
+                    ? Math.round(launcher.lerpY(Math.min(launcher.pillH / 2, 24),
+                                                Config.Appearance.rPanel))
+                    : Config.Appearance.rPanel
             // As tall as what is in it, and no taller.
             //
             // This has been both ways round. It was min(setting, content),
@@ -382,7 +427,7 @@ Variants {
                          Math.min(launcher.panelHeight,
                                   launcher.height - launcher.dockOffset - 24))
             height: launcher.morphing
-                    ? Math.round(launcher.lerp(launcher.pillH, targetHeight))
+                    ? Math.round(launcher.lerpY(launcher.pillH, targetHeight))
                     : targetHeight
 
             // Latched rather than computed: the resting layout is not on
@@ -411,7 +456,7 @@ Variants {
 
             x: launcher.morphing ? Math.round(launcher.lerp(launcher.pillX, targetX))
                                  : targetX
-            y: launcher.morphing ? Math.round(launcher.lerp(launcher.pillY, targetY))
+            y: launcher.morphing ? Math.round(launcher.lerpY(launcher.pillY, targetY))
                                  : targetY
 
             // Swallow clicks so they don't reach the catcher behind.
@@ -429,9 +474,7 @@ Variants {
                 // Fades in over the back half of the morph: at the start
                 // there is a pill-sized hole to look through and text in it
                 // would just be clipped nonsense.
-                opacity: launcher.morphing
-                         ? Math.max(0, Math.min(1, (launcher.morph - 0.45) / 0.4))
-                         : 1
+                opacity: launcher.morphing ? launcher.morphFade : 1
 
             Column {
                 id: body

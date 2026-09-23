@@ -40,7 +40,12 @@ Item {
 
     implicitWidth: showLabel ? Math.round(tileSize + labelText.implicitWidth + 21) : tileSize
     implicitHeight: tileSize
-    Behavior on implicitWidth { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+    // Matches the label's fade, and eases out of the same curve the rest of
+    // the dock uses. Until the surface stopped being resized to the pill on
+    // every frame of this, no easing here could have looked smooth.
+    Behavior on implicitWidth {
+        NumberAnimation { duration: 260; easing.type: Easing.OutQuint }
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -70,7 +75,12 @@ Item {
         StyledText {
             id: labelText
             anchors.verticalCenter: parent.verticalCenter
-            visible: root.showLabel
+            // Fades on the way out rather than being cut off by the tile
+            // closing over it. Kept in the layout until the fade is done,
+            // or the Row would reflow the glyph sideways halfway through.
+            visible: root.showLabel || opacity > 0.01
+            opacity: root.showLabel ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 140 } }
             text: root.label
             font.pixelSize: Config.Appearance.fs(Config.Appearance.dockLabelSize)
             font.weight: Font.DemiBold
