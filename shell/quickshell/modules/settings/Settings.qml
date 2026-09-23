@@ -272,6 +272,14 @@ Scope {
                  + "and 14px.",
               type: "slider", min: 60, max: 180, unit: "%",
               value: A.barIconPct, set: v => A.barIconPct = v },
+            { n: "Sharper icon edges",
+              s: "Draws the shell's glyphs with Qt's analytic renderer "
+                 + "instead of the default one. Cleaner curves — but it is "
+                 + "a newer code path and on some drivers it drops glyphs "
+                 + "entirely, which looks like a dock tile with nothing on "
+                 + "it. Turn it on; if anything vanishes, turn it back off.",
+              type: "toggle", value: A.curveRenderer,
+              set: v => A.curveRenderer = v },
             { n: "File manager icons",
               s: "Set inside the file manager itself — Ctrl + and Ctrl - in "
                  + "its window, or Ctrl 0 to go back to normal. It is a "

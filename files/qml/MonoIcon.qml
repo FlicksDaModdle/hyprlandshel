@@ -57,11 +57,22 @@ Item {
     implicitWidth: drawSize
     implicitHeight: drawSize
 
-    // Qt 6.6 and up. Undefined below that, where the enum does not exist —
-    // reading it is safe, assigning the property would not be, so every
-    // assignment below is behind this check and never runs on older Qt.
+    // Qt's analytic Shape renderer, 6.6 and up. Undefined below that, where
+    // the enum does not exist — reading it is safe, assigning the property
+    // would not be, so the assignment below is behind this check and never
+    // runs on older Qt.
+    //
+    // Off unless theme.json turns it on, and that default is the point:
+    // every render used to check this pack runs on the software backend,
+    // which ignores the request and uses its own rasteriser, so the curve
+    // renderer has never actually been exercised by anything here. The
+    // shell asked for it unconditionally and the dock has tiles that draw
+    // no glyph at all on real hardware. The two renderers lay down the same
+    // amount of ink — measured — so the default costs only edge quality on
+    // curves, and is the one this pack has actually been verified against.
     readonly property var curveRenderer: Shape.CurveRenderer
-    readonly property bool curves: root.curveRenderer !== undefined
+    readonly property bool curves:
+        Appearance.curveRenderer && root.curveRenderer !== undefined
 
     Item {
         width: 24

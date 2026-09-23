@@ -114,6 +114,8 @@ Singleton {
             property int barBadgeSize: 11             // notification count
             property int dockLabelSize: 12            // dock tooltips and the active label
             property int barIcon: 100                 // 60-180 % of the bar's glyphs
+            // Qt's analytic Shape renderer. Off by default: see MonoIcon.
+            property bool curveRenderer: false
             property int launcherTitleSize: 13        // launcher entry names
             property int launcherMetaSize: 11         // launcher categories and hints
 
@@ -262,6 +264,7 @@ Singleton {
     property alias barBadgeSize: prefs.barBadgeSize
     property alias dockLabelSize: prefs.dockLabelSize
     property alias barIconPct: prefs.barIcon
+    property alias curveRenderer: prefs.curveRenderer
     property alias launcherTitleSize: prefs.launcherTitleSize
     property alias launcherMetaSize: prefs.launcherMetaSize
 

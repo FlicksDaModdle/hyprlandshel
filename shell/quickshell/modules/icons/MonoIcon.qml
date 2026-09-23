@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Shapes
+import "../../config" as Config
 import "IconPaths.js" as IconData
 
 // Renders one glyph from the bespoke icon pack (see IconPaths.js): monoline
@@ -27,6 +28,23 @@ Item {
     // throughout; setting this makes an app glyph render flat too (used by
     // the launcher's selected row, where the whole tile inverts).
     property bool monochrome: false
+
+    // Which of Qt's two Shape renderers draws this.
+    //
+    // CurveRenderer antialiases analytically in the shader instead of
+    // triangulating, and it is what this file asked for unconditionally
+    // until now. It is also the one thing about these glyphs that has
+    // never been exercised in testing: every render used to check this
+    // shell runs on the software backend, which ignores the request
+    // entirely and uses its own rasteriser. So it has been shipping
+    // untested on real hardware while looking correct in every check.
+    //
+    // It is therefore off by default and behind a setting. GeometryRenderer
+    // is what every verified render of this pack actually used, and the two
+    // lay down the same amount of ink — measured, not assumed — so the
+    // default costs nothing but edge quality on curves.
+    readonly property int renderer: Config.Appearance.curveRenderer
+                                    ? Shape.CurveRenderer : Shape.GeometryRenderer
 
     readonly property var spec: IconData.icons[name] || ({})
     readonly property color accent: monochrome ? inkColor : accentColor
@@ -56,7 +74,7 @@ Item {
         Shape {
             visible: !!root.spec.fill
             anchors.fill: parent
-            preferredRendererType: Shape.CurveRenderer
+            preferredRendererType: root.renderer
             ShapePath {
                 fillColor: root.accent
                 strokeWidth: 0
@@ -68,7 +86,7 @@ Item {
         Shape {
             visible: !!root.spec.ink
             anchors.fill: parent
-            preferredRendererType: Shape.CurveRenderer
+            preferredRendererType: root.renderer
             ShapePath {
                 strokeColor: root.inkColor
                 strokeWidth: root.stroke
@@ -82,7 +100,7 @@ Item {
         Shape {
             visible: !!root.spec.acc
             anchors.fill: parent
-            preferredRendererType: Shape.CurveRenderer
+            preferredRendererType: root.renderer
             ShapePath {
                 strokeColor: root.accent
                 strokeWidth: root.stroke
@@ -96,7 +114,7 @@ Item {
         Shape {
             visible: !!root.spec.inkW
             anchors.fill: parent
-            preferredRendererType: Shape.CurveRenderer
+            preferredRendererType: root.renderer
             ShapePath {
                 strokeColor: root.inkColor
                 strokeWidth: root.strokeW
@@ -110,7 +128,7 @@ Item {
         Shape {
             visible: !!root.spec.accW
             anchors.fill: parent
-            preferredRendererType: Shape.CurveRenderer
+            preferredRendererType: root.renderer
             ShapePath {
                 strokeColor: root.accent
                 strokeWidth: root.strokeW

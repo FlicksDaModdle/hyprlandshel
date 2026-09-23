@@ -606,6 +606,25 @@ proportion above size 24. Settings' chrome went up with it, from 11–15px to
 17–20 in 30px buttons. `monocheck.sh` asserts the 2px floor across ten sizes
 in both this pack and the file manager's copy.
 
+### When a glyph is missing
+
+Run the icon sheet on the machine that shows it:
+
+    qs -p ~/.config/quickshell/hyprshell/tools/iconsheet.qml
+
+Every glyph in the pack, twice: left with Qt's default Shape renderer,
+right with the analytic one (`Shape.CurveRenderer`). A name whose left
+square is filled and whose right one is empty is a glyph the curve renderer
+drops on that GPU — which looks, in the dock, like a tile with a fill and
+nothing on it.
+
+The curve renderer is off by default for exactly that reason. It is the one
+thing about these glyphs that cannot be tested here: every offscreen render
+used to check this shell runs on the software backend, which ignores the
+request and uses its own rasteriser, so it looked correct in every check
+while shipping untested on real hardware. Settings → Appearance → Sharper
+icon edges turns it on.
+
 `MonoIcon` renders an unknown name as nothing at all and reports nothing,
 so `iconcheck.js` asserts that every name the shell and the file manager
 ask for exists in their pack — including the ones that only appear as a
