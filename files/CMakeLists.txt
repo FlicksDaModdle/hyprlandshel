@@ -110,9 +110,13 @@ configure_file(org.freedesktop.FileManager1.service.in
                ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.FileManager1.service @ONLY)
 
 # And the same for the file-dialog portal backend, which xdg-desktop-portal
-# starts the first time anything puts up a "Save as…".
+# starts the first time anything puts up a "Save as…" — by way of the user
+# manager, which is where the session's environment is.
 configure_file(portal.service.in
                ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.impl.portal.desktop.hyprshell.service @ONLY)
+
+configure_file(portal.systemd.service.in
+               ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files-portal.service @ONLY)
 
 configure_file(hyprshell-files.desktop.in
                ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files.desktop @ONLY)
@@ -127,6 +131,12 @@ install(FILES hyprshell.portal
         DESTINATION ${CMAKE_INSTALL_DATADIR}/xdg-desktop-portal/portals)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.impl.portal.desktop.hyprshell.service
         DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
+# share/systemd/user, not lib/systemd/user: the user manager searches
+# $XDG_DATA_HOME/systemd/user and each $XDG_DATA_DIRS/systemd/user, which
+# covers both an install into ~/.local and one into a system prefix. The
+# lib path is only searched under /usr and /usr/local.
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files-portal.service
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/systemd/user)
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.FileManager1.service
         DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)

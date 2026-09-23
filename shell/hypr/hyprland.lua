@@ -159,7 +159,27 @@ local launch = "pgrep -x qs >/dev/null 2>&1 || "
 -- nothing then and the hook below does the real work.
 hl.exec_cmd('test -n "$WAYLAND_DISPLAY" && { ' .. launch .. "; }")
 
+-- Hand the session's environment to D-Bus and systemd.
+--
+-- Anything started *by the bus* rather than by the compositor inherits the
+-- bus daemon's environment, which was set before this session existed: no
+-- WAYLAND_DISPLAY, no XDG_CURRENT_DESKTOP. A Qt or GTK program activated
+-- that way cannot find a display at all and dies during startup, and what
+-- the caller sees is an activation that failed for no stated reason. The
+-- file manager answering "show in file manager" and the file-dialog portal
+-- are both started exactly that way, so both need this.
+--
+-- XDG_CURRENT_DESKTOP is in the list for a second reason: xdg-desktop-portal
+-- matches it against each backend's UseIn= line, and with it unset every
+-- backend is skipped.
+local shareEnv = "dbus-update-activation-environment --systemd "
+    .. "WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE "
+    .. "HYPRLAND_INSTANCE_SIGNATURE XDG_SESSION_DESKTOP 2>/dev/null"
+
 hl.on("hyprland.start", function()
+    -- Before the shell, and before anything that might ask the bus for a
+    -- program: an activation that happens first gets the old environment.
+    hl.exec_cmd(shareEnv)
     hl.exec_cmd(launch)
     -- The shell draws its own lock screen; hypridle just decides when to ask
     -- for it. Safe to drop if hypridle isn't installed.

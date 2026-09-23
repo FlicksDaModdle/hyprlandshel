@@ -1,3 +1,17 @@
 [D-BUS Service]
 Name=org.freedesktop.impl.portal.desktop.hyprshell
 Exec=@CMAKE_INSTALL_FULL_BINDIR@/hyprshell-files --portal
+# Started through systemd rather than forked by the bus daemon.
+#
+# The bus daemon's own environment is the one the session started with,
+# and it has no WAYLAND_DISPLAY in it: a Qt program forked from there
+# finds no display, cannot initialise a platform plugin, and dies during
+# startup. All the caller sees is an activation that failed, with no
+# reason given anywhere. Going through the user manager means the
+# environment the session imported into it, and — just as useful when
+# something does go wrong — the failure lands in the journal:
+#
+#   journalctl --user -u hyprshell-files-portal.service
+#
+# Exec above stays as the fallback for a session without systemd.
+SystemdService=hyprshell-files-portal.service

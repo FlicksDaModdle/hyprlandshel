@@ -1,0 +1,13 @@
+[Unit]
+Description=Hyprshell Files portal backend (file dialogs)
+Documentation=https://flatpak.github.io/xdg-desktop-portal/docs/
+PartOf=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=org.freedesktop.impl.portal.desktop.hyprshell
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/hyprshell-files --portal
+# A file dialog is part of the session, not a daemon of its own, and it
+# should go when the session does rather than outlive it invisibly.
+Slice=session.slice
+TimeoutStopSec=5

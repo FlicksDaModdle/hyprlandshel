@@ -242,6 +242,25 @@ PORTALEOF
     printf '  %s  systemctl --user restart xdg-desktop-portal%s\n' "$DIM" "$RST"
 fi
 
+# Anything the bus starts inherits the bus daemon's environment, which was
+# fixed before this session existed. Without WAYLAND_DISPLAY in it a Qt
+# program cannot find a display at all and dies during startup, and the
+# caller is told only that activation failed. The backend is registered
+# through systemd for that reason, so what matters is whether the *user
+# manager* has the session's environment.
+if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+    systemctl --user daemon-reload 2>/dev/null \
+        && ok "systemd" "reloaded user units"
+    if systemctl --user show-environment 2>/dev/null | grep -q '^WAYLAND_DISPLAY='; then
+        ok "session environment" "the user manager knows WAYLAND_DISPLAY"
+    else
+        warn "session environment" "the user manager has no WAYLAND_DISPLAY"
+        printf '  %sanything the bus starts will have no display to open on. The%s\n' "$DIM" "$RST"
+        printf '  %sshell'"'"'s hyprland.lua does this at login; for now:%s\n' "$DIM" "$RST"
+        printf '  %s  dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP%s\n' "$DIM" "$RST"
+    fi
+fi
+
 # Firefox has to be told to ask at all. Its own GTK dialog is the default
 # for an unsandboxed build — widget.use-xdg-desktop-portal.file-picker is
 # 2, "auto", which means the portal only when sandboxed. At 2 none of the

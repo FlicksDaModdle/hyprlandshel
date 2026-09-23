@@ -113,6 +113,28 @@ else
     note "Run ./install.sh — without this the bus cannot start the backend on demand."
 fi
 
+# The bus hands this to systemd, so the unit has to be one it knows, and
+# the environment that matters is the user manager's. A Qt program with no
+# WAYLAND_DISPLAY cannot open a display and dies during startup — which the
+# caller sees only as "activation failed".
+UNIT=hyprshell-files-portal.service
+if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+    if systemctl --user cat "$UNIT" >/dev/null 2>&1; then
+        ok "systemd knows $UNIT"
+    else
+        bad "systemd does not know $UNIT"
+        note "Run ./install.sh, then: systemctl --user daemon-reload"
+    fi
+    if systemctl --user show-environment 2>/dev/null | grep -q '^WAYLAND_DISPLAY='; then
+        ok "the user manager has WAYLAND_DISPLAY"
+    else
+        bad "the user manager has no WAYLAND_DISPLAY"
+        note "Anything the bus starts then has no display to open on, and dies."
+        note "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP"
+        note "The shell's hyprland.lua does this at login; this session started before it did."
+    fi
+fi
+
 if command -v gdbus >/dev/null 2>&1; then
     if timeout 10 gdbus call --session --dest "$SVC" \
          --object-path /org/freedesktop/portal/desktop \
@@ -128,7 +150,10 @@ if command -v gdbus >/dev/null 2>&1; then
         else bad "it is missing:$MISS"; fi
     else
         bad "the bus could not start $SVC"
-        note "Try it by hand and read what it says:  hyprshell-files --portal"
+        note "What it said on the way down:"
+        note "  journalctl --user -u $UNIT -n 20 --no-pager"
+        note "Or run it yourself, which shows the same thing:"
+        note "  hyprshell-files --portal"
     fi
 else
     warn "gdbus is not installed, so the backend could not be called (glib2)"
