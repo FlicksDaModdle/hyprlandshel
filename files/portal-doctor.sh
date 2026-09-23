@@ -139,6 +139,36 @@ if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/d
     fi
 fi
 
+# Having the file on disk is not the same as the bus having read it.
+#
+# A bus daemon lists its activatable services when it starts, and watches
+# the directories it found then. An install that *creates*
+# ~/.local/share/dbus-1/services leaves a directory nothing is watching,
+# so the name stays unknown however correct the file is — and what a
+# caller is told is "The name is not activatable", which reads like the
+# service is broken rather than unseen.
+if command -v gdbus >/dev/null 2>&1; then
+    ACT=$(timeout 10 gdbus call --session --dest org.freedesktop.DBus \
+          --object-path /org/freedesktop/DBus \
+          --method org.freedesktop.DBus.ListActivatableNames 2>/dev/null)
+    case "$ACT" in
+        *"$SVC"*) ok "the bus lists it as activatable" ;;
+        "")       warn "could not ask the bus what it can activate" ;;
+        *)        bad "the bus does not list $SVC as activatable"
+                  if [ -n "$SVCFILE" ]; then
+                      note "The file is there; the bus has not read it. Ask it to:"
+                  else
+                      note "Install it (./install.sh), then ask the bus to re-read:"
+                  fi
+                  note "  systemctl --user reload dbus.service"
+                  note "or, on a bus without that unit:"
+                  note "  gdbus call --session --dest org.freedesktop.DBus \\"
+                  note "    --object-path /org/freedesktop/DBus \\"
+                  note "    --method org.freedesktop.DBus.ReloadConfig"
+                  note "If it is still unknown after that, log out and back in." ;;
+    esac
+fi
+
 if command -v gdbus >/dev/null 2>&1; then
     if timeout 10 gdbus call --session --dest "$SVC" \
          --object-path /org/freedesktop/portal/desktop \
