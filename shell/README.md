@@ -606,6 +606,25 @@ proportion above size 24. Settings' chrome went up with it, from 11–15px to
 17–20 in 30px buttons. `monocheck.sh` asserts the 2px floor across ten sizes
 in both this pack and the file manager's copy.
 
+### The launcher grows out of the dock
+
+Settings → Shell → Launcher → "Grow out of the dock", on by default. The
+start menu is the dock's own pill stretching into it rather than a separate
+panel appearing above it, and it shrinks back on the way out. With
+auto-hide on, the dock slides out first and the menu grows from it — that
+part was already there, since the dock counts the launcher being open as a
+reason to be revealed.
+
+How it works: the focused screen's dock publishes its pill's width and
+height to `UiState`, the launcher covers the whole screen so it works the
+position out itself, and one number — `morph`, 0 at the pill and 1 at the
+panel — drives every part of the shape. The contents are laid out at the
+finished size throughout and clipped, rather than reflowed each frame, so
+the panel opens like a shutter and the text does not rewrap twenty times on
+the way up; they fade in over the back half, when there is something to
+see through. The dock's pill fades out as it goes, since two of them on
+screen at once would give it away.
+
 ### When a glyph is missing
 
 Run the icon sheet on the machine that shows it:

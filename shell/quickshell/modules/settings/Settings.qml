@@ -272,14 +272,17 @@ Scope {
                  + "and 14px.",
               type: "slider", min: 60, max: 180, unit: "%",
               value: A.barIconPct, set: v => A.barIconPct = v },
-            { n: "Sharper icon edges",
-              s: "Draws the shell's glyphs with Qt's analytic renderer "
-                 + "instead of the default one. Cleaner curves — but it is "
-                 + "a newer code path and on some drivers it drops glyphs "
-                 + "entirely, which looks like a dock tile with nothing on "
-                 + "it. Turn it on; if anything vanishes, turn it back off.",
-              type: "toggle", value: A.curveRenderer,
-              set: v => A.curveRenderer = v },
+            { n: "Icon edge smoothing",
+              s: "How the shell's glyphs are antialiased. Multisampled is "
+                 + "the safe default. Analytic gives the cleanest curves but "
+                 + "is a newer code path that drops glyphs entirely on some "
+                 + "drivers — a dock tile with nothing on it is what that "
+                 + "looks like. Off is the raw triangulated edge.",
+              type: "seg",
+              options: [{ label: "Off",          value: "off" },
+                        { label: "Multisampled", value: "layer" },
+                        { label: "Analytic",     value: "curve" }],
+              value: A.iconSmoothing, set: v => A.iconSmoothing = v },
             { n: "File manager icons",
               s: "Set inside the file manager itself — Ctrl + and Ctrl - in "
                  + "its window, or Ctrl 0 to go back to normal. It is a "
@@ -395,6 +398,14 @@ Scope {
             { type: "header", n: "Stretch",
               s: "Optional, on top of the size above. These change one "
                  + "dimension and leave the content alone." },
+            { n: "Grow out of the dock",
+              s: "The start menu opens as the dock's own pill stretching "
+                 + "into it, rather than a separate panel appearing above "
+                 + "it, and shrinks back into it on the way out. With "
+                 + "auto-hide on, the dock slides out first and the menu "
+                 + "grows from it.",
+              type: "toggle", value: A.launcherMorph,
+              set: v => A.launcherMorph = v },
             { n: "Wider", s: "Extra width, spent on more columns rather than "
                  + "more space between the same tiles",
               type: "slider", min: 100, max: 200, unit: "%",

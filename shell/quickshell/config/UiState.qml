@@ -14,6 +14,12 @@ Singleton {
 
     // ── panels ────────────────────────────────────────────────────────────
     property bool launcherOpen: false
+    // Where the dock's pill is, published by the focused screen's dock so
+    // the launcher can grow out of it. Width and height only: the launcher
+    // covers the whole screen and works the position out itself, which
+    // keeps the two windows from having to agree about coordinates.
+    property real dockPillWidth: 0
+    property real dockPillHeight: 0
     property bool overviewOpen: false
     property bool controlCenterOpen: false
     property bool notificationsOpen: false

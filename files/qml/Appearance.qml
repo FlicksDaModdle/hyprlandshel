@@ -133,9 +133,12 @@ QtObject {
         return lum > 0.6 ? "#201e1d" : "#ffffff";
     }
 
-    // Qt's analytic Shape renderer. See MonoIcon for why this is off unless
-    // asked for. Shares the shell's key, so one switch covers both.
-    readonly property bool curveRenderer: root.theme.curveRenderer === true
+    // "off" | "layer" | "curve". See MonoIcon. Shares the shell's key, so
+    // one switch covers both programs.
+    readonly property string iconSmoothing: {
+        const v = root.theme.iconSmoothing;
+        return (v === "off" || v === "curve") ? v : "layer";
+    }
 
     // ── geometry and type ─────────────────────────────────────────────────
     readonly property real roundingPct: root.theme.rounding === undefined

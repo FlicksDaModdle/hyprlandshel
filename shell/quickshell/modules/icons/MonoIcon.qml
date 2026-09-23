@@ -29,22 +29,31 @@ Item {
     // the launcher's selected row, where the whole tile inverts).
     property bool monochrome: false
 
-    // Which of Qt's two Shape renderers draws this.
+    // How the edges are smoothed. Three settings because the two things
+    // that can do it have different costs and different risks:
     //
-    // CurveRenderer antialiases analytically in the shader instead of
-    // triangulating, and it is what this file asked for unconditionally
-    // until now. It is also the one thing about these glyphs that has
-    // never been exercised in testing: every render used to check this
-    // shell runs on the software backend, which ignores the request
-    // entirely and uses its own rasteriser. So it has been shipping
-    // untested on real hardware while looking correct in every check.
+    //   "off"     Shape's geometry renderer, raw. Triangulated, no
+    //             antialiasing of its own — this is what the glyphs looked
+    //             like after the curve renderer was switched off, and the
+    //             answer to "there is no antialiasing on any icons".
+    //   "layer"   the same renderer, multisampled 4x as one layer per
+    //             glyph. An old, widely supported Qt Quick feature that
+    //             does not change how the path is rasterised, only how the
+    //             result is resolved. The default.
+    //   "curve"   Shape.CurveRenderer, which antialiases analytically in
+    //             the shader. The best edges, and the one that dropped the
+    //             dock's grid and panelsTopLeft glyphs entirely on real
+    //             hardware while looking perfect in every check here.
     //
-    // It is therefore off by default and behind a setting. GeometryRenderer
-    // is what every verified render of this pack actually used, and the two
-    // lay down the same amount of ink — measured, not assumed — so the
-    // default costs nothing but edge quality on curves.
-    readonly property int renderer: Config.Appearance.curveRenderer
+    // Neither smoothing path can be verified in this repository: every
+    // render used to check these glyphs runs on Qt's software backend,
+    // which ignores both layer.samples and preferredRendererType and
+    // rasterises its own way. So the default is the conservative one and
+    // the others are a switch, not a promise.
+    readonly property string smoothing: Config.Appearance.iconSmoothing
+    readonly property int renderer: smoothing === "curve"
                                     ? Shape.CurveRenderer : Shape.GeometryRenderer
+    readonly property bool multisample: smoothing === "layer"
 
     readonly property var spec: IconData.icons[name] || ({})
     readonly property color accent: monochrome ? inkColor : accentColor
@@ -69,6 +78,19 @@ Item {
         scale: root.drawSize / 24
         transformOrigin: Item.TopLeft
         antialiasing: true
+        // Supersampled, not just multisampled. `layer.samples` asks the
+        // GPU for MSAA and is ignored by backends that have none, which
+        // leaves a layer resolved at 1:1 and looking softer than no layer
+        // at all. Rendering the layer at twice the size and letting it
+        // scale down is antialiasing that does not depend on the backend
+        // having anything in particular, and the samples request rides
+        // along for the hardware that does honour it.
+        layer.enabled: root.multisample
+        layer.samples: 4
+        layer.smooth: true
+        layer.textureSize: root.multisample
+                           ? Qt.size(Math.ceil(width * 2), Math.ceil(height * 2))
+                           : undefined
 
         // Filled accent region (palette's half-disc is the only one today).
         Shape {

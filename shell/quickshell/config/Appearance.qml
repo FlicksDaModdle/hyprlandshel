@@ -114,8 +114,11 @@ Singleton {
             property int barBadgeSize: 11             // notification count
             property int dockLabelSize: 12            // dock tooltips and the active label
             property int barIcon: 100                 // 60-180 % of the bar's glyphs
-            // Qt's analytic Shape renderer. Off by default: see MonoIcon.
-            property bool curveRenderer: false
+            // "off" | "layer" | "curve" — see MonoIcon.
+            property string iconSmoothing: "layer"
+            // The launcher grows out of the dock's pill rather than
+            // appearing above it.
+            property bool launcherMorph: true
             property int launcherTitleSize: 13        // launcher entry names
             property int launcherMetaSize: 11         // launcher categories and hints
 
@@ -264,7 +267,8 @@ Singleton {
     property alias barBadgeSize: prefs.barBadgeSize
     property alias dockLabelSize: prefs.dockLabelSize
     property alias barIconPct: prefs.barIcon
-    property alias curveRenderer: prefs.curveRenderer
+    property alias iconSmoothing: prefs.iconSmoothing
+    property alias launcherMorph: prefs.launcherMorph
     property alias launcherTitleSize: prefs.launcherTitleSize
     property alias launcherMetaSize: prefs.launcherMetaSize
 
@@ -494,7 +498,10 @@ Singleton {
     // it reads as a missing icon rather than as a setting turned down.
     readonly property real dockIconSize:
         Math.max(8, Math.round(dockTileSize * dockIconPct / 100))
-    readonly property real dockGlyphSize: Math.max(8, Math.round(dockIconSize * 0.82))
+    // The utility tiles — overview, settings, show desktop — used to draw at
+    // 82% of the app tiles, which is a distinction nobody asked for and read
+    // as the corner icons being smaller than the rest. They use dockIconSize
+    // now, like everything else in the dock.
 
     // ── bar glyphs ────────────────────────────────────────────────────────
     // The design's own 16 and 14, scaled by one preference so the bar's

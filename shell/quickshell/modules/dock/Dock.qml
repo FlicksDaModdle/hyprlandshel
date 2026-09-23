@@ -31,7 +31,6 @@ Variants {
         readonly property bool isLeft: Config.Appearance.dockLeft
         readonly property real tileSize: Config.Appearance.dockTileSize
         readonly property real iconSize: Config.Appearance.dockIconSize
-        readonly property real glyphSize: Config.Appearance.dockGlyphSize
         readonly property real padH: Config.Appearance.dockPadH
         readonly property real padV: Config.Appearance.dockPadV
         readonly property real tileSpacing: Config.Appearance.dockTileSpacing
@@ -205,6 +204,32 @@ Variants {
             implicitWidth: (dock.isLeft ? tiles.implicitWidth : tiles.implicitWidth) + dock.padH * 2
             implicitHeight: tiles.implicitHeight + dock.padV * 2
 
+            // The launcher grows out of this shape, so it has to know it.
+            // Only the focused screen's dock reports, or two monitors would
+            // take turns overwriting each other.
+            Binding {
+                target: Config.UiState
+                property: "dockPillWidth"
+                value: pill.implicitWidth
+                when: dock.onFocusedScreen
+                restoreMode: Binding.RestoreNone
+            }
+            Binding {
+                target: Config.UiState
+                property: "dockPillHeight"
+                value: pill.implicitHeight
+                when: dock.onFocusedScreen
+                restoreMode: Binding.RestoreNone
+            }
+
+            // While the launcher is out, it *is* this pill — it starts at
+            // exactly this rectangle and grows. Two of them on screen at
+            // once would give the trick away, so this one steps aside.
+            opacity: (Config.Appearance.launcherMorph
+                      && Config.UiState.launcherOpen && dock.onFocusedScreen) ? 0 : 1
+            visible: opacity > 0.01
+            Behavior on opacity { NumberAnimation { duration: 90 } }
+
             // The mockup's `inset 0 1px 0 var(--gloss)` reads as a soft
             // highlight on a translucent panel over a darker backdrop. Drawn
             // as a literal 1px line on a light dock it is just a white stripe
@@ -240,7 +265,7 @@ Variants {
                     width: dock.tileSize
                     height: dock.tileSize
                     tileSize: dock.tileSize
-                    iconSize: dock.glyphSize
+                    iconSize: dock.iconSize
                     iconName: "panelsTopLeft"
                     label: "Overview"
                     subtitle: "super tab"
@@ -340,7 +365,7 @@ Variants {
                     width: dock.tileSize
                     height: dock.tileSize
                     tileSize: dock.tileSize
-                    iconSize: dock.glyphSize
+                    iconSize: dock.iconSize
                     iconName: "settings"
                     label: "Settings"
                     active: Config.UiState.settingsOpen
@@ -352,7 +377,7 @@ Variants {
                     width: dock.tileSize
                     height: dock.tileSize
                     tileSize: dock.tileSize
-                    iconSize: dock.glyphSize
+                    iconSize: dock.iconSize
                     iconName: "minus"
                     label: "Show desktop"
                     subtitle: "toggle"

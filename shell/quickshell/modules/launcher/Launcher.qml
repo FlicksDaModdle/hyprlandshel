@@ -33,7 +33,23 @@ Variants {
         screen: modelData ?? null
         readonly property bool isPrimary: Services.Compositor.isFocusedScreen(modelData)
 
-        visible: Config.UiState.launcherOpen && !Config.UiState.locked && isPrimary
+        readonly property bool wanted:
+            Config.UiState.launcherOpen && !Config.UiState.locked && isPrimary
+        // Stays up while it shrinks back into the dock. Without this the
+        // surface goes the instant the flag does and there is no closing
+        // animation to see.
+        property bool lingering: false
+        visible: wanted || lingering
+        onWantedChanged: {
+            if (wanted) { linger.stop(); lingering = false; }
+            else if (visible && Config.Appearance.launcherMorph) {
+                lingering = true; linger.restart();
+            }
+            // Drives the morph too: one handler, because QML keeps only the
+            // last handler declared for a signal and silently drops the rest.
+            launcher.morph = wanted ? 1 : 0;
+        }
+        Timer { id: linger; interval: 260; onTriggered: launcher.lingering = false }
 
         anchors.top: true
         anchors.bottom: true
@@ -66,6 +82,31 @@ Variants {
         function z(px) { return Math.round(px * zoom); }
         readonly property real dockOffset: Config.Appearance.dockEdgeGap
                                            + Config.Appearance.dockPanelBreadth + 12
+
+        // ── the morph ─────────────────────────────────────────────────────
+        // 0 is the dock's pill, 1 is the panel. Everything about the
+        // panel's shape is this number, so one animation drives the lot.
+        readonly property bool morphing: Config.Appearance.launcherMorph
+                                         && Config.UiState.dockPillWidth > 0
+        property real morph: 0
+        Behavior on morph {
+            NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+        }
+        Component.onCompleted: morph = wanted ? 1 : 0
+
+        // Where the dock's pill sits, in this window's coordinates. This
+        // surface covers the screen, so the sums are the dock's own: the
+        // pill is centred on the long axis and one gap from its edge.
+        readonly property real pillW: Config.UiState.dockPillWidth
+        readonly property real pillH: Config.UiState.dockPillHeight
+        readonly property real pillX: launcher.isLeft
+            ? Config.Appearance.dockEdgeGap
+            : Math.round((launcher.width - pillW) / 2)
+        readonly property real pillY: launcher.isLeft
+            ? Math.round((launcher.height - pillH) / 2)
+            : launcher.height - Config.Appearance.dockEdgeGap - pillH
+
+        function lerp(a, b) { return a + (b - a) * launcher.morph; }
 
         property string query: ""
         property bool showAll: false
@@ -303,7 +344,16 @@ Variants {
         PanelSurface {
             id: panel
 
-            width: launcher.panelWidth
+            readonly property real targetWidth: launcher.panelWidth
+            width: launcher.morphing
+                   ? Math.round(launcher.lerp(launcher.pillW, targetWidth))
+                   : targetWidth
+            // The content is laid out at the finished size throughout and
+            // this clips it, so the panel opens like a shutter rather than
+            // reflowing every frame — which is both what the effect should
+            // look like and the only way the text does not reflow twenty
+            // times on the way up.
+            clip: launcher.morphing && launcher.morph < 0.999
             // As tall as what is in it, and no taller.
             //
             // This has been both ways round. It was min(setting, content),
@@ -319,25 +369,69 @@ Variants {
             // page is a fixed three rows, so the content cannot run away.
             // The footer is anchored to the bottom rather than carried at
             // the end of the column, so its height is added back here.
-            height: Math.min(body.implicitHeight + footer.height,
-                             Math.min(launcher.panelHeight,
-                                      launcher.height - launcher.dockOffset - 24))
+            // ...with one floor: whatever it measured while showing the
+            // pinned grid. Without it the panel is a different size for
+            // every keystroke, and collapses to a stub the moment a query
+            // matches nothing — which is the worst moment for the thing
+            // you are typing into to jump.
+            property real restingHeight: 0
+
+            readonly property real targetHeight:
+                Math.min(Math.max(body.implicitHeight + footer.height,
+                                  panel.restingHeight),
+                         Math.min(launcher.panelHeight,
+                                  launcher.height - launcher.dockOffset - 24))
+            height: launcher.morphing
+                    ? Math.round(launcher.lerp(launcher.pillH, targetHeight))
+                    : targetHeight
+
+            // Latched rather than computed: the resting layout is not on
+            // screen while you are searching, so its height cannot be asked
+            // for then. This records it whenever it *is* showing.
+            Binding {
+                target: panel
+                property: "restingHeight"
+                value: body.implicitHeight + footer.height
+                when: !launcher.showingList && launcher.visible
+                restoreMode: Binding.RestoreNone
+            }
 
             // Anchored to the dock's Start tile: above it when the dock is at
             // the bottom, beside it when the dock is on the left. Clamped so it
             // can't run off the screen on a narrow monitor.
-            x: launcher.isLeft
+            readonly property real targetX: launcher.isLeft
                ? launcher.dockOffset
-               : Math.max(12, Math.min(launcher.width - width - 12,
-                    Math.round(launcher.width / 2 - width / 2)))
-            y: launcher.isLeft
+               : Math.max(12, Math.min(launcher.width - targetWidth - 12,
+                    Math.round(launcher.width / 2 - targetWidth / 2)))
+            readonly property real targetY: launcher.isLeft
                ? Math.max(Config.Appearance.barHeight + 12,
-                    Math.min(launcher.height - height - 12,
-                             Math.round(launcher.height / 2 - height / 2)))
-               : launcher.height - height - launcher.dockOffset
+                    Math.min(launcher.height - targetHeight - 12,
+                             Math.round(launcher.height / 2 - targetHeight / 2)))
+               : launcher.height - targetHeight - launcher.dockOffset
+
+            x: launcher.morphing ? Math.round(launcher.lerp(launcher.pillX, targetX))
+                                 : targetX
+            y: launcher.morphing ? Math.round(launcher.lerp(launcher.pillY, targetY))
+                                 : targetY
 
             // Swallow clicks so they don't reach the catcher behind.
             MouseArea { anchors.fill: parent }
+
+            // Everything inside is laid out at the panel's finished size and
+            // pinned to the bottom, which is the edge it grows away from, so
+            // the contents hold still while the shape opens around them.
+            Item {
+                id: inner
+                width: panel.targetWidth
+                height: panel.targetHeight
+                anchors.bottom: parent.bottom
+                anchors.horizontalCenter: parent.horizontalCenter
+                // Fades in over the back half of the morph: at the start
+                // there is a pill-sized hole to look through and text in it
+                // would just be clipped nonsense.
+                opacity: launcher.morphing
+                         ? Math.max(0, Math.min(1, (launcher.morph - 0.45) / 0.4))
+                         : 1
 
             Column {
                 id: body
@@ -1054,6 +1148,7 @@ Variants {
                     HoverHandler { id: powerHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { launcher.close(); Config.UiState.togglePower(); } }
                 }
+            }
             }
         }
 

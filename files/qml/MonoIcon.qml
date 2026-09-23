@@ -57,22 +57,31 @@ Item {
     implicitWidth: drawSize
     implicitHeight: drawSize
 
-    // Qt's analytic Shape renderer, 6.6 and up. Undefined below that, where
-    // the enum does not exist — reading it is safe, assigning the property
-    // would not be, so the assignment below is behind this check and never
-    // runs on older Qt.
+    // How the edges are smoothed. Three settings because the two things
+    // that can do it have different costs and different risks:
     //
-    // Off unless theme.json turns it on, and that default is the point:
-    // every render used to check this pack runs on the software backend,
-    // which ignores the request and uses its own rasteriser, so the curve
-    // renderer has never actually been exercised by anything here. The
-    // shell asked for it unconditionally and the dock has tiles that draw
-    // no glyph at all on real hardware. The two renderers lay down the same
-    // amount of ink — measured — so the default costs only edge quality on
-    // curves, and is the one this pack has actually been verified against.
-    readonly property var curveRenderer: Shape.CurveRenderer
+    //   "off"     Shape's geometry renderer, raw. Triangulated, no
+    //             antialiasing of its own — this is what the glyphs looked
+    //             like after the curve renderer was switched off, and the
+    //             answer to "there is no antialiasing on any icons".
+    //   "layer"   the same renderer, multisampled 4x as one layer per
+    //             glyph. An old, widely supported Qt Quick feature that
+    //             does not change how the path is rasterised, only how the
+    //             result is resolved. The default.
+    //   "curve"   Shape.CurveRenderer, which antialiases analytically in
+    //             the shader. The best edges, and the one that dropped the
+    //             dock's grid and panelsTopLeft glyphs entirely on real
+    //             hardware while looking perfect in every check here.
+    //
+    // Neither smoothing path can be verified in this repository: every
+    // render used to check these glyphs runs on Qt's software backend,
+    // which ignores both layer.samples and preferredRendererType and
+    // rasterises its own way. So the default is the conservative one and
+    // the others are a switch, not a promise.
+    readonly property bool multisample: Appearance.iconSmoothing === "layer"
     readonly property bool curves:
-        Appearance.curveRenderer && root.curveRenderer !== undefined
+        Appearance.iconSmoothing === "curve" && Shape.CurveRenderer !== undefined
+    readonly property var curveRenderer: Shape.CurveRenderer
 
     Item {
         width: 24
@@ -80,6 +89,19 @@ Item {
         scale: root.drawSize / 24
         transformOrigin: Item.TopLeft
         antialiasing: true
+        // Supersampled, not just multisampled. `layer.samples` asks the
+        // GPU for MSAA and is ignored by backends that have none, which
+        // leaves a layer resolved at 1:1 and looking softer than no layer
+        // at all. Rendering the layer at twice the size and letting it
+        // scale down is antialiasing that does not depend on the backend
+        // having anything in particular, and the samples request rides
+        // along for the hardware that does honour it.
+        layer.enabled: root.multisample
+        layer.samples: 4
+        layer.smooth: true
+        layer.textureSize: root.multisample
+                           ? Qt.size(Math.ceil(width * 2), Math.ceil(height * 2))
+                           : undefined
 
         // Filled accent region (palette's half-disc is the only one today).
         Shape {
