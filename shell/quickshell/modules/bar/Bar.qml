@@ -61,6 +61,10 @@ Variants {
         anchors.right: true
 
         implicitHeight: bar.u(Config.Appearance.barHeight)
+        // Explicit, for the same reason as the dock: three anchors would
+        // otherwise let Auto decide, and the zone this reserves should be
+        // the number this bar is, not a guess from its geometry.
+        exclusionMode: ExclusionMode.Normal
         exclusiveZone: bar.u(Config.Appearance.barHeight)
 
         WlrLayershell.namespace: "quickshell:bar"

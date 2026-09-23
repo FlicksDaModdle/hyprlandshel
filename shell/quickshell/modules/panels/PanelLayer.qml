@@ -34,6 +34,18 @@ Variants {
         // would land on the default output instead. Two bars on one monitor
         // is what that looks like from the outside.
         readonly property bool hasScreen: !!modelData
+        // Covers the whole output, exclusive zones and all.
+        //
+        // An always-on dock reserves its strip, and a layer surface that
+        // respects that reservation gets shrunk by it — so the wallpaper
+        // stopped at the dock and what showed behind and beside it was the
+        // compositor's own background, not the desktop. The same shrinking
+        // moved the launcher's bottom edge up off the screen edge, which is
+        // the one place it must stay anchored, and took its click-away
+        // target with it: the desktop beside the dock stopped dismissing
+        // it. Reserving space is for *windows*, not for the shell's own
+        // full-screen surfaces.
+        exclusionMode: ExclusionMode.Ignore
         visible: hasScreen && Config.UiState.anyPanelOpen && isPrimary
         color: "transparent"
         exclusiveZone: 0

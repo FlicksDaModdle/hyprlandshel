@@ -32,6 +32,14 @@ Variants {
         // is what that looks like from the outside.
         readonly property bool hasScreen: !!modelData
         color: "transparent"
+        // Normal, explicitly. Auto reserves space for the whole surface
+        // when exactly three anchors are set, and this surface is anchored
+        // on three and is much taller than the dock — it carries the
+        // tooltip headroom above the pill. Left on Auto it would reserve
+        // all of that, pushing every window and every other layer down by
+        // a tooltip's height for no reason anyone could see.
+        exclusionMode: ExclusionMode.Normal
+
         // Windows are kept clear of the dock when it is always there, and
         // not when it hides — an auto-hiding dock that still reserved its
         // strip would be a band of unusable desktop with nothing in it.

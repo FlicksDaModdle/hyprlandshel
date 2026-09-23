@@ -657,6 +657,26 @@ a scale, which makes Hyprland re-enumerate — a surface whose modelData had
 momentarily gone would land on the default output instead. Two bars on one
 monitor is what that looks like.
 
+### Which surfaces reserve space, and which ignore it
+
+Only two reserve: the bar and, when it is not set to auto-hide, the dock.
+Both are pinned to `ExclusionMode.Normal` explicitly, because `Auto` —
+the default — reserves space for the *whole surface* when exactly three
+anchors are set, and both are anchored on three. The dock's surface spans
+the screen edge and carries tooltip headroom above the pill, so on `Auto`
+it would reserve all of that and push every window down by a tooltip's
+height.
+
+Everything that covers the screen sets `ExclusionMode.Ignore`: the
+wallpaper, the launcher, the panel layer and the overview. A reservation
+shrinks other layer surfaces too, not just windows, and that is almost
+never what is meant. Left respecting it, the wallpaper stopped at the dock
+and what showed behind and beside the dock was the compositor's own
+background rather than the desktop; the launcher's bottom edge lifted off
+the screen edge, which is the one place it must stay anchored when it grows
+out of the dock; and its click-away target lifted with it, so the desktop
+beside the dock stopped dismissing it. Reserving space is for windows.
+
 ### Space for the dock
 
 An always-visible dock reserves its strip, so windows tile above it rather
