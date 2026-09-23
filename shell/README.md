@@ -505,17 +505,27 @@ not what widgets exist or where they sit. The concept isn't Dolphin with
 different colours, it is a different layout, so no amount of styling gets
 there. Writing the window is the only route that does.
 
-**What it does not write itself.** Everything that changes the disk goes
-through `gio` — the GIO/GVfs library GTK file managers are built on:
+**What it does not write itself.** Deleting, watching, opening and renaming
+go through `gio` — the GIO/GVfs library GTK file managers are built on:
 
-    gio trash     gio copy    gio move    gio rename
-    gio mkdir     gio open    gio monitor
+    gio trash     gio rename    gio mkdir    gio open    gio monitor
 
 So deleting means the real freedesktop trash, restorable from here or from
-any other file manager, rather than `rm`. `gio monitor` is the same
+any other file manager, rather than `rm`, and `gio monitor` is the same
 GFileMonitor Nautilus uses, so files something else creates appear without a
-refresh. Paths are passed as their own argv entries and never interpolated
-into a shell string.
+refresh.
+
+Copy and move are `cp -a` and `mv`, not `gio copy` and `gio move`, for two
+reasons that only showed up under test. `gio copy` refuses a directory
+outright — "Can't recursively copy directory" — so pasting a folder did not
+work at all, and there is no recursive flag. And neither gio verb has a
+conflict policy fit for a window: the default overwrites silently, and `-i`
+prompts on a terminal that does not exist, so it would hang.
+`--backup=numbered` keeps whatever was there as `name.~1~` and asks nobody.
+
+Paths are passed as their own argv entries and never interpolated into a
+shell string, so a file named `; rm -rf ~` is only ever a name — which is
+tested, by creating one and trashing it.
 
 **Listing is `find`, not `gio list`.** `gio list` prints one line per file,
 which cannot represent a filename containing a newline — it splits it across

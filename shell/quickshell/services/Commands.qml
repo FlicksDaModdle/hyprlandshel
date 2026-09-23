@@ -99,13 +99,22 @@ Singleton {
     property string lastToggle: ""
     property double lastToggleAt: 0
 
+    // The window is refreshed on a suppressed repeat too, not only on one
+    // that gets through. Refreshing only on the latter meant a steady
+    // stream leaked: at 0, 150, 300ms the first fired, the second was
+    // suppressed without moving the mark, and the third was 300ms from a
+    // mark that had not moved, so it fired as well.
+    //
+    // With Super bound once (see hyprland.lua) nothing should reach here
+    // twice anyway. This is the backstop, and a backstop that lets every
+    // other event through is not one.
     function isDuplicate(name) {
         if (name.indexOf("toggle") !== 0) return false;
         const now = Date.now();
-        if (name === lastToggle && now - lastToggleAt < 200) return true;
+        const repeat = name === lastToggle && now - lastToggleAt < 150;
         lastToggle = name;
         lastToggleAt = now;
-        return false;
+        return repeat;
     }
 
     // "openSettings Display" -> table.openSettings("Display")

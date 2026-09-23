@@ -15,11 +15,11 @@ import "../config" as Config
 //   it prints it across two lines, and a line-based reader silently invents
 //   two files that do not exist.
 //
-//   Acting wants GIO's semantics. `gio trash` is the real freedesktop trash,
-//   restorable from any file manager, where `rm` is gone forever; `gio move`
-//   knows about cross-device copies; `gio mount` reaches removable and
-//   network locations. Paths go to it as their own argv entries, so nothing
-//   is parsed and nothing can be mangled.
+//   Acting wants GIO where GIO is actually better. `gio trash` is the real
+//   freedesktop trash, restorable from any file manager, where `rm` is gone
+//   forever, and `gio monitor` is the change feed. Copy and move are cp and
+//   mv instead — see the note above them for why. Either way paths go as
+//   their own argv entries, so nothing is parsed and nothing can be mangled.
 //
 // Nothing here holds the current directory: a window does, because there can
 // be more than one. This is stateless apart from the clipboard.
@@ -479,16 +479,31 @@ Singleton {
         run(["gio", "rename", path, name], root.parent(path));
     }
 
+    // Copy and move are cp and mv, not `gio copy` and `gio move`, for two
+    // measured reasons:
+    //
+    //   `gio copy` refuses a directory outright — "Can't recursively copy
+    //   directory", exit 1 — so pasting a folder simply did not work. There
+    //   is no recursive flag; the option that looks like one, -p, is
+    //   --progress. (--preserve is the attribute one, and has no short form,
+    //   which is how -p came to be in here claiming to preserve anything.)
+    //
+    //   Neither gio verb has a conflict policy that suits a shell: the
+    //   default overwrites silently, and -i prompts on a terminal that does
+    //   not exist, so it would hang. --backup=numbered keeps whatever was
+    //   there as name.~1~ and needs nobody to answer a question.
+    //
+    // cp -a is recursive and does preserve mode, ownership and timestamps;
+    // mv handles a cross-device move by copying, the same as gio move. The
+    // listing is local-only anyway, since it is `find`.
     function copy(paths, dir) {
         if (!paths || !paths.length) return;
-        // -p keeps permissions and timestamps; a copy that silently drops
-        // the executable bit is a copy that does not work.
-        run(["gio", "copy", "-p"].concat(paths).concat([dir]), dir);
+        run(["cp", "-a", "--backup=numbered", "--"].concat(paths).concat([dir]), dir);
     }
 
     function move(paths, dir) {
         if (!paths || !paths.length) return;
-        run(["gio", "move"].concat(paths).concat([dir]), dir);
+        run(["mv", "--backup=numbered", "--"].concat(paths).concat([dir]), dir);
     }
 
     function cut(paths) { root.clipboard = { paths: (paths || []).slice(), cut: true }; }

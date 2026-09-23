@@ -333,9 +333,8 @@ hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
 -- end of SUPER+C, because Hyprland shadows a release bind whose key took
 -- part in a chord (shadowBinds, src/keybinds/Manager.cpp).
 --
--- Bound twice, by keysym and by keycode, because which spelling a given
--- Hyprland build accepts for this has not been possible to establish from
--- outside it, and both forms reach the same physical key:
+-- There are two ways to spell this key, and they are the *same physical
+-- key*, not alternatives:
 --
 --   Super_L    the keysym. On current Hyprland this is also in
 --              SIDED_MODIFIER_NAMES, so naming it sets the SUPER bit in the
@@ -343,19 +342,29 @@ hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
 --   code:133   the keycode — evdev KEY_LEFTMETA (125) plus the 8 that xkb
 --              adds. Independent of layout and of keysym naming entirely.
 --
--- Binding both is only safe because the shell ignores the same toggle twice
--- inside 200ms (services/Commands.qml). If both binds fire, the launcher
--- opens once.
+-- This used to bind both, on the theory that whichever one worked would win
+-- and the shell's duplicate filter would absorb the other. That was wrong,
+-- and it is what made the tap unreliable: when both spellings register, one
+-- press fires *two* commands, and any time the second arrives more than a
+-- moment after the first it toggles the launcher straight back shut. A
+-- filter cannot fix that — the right number of binds is one.
 --
+-- So pick one. "name" is the default because it is what Hyprland documents;
+-- if the tap does nothing at all on your keyboard, change this to "code".
 -- `hyprshellctl doctor` step 5 prints what Hyprland actually registered.
-hl.bind("SUPER + Super_L", hl.dsp.exec_cmd(shell("toggleLauncher")),
-    { release = true })
-hl.bind("SUPER + Super_R", hl.dsp.exec_cmd(shell("toggleLauncher")),
-    { release = true })
-hl.bind("SUPER + code:133", hl.dsp.exec_cmd(shell("toggleLauncher")),
-    { release = true })
-hl.bind("SUPER + code:134", hl.dsp.exec_cmd(shell("toggleLauncher")),
-    { release = true })
+local superSpelling = "name"   -- "name" | "code"
+
+if superSpelling == "code" then
+    hl.bind("SUPER + code:133", hl.dsp.exec_cmd(shell("toggleLauncher")),
+        { release = true })
+    hl.bind("SUPER + code:134", hl.dsp.exec_cmd(shell("toggleLauncher")),
+        { release = true })
+else
+    hl.bind("SUPER + Super_L", hl.dsp.exec_cmd(shell("toggleLauncher")),
+        { release = true })
+    hl.bind("SUPER + Super_R", hl.dsp.exec_cmd(shell("toggleLauncher")),
+        { release = true })
+end
 
 -- Kept until the tap above is confirmed working on your keyboard, so there
 -- is always a way to open the launcher. Delete this line once it is.
