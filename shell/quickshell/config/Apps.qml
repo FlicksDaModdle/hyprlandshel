@@ -105,14 +105,41 @@ Singleton {
     // opens them, so the dock, the launcher and the tile menu do not each
     // keep their own list of which keys are special.
     readonly property var shellTiles: ({
-        "appSettings": "openSettings"
+        "appSettings": "openSettings",
+        // Not a shell surface any more, but still routed through the
+        // command table, because that is where the knowledge of how to find
+        // the binary lives.
+        "appFiles":    "openFiles"
     })
 
     function isShellTile(key) { return !!shellTiles[key]; }
 
+    // Launching the file manager, which is a separate application.
+    //
+    // Not a bare argv: execDetached looks the name up in the *shell's*
+    // PATH, which is Hyprland's environment rather than the one your
+    // terminal has, and ~/.local/bin — where install.sh puts it by
+    // default — is frequently not in it. That is a launch that works when
+    // you type it and silently does nothing from a keybind. So look on
+    // PATH first, then in the places it is actually installed to, and say
+    // something if it is in none of them.
+    readonly property string filesFinder:
+        'command -v hyprshell-files >/dev/null 2>&1 && exec hyprshell-files "$@"; '
+        + 'for d in "$HOME/.local/bin" /usr/local/bin /usr/bin; do '
+        + '[ -x "$d/hyprshell-files" ] && exec "$d/hyprshell-files" "$@"; done; '
+        + 'notify-send "Files" "hyprshell-files is not installed" 2>/dev/null; exit 127'
+
+    function filesCommand(arg) {
+        const cmd = ["sh", "-c", filesFinder, "open-files"];
+        if (arg) cmd.push(arg);
+        return cmd;
+    }
+
+    function launchFiles(arg) { Quickshell.execDetached(filesCommand(arg)); }
+
     readonly property var defaultPinned: [
         { key: "appTerm",     label: "Terminal", icon: "terminal",   exec: ["kitty"],    match: /^(kitty|foot|alacritty|wezterm|org\.wezfurlong\.wezterm)$/i },
-        { key: "appFiles",    label: "Files",    icon: "folder",     exec: ["hyprshell-files"], match: /^(org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$/i },
+        { key: "appFiles",    label: "Files",    icon: "folder",     exec: [],           match: /^(org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$/i },
         { key: "appWeb",      label: "Web",      icon: "globe",      exec: ["firefox"],  match: /^(firefox.*|chromium|google-chrome.*|brave-browser|zen.*)$/i },
         { key: "appCode",     label: "Code",     icon: "code",       exec: ["neovide"],  match: /^(neovide|code|code-oss|codium|dev\.zed\.Zed|jetbrains-.*)$/i },
         { key: "appNotes",    label: "Notes",    icon: "stickyNote", exec: ["obsidian"], match: /^(obsidian|org\.gnome\.TextEditor|logseq)$/i },

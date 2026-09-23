@@ -21,28 +21,9 @@ PanelSurface {
     showSeam: false
     color: Appearance.sheet
     radius: Appearance.rWin
-
-    width: frame.host.tiled ? frame.host.width
-           : (frame.host.maximised ? frame.host.width - 16 : frame.host.normalWidth)
-    height: frame.host.tiled ? frame.host.height
-            : (frame.host.maximised
-               ? Math.max(320, frame.host.workBottom - frame.host.workTop)
-               : frame.host.normalHeight)
-
-    x: frame.host.tiled ? 0
-       : (frame.host.maximised ? 8
-          : (Config.UiState.filesX >= 0
-             ? Math.max(0, Math.min(frame.host.width - width, Config.UiState.filesX))
-             : Math.round((frame.host.width - width) / 2)))
-    y: frame.host.tiled ? 0
-       : (frame.host.maximised ? frame.host.workTop
-          : (Config.UiState.filesY >= 0
-             ? Math.max(Appearance.barHeight,
-                        Math.min(frame.host.height - height, Config.UiState.filesY))
-             : Math.round((frame.host.height - height) / 2)))
-
-    Behavior on width  { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-    Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+    // The window manager owns the geometry in an application, so the
+    // frame is simply the whole window: Main.qml anchors it, there is
+    // nothing to place and nothing to animate.
 
     // ── keyboard ──────────────────────────────────────────────────────────
     // On the frame rather than on the view, so the shortcuts work wherever
@@ -62,7 +43,7 @@ PanelSurface {
         case Qt.Key_Escape:
             if (frame.app.confirmingEmpty) frame.app.confirmingEmpty = false;
             else if (frame.app.selection.length) frame.app.clearSelection();
-            else Config.UiState.closeFiles();
+            else frame.host.close();
             event.accepted = true;
             break;
         case Qt.Key_Backspace:  frame.app.up(); event.accepted = true; break;
@@ -115,7 +96,7 @@ PanelSurface {
                 frame.host.moveTo(Math.round(p.x - pressX), Math.round(p.y - pressY));
             }
             onDoubleClicked: if (!frame.host.tiled)
-                                 Config.UiState.filesMaximized = !frame.host.maximised
+                                 frame.host.toggleMaximised()
         }
 
         Row {
@@ -166,17 +147,16 @@ PanelSurface {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
 
-            // Tiled, the compositor owns the geometry: a maximise button
-            // would do nothing and a minimise button would be a confusing
-            // way to close. Only the close button means anything there.
+            // The window's own controls. They act on the window rather
+            // than on any shell state — minimise and maximise are its
+            // visibility, close ends the application.
             Repeater {
                 model: frame.host.tiled
-                    ? [{ glyph: "x", danger: true, act: () => Config.UiState.closeFiles() }]
-                    : [
-                    { glyph: "minus",  danger: false, act: () => Config.UiState.minimiseFiles() },
-                    { glyph: "square", danger: false, act: () => Config.UiState.filesMaximized = !frame.host.maximised },
-                    { glyph: "x",      danger: true,  act: () => Config.UiState.closeFiles() }
-                ]
+                    ? [
+                    { glyph: "minus",  danger: false, act: () => frame.host.minimise() },
+                    { glyph: "square", danger: false, act: () => frame.host.toggleMaximised() },
+                    { glyph: "x",      danger: true,  act: () => frame.host.close() }
+                ] : []
 
                 Rectangle {
                     id: winBtn

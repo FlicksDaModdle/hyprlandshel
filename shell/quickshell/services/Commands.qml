@@ -58,8 +58,7 @@ Singleton {
         // shell: an ordinary toplevel the compositor tiles and focuses like
         // anything else, and a real drag source, which a layer-shell
         // surface is not. An argument is a directory to open.
-        "openFiles":           arg => Quickshell.execDetached(
-                                   arg ? ["hyprshell-files", arg] : ["hyprshell-files"]),
+        "openFiles":           arg => Config.Apps.launchFiles(arg),
 
         // Appearance
         "toggleTheme":         () => Config.Appearance.toggleTheme(),

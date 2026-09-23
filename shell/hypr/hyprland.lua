@@ -307,7 +307,17 @@ hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(terminal))
 -- The file manager is its own application, so this launches it directly
 -- rather than going through the shell. `fileManager` at the top of this
 -- file is the second opinion, on SHIFT.
-hl.bind(mainMod .. " + E",      hl.dsp.exec_cmd("hyprshell-files"))
+--
+-- Not a bare name: Hyprland's PATH is the session's, not your terminal's,
+-- and ~/.local/bin — where files/install.sh puts it by default — is
+-- routinely missing from it. A bare name there is a bind that silently does
+-- nothing while the same command works when you type it.
+local filesApp = 'command -v hyprshell-files >/dev/null 2>&1 && exec hyprshell-files; '
+    .. 'for d in "$HOME/.local/bin" /usr/local/bin /usr/bin; do '
+    .. '[ -x "$d/hyprshell-files" ] && exec "$d/hyprshell-files"; done; '
+    .. 'notify-send "Files" "hyprshell-files is not installed" 2>/dev/null'
+
+hl.bind(mainMod .. " + E",      hl.dsp.exec_cmd(filesApp))
 hl.bind(mainMod .. " + SHIFT + E", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(browser))
 

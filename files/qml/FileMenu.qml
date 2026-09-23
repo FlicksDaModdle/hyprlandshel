@@ -98,8 +98,8 @@ PanelSurface {
                        icon: "eye", rule: true,
                        run: () => FilesService.showHidden =
                                   !FilesService.showHidden });
-            out.push({ n: "Files settings", icon: "settings",
-                       run: () => Config.UiState.openSettings("Files") });
+            // No settings window of its own: the view controls are in the
+            // toolbar and the rest is a small JSON file.
         }
         return out;
     }

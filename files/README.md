@@ -88,6 +88,27 @@ Grabs the window once the first frame has settled, writes the PNG and exits.
 This is how the screenshots in this repository are made, and how a rendering
 problem gets looked at from a terminal.
 
+## If a keybind launches nothing
+
+Almost always PATH. `install.sh` puts the binary in `~/.local/bin` by
+default, and that directory is frequently absent from the environment
+Hyprland itself was started in — which is not the one your terminal has. So
+the command works when you type it and does nothing from a bind.
+
+    hyprshell-files            # works in a terminal
+    Super + E                  # ...and does nothing
+
+The shell's keybind and dock tile look on PATH first and then in
+`~/.local/bin`, `/usr/local/bin` and `/usr/bin`, so this should not bite.
+To check what Hyprland can see:
+
+    hyprctl dispatch exec 'sh -c "command -v hyprshell-files > /tmp/found; \
+        echo $PATH >> /tmp/found"' && cat /tmp/found
+
+Installing to a prefix already on PATH avoids the question entirely:
+
+    ./install.sh --prefix /usr/local     # needs write access there
+
 ## Not in this version
 
 Thumbnails for anything but images, mounting removable or network volumes,
