@@ -139,12 +139,16 @@ Singleton {
 
     readonly property var defaultPinned: [
         { key: "appTerm",     label: "Terminal", icon: "terminal",   exec: ["kitty"],    match: /^(kitty|foot|alacritty|wezterm|org\.wezfurlong\.wezterm)$/i },
-        { key: "appFiles",    label: "Files",    icon: "folder",     exec: [],           match: /^(org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$/i },
+        { key: "appFiles",    label: "Files",    icon: "folder",     exec: [],           match: /^(hyprshell-files|org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$/i },
         { key: "appWeb",      label: "Web",      icon: "globe",      exec: ["firefox"],  match: /^(firefox.*|chromium|google-chrome.*|brave-browser|zen.*)$/i },
         { key: "appCode",     label: "Code",     icon: "code",       exec: ["neovide"],  match: /^(neovide|code|code-oss|codium|dev\.zed\.Zed|jetbrains-.*)$/i },
         { key: "appNotes",    label: "Notes",    icon: "stickyNote", exec: ["obsidian"], match: /^(obsidian|org\.gnome\.TextEditor|logseq)$/i },
         { key: "appMusic",    label: "Music",    icon: "music",      exec: ["kitty", "-e", "ncmpcpp"], match: /^(ncmpcpp|spotify|org\.gnome\.Rhythmbox3|io\.bassi\.Amberol)$/i },
         { key: "appSettings", label: "Settings", icon: "settings",   exec: [],           match: /^$/ }
+        // appSettings matches nothing on purpose: the Settings window is a
+        // Quickshell surface and carries Quickshell's app id, which the
+        // other shell windows carry too, so matching on it would bind the
+        // wrong ones.
     ]
 
     // Class fragments → pack glyph, checked in order. Used for any window

@@ -187,7 +187,7 @@ Variants {
                 MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: Config.Appearance.dnd ? "bellOff" : "bell"
-                    size: 16
+                    size: Config.Appearance.barIconSize
                     inkColor: Config.Appearance.dnd ? Config.Appearance.ink3 : Config.Appearance.ink
                     monochrome: true
                 }
@@ -226,7 +226,7 @@ Variants {
                     MonoIcon {
                         anchors.verticalCenter: parent.verticalCenter
                         name: Services.Network.icon
-                        size: 16
+                        size: Config.Appearance.barIconSize
                         inkColor: Config.Appearance.ink
                         monochrome: true
                     }
@@ -246,7 +246,7 @@ Variants {
                     MonoIcon {
                         anchors.verticalCenter: parent.verticalCenter
                         name: Services.Audio.icon
-                        size: 16
+                        size: Config.Appearance.barIconSize
                         inkColor: Config.Appearance.ink
                         monochrome: true
                     }
@@ -272,7 +272,7 @@ Variants {
                         MonoIcon {
                             anchors.fill: parent
                             name: bar.charging ? "batteryCharging" : "battery"
-                            size: 16
+                            size: Config.Appearance.barIconSize
                             inkColor: Config.Appearance.ink
                         }
 
@@ -335,7 +335,7 @@ Variants {
                 MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "power"
-                    size: 16
+                    size: Config.Appearance.barIconSize
                     inkColor: Config.UiState.powerOpen ? Config.Appearance.onAccent : Config.Appearance.ink
                     monochrome: true
                 }

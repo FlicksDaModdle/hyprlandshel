@@ -234,6 +234,24 @@ does. In the trash the columns are replaced by where each thing
 came from, because that is the only question worth asking about something
 you have deleted.
 
+## Grouping by date
+
+Sort by Modified and the listing breaks into Today, Yesterday, Earlier this
+week, Last week, Earlier this month, Earlier this year and Older — the same
+bands Windows Explorer uses, because forty rows of timestamps read as forty
+rows of timestamps otherwise. Folders keep their own band at the top, since
+they sort ahead of files regardless.
+
+The boundaries are local midnights, not "24 hours ago": a file from 11pm
+last night is Yesterday at 9am, not Today. Right-click the folder's empty
+space to turn it off; the option only appears under the date sort, where it
+does something.
+
+The headings are a lookup beside the list rather than rows spliced into it
+— selection, shift-ranges, type-ahead and the drag all index into the same
+entry list, and every one of them would otherwise have to learn to step
+over a heading.
+
 ## Properties
 
 `Ctrl+I`, or the menu. Type, size, location, modified, permissions, owner,

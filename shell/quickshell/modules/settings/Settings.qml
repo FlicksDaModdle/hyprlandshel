@@ -252,6 +252,32 @@ Scope {
             { n: "Theme written to", s: "Regenerated whenever the theme changes",
               type: "info", value: "Kvantum/Hyprshell/" },
 
+            { type: "header", n: "Icon sizes",
+              s: "Every place an app icon appears, in one list. Each of "
+                 + "these is the same setting as the one in that part's own "
+                 + "pane, so moving it here moves it there" },
+            { n: "Dock icons",
+              s: "The glyph inside a dock tile, as a share of the tile. The "
+                 + "tile itself is sized under Dock.",
+              type: "slider", min: 30, max: 72, unit: "%",
+              value: A.dockIconPct, set: v => A.dockIconPct = v },
+            { n: "Launcher icons",
+              s: "The glyph inside each app tile in the start menu, without "
+                 + "changing how many fit on a row.",
+              type: "slider", min: 50, max: 200, unit: "%",
+              value: A.launcherIconScale, set: v => A.launcherIconScale = v },
+            { n: "Bar and tray icons",
+              s: "The top bar's own glyphs and the system tray's, together "
+                 + "so they stay in proportion. 100% is the design's 16px "
+                 + "and 14px.",
+              type: "slider", min: 60, max: 180, unit: "%",
+              value: A.barIconPct, set: v => A.barIconPct = v },
+            { n: "File manager icons",
+              s: "Set inside the file manager itself — Ctrl + and Ctrl - in "
+                 + "its window, or Ctrl 0 to go back to normal. It is a "
+                 + "separate application and keeps its own settings.",
+              type: "info", value: "Ctrl +  /  Ctrl -" },
+
             { type: "header", n: "This window",
               s: "How Settings itself is put on screen" },
             { n: "Window mode",
@@ -365,8 +391,10 @@ Scope {
                  + "more space between the same tiles",
               type: "slider", min: 100, max: 200, unit: "%",
               value: A.launcherWide, set: v => A.launcherWide = v },
-            { n: "Taller", s: "Extra height. The user row stays at the bottom, "
-                 + "so this is room for results, not a gap under them.",
+            { n: "Taller", s: "How tall the menu is allowed to get. It is as "
+                 + "tall as what is in it and no taller, so raising this "
+                 + "only shows when the results would otherwise be cut "
+                 + "off — it does not add empty panel.",
               type: "slider", min: 100, max: 200, unit: "%",
               value: A.launcherTall, set: v => A.launcherTall = v },
             { n: "Icon size", s: "The glyph inside each tile, without "

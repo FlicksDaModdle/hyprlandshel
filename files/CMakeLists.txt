@@ -65,6 +65,7 @@ qt_add_qml_module(hyprshell-files
         qml/FileRow.qml
         qml/PlaceRow.qml
         qml/ListHeader.qml
+        qml/GroupHeading.qml
         qml/DragBadge.qml
         qml/Properties.qml
         qml/NameField.qml

@@ -45,7 +45,7 @@ Item {
             MonoIcon {
                 anchors.centerIn: parent
                 name: root.expanded ? "chevronRight" : "chevronLeft"
-                size: 14
+                size: Config.Appearance.barTrayIconSize
                 inkColor: root.expanded ? Config.Appearance.ink2 : Config.Appearance.ink
                 monochrome: true
             }

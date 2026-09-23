@@ -79,7 +79,7 @@ Item {
                     MonoIcon {
                         anchors.verticalCenter: parent.verticalCenter
                         name: Config.Apps.iconFor(task.modelData.cls)
-                        size: 14
+                        size: Config.Appearance.barTrayIconSize
                         inkColor: task.modelData.active ? Config.Appearance.ink : Config.Appearance.ink2
                         accentColor: Config.Appearance.accent
                     }

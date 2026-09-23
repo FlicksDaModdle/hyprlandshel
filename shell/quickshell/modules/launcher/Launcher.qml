@@ -304,20 +304,22 @@ Variants {
             id: panel
 
             width: launcher.panelWidth
-            // The height you set, not "whatever the content happens to need".
+            // As tall as what is in it, and no taller.
             //
-            // This used to be min(setting, content), which meant the slider did
-            // nothing whenever the content was shorter — which it almost always
-            // is. Raising it looked broken because it was: the panel was already
-            // as tall as its contents and the setting only ever capped it.
+            // This has been both ways round. It was min(setting, content),
+            // which made the Height slider do nothing whenever the content
+            // was shorter — almost always — so raising it looked broken. It
+            // was then max(content, setting), which fixed the slider by
+            // giving the panel a floor: at the default 145% that floor is
+            // 725px against a good deal less content, and the difference
+            // came out as a band of empty panel above the footer.
             //
-            // Clamped to the screen so a large value can't push it off the top.
-            // The footer is anchored to the bottom rather than carried at the
-            // end of the column, so the user row is grounded there whatever
-            // the content does and the slack falls between the two — which is
-            // what a Start menu looks like. Its height is added back here
-            // because it is no longer part of body.implicitHeight.
-            height: Math.max(body.implicitHeight + footer.height,
+            // So: the content decides, and the setting is the ceiling it
+            // may not pass, along with the room actually on screen. A grid
+            // page is a fixed three rows, so the content cannot run away.
+            // The footer is anchored to the bottom rather than carried at
+            // the end of the column, so its height is added back here.
+            height: Math.min(body.implicitHeight + footer.height,
                              Math.min(launcher.panelHeight,
                                       launcher.height - launcher.dockOffset - 24))
 

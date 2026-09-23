@@ -112,6 +112,15 @@ PanelSurface {
                           : "Add this folder to sidebar",
                        icon: "star",
                        run: () => menu.svc.toggleBookmark(menu.app.cwd) });
+            // Only offered where it does something: grouping follows the
+            // date sort, so under any other sort this would be a switch
+            // with no visible effect.
+            if (menu.svc.sortBy === "modified" && !menu.app.inTrash)
+                out.push({ n: menu.svc.groupByDate
+                              ? "Stop grouping by date" : "Group by date",
+                           icon: "list", rule: true,
+                           run: () => menu.svc.groupByDate = !menu.svc.groupByDate });
+
             out.push({ n: "Select all", icon: "check", rule: true,
                        run: () => menu.app.selectAll() });
             out.push({ n: "Invert selection", icon: "refresh",

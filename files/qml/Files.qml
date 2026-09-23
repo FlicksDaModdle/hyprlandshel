@@ -67,6 +67,30 @@ QtObject {
         return root.svc.sortEntries(all, root.sortBy, root.sortReverse);
     }
 
+    // Whether this listing is broken into date groups. Only when the sort
+    // is by date — grouping a name-sorted list would scatter the groups
+    // through it — and never in the trash, where the date shown is when a
+    // thing was deleted and the columns are different anyway.
+    readonly property bool grouping:
+        root.svc.groupByDate && root.sortBy === "modified" && !root.inTrash
+
+    // The heading that belongs *above* entry `i`, or "" when it carries on
+    // from the one before it. Deliberately a lookup beside the list rather
+    // than headings spliced into it: selection, shift-ranges, type-ahead
+    // and the drag all index into visibleEntries, and every one of them
+    // would have to learn to skip a heading.
+    function groupAt(i) {
+        if (!root.grouping) return "";
+        const list = root.visibleEntries;
+        if (i < 0 || i >= list.length) return "";
+        // Folders sort ahead of files regardless, so they are their own
+        // run and get their own heading rather than being dated.
+        const here = list[i].dir ? "Folders" : root.svc.dateGroup(list[i].mtime);
+        if (i === 0) return here;
+        const prev = list[i - 1].dir ? "Folders" : root.svc.dateGroup(list[i - 1].mtime);
+        return here === prev ? "" : here;
+    }
+
     // Typing a letter with no field focused jumps to the next entry
     // starting with it, which is how a file list has always behaved.
     property string typeAhead: ""

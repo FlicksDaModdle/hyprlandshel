@@ -113,6 +113,7 @@ Singleton {
             property int barClockSize: 13             // the clock's time
             property int barBadgeSize: 11             // notification count
             property int dockLabelSize: 12            // dock tooltips and the active label
+            property int barIcon: 100                 // 60-180 % of the bar's glyphs
             property int launcherTitleSize: 13        // launcher entry names
             property int launcherMetaSize: 11         // launcher categories and hints
 
@@ -260,6 +261,7 @@ Singleton {
     property alias barClockSize: prefs.barClockSize
     property alias barBadgeSize: prefs.barBadgeSize
     property alias dockLabelSize: prefs.dockLabelSize
+    property alias barIconPct: prefs.barIcon
     property alias launcherTitleSize: prefs.launcherTitleSize
     property alias launcherMetaSize: prefs.launcherMetaSize
 
@@ -472,8 +474,18 @@ Singleton {
 
     // ── dock geometry ─────────────────────────────────────────────────────
     readonly property bool dockLeft: dockPositionName === "Left"
-    readonly property real dockIconSize: Math.round(dockTileSize * dockIconPct / 100)
-    readonly property real dockGlyphSize: Math.round(dockIconSize * 0.82)
+    // Never zero, whatever the percentage says: a glyph asked to draw at no
+    // size draws nothing at all, and a dock tile with a fill and no icon in
+    // it reads as a missing icon rather than as a setting turned down.
+    readonly property real dockIconSize:
+        Math.max(8, Math.round(dockTileSize * dockIconPct / 100))
+    readonly property real dockGlyphSize: Math.max(8, Math.round(dockIconSize * 0.82))
+
+    // ── bar glyphs ────────────────────────────────────────────────────────
+    // The design's own 16 and 14, scaled by one preference so the bar's
+    // icons and the tray's stay in proportion with each other.
+    readonly property real barIconSize: Math.max(8, Math.round(16 * barIconPct / 100))
+    readonly property real barTrayIconSize: Math.max(8, Math.round(14 * barIconPct / 100))
 
     readonly property real dockPadH: 7
     readonly property real dockPadV: 5

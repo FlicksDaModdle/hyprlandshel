@@ -29,7 +29,14 @@ Item {
     id: root
 
     property string name: ""
+    // `size` stays the property callers set. `drawSize` is what is drawn,
+    // and it refuses to be nothing: a size arriving as 0, NaN or undefined
+    // — a binding to a preference that has not loaded, an expression that
+    // divided by something empty — used to draw a glyph of no size at all,
+    // silently. From the outside that is a tile with a fill and no icon in
+    // it, which reads as a missing icon rather than as a bug.
     property real size: 24
+    readonly property real drawSize: (size > 0 && size === size) ? size : 24
     property color inkColor: "#605d5d"
     property color accentColor: "#ec3013"
     // Chrome glyphs have no accent element, so they take `inkColor`
@@ -42,13 +49,13 @@ Item {
 
     // Authored units per device pixel: 1 at size 24, and more as the glyph
     // shrinks. A 2px device stroke is `2 * k` authored units.
-    readonly property real k: 24 / Math.max(1, root.size)
+    readonly property real k: 24 / Math.max(1, root.drawSize)
     readonly property real stroke: Math.max(2, 2 * root.k)
     // The heavier weight a few glyphs use keeps its 3:2 relationship.
     readonly property real strokeW: root.stroke * 1.5
 
-    implicitWidth: size
-    implicitHeight: size
+    implicitWidth: drawSize
+    implicitHeight: drawSize
 
     // Qt 6.6 and up. Undefined below that, where the enum does not exist —
     // reading it is safe, assigning the property would not be, so every
@@ -59,7 +66,7 @@ Item {
     Item {
         width: 24
         height: 24
-        scale: root.size / 24
+        scale: root.drawSize / 24
         transformOrigin: Item.TopLeft
         antialiasing: true
 

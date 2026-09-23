@@ -69,6 +69,9 @@ QtObject {
     property int iconSize: 100
     property string bookmarksRaw: ""
     property string terminal: "kitty"
+    // Break a date-sorted listing into Today / Yesterday / … the way
+    // Windows Explorer does. Only applies when sorting by date.
+    property bool groupByDate: true
 
     onViewChanged:         setPref("view", view)
     onSortByChanged:       setPref("sortBy", sortBy)
@@ -76,6 +79,7 @@ QtObject {
     onShowHiddenChanged:   setPref("showHidden", showHidden)
     onIconSizeChanged:     setPref("iconSize", iconSize)
     onBookmarksRawChanged: setPref("bookmarks", bookmarksRaw)
+    onGroupByDateChanged:  setPref("groupByDate", groupByDate)
 
     function loadPrefs() {
         const text = Sys.readFile(root.settingsPath);
@@ -90,6 +94,7 @@ QtObject {
         root.iconSize = pref("iconSize", 100);
         root.bookmarksRaw = pref("bookmarks", "");
         root.terminal = pref("terminal", "kitty");
+        root.groupByDate = pref("groupByDate", true);
         root.loadingPrefs = false;
     }
 
@@ -195,6 +200,39 @@ QtObject {
             return r * dir;
         });
         return sorted;
+    }
+
+    // ── grouping by when things changed ───────────────────────────────────
+    // Sorting a Downloads folder by date gives you the right order and no
+    // shape: forty rows of timestamps read as forty rows of timestamps.
+    // Windows Explorer's answer is to break them into Today, Yesterday and
+    // so on, which turns the column into something you can skim, so this
+    // does the same.
+    //
+    // The boundaries are local midnights rather than "24 hours ago": a file
+    // from 11pm last night is Yesterday at 9am, not Today.
+
+    function dayStart(d) {
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000;
+    }
+
+    function dateGroup(mtime) {
+        if (!mtime) return "Unknown";
+        const now = new Date();
+        const today = root.dayStart(now);
+        const t = mtime;
+        if (t >= today) return "Today";
+        if (t >= today - 86400) return "Yesterday";
+        // The rest of the current week, counting from Monday, which is what
+        // "earlier this week" means to everyone who is not a calendar.
+        const dow = (now.getDay() + 6) % 7;          // Monday = 0
+        if (t >= today - dow * 86400) return "Earlier this week";
+        if (t >= today - (dow + 7) * 86400) return "Last week";
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000;
+        if (t >= monthStart) return "Earlier this month";
+        const yearStart = new Date(now.getFullYear(), 0, 1).getTime() / 1000;
+        if (t >= yearStart) return "Earlier this year";
+        return "Older";
     }
 
     // ── names and paths ───────────────────────────────────────────────────

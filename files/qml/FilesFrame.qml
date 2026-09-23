@@ -975,14 +975,34 @@ PanelSurface {
                 Repeater {
                     model: frame.app.visibleEntries
 
-                    FileRow {
+                    // A row, with the group heading that belongs above it
+                    // when it starts a new run. The heading lives in the
+                    // delegate rather than in the model so that the model
+                    // stays exactly the list everything else indexes into.
+                    Column {
+                        id: rowGroup
                         required property var modelData
+                        required property int index
                         width: list.width
-                        entry: modelData
-                        app: frame.app
-                        sizeWidth: listHeader.sizeWidth
-                        typeWidth: listHeader.typeWidth
-                        timeWidth: listHeader.timeWidth
+
+                        readonly property string heading: frame.app.groupAt(rowGroup.index)
+
+                        GroupHeading {
+                            width: rowGroup.width
+                            visible: rowGroup.heading !== ""
+                            height: visible ? implicitHeight : 0
+                            text: rowGroup.heading
+                            firstOne: rowGroup.index === 0
+                        }
+
+                        FileRow {
+                            width: rowGroup.width
+                            entry: rowGroup.modelData
+                            app: frame.app
+                            sizeWidth: listHeader.sizeWidth
+                            typeWidth: listHeader.typeWidth
+                            timeWidth: listHeader.timeWidth
+                        }
                     }
                 }
             }
