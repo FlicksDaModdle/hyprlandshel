@@ -23,8 +23,16 @@ Item {
     readonly property var slots: Services.Compositor.workspaceSlots
     property int hoveredId: -1
 
-    implicitWidth: group.implicitWidth + 6
-    implicitHeight: 28
+    // Padding around the pills, rather than a fixed box they sit inside.
+    //
+    // It was a hardcoded 28 against 22-tall pills — three pixels above and
+    // below, which made the group taller than it needed to be on a 40px
+    // bar, and which did not follow the size slider at all: the pills
+    // scaled and the box did not.
+    readonly property real padV: 1
+    readonly property real padH: 3
+    implicitWidth: group.implicitWidth + root.w(root.padH) * 2
+    implicitHeight: root.w(22) + root.w(root.padV) * 2
 
     Rectangle {
         anchors.fill: parent
