@@ -206,7 +206,7 @@ Singleton {
         const ink = root.hex(A.ink);
         const ink2 = root.hex(A.ink2);
         const ink3 = root.hex(A.ink3);
-        const onAccent = root.hex(A.onAccent);
+        const inkOnAccent = root.hex(A.inkOnAccent);
 
         const parts = [];
         let row = 0;
@@ -280,18 +280,18 @@ Singleton {
             one("-normal", ground, line, "");
             one("-focused", ground, accent, "");
             one("-pressed", ground, accent, "");
-            one("-checked-normal", accent, accent, mark(cx0, cy0, onAccent));
-            one("-checked-focused", accent, accent, mark(cx0, cy0, onAccent));
-            one("-checked-pressed", accent, accent, mark(cx0, cy0, onAccent));
+            one("-checked-normal", accent, accent, mark(cx0, cy0, inkOnAccent));
+            one("-checked-focused", accent, accent, mark(cx0, cy0, inkOnAccent));
+            one("-checked-pressed", accent, accent, mark(cx0, cy0, inkOnAccent));
         }
         control("checkbox", 4, (x, y, c) => root.tickPath(x, y, c));
         control("radio", 8, (x, y, c) => root.dotMark(x, y, c));
         // The third check state, which Qt calls partially checked.
         parts.push(root.markBox("checkbox-tristate-normal", cx0, cy0, accent, accent, 4,
-                                root.dashPath(cx0, cy0, onAccent)));
+                                root.dashPath(cx0, cy0, inkOnAccent)));
         cx0 += 24;
         parts.push(root.markBox("checkbox-tristate-focused", cx0, cy0, accent, accent, 4,
-                                root.dashPath(cx0, cy0, onAccent)));
+                                root.dashPath(cx0, cy0, inkOnAccent)));
         row++;
 
         // Indicators. -normal covers the rest by Kvantum's own fallback.
@@ -339,7 +339,7 @@ Singleton {
         const ink = root.hex(A.ink);
         const ink2 = root.hex(A.ink2);
         const ink3 = root.hex(A.ink3);
-        const onAccent = root.hex(A.onAccent);
+        const inkOnAccent = root.hex(A.inkOnAccent);
         const accent = root.hex(A.accent);
 
         function group(name, body) { return "[" + name + "]\n" + body + "\n"; }
@@ -407,10 +407,10 @@ Singleton {
                  + "button.text.color=" + ink + "\n"
                  + "disabled.text.color=" + ink3 + "\n"
                  + "tooltip.text.color=" + ink + "\n"
-                 + "highlight.text.color=" + onAccent + "\n"
+                 + "highlight.text.color=" + inkOnAccent + "\n"
                  + "link.color=" + accent + "\n"
                  + "link.visited.color=" + ink2 + "\n"
-                 + "progress.indicator.text.color=" + onAccent + "\n")
+                 + "progress.indicator.text.color=" + inkOnAccent + "\n")
              + group("Hacks",
                  "transparent_ktitle_label=true\n"
                  + "transparent_dolphin_view=false\n"
@@ -431,7 +431,7 @@ Singleton {
                  + "text.normal.color=" + ink + "\n"
                  + "text.focus.color=" + ink + "\n"
                  + "text.press.color=" + ink + "\n"
-                 + "text.toggle.color=" + onAccent + "\n"
+                 + "text.toggle.color=" + inkOnAccent + "\n"
                  + "text.margin.top=3\ntext.margin.bottom=3\n"
                  + "text.margin.left=6\ntext.margin.right=6\n"
                  + "text.iconspacing=5\nframe.expansion=0\nmin_width=+0.2font\n")
@@ -506,7 +506,7 @@ Singleton {
                      + framed("menuitem", 5)
                      + "text.margin.left=8\ntext.margin.right=8\n"
                      + "text.normal.color=" + ink + "\n"
-                     + "text.focus.color=" + onAccent + "\n"
+                     + "text.focus.color=" + inkOnAccent + "\n"
                      + "indicator.element=arrow\n")
              + group("MenuBarItem", "inherits=PanelButtonCommand\n"
                      + framed("menuitem", 5)

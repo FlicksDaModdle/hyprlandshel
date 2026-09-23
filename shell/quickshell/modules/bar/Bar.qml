@@ -206,7 +206,7 @@ Variants {
                         text: Services.Notifications.count
                         font.pixelSize: Config.Appearance.fs(Config.Appearance.barBadgeSize)
                         font.weight: Font.Bold
-                        color: Config.Appearance.onAccent
+                        color: Config.Appearance.inkOnAccent
                     }
                 }
             }
@@ -336,7 +336,7 @@ Variants {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "power"
                     size: Config.Appearance.barIconSize
-                    inkColor: Config.UiState.powerOpen ? Config.Appearance.onAccent : Config.Appearance.ink
+                    inkColor: Config.UiState.powerOpen ? Config.Appearance.inkOnAccent : Config.Appearance.ink
                     monochrome: true
                 }
             }

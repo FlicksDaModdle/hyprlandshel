@@ -63,8 +63,8 @@ Item {
             size: root.iconSize
             // The source design never dims dock glyphs — active and hover
             // change the tile's fill and the pips, not the glyph itself.
-            inkColor: root.accentFilled ? Config.Appearance.onAccent : Config.Appearance.ink
-            accentColor: root.accentFilled ? Config.Appearance.onAccent : Config.Appearance.accent
+            inkColor: root.accentFilled ? Config.Appearance.inkOnAccent : Config.Appearance.ink
+            accentColor: root.accentFilled ? Config.Appearance.inkOnAccent : Config.Appearance.accent
         }
 
         StyledText {

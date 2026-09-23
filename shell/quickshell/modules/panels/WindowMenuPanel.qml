@@ -120,7 +120,7 @@ PanelSurface {
                         anchors.verticalCenter: parent.verticalCenter
                         text: row.modelData.n
                         font.pixelSize: Config.Appearance.fs(12)
-                        color: rowHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink
+                        color: rowHover.hovered ? Config.Appearance.inkOnAccent : Config.Appearance.ink
                     }
                     StyledText {
                         anchors.right: parent.right
@@ -129,7 +129,7 @@ PanelSurface {
                         text: row.modelData.k
                         font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.Normal
-                        color: rowHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink3
+                        color: rowHover.hovered ? Config.Appearance.inkOnAccent : Config.Appearance.ink3
                     }
                 }
 

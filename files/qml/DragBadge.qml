@@ -84,7 +84,7 @@ Item {
                     text: "+" + (badge.count - 1)
                     font.pixelSize: Appearance.fs(11)
                     font.weight: Font.DemiBold
-                    color: Appearance.onAccent
+                    color: Appearance.inkOnAccent
                 }
             }
         }

@@ -156,7 +156,7 @@ PanelSurface {
                         name: winBtn.modelData.glyph
                         size: 17
                         inkColor: btnArea.containsMouse && winBtn.modelData.danger
-                                  ? Config.Appearance.onAccent : Config.Appearance.ink2
+                                  ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                         monochrome: true
                     }
 

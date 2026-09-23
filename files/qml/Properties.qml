@@ -154,7 +154,7 @@ PanelSurface {
                     text: "Close"
                     font.pixelSize: Appearance.fs(12)
                     font.weight: Font.DemiBold
-                    color: closeArea.containsMouse ? Appearance.onAccent : Appearance.ink
+                    color: closeArea.containsMouse ? Appearance.inkOnAccent : Appearance.ink
                 }
 
                 MouseArea {

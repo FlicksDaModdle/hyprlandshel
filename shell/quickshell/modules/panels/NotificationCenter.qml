@@ -59,7 +59,7 @@ PanelSurface {
                         anchors.verticalCenter: parent.verticalCenter
                         name: "moon"
                         size: 13
-                        inkColor: Config.Appearance.dnd ? Config.Appearance.onAccent : Config.Appearance.ink2
+                        inkColor: Config.Appearance.dnd ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                         monochrome: true
                     }
                     StyledText {
@@ -67,7 +67,7 @@ PanelSurface {
                         text: "Do not disturb"
                         font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.DemiBold
-                        color: Config.Appearance.dnd ? Config.Appearance.onAccent : Config.Appearance.ink2
+                        color: Config.Appearance.dnd ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                     }
                 }
 

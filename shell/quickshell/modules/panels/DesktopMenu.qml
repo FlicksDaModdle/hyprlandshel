@@ -80,14 +80,14 @@ PanelSurface {
                             anchors.verticalCenter: parent.verticalCenter
                             name: entry.modelData.icon
                             size: 14
-                            inkColor: entryHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink
-                            accentColor: entryHover.hovered ? Config.Appearance.onAccent : Config.Appearance.accent
+                            inkColor: entryHover.hovered ? Config.Appearance.inkOnAccent : Config.Appearance.ink
+                            accentColor: entryHover.hovered ? Config.Appearance.inkOnAccent : Config.Appearance.accent
                         }
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: entry.modelData.n
                             font.pixelSize: Config.Appearance.fs(12)
-                            color: entryHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink
+                            color: entryHover.hovered ? Config.Appearance.inkOnAccent : Config.Appearance.ink
                         }
                     }
 
@@ -98,7 +98,7 @@ PanelSurface {
                         text: entry.modelData.k
                         font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.Normal
-                        color: entryHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink3
+                        color: entryHover.hovered ? Config.Appearance.inkOnAccent : Config.Appearance.ink3
                     }
                 }
 

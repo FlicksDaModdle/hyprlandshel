@@ -113,9 +113,21 @@ QtObject {
     readonly property color panel: sheet
     readonly property color seam:  accent
 
-    // Ink laid on the accent, by the same relative-luminance rule the shell
-    // uses, so a pale accent gets dark text rather than white on yellow.
-    readonly property color onAccent: {
+
+    // Ink laid *on* the accent, so a light custom accent flips to dark text
+    // instead of going unreadable.
+    //
+    // Named inkOnAccent, not onAccent, and that is not a style choice. A
+    // property whose name is `on` followed by a capital and whose
+    // initialiser is a brace block is parsed as a signal handler: the block
+    // becomes handler code that never runs, and the property keeps its
+    // type's default — black, for a colour. It fails silently, with no
+    // warning at load and no error at run time, and it had been doing so
+    // here for as long as this property has existed: every glyph and label
+    // drawn on the accent was black rather than this. The same name with a
+    // one-line expression binding works, which is why it is easy to miss.
+    // `qmlparse.py` now refuses the shape outright.
+    readonly property color inkOnAccent: {
         const c = root.accent;
         const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
         return lum > 0.6 ? "#201e1d" : "#ffffff";

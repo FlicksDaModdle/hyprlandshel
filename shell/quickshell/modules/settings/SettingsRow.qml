@@ -131,7 +131,7 @@ Item {
                 font.weight: Font.DemiBold
                 font.family: capture.listening ? Config.Appearance.fontFamily
                                                : Config.Appearance.monoFamily
-                color: capture.listening ? Config.Appearance.onAccent : Config.Appearance.ink
+                color: capture.listening ? Config.Appearance.inkOnAccent : Config.Appearance.ink
             }
 
             HoverHandler { id: capHover; cursorShape: Qt.PointingHandCursor }
@@ -316,7 +316,7 @@ Item {
                         font.weight: Font.DemiBold
                         selectByMouse: true
                         selectionColor: Config.Appearance.accent
-                        selectedTextColor: Config.Appearance.onAccent
+                        selectedTextColor: Config.Appearance.inkOnAccent
                         inputMethodHints: Qt.ImhDigitsOnly
                         validator: IntValidator { bottom: root.spec.min; top: root.spec.max }
 
@@ -601,7 +601,7 @@ Item {
                     anchors.centerIn: parent
                     name: Config.Appearance.accentIndex === -1 ? "check" : "plus"
                     size: 18
-                    inkColor: Config.Appearance.onAccent
+                    inkColor: Config.Appearance.inkOnAccent
                     monochrome: true
                 }
 
@@ -758,7 +758,7 @@ Item {
                     text: root.spec.label || "Go"
                     font.pixelSize: Config.Appearance.fs(12)
                     font.weight: Font.DemiBold
-                    color: Config.Appearance.onAccent
+                    color: Config.Appearance.inkOnAccent
                 }
 
                 HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }
@@ -783,7 +783,7 @@ Item {
                 text: root.spec.label
                 font.pixelSize: Config.Appearance.fs(12)
                 font.weight: Font.DemiBold
-                color: Config.Appearance.onAccent
+                color: Config.Appearance.inkOnAccent
             }
 
             HoverHandler { id: actionHover; cursorShape: Qt.PointingHandCursor }

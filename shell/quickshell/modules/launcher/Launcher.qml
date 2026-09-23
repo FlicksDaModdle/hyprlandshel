@@ -395,7 +395,7 @@ Variants {
                             font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherTitleSize))
                             selectByMouse: true
                             selectionColor: Config.Appearance.accent
-                            selectedTextColor: Config.Appearance.onAccent
+                            selectedTextColor: Config.Appearance.inkOnAccent
 
                             Keys.onEscapePressed: {
                                 if (launcher.query !== "") { launcher.query = ""; text = ""; }
@@ -509,13 +509,13 @@ Variants {
                                     text: "All apps"
                                     font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize))
                                     font.weight: Font.DemiBold
-                                    color: allHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
+                                    color: allHover.hovered ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                                 }
                                 MonoIcon {
                                     anchors.verticalCenter: parent.verticalCenter
                                     name: "chevronRight"
                                     size: launcher.z(12)
-                                    inkColor: allHover.hovered ? Config.Appearance.onAccent : Config.Appearance.ink2
+                                    inkColor: allHover.hovered ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                                     monochrome: true
                                 }
                             }
@@ -898,9 +898,9 @@ Variants {
                                         name: resultRow.modelData.icon || "square"
                                         size: launcher.z(14)
                                         inkColor: resultRow.selected
-                                                  ? Config.Appearance.onAccent : Config.Appearance.ink
+                                                  ? Config.Appearance.inkOnAccent : Config.Appearance.ink
                                         accentColor: resultRow.selected
-                                                     ? Config.Appearance.onAccent : Config.Appearance.accent
+                                                     ? Config.Appearance.inkOnAccent : Config.Appearance.accent
                                     }
                                 }
 
@@ -916,7 +916,7 @@ Variants {
                                         font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherTitleSize - 1))
                                         font.weight: Font.DemiBold
                                         color: resultRow.selected
-                                               ? Config.Appearance.onAccent : Config.Appearance.ink
+                                               ? Config.Appearance.inkOnAccent : Config.Appearance.ink
                                     }
                                     StyledText {
                                         width: parent.width
@@ -926,7 +926,7 @@ Variants {
                                         font.weight: Font.Normal
                                         opacity: resultRow.selected ? 0.8 : 1
                                         color: resultRow.selected
-                                               ? Config.Appearance.onAccent : Config.Appearance.ink3
+                                               ? Config.Appearance.inkOnAccent : Config.Appearance.ink3
                                     }
                                 }
                             }
@@ -939,7 +939,7 @@ Variants {
                                 text: resultRow.selected ? "return" : ""
                                 font.pixelSize: Config.Appearance.fs(launcher.z(Config.Appearance.launcherMetaSize))
                                 font.weight: Font.DemiBold
-                                color: Config.Appearance.onAccent
+                                color: Config.Appearance.inkOnAccent
                             }
 
                             HoverHandler {
@@ -1007,7 +1007,7 @@ Variants {
                                 anchors.centerIn: parent
                                 name: "user"
                                 size: launcher.z(11)
-                                inkColor: Config.Appearance.onAccent
+                                inkColor: Config.Appearance.inkOnAccent
                                 monochrome: true
                             }
                         }
@@ -1047,7 +1047,7 @@ Variants {
                         name: "power"
                         size: launcher.z(15)
                         inkColor: powerHover.hovered
-                                  ? Config.Appearance.onAccent : Config.Appearance.ink2
+                                  ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                         monochrome: true
                     }
 

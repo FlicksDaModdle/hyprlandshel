@@ -53,7 +53,7 @@ Item {
                     text: root.labelOf(seg.modelData)
                     font.pixelSize: Config.Appearance.fs(12)
                     font.weight: Font.DemiBold
-                    color: seg.active ? Config.Appearance.onAccent : Config.Appearance.ink2
+                    color: seg.active ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                 }
 
                 HoverHandler { id: segHover; cursorShape: Qt.PointingHandCursor }

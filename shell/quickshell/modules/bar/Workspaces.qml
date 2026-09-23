@@ -64,7 +64,7 @@ Item {
                     font.pixelSize: Config.Appearance.fs(11)
                     font.weight: Font.Bold
                     font.letterSpacing: 0.2
-                    color: pill.focused ? Config.Appearance.onAccent
+                    color: pill.focused ? Config.Appearance.inkOnAccent
                          : (pill.urgent ? Config.Appearance.accent : Config.Appearance.ink2)
                     Behavior on opacity { NumberAnimation { duration: 140 } }
                 }

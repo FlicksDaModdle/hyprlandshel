@@ -50,7 +50,7 @@ Rectangle {
         font.pixelSize: Appearance.fs(12)
         color: Appearance.ink
         selectionColor: Appearance.accent
-        selectedTextColor: Appearance.onAccent
+        selectedTextColor: Appearance.inkOnAccent
         clip: true
 
         onAccepted: field.committed(text.trim())

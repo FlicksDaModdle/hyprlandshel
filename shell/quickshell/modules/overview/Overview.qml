@@ -238,7 +238,7 @@ Variants {
                                     font.pixelSize: Config.Appearance.fs(11)
                                     font.weight: Font.DemiBold
                                     color: card.modelData.focused
-                                           ? Config.Appearance.onAccent : Config.Appearance.ink
+                                           ? Config.Appearance.inkOnAccent : Config.Appearance.ink
                                 }
                             }
 

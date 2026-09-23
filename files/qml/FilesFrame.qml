@@ -228,7 +228,7 @@ PanelSurface {
                         name: winBtn.modelData.glyph
                         size: 17
                         inkColor: btnArea.containsMouse && winBtn.modelData.danger
-                                  ? Appearance.onAccent : Appearance.ink2
+                                  ? Appearance.inkOnAccent : Appearance.ink2
                         monochrome: true
                     }
 
@@ -534,7 +534,7 @@ PanelSurface {
                 font.pixelSize: Appearance.fs(11.5)
                 color: Appearance.ink
                 selectionColor: Appearance.accent
-                selectedTextColor: Appearance.onAccent
+                selectedTextColor: Appearance.inkOnAccent
                 clip: true
 
                 onAccepted: {
@@ -589,7 +589,7 @@ PanelSurface {
                             anchors.centerIn: parent
                             name: viewBtn.modelData.glyph
                             size: 19
-                            inkColor: viewBtn.on ? Appearance.onAccent : Appearance.ink2
+                            inkColor: viewBtn.on ? Appearance.inkOnAccent : Appearance.ink2
                             monochrome: true
                         }
 
@@ -658,7 +658,7 @@ PanelSurface {
                 font.pixelSize: Appearance.fs(12)
                 color: Appearance.ink
                 selectionColor: Appearance.accent
-                selectedTextColor: Appearance.onAccent
+                selectedTextColor: Appearance.inkOnAccent
                 clip: true
                 text: frame.app.filter
                 onTextChanged: frame.app.filter = text
@@ -752,7 +752,7 @@ PanelSurface {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "plus"
                     size: 18
-                    inkColor: Appearance.onAccent
+                    inkColor: Appearance.inkOnAccent
                     monochrome: true
                 }
 
@@ -761,7 +761,7 @@ PanelSurface {
                     text: "New"
                     font.pixelSize: Appearance.fs(11.5)
                     font.weight: Font.DemiBold
-                    color: Appearance.onAccent
+                    color: Appearance.inkOnAccent
                 }
             }
 
@@ -795,7 +795,7 @@ PanelSurface {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "trash"
                     size: 20
-                    inkColor: frame.app.confirmingEmpty ? Appearance.onAccent
+                    inkColor: frame.app.confirmingEmpty ? Appearance.inkOnAccent
                                                         : Appearance.ink2
                     monochrome: true
                 }
@@ -805,7 +805,7 @@ PanelSurface {
                     text: frame.app.confirmingEmpty ? "Delete them permanently?" : "Empty Trash"
                     font.pixelSize: Appearance.fs(13)
                     font.weight: Font.DemiBold
-                    color: frame.app.confirmingEmpty ? Appearance.onAccent
+                    color: frame.app.confirmingEmpty ? Appearance.inkOnAccent
                                                      : Appearance.ink
                 }
             }
@@ -1108,7 +1108,7 @@ PanelSurface {
             }
             font.pixelSize: Appearance.fs(12)
             font.weight: Font.DemiBold
-            color: Appearance.onAccent
+            color: Appearance.inkOnAccent
             elide: Text.ElideRight
             width: parent.width - 220
         }
@@ -1139,7 +1139,7 @@ PanelSurface {
                         text: confirmBtn.modelData.n
                         font.pixelSize: Appearance.fs(12)
                         font.weight: Font.DemiBold
-                        color: Appearance.onAccent
+                        color: Appearance.inkOnAccent
                     }
 
                     MouseArea {

@@ -27,7 +27,7 @@ Item {
             radius: width / 2
             y: 2
             x: root.checked ? parent.width - width - 2 : 2
-            color: root.checked ? Config.Appearance.onAccent : Config.Appearance.ink2
+            color: root.checked ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
             Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
             Behavior on color { ColorAnimation { duration: 160 } }
         }

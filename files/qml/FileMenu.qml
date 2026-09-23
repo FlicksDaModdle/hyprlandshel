@@ -180,16 +180,16 @@ PanelSurface {
                             anchors.verticalCenter: parent.verticalCenter
                             name: item.modelData.icon
                             size: 18
-                            inkColor: rowHover.hovered ? Appearance.onAccent
+                            inkColor: rowHover.hovered ? Appearance.inkOnAccent
                                                        : Appearance.ink
-                            accentColor: rowHover.hovered ? Appearance.onAccent
+                            accentColor: rowHover.hovered ? Appearance.inkOnAccent
                                                           : Appearance.accent
                         }
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: item.modelData.n
                             font.pixelSize: Appearance.fs(12)
-                            color: rowHover.hovered ? Appearance.onAccent
+                            color: rowHover.hovered ? Appearance.inkOnAccent
                                                     : Appearance.ink
                         }
                     }

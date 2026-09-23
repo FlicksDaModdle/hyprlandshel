@@ -240,7 +240,7 @@ Rectangle {
                     font.weight: Font.DemiBold
                     selectByMouse: true
                     selectionColor: Config.Appearance.accent
-                    selectedTextColor: Config.Appearance.onAccent
+                    selectedTextColor: Config.Appearance.inkOnAccent
                     maximumLength: 7
 
                     function commit() {

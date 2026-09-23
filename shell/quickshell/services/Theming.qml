@@ -139,7 +139,7 @@ Singleton {
     readonly property string kdeWanted: {
         const A = Config.Appearance;
         const bg = A.ground, view = A.surface, ink = A.ink, dim = A.ink2;
-        const sel = A.accent, onSel = A.onAccent;
+        const sel = A.accent, onSel = A.inkOnAccent;
         const line = root.over(A.rule, bg);
         const hover = root.over(A.hover, bg);
 

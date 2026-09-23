@@ -158,7 +158,7 @@ PanelSurface {
                     visible: cell.modelData.day > 0
                     text: cell.modelData.day
                     font.pixelSize: Config.Appearance.fs(12)
-                    color: cell.modelData.today ? Config.Appearance.onAccent : Config.Appearance.ink2
+                    color: cell.modelData.today ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                 }
 
                 HoverHandler { id: cellHover; enabled: cell.modelData.day > 0 }

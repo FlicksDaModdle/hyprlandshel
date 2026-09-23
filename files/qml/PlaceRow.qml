@@ -109,7 +109,7 @@ Item {
             anchors.centerIn: parent
             name: "x"
             size: 15
-            inkColor: removeArea.containsMouse ? Appearance.onAccent : Appearance.ink2
+            inkColor: removeArea.containsMouse ? Appearance.inkOnAccent : Appearance.ink2
             monochrome: true
         }
 

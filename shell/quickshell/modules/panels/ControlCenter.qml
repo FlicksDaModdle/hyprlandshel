@@ -53,7 +53,7 @@ PanelSurface {
                         anchors.centerIn: parent
                         name: "user"
                         size: 18
-                        inkColor: Config.Appearance.onAccent
+                        inkColor: Config.Appearance.inkOnAccent
                         monochrome: true
                     }
                 }
@@ -157,7 +157,7 @@ PanelSurface {
                                 width: parent.width - 24
                                 height: 2
                                 radius: 1
-                                color: tile.modelData.on ? Config.Appearance.onAccent : Config.Appearance.div
+                                color: tile.modelData.on ? Config.Appearance.inkOnAccent : Config.Appearance.div
                                 opacity: tile.modelData.on ? 0.55 : 1
                             }
                         }
@@ -167,7 +167,7 @@ PanelSurface {
                             y: 12
                             name: tile.modelData.icon
                             size: 18
-                            inkColor: tile.modelData.on ? Config.Appearance.onAccent : Config.Appearance.ink
+                            inkColor: tile.modelData.on ? Config.Appearance.inkOnAccent : Config.Appearance.ink
                             monochrome: true
                         }
 
@@ -188,7 +188,7 @@ PanelSurface {
                                 anchors.centerIn: parent
                                 name: "chevronRight"
                                 size: 13
-                                inkColor: tile.modelData.on ? Config.Appearance.onAccent : Config.Appearance.ink2
+                                inkColor: tile.modelData.on ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                                 monochrome: true
                             }
 
@@ -222,7 +222,7 @@ PanelSurface {
                                 text: tile.modelData.n
                                 font.pixelSize: Config.Appearance.fs(12)
                                 font.weight: Font.DemiBold
-                                color: tile.modelData.on ? Config.Appearance.onAccent : Config.Appearance.ink
+                                color: tile.modelData.on ? Config.Appearance.inkOnAccent : Config.Appearance.ink
                             }
                             StyledText {
                                 width: parent.width
@@ -231,7 +231,7 @@ PanelSurface {
                                 font.pixelSize: Config.Appearance.fs(11)
                                 font.weight: Font.Normal
                                 opacity: tile.modelData.on ? 0.75 : 1
-                                color: tile.modelData.on ? Config.Appearance.onAccent : Config.Appearance.ink3
+                                color: tile.modelData.on ? Config.Appearance.inkOnAccent : Config.Appearance.ink3
                             }
                         }
 
@@ -568,7 +568,7 @@ PanelSurface {
                                         text: "Join"
                                         font.pixelSize: Config.Appearance.fs(12)
                                         font.weight: Font.DemiBold
-                                        color: Config.Appearance.onAccent
+                                        color: Config.Appearance.inkOnAccent
                                     }
 
                                     HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }

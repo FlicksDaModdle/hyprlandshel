@@ -180,7 +180,7 @@ WlSessionLock {
                                 anchors.centerIn: parent
                                 name: "user"
                                 size: 32
-                                inkColor: Config.Appearance.onAccent
+                                inkColor: Config.Appearance.inkOnAccent
                                 monochrome: true
                             }
                         }
@@ -243,7 +243,7 @@ WlSessionLock {
                                     anchors.centerIn: parent
                                     name: "cornerDownLeft"
                                     size: 18
-                                    inkColor: Config.Appearance.onAccent
+                                    inkColor: Config.Appearance.inkOnAccent
                                     monochrome: true
                                 }
 

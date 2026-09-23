@@ -357,9 +357,21 @@ Singleton {
         const preset = accentPresets[Math.max(0, Math.min(accentPresets.length - 1, accentIndex))];
         return dark ? preset.dark : preset.light;
     }
-    // Ink laid *on* the accent — same relative-luminance rule the mockup uses,
-    // so a light custom accent flips to dark text instead of going unreadable.
-    readonly property color onAccent: {
+
+    // Ink laid *on* the accent, so a light custom accent flips to dark text
+    // instead of going unreadable.
+    //
+    // Named inkOnAccent, not onAccent, and that is not a style choice. A
+    // property whose name is `on` followed by a capital and whose
+    // initialiser is a brace block is parsed as a signal handler: the block
+    // becomes handler code that never runs, and the property keeps its
+    // type's default — black, for a colour. It fails silently, with no
+    // warning at load and no error at run time, and it had been doing so
+    // here for as long as this property has existed: every glyph and label
+    // drawn on the accent was black rather than this. The same name with a
+    // one-line expression binding works, which is why it is easy to miss.
+    // `qmlparse.py` now refuses the shape outright.
+    readonly property color inkOnAccent: {
         const c = accent;
         const lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
         return lum > 0.62 ? "#201e1d" : "#fff8f6";

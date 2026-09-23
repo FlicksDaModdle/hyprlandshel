@@ -170,7 +170,7 @@ Rectangle {
                             text: actionBtn.modelData.text
                             font.pixelSize: Config.Appearance.fs(11)
                             font.weight: Font.DemiBold
-                            color: actionBtn.index === 0 ? Config.Appearance.onAccent : Config.Appearance.ink
+                            color: actionBtn.index === 0 ? Config.Appearance.inkOnAccent : Config.Appearance.ink
                         }
 
                         HoverHandler { id: actionHover; cursorShape: Qt.PointingHandCursor }
