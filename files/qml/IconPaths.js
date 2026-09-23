@@ -343,6 +343,72 @@ var icons = {
     },
     eye: {
         ink: join("M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6Z", circle(12, 12, 3))
+    },
+
+    // ══ File kinds ═══════════════════════════════════════════════════════
+    //
+    // Most of a Downloads folder used to come out as the generic `file`,
+    // so nine rows in a row carried the same grey page and the glyph told
+    // you nothing. These share the pack's language — an ink body, one
+    // accent element that is the identifying mark — so the accent is what
+    // you actually read at a glance.
+
+    // A page with a solid accent block where the label sits.
+    pdf: {
+        ink: rrect(5, 3.5, 14, 17, 2),
+        fill: rrect(7.5, 12, 9, 5.5, 1.25)
+    },
+    // A written document: ruled, with the first line in accent.
+    doc: {
+        ink: join(rrect(5, 3.5, 14, 17, 2), "M8.5 13H15.5 M8.5 16.5H13"),
+        acc: "M8.5 9H15.5"
+    },
+    // A table: header rule, one column divider, an accent row.
+    sheet: {
+        ink: join(rrect(4.5, 4, 15, 16, 2), "M4.5 9.5H19.5 M9.5 9.5V20"),
+        acc: "M4.5 14.75H19.5"
+    },
+    // A slide, on its stand.
+    slides: {
+        ink: join(rrect(3.5, 4.5, 17, 12, 2), "M12 16.5V19.5 M8.5 19.5H15.5"),
+        acc: "M10.25 8L14.25 10.5L10.25 13Z"
+    },
+    // A crate with a latch — deliberately not `package`, which is the 3D
+    // box and now means an installable thing rather than a bag of files.
+    archive: {
+        ink: join(rrect(3.5, 5, 17, 14, 2), "M3.5 10H20.5"),
+        acc: "M10 13.75H14"
+    },
+    // An optical disc, for images of one.
+    disk: {
+        ink: circle(12, 12, 8.5),
+        acc: circle(12, 12, 2.75)
+    },
+    // The stack of platters every database has been drawn as.
+    database: {
+        ink: join(ellipse(12, 6.5, 7, 3),
+            "M5 6.5V17.5A7 3 0 0 0 19 17.5V6.5"),
+        acc: "M5 12A7 3 0 0 0 19 12"
+    },
+    // A key, for anything that is one: certificates, signatures, keyrings.
+    key: {
+        ink: join(circle(8, 15.5, 3.75), "M10.75 12.9L19 5"),
+        acc: "M16.25 7.5L18.5 9.75"
+    },
+    // The hash sign, for checksum lists.
+    hash: {
+        ink: "M4.5 9.5H19.5 M4.5 15H19.5",
+        acc: "M10.25 4.5L8.5 19.5 M16 4.5L14.25 19.5"
+    },
+    // An A on its baseline, which is what a font is.
+    font: {
+        ink: "M6.5 16.5L11.25 5.5L16 16.5 M8.4 12.75H14.1",
+        acc: "M5 20H19"
+    },
+    // A bound book, for the things that are read rather than run.
+    book: {
+        ink: join(rrect(5, 3.5, 14, 17, 1.75), "M12 8.5H16"),
+        acc: "M9 3.5V20.5"
     }
 };
 

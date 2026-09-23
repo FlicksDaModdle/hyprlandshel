@@ -106,7 +106,9 @@ QtObject {
                 // control characters here: argv strings are NUL-terminated,
                 // so a real NUL cannot be passed to a process at all, and
                 // execve would reject the call.
-                "-printf", "%y\\t%Y\\t%s\\t%T@\\t%f\\0"];
+                // %m is the octal mode, which is how a downloaded binary
+                // gets told apart from a document with no suffix.
+                "-printf", "%y\\t%Y\\t%s\\t%T@\\t%m\\t%f\\0"];
     }
 
     function parseListing(text) {
@@ -114,9 +116,9 @@ QtObject {
         for (const rec of String(text || "").split("\0")) {
             if (!rec) continue;
             const f = rec.split("\t");
-            if (f.length < 5) continue;
-            // Everything after the fourth tab is the name, tabs and all.
-            const name = f.slice(4).join("\t");
+            if (f.length < 6) continue;
+            // Everything after the fifth tab is the name, tabs and all.
+            const name = f.slice(5).join("\t");
             if (!name || name === "." || name === "..") continue;
             const kind = f[0] === "l" ? f[1] : f[0];
             out.push({
@@ -128,7 +130,11 @@ QtObject {
                 // the letter it could not resolve rather than d or f.
                 broken: f[0] === "l" && f[1] !== "d" && f[1] !== "f",
                 size: parseInt(f[2], 10) || 0,
-                mtime: parseFloat(f[3]) || 0
+                mtime: parseFloat(f[3]) || 0,
+                // Any of the three execute bits. `find`'s %m is octal, so
+                // parseInt needs telling: base 10 would read 755 as seven
+                // hundred and fifty-five and get the bits wrong.
+                exec: ((parseInt(f[4], 8) || 0) & 0o111) !== 0
             });
         }
         return out;
@@ -278,23 +284,110 @@ QtObject {
         mp3: "music", flac: "music", ogg: "music", wav: "music", m4a: "music",
         opus: "music", aac: "music",
         mp4: "film", mkv: "film", webm: "film", mov: "film", avi: "film",
-        // bundles
-        zip: "package", tar: "package", gz: "package", xz: "package",
-        zst: "package", bz2: "package", "7z": "package", rar: "package",
+        // a bag of files, and a thing you install — not the same glyph,
+        // because "can I open this" and "can I run this" are not the same
+        // question
+        zip: "archive", tar: "archive", gz: "archive", xz: "archive",
+        zst: "archive", bz2: "archive", "7z": "archive", rar: "archive",
+        tgz: "archive", txz: "archive", tbz: "archive", lz4: "archive",
+        bundle: "archive", pack: "archive", cbz: "archive", jar: "archive",
         pkg: "package", deb: "package", rpm: "package", appimage: "package",
+        apk: "package", flatpak: "package", snap: "package", msi: "package",
+        exe: "package", xbps: "package", "pkg.tar.zst": "package",
+        // documents, which used to come back as the generic page — a
+        // Downloads folder is mostly these, so mostly it told you nothing
+        pdf: "pdf", ps: "pdf", eps: "pdf",
+        doc: "doc", docx: "doc", odt: "doc", rtf: "doc", tex: "doc",
+        csv: "sheet", tsv: "sheet", xls: "sheet", xlsx: "sheet", ods: "sheet",
+        ppt: "slides", pptx: "slides", odp: "slides",
+        epub: "book", mobi: "book", azw: "book", azw3: "book", djvu: "book",
+        // music, as written rather than recorded
+        mid: "music", midi: "music", mscz: "music", mscx: "music",
+        musicxml: "music", mxl: "music", abc: "music",
+        // disc and disk images
+        iso: "disk", img: "disk", qcow2: "disk", vdi: "disk", vmdk: "disk",
+        dmg: "disk", squashfs: "disk",
+        // data you query rather than read
+        db: "database", sqlite: "database", sqlite3: "database", mdb: "database",
+        // secrets and the things that vouch for them
+        pem: "key", key: "key", crt: "key", cer: "key", pub: "key",
+        gpg: "key", asc: "key", sig: "key", kbx: "key", p12: "key",
+        // checksum lists
+        sha256: "hash", sha512: "hash", sha1: "hash", md5: "hash",
+        sum: "hash", sums: "hash", checksum: "hash",
         // the rest
-        pdf: "file", desktop: "panelsTopLeft", ttf: "palette", otf: "palette"
+        desktop: "panelsTopLeft",
+        ttf: "font", otf: "font", woff: "font", woff2: "font", ttc: "font",
+        torrent: "download"
     })
+
+    // Files with no extension worth reading, matched on the whole name.
+    // `SHA256SUMS` and `Makefile` are not rare and both used to come back
+    // as the generic page.
+    readonly property var nameIcons: ({
+        makefile: "code", dockerfile: "code", "cmakelists.txt": "code",
+        pkgbuild: "code", justfile: "code", rakefile: "code", "gnumakefile": "code",
+        vagrantfile: "code", procfile: "code", brewfile: "code",
+        license: "doc", licence: "doc", copying: "doc", notice: "doc",
+        authors: "doc", contributors: "doc", changelog: "doc", news: "doc",
+        readme: "stickyNote", todo: "stickyNote", install: "stickyNote",
+        ".gitignore": "code", ".gitattributes": "code", ".editorconfig": "code",
+        ".gitmodules": "code", ".dockerignore": "code", ".npmrc": "code",
+        ".bashrc": "code", ".zshrc": "code", ".profile": "code",
+        ".bash_profile": "code", ".inputrc": "code", ".vimrc": "code"
+    })
+
+    readonly property var nameNames: ({
+        makefile: "Makefile", dockerfile: "Dockerfile",
+        "cmakelists.txt": "CMake script", pkgbuild: "Build script",
+        justfile: "Justfile", rakefile: "Rakefile", gnumakefile: "Makefile",
+        vagrantfile: "Vagrantfile", procfile: "Procfile", brewfile: "Brewfile",
+        license: "Licence", licence: "Licence", copying: "Licence",
+        notice: "Notice", authors: "Credits", contributors: "Credits",
+        changelog: "Changelog", news: "Changelog",
+        readme: "Readme", todo: "Notes", install: "Instructions",
+        ".gitignore": "Git config", ".gitattributes": "Git config",
+        ".gitmodules": "Git config", ".editorconfig": "Configuration",
+        ".dockerignore": "Configuration", ".npmrc": "Configuration",
+        ".bashrc": "Shell config", ".zshrc": "Shell config",
+        ".profile": "Shell config", ".bash_profile": "Shell config",
+        ".inputrc": "Configuration", ".vimrc": "Configuration"
+    })
+
+    // A checksum list is named for its algorithm rather than suffixed with
+    // it: SHA256SUMS, sha512sum.txt, MD5SUM. One pattern catches the lot.
+    readonly property var checksumRe: /^(md5|sha\d*)(sums?|sum)?(\.txt)?$/i
 
     function iconFor(entry) {
         if (!entry) return "file";
         if (entry.dir) return "folder";
         if (entry.broken) return "x";
+
+        const lower = entry.name.toLowerCase();
+        if (root.nameIcons[lower]) return root.nameIcons[lower];
+        if (root.checksumRe.test(entry.name)) return "hash";
+
+        // A two-part suffix first, so .tar.gz is an archive rather than
+        // whatever .gz alone would say, and .pkg.tar.zst is a package.
+        const parts = lower.split(".");
+        if (parts.length > 2) {
+            const two = parts.slice(-2).join(".");
+            if (root.extIcons[two]) return root.extIcons[two];
+            if (parts.length > 3) {
+                const three = parts.slice(-3).join(".");
+                if (root.extIcons[three]) return root.extIcons[three];
+            }
+        }
         const dot = entry.name.lastIndexOf(".");
         if (dot > 0) {
-            const ext = entry.name.slice(dot + 1).toLowerCase();
+            const ext = lower.slice(dot + 1);
             if (root.extIcons[ext]) return root.extIcons[ext];
         }
+
+        // Nothing in the name said what it is, but the mode might: a file
+        // you can run is a program, and a whole row of downloaded binaries
+        // showing the same blank page was the complaint that started this.
+        if (entry.exec) return "terminal";
         return "file";
     }
 
@@ -345,24 +438,78 @@ QtObject {
         mp4: "MP4 video", mkv: "Matroska video", webm: "WebM video",
         mov: "QuickTime video", avi: "AVI video",
         zip: "ZIP archive", tar: "Tar archive", gz: "Gzip archive",
-        xz: "XZ archive", zst: "Zstandard archive", bz2: "Bzip2 archive",
-        "7z": "7-Zip archive", rar: "RAR archive",
+        xz: "XZ archive", zst: "Zstd archive", bz2: "Bzip2 archive",
+        "7z": "7-Zip archive", rar: "RAR archive", tgz: "Tar archive",
+        txz: "Tar archive", tbz: "Tar archive", lz4: "LZ4 archive",
+        "tar.gz": "Tar archive", "tar.xz": "Tar archive",
+        "tar.bz2": "Tar archive", "tar.zst": "Tar archive",
+        bundle: "Git bundle", pack: "Git pack", cbz: "Comic book",
+        jar: "Java archive",
         pkg: "Package", deb: "Debian package", rpm: "RPM package",
-        appimage: "AppImage", pdf: "PDF document", desktop: "Shortcut",
-        ttf: "Font", otf: "Font"
+        appimage: "AppImage", apk: "Android package", flatpak: "Flatpak",
+        snap: "Snap package", msi: "Installer", exe: "Windows program",
+        xbps: "XBPS package", "pkg.tar.zst": "Arch package",
+        pdf: "PDF document", ps: "PostScript", eps: "EPS image",
+        doc: "Word document", docx: "Word document", odt: "Text document",
+        rtf: "Rich text", tex: "LaTeX",
+        csv: "CSV data", tsv: "TSV data",
+        xls: "Excel workbook", xlsx: "Excel workbook", ods: "Spreadsheet",
+        ppt: "Presentation", pptx: "Presentation", odp: "Presentation",
+        epub: "EPUB book", mobi: "Kindle book", azw: "Kindle book",
+        azw3: "Kindle book", djvu: "DjVu document",
+        mid: "MIDI", midi: "MIDI", mscz: "MuseScore score",
+        mscx: "MuseScore score", musicxml: "MusicXML score", mxl: "MusicXML score",
+        abc: "ABC notation",
+        iso: "Disc image", img: "Disk image", qcow2: "Disk image",
+        vdi: "Disk image", vmdk: "Disk image", dmg: "Disk image",
+        squashfs: "SquashFS image",
+        db: "Database", sqlite: "SQLite database", sqlite3: "SQLite database",
+        mdb: "Database",
+        pem: "Certificate", key: "Private key", crt: "Certificate",
+        cer: "Certificate", pub: "Public key", gpg: "OpenPGP data",
+        asc: "OpenPGP data", sig: "Signature", kbx: "Keyring",
+        p12: "Key bundle",
+        sha256: "Checksum", sha512: "Checksum", sha1: "Checksum",
+        md5: "Checksum", sum: "Checksum", sums: "Checksum",
+        checksum: "Checksum",
+        desktop: "Shortcut",
+        ttf: "Font", otf: "Font", woff: "Web font", woff2: "Web font",
+        ttc: "Font collection",
+        torrent: "Torrent"
     })
 
+    // The words beside the glyph, and they follow the same route through
+    // the name so the two cannot disagree — a row saying "Package" under
+    // an archive crate would be worse than either alone.
     function typeLabel(entry) {
         if (!entry) return "";
         if (entry.dir) return "Folder";
         if (entry.broken) return "Broken link";
+        const suffix = entry.link ? " (link)" : "";
+
+        const lower = entry.name.toLowerCase();
+        if (root.checksumRe.test(entry.name)) return "Checksum" + suffix;
+        if (root.nameNames[lower]) return root.nameNames[lower] + suffix;
+
+        const parts = lower.split(".");
+        if (parts.length > 2) {
+            const two = parts.slice(-2).join(".");
+            if (root.extNames[two]) return root.extNames[two] + suffix;
+            if (parts.length > 3) {
+                const three = parts.slice(-3).join(".");
+                if (root.extNames[three]) return root.extNames[three] + suffix;
+            }
+        }
         const dot = entry.name.lastIndexOf(".");
         if (dot > 0) {
-            const ext = entry.name.slice(dot + 1).toLowerCase();
-            if (root.extNames[ext]) return root.extNames[ext]
-                                          + (entry.link ? " (link)" : "");
-            return ext.toUpperCase() + " file";
+            const ext = lower.slice(dot + 1);
+            if (root.extNames[ext]) return root.extNames[ext] + suffix;
+            // An unknown suffix is still worth printing, but only when it
+            // looks like one: "Show must goon 9_20" has a dot in it and no
+            // extension, and "9_20 FILE" is a lie about the file.
+            if (/^[a-z0-9]{1,8}$/.test(ext)) return ext.toUpperCase() + " file" + suffix;
         }
+        if (entry.exec) return "Program" + suffix;
         return entry.link ? "Link" : "File";
     }
 

@@ -82,7 +82,7 @@ PanelSurface {
                 MonoIcon {
                     anchors.centerIn: parent
                     name: props.entry ? props.svc.iconFor(props.entry) : "file"
-                    size: 20
+                    size: 24
                     inkColor: Appearance.ink2
                     accentColor: Appearance.accent
                 }

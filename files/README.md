@@ -135,13 +135,43 @@ a folder, add it to the sidebar; and on the folder's own space, new folder,
 new file, paste, open in terminal, add this folder to the sidebar, select
 all, invert, hidden files.
 
+## Icons
+
+Every glyph is drawn from the pack in `qml/IconPaths.js` — a 24-unit grid,
+a 2-unit ink stroke and one accent element that is the identifying mark.
+Nothing is loaded from an icon theme, so the window looks the same on any
+machine.
+
+What a file *is* gets decided in this order, and the Type column follows
+exactly the same route so the words and the glyph cannot disagree:
+
+1. the whole name — `Makefile`, `LICENSE`, `README`, `.gitignore`
+2. a checksum list, by pattern — `SHA256SUMS`, `sha512sum.txt`, `MD5SUM`
+3. a two- or three-part suffix — `.tar.gz` is a tar, not a gzip
+4. the last suffix
+5. the execute bit, from `find`'s `%m` — a downloaded binary with no
+   suffix is a **Program**, not a blank page
+
+Archives and packages are deliberately different glyphs: "can I open this"
+and "can I run this" are not the same question. `iconcheck.js` asserts that
+every name the tables ask for exists in the pack, because `MonoIcon` draws
+an unknown name as nothing at all and says nothing about it.
+
+The glyph's size is also its weight — the strokes are 2 units on a 24 grid,
+so they scale with it. At 14px they came out at 1.2px and read as grey
+suggestions, which is why the list draws at 18 in a 30px plate and the grid
+at 24 in a 44px plate.
+
 ## Measurements
 
 The window follows the concept's own numbers rather than approximating
 them: a 192px sidebar, a 48px toolbar ruled off from the view, 28px
 controls, a breadcrumb that is the hover tint with a hairline rather than a
-solid fill, the view switch as one segmented group, 38px icon plates with a
-1px inset rule, 11px tile labels on one line, and a 32px status bar.
+solid fill, the view switch as one segmented group, icon plates with a 1px
+inset rule, 11px tile labels on one line, and a 32px status bar. The plates
+are the one departure: the concept's 38px grid plate and its 26px row plate
+both drew their glyph too faintly to tell one file from another, so they
+are 44 and 30.
 
 Selection is marked the way the concept marks it — a rule inset 10px from
 each side and lifted 3px off the bottom, over a quiet fill. Not a
