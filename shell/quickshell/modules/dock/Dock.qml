@@ -49,14 +49,24 @@ Variants {
         // too would push every window down by a tooltip's height.
         exclusiveZone: Config.Appearance.dockAutoHide
                        ? 0
-                       // Twice the gap: one below the pill, between it and
-                       // the screen edge, and one above it, between it and
-                       // whatever is tiled there. Reserving only the pill
-                       // and the bottom gap put windows flush against the
-                       // dock's top edge while it floated clear of the
-                       // bottom — uneven, and the reason it read as stuck
-                       // to the edge rather than sitting above it.
-                       : Math.round(panelBreadth + edgeGap * 2)
+                       // The pill, plus a gap on each side of it, less
+                       // whatever Hyprland is already insetting windows by.
+                       //
+                       // Twice the gap alone was still uneven, because a
+                       // tiled window does not sit on the edge of the
+                       // usable area — general:gaps_out holds it off by
+                       // that much again. So the gap above came out as
+                       // edgeGap + gaps_out against edgeGap below, and grew
+                       // wider the more gaps you ran. Subtracting it here
+                       // hands that part of the job back to the compositor,
+                       // which is already doing it.
+                       //
+                       // Floored at the pill itself: with gaps wider than
+                       // twice the dock's own spacing there is nothing left
+                       // to give back, and a window is never allowed to
+                       // reach the pill.
+                       : Math.round(Math.max(panelBreadth,
+                                    panelBreadth + edgeGap * 2 - gapsOut))
         visible: hasScreen && !Config.UiState.locked
 
         readonly property bool isLeft: Config.Appearance.dockLeft
@@ -66,6 +76,10 @@ Variants {
         readonly property real padV: Config.Appearance.dockPadV
         readonly property real tileSpacing: Config.Appearance.dockTileSpacing
         readonly property real edgeGap: Config.Appearance.dockEdgeGap
+        // The shell owns this and writes it to Hyprland (Settings → Shell →
+        // Hyprland → Outer gaps), so reading the preference is reading what
+        // the compositor is actually doing.
+        readonly property real gapsOut: Math.max(0, Config.Appearance.gapsOut)
         // Headroom reserved above the pill for tiles' hover tooltips.
         readonly property real tooltipRoom: Config.Appearance.dockTooltipRoom
         readonly property real panelBreadth: Config.Appearance.dockPanelBreadth

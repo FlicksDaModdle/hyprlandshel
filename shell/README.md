@@ -687,10 +687,23 @@ Below is geometry — the pill sits `tooltipRoom` down a surface that is
 what is left under it is the gap. Above is the exclusive zone, which is
 where tiled windows stop. Those two live in different files and used to
 disagree: the zone covered the pill and the bottom gap only, so windows sat
-flush against the dock's top edge while it floated clear of the bottom, and
-it read as mounted on the edge rather than over it. The zone is the pill
-plus *twice* the gap now. `dockgap.js` checks the two come out equal across
-five spacings and three dock sizes, and was written by breaking it first.
+flush against the dock's top edge while it floated clear of the bottom.
+
+The zone is the pill, plus a gap on each side, **less `general:gaps_out`**.
+That last term is the one that is easy to miss: a tiled window does not sit
+on the edge of the usable area, the compositor holds it off by its own
+outer gap, so reserving two gaps put `edgeGap + gaps_out` above against
+`edgeGap` below — even in the arithmetic and visibly uneven on screen, and
+worse the wider the gaps. Subtracting it hands that part back to the
+compositor, which was already doing it. Floored at the pill: with gaps
+wider than twice the dock's spacing there is nothing left to give back, and
+a window is never allowed to reach the dock.
+
+`dockgap.js` lifts the zone expression out of Dock.qml and *runs* it,
+rather than matching its shape, and checks above equals below across five
+spacings, two dock sizes and four gap settings. It was written by breaking
+it: drop the `gaps_out` term and it reports 22 failures, all "above 8,
+below 4"; drop the doubling and it reports 28, all "above 0".
 
 
 
