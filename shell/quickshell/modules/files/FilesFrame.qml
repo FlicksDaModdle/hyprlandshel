@@ -170,8 +170,13 @@ PanelSurface {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
 
+            // Tiled, the compositor owns the geometry: a maximise button
+            // would do nothing and a minimise button would be a confusing
+            // way to close. Only the close button means anything there.
             Repeater {
-                model: [
+                model: frame.host.tiled
+                    ? [{ glyph: "x", danger: true, act: () => Config.UiState.closeFiles() }]
+                    : [
                     { glyph: "minus",  danger: false, act: () => Config.UiState.minimiseFiles() },
                     { glyph: "square", danger: false, act: () => Config.UiState.filesMaximized = !frame.host.maximised },
                     { glyph: "x",      danger: true,  act: () => Config.UiState.closeFiles() }
@@ -646,11 +651,25 @@ PanelSurface {
         anchors.bottom: statusBar.top
 
         // Clicking the empty space drops the selection, the way every file
-        // manager does.
+        // manager does; right-clicking it is the folder's own menu.
         MouseArea {
             anchors.fill: parent
-            acceptedButtons: Qt.LeftButton
-            onClicked: frame.app.clearSelection()
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onClicked: mouse => {
+                if (mouse.button === Qt.RightButton) {
+                    const p = mapToItem(menuLayer, mouse.x, mouse.y);
+                    frame.app.openMenu(p.x, p.y, null);
+                } else {
+                    frame.app.clearSelection();
+                }
+            }
+        }
+
+        // Anything dropped on the folder's own space lands in the folder.
+        DropArea {
+            anchors.fill: parent
+            keys: ["text/uri-list"]
+            onDropped: drop => frame.app.dropOnto(drop, frame.app.cwd)
         }
 
         Flickable {
@@ -682,10 +701,15 @@ PanelSurface {
                     model: frame.app.visibleEntries
 
                     FileTile {
+                        id: gridTile
                         required property var modelData
                         width: grid.tileWidth
                         entry: modelData
                         app: frame.app
+                        // A row of slack either side, so scrolling does not
+                        // show a column of empty plates catching up.
+                        inView: (gridTile.y + gridTile.height) > flick.contentY - gridTile.height
+                                && gridTile.y < flick.contentY + flick.height + gridTile.height
                     }
                 }
             }
@@ -727,6 +751,32 @@ PanelSurface {
             font.pixelSize: Config.Appearance.fs(13)
             color: Config.Appearance.ink3
         }
+    }
+
+    // ── the right-click menu ──────────────────────────────────────────────
+    // Above every other part of the window, with a full-window catcher
+    // under it so a click anywhere else puts it away.
+    Item {
+        id: menuLayer
+        anchors.fill: parent
+        z: 900
+
+        MouseArea {
+            anchors.fill: parent
+            visible: fileMenu.open
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: fileMenu.close()
+        }
+
+        FileMenu {
+            id: fileMenu
+            app: frame.app
+        }
+    }
+
+    Component.onCompleted: {
+        frame.app.menuLayer = menuLayer;
+        frame.app.menu = fileMenu;
     }
 
     // ── status bar ────────────────────────────────────────────────────────

@@ -109,14 +109,64 @@ Item {
         color: Config.Appearance.ink3
     }
 
+    property bool dropTarget: false
+
+    DropArea {
+        anchors.fill: fill
+        enabled: row.entry.dir
+        keys: ["text/uri-list"]
+        onEntered: row.dropTarget = true
+        onExited: row.dropTarget = false
+        onDropped: drop => {
+            row.dropTarget = false;
+            row.app.dropOnto(drop, row.svc.join(row.app.cwd, row.entry.name));
+        }
+    }
+
+    Rectangle {
+        visible: row.dropTarget
+        anchors.fill: fill
+        radius: Config.Appearance.rSm
+        color: "transparent"
+        border.width: 2
+        border.color: Config.Appearance.accent
+    }
+
     MouseArea {
         id: area
         anchors.fill: fill
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        acceptedButtons: Qt.LeftButton
-        onClicked: mouse => row.app.select(row.entry.name,
-                                           (mouse.modifiers & Qt.ControlModifier) !== 0)
-        onDoubleClicked: row.app.activate(row.entry)
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+
+        drag.target: dragProxy
+        onPressed: mouse => {
+            if (mouse.button !== Qt.LeftButton) return;
+            if (!row.app.isSelected(row.entry.name))
+                row.app.select(row.entry.name, false);
+            dragProxy.x = mouse.x;
+            dragProxy.y = mouse.y;
+            dragProxy.Drag.mimeData = { "text/uri-list": row.app.selectedUris() };
+        }
+        onReleased: dragProxy.Drag.drop()
+
+        onClicked: mouse => {
+            if (mouse.button === Qt.RightButton) {
+                const p = mapToItem(row.app.menuLayer, mouse.x, mouse.y);
+                row.app.openMenu(p.x, p.y, row.entry);
+                return;
+            }
+            row.app.select(row.entry.name, (mouse.modifiers & Qt.ControlModifier) !== 0);
+        }
+        onDoubleClicked: mouse => {
+            if (mouse.button === Qt.LeftButton) row.app.activate(row.entry);
+        }
+    }
+
+    Item {
+        id: dragProxy
+        Drag.active: area.drag.active
+        Drag.dragType: Drag.Automatic
+        Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
     }
 }

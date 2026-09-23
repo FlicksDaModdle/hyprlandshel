@@ -449,6 +449,17 @@ hl.window_rule({
     float = true,
 })
 
+-- The shell's own toplevels. Both Settings and Files are Quickshell
+-- FloatingWindows when set to tiled, so they carry Quickshell's app id and
+-- are told apart by title. Giving Files a decent opening size matters
+-- because Hyprland only uses it in a floating layout; tiled, the layout
+-- decides and this is ignored.
+hl.window_rule({
+    name  = "hyprshell-files",
+    match = { class = "^(org.quickshell)$", title = "^(Files)$" },
+    size  = { 1100, 700 },
+})
+
 -------------------------------------
 ---- SHELL-MANAGED KEYBINDS (last) ---
 -------------------------------------

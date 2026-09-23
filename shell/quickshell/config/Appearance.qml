@@ -140,8 +140,13 @@ Singleton {
             property bool kvantumTheme: false
 
             // ── the file manager ──────────────────────────────────────────
-            // Its window, the same choice Settings has.
-            property bool filesTiled: false
+            // Its window, the same choice Settings has. Tiled by default,
+            // unlike Settings: a file manager is a window you work in
+            // alongside other windows, so it should take a slot in the
+            // layout rather than float over everything. It is also the mode
+            // where dragging files out to other applications works, because
+            // a layer-shell surface is not an ordinary drag source.
+            property bool filesTiled: true
             // "grid" | "list" — the design's two view buttons.
             property string filesView: "grid"
             property string filesSortBy: "name"

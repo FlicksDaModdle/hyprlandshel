@@ -534,17 +534,41 @@ two lines, and a line-based reader invents a file that does not exist.
 every legal filename survives. The item counts beside each place count
 characters from `-printf .` rather than lines, for the same reason.
 
+Right-click a file for open / open with / cut / copy / copy path / rename /
+trash, and the empty space for new folder, paste, open in terminal,
+bookmark and hidden files. In the trash the menu offers restore instead.
+
+Drag a file onto a folder to move it there, or out of the window to hand it
+to another application as `text/uri-list`. Dropping files *into* the window
+copies them in. Dragging works in tiled mode; a floating window is a
+layer-shell surface, which is not an ordinary drag source, so drags out of
+it may not reach other applications.
+
 Keys: `Ctrl+A` select all, `Ctrl+C`/`X`/`V` copy, cut and paste, `Ctrl+H`
 hidden files, `Ctrl+L` type a path, `F2` rename, `Delete` to trash,
 `Backspace` up, `Enter` open, `Escape` clear the selection then close.
+
+**Opening a file** tries `gio open`, then `xdg-open`, then `handlr` and
+`mimeopen`. One is not enough: `gio open` reads glib's own
+default-application table and can come back having done nothing on a
+session with no portal running, while `xdg-open` falls through
+desktop-specific openers to its own generic handling.
+
+It opens **tiled** by default, unlike Settings — a file manager is a window
+you work in beside other windows, and tiled is also the mode where dragging
+files out to other applications works. Settings → Files switches it.
 
 Settings → Files has the window mode, the view, tile size, sorting and the
 bookmarks. `Super + Shift + E` still opens whatever `fileManager` in
 `hyprland.lua` names, if you want a second opinion.
 
-**Not in this version:** thumbnails for anything but images, drag and drop,
-and mounting removable or network volumes. Images preview themselves, at the
-size actually drawn.
+Image thumbnails load only for tiles on screen. A folder of screenshots
+would otherwise decode every full-resolution PNG in it the moment you opened
+the folder, for the sake of the handful actually visible.
+
+**Not in this version:** thumbnails for anything but images, mounting
+removable or network volumes, tabs, split panes, search, and an archive
+extractor.
 
 ## Theming KDE applications
 

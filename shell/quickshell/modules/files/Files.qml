@@ -115,6 +115,46 @@ Scope {
         return root.selection.map(n => root.svc.join(root.cwd, n));
     }
 
+    // What a drag carries. text/uri-list is one URL per line, CRLF by the
+    // spec, and every other application expects exactly that.
+    function selectedUris() {
+        return root.selectedPaths().map(p => root.svc.fileUrl(p)).join("\r\n");
+    }
+
+    // Where the menu is drawn, and how it is opened. The frame sets these
+    // when it builds; the tiles call them without knowing where the menu
+    // lives.
+    property var menuLayer: null
+    property var menu: null
+
+    function openMenu(x, y, entry) {
+        if (root.menu) root.menu.openAt(x, y, entry);
+    }
+
+    // A drop, from our own window or from another application. Files coming
+    // from elsewhere are copied; files from this window are moved, which is
+    // what dragging within one place means everywhere else.
+    function dropOnto(drop, targetDir) {
+        if (!drop || !targetDir) return;
+        const paths = root.svc.pathsFromDrop(drop);
+        if (!paths.length) return;
+        // Dropping a folder into itself, or into where it already is, is a
+        // no-op rather than an error.
+        const useful = paths.filter(p => p !== targetDir
+                                         && root.svc.parent(p) !== targetDir);
+        if (!useful.length) return;
+        if (drop.proposedAction === Qt.CopyAction || !root.ownsPaths(useful))
+            root.svc.copy(useful, targetDir);
+        else
+            root.svc.move(useful, targetDir);
+    }
+
+    // Whether these came from the folder we are showing, which is what makes
+    // a drag a move rather than a copy.
+    function ownsPaths(paths) {
+        return paths.every(p => root.svc.parent(p) === root.cwd);
+    }
+
     // Move the cursor with the keyboard. `step` is in entries; the grid
     // passes its column count so up and down move a row.
     function moveSelection(step) {

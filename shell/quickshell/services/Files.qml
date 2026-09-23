@@ -202,6 +202,33 @@ Singleton {
         return "file";
     }
 
+    // The paths inside a drop. Qt hands back `urls` when the source set
+    // them, and otherwise the raw text/uri-list, which also carries comment
+    // lines beginning with '#' per the spec.
+    function pathsFromDrop(drop) {
+        const out = [];
+        const add = u => {
+            const s = String(u || "").trim();
+            if (!s || s.charAt(0) === "#") return;
+            if (s.indexOf("file://") !== 0) return;
+            let p = s.slice("file://".length);
+            try { p = decodeURIComponent(p); } catch (e) {}
+            if (p && out.indexOf(p) < 0) out.push(p);
+        };
+        if (drop.urls && drop.urls.length) for (const u of drop.urls) add(u);
+        else if (drop.text) for (const line of String(drop.text).split(/\r?\n/)) add(line);
+        return out;
+    }
+
+    // A path as a URL Qt will open. Each segment is encoded separately so
+    // the separators survive: a name containing '#' would otherwise be read
+    // as a fragment and everything after it dropped, and one containing '%'
+    // would be read as an escape.
+    function fileUrl(path) {
+        const parts = String(path).split("/").map(encodeURIComponent);
+        return "file://" + parts.join("/");
+    }
+
     // Images are shown as themselves. Anything else would need the
     // freedesktop thumbnailers, which is a separate piece of work.
     readonly property var previewExts: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico"]
@@ -506,6 +533,19 @@ Singleton {
         run(["mv", "--backup=numbered", "--"].concat(paths).concat([dir]), dir);
     }
 
+    // The system clipboard, for "copy path". wl-copy reads the text from
+    // stdin rather than argv, so a path containing anything at all — a
+    // newline included — survives the trip.
+    Process { id: clipProc }
+
+    function copyPathToClipboard(paths) {
+        if (!paths || !paths.length) return;
+        clipProc.command = ["sh", "-c",
+            'printf %s "$1" | wl-copy 2>/dev/null || printf %s "$1" | xclip -selection clipboard 2>/dev/null',
+            "copy-path", paths.join("\n")];
+        clipProc.running = true;
+    }
+
     function cut(paths) { root.clipboard = { paths: (paths || []).slice(), cut: true }; }
     function copyToClipboard(paths) { root.clipboard = { paths: (paths || []).slice(), cut: false }; }
 
@@ -518,8 +558,31 @@ Singleton {
 
     // Opening is the desktop's decision, not ours: `gio open` follows the
     // same default-application table every other application uses.
+    // `gio open` consults the same default-application table every GTK app
+    // uses, but it is the glib one: on a session with no portal running, or
+    // with a mimeapps.list that only xdg-utils understands, it can come back
+    // having done nothing at all. xdg-open is the wider net — it falls
+    // through desktop-specific openers to its own generic handling — so try
+    // gio first and hand off to xdg-open when it fails.
+    //
+    // This is one `sh -c` rather than two spawns because the fallback has to
+    // depend on the first one's exit status. The path is still $1, not
+    // interpolated, so a filename remains only a filename.
     function open(path) {
-        Quickshell.execDetached(["gio", "open", path]);
+        Quickshell.execDetached(["sh", "-c",
+            'gio open -- "$1" 2>/dev/null || xdg-open "$1" 2>/dev/null || '
+            + 'handlr open "$1" 2>/dev/null || mimeopen -n "$1" 2>/dev/null',
+            "open-file", path]);
+    }
+
+    // Open with a chooser, for when the default is not what you want.
+    // Nothing here ships a picker of its own; these are the ones desktops
+    // actually provide, tried in turn.
+    function openWith(path) {
+        Quickshell.execDetached(["sh", "-c",
+            'mimeopen -a "$1" 2>/dev/null || handlr launch "$1" 2>/dev/null || '
+            + 'exo-open "$1" 2>/dev/null || gio open -- "$1"',
+            "open-with", path]);
     }
 
     function openTerminal(dir) {
