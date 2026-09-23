@@ -80,6 +80,10 @@ else
             && note "it is installed at $d/... — that prefix is not on the list"
     done
     note "./install.sh writes an environment.d file for this; it needs a re-login."
+    note "To skip all of that, put the file where the search always looks:"
+    note "  sudo ln -sfn \"\$HOME/.local/share/xdg-desktop-portal/portals/hyprshell.portal\" \\"
+    note "       /usr/share/xdg-desktop-portal/portals/hyprshell.portal"
+    note "  systemctl --user restart xdg-desktop-portal"
 fi
 
 # UseIn has to match the session, or the file is read and discarded.
@@ -196,16 +200,57 @@ done
 
 # ── 5. and it has to have been read ──────────────────────────────────────
 head1 "Has xdg-desktop-portal read any of this?"
+XPID=
 if command -v systemctl >/dev/null 2>&1 \
    && systemctl --user is-active xdg-desktop-portal >/dev/null 2>&1; then
     SINCE=$(systemctl --user show -p ActiveEnterTimestamp --value xdg-desktop-portal)
+    XPID=$(systemctl --user show -p MainPID --value xdg-desktop-portal 2>/dev/null)
     ok "xdg-desktop-portal is running ${DIM}(since $SINCE)${RST}"
-    if [ -n "$CONF" ] && [ "$CONF" -nt /proc/$(systemctl --user show -p MainPID --value xdg-desktop-portal 2>/dev/null)/stat ] 2>/dev/null; then
+else
+    # Not pgrep -x: the kernel truncates a process name to 15 characters
+    # and "xdg-desktop-portal" is 18, so an exact match on the name never
+    # finds it. The command line is whole.
+    XPID=$(pgrep -f '/xdg-desktop-portal([[:space:]]|$)' 2>/dev/null | head -1)
+    [ -n "$XPID" ] && warn "xdg-desktop-portal is running, but not as a user unit" \
+                   || warn "xdg-desktop-portal is not running"
+fi
+
+# The environment that decides what it can see is *its* environment, not
+# this shell's. They are routinely different: exporting XDG_DATA_DIRS in a
+# terminal, or setting it on the user manager, changes nothing for a
+# process that was already running when you did it.
+if [ -n "${XPID:-}" ] && [ -r "/proc/$XPID/environ" ]; then
+    XDIRS=$(tr '\0' '\n' < "/proc/$XPID/environ" | sed -n 's/^XDG_DATA_DIRS=//p')
+    XOVR=$(tr '\0' '\n' < "/proc/$XPID/environ" | sed -n 's/^XDG_DESKTOP_PORTAL_DIR=//p')
+    SEEN=
+    if [ -n "$XOVR" ]; then
+        warn "it was started with XDG_DESKTOP_PORTAL_DIR=$XOVR"
+        note "That overrides the search entirely; only backends in there are read."
+        [ -f "$XOVR/hyprshell.portal" ] && SEEN=yes
+    else
+        IFS=: read -ra XLIST <<< "${XDIRS:-/usr/local/share:/usr/share}"
+        for d in "${XLIST[@]}"; do
+            [ -f "$d/xdg-desktop-portal/portals/hyprshell.portal" ] && { SEEN=yes; break; }
+        done
+    fi
+    if [ -n "$SEEN" ]; then
+        ok "the running process can see hyprshell.portal"
+    else
+        bad "the running process cannot see hyprshell.portal"
+        note "its XDG_DATA_DIRS=${XDIRS:-<unset, so the default>}"
+        note "Setting this in a shell, or on the user manager, does not reach a"
+        note "process that is already running. It has to be restarted after:"
+        note "  systemctl --user restart xdg-desktop-portal"
+    fi
+fi
+
+if [ -n "$CONF" ] && [ -n "${XPID:-}" ] && [ -e "/proc/$XPID" ]; then
+    if [ "$CONF" -nt "/proc/$XPID" ]; then
         bad "the config is newer than the running process — it has not read it"
         note "systemctl --user restart xdg-desktop-portal"
+    else
+        ok "it has been restarted since the config was written"
     fi
-else
-    warn "xdg-desktop-portal is not running as a user unit here"
 fi
 
 head1 "The one test that settles it"
@@ -220,6 +265,16 @@ cat <<TESTEOF
 
   If that opens Files and the browser does not, the browser is not asking
   the portal — check 1 above.
+
+  And if it opens something else, stop guessing which backend it chose and
+  watch it choose. Run the portal in the foreground, with its own logging
+  turned up, and make that call again in another terminal:
+
+    systemctl --user stop xdg-desktop-portal
+    G_MESSAGES_DEBUG=all /usr/lib/xdg-desktop-portal -r -v
+
+  It names the backend it picks for each interface, and says why it
+  skipped the ones it skipped. That line is the answer.
 TESTEOF
 
 if [ "$BROKEN" -gt 0 ]; then
