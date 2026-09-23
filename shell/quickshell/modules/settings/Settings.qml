@@ -252,6 +252,16 @@ Scope {
             { n: "Theme written to", s: "Regenerated whenever the theme changes",
               type: "info", value: "Kvantum/Hyprshell/" },
 
+            { type: "header", n: "Motion",
+              s: "One control over every animation the shell draws" },
+            { n: "Animation speed",
+              s: "Scales every duration in the shell — panels, the dock, "
+                 + "the start menu, toggles, the lot. 0% is genuinely "
+                 + "instant rather than merely fast, which is what turning "
+                 + "animations down is usually for.",
+              type: "slider", min: 0, max: 250, unit: "%",
+              value: A.animSpeed, set: v => A.animSpeed = v },
+
             { type: "header", n: "Icon sizes",
               s: "Every place an app icon appears, in one list. Each of "
                  + "these is the same setting as the one in that part's own "
@@ -330,6 +340,12 @@ Scope {
         ];
 
         case "Bar": return [
+            { n: "Workspace switcher size",
+              s: "The pills on the left of the bar, on their own. They are "
+                 + "the widest thing there and usually the first to feel "
+                 + "oversized.",
+              type: "slider", min: 60, max: 160, unit: "%",
+              value: A.workspaceScale, set: v => A.workspaceScale = v },
             { n: "Bar height", s: "Top bar thickness", type: "slider",
               min: 32, max: 56, unit: "px", value: A.barHeight, set: v => A.barHeight = v },
             { type: "header", n: "Text",
@@ -680,10 +696,73 @@ Scope {
                 type: "toggle", value: (ipc.vrr || 0) !== 0,
                 set: v => Services.Compositor.setConfig({ misc: { vrr: v ? 2 : 0 } }) });
 
+            // How much of this output's scale the shell gives back. The
+            // compositor's scale enlarges everything on the screen, the
+            // shell included; this is the only way to say that the bar on
+            // a 150% laptop should not be 150% of a bar.
+            rows.push({ n: "Shell size on this display",
+                s: "The bar, dock and menus on " + m.name + ", independently "
+                   + "of the display scale above. A laptop panel scaled up "
+                   + "so applications are legible makes the shell large to "
+                   + "match; this gives that back.",
+                type: "slider", min: 60, max: 140, unit: "%",
+                value: Math.round(A.screenScale(m.name) * 100),
+                set: v => root.setScreenScale(m.name, v) });
+
             if (mons.length > 1) {
+                rows.push({ n: "Arrangement",
+                    s: "Drag a screen to where it actually is. Released near "
+                       + "another it lands flush against it — a one pixel gap "
+                       + "between two outputs is a column of desktop the "
+                       + "pointer cannot cross.",
+                    type: "monitors",
+                    monitors: mons.map(x => ({
+                        name: x.name, x: x.x, y: x.y,
+                        width: (x.lastIpcObject || {}).width || x.width,
+                        height: (x.lastIpcObject || {}).height || x.height,
+                        scale: x.scale || 1, focused: x.focused })),
+                    value: m.name,
+                    pick: n => root.displayPickRaw = n,
+                    set: (n, px, py) => Services.Compositor.setMonitorPosition(n, px, py) });
                 rows.push({ n: "Position", s: "Top-left corner in the layout, in logical pixels",
                     type: "info", value: m.x + ", " + m.y });
             }
+
+            rows.push({ type: "header", n: "When you leave it alone",
+                s: Services.Idle.available
+                   ? "Written to hypridle.conf. Anything you put in that "
+                     + "file yourself is left alone."
+                   : "Install hypridle to use these" });
+
+            const idleUnit = v => v === 0 ? "Never"
+                                : (v === 1 ? "1 minute" : v + " minutes");
+            rows.push({ n: "Turn the screen off after",
+                s: Services.Idle.screenOffAfter === 0
+                   ? "Never — the panel stays on until something else "
+                     + "turns it off"
+                   : idleUnit(Services.Idle.screenOffAfter)
+                     + " of stillness, and back on when you touch anything",
+                type: Services.Idle.available ? "slider" : "info",
+                min: 0, max: 60, unit: " min",
+                value: Services.Idle.screenOffAfter,
+                set: v => { Services.Idle.screenOffAfter = v; Services.Idle.save(); } });
+
+            rows.push({ n: "Sleep after",
+                s: Services.Idle.suspendAfter === 0
+                   ? "Never — this machine will not suspend on its own"
+                   : idleUnit(Services.Idle.suspendAfter) + " of stillness",
+                type: Services.Idle.available ? "slider" : "info",
+                min: 0, max: 180, unit: " min",
+                value: Services.Idle.suspendAfter,
+                set: v => { Services.Idle.suspendAfter = v; Services.Idle.save(); } });
+
+            rows.push({ n: "Lock after",
+                s: Services.Idle.lockAfter === 0 ? "Never locks on its own"
+                   : idleUnit(Services.Idle.lockAfter) + " of stillness",
+                type: Services.Idle.available ? "slider" : "info",
+                min: 0, max: 120, unit: " min",
+                value: Services.Idle.lockAfter,
+                set: v => { Services.Idle.lockAfter = v; Services.Idle.save(); } });
 
             rows.push({ type: "header", n: "All displays",
                 s: "These apply to every screen" });
@@ -1261,6 +1340,20 @@ Scope {
     // screen and the rest are left alone. `position` is deliberately not
     // sent: passing "auto" would re-run Hyprland's placement and shuffle a
     // multi-monitor layout the user arranged themselves.
+    // One line per output in a newline-separated list, so a name with any
+    // character in it survives — outputs are called things like
+    // "Dell Inc. DELL U2720Q" when Hyprland reports them by description.
+    function setScreenScale(name, pct) {
+        const A = Config.Appearance;
+        const keep = [];
+        for (const line of String(A.screenScales || "").split("\n")) {
+            const m = /^\s*([^=]+?)\s*=\s*(\d+)\s*$/.exec(line);
+            if (m && m[1] !== name) keep.push(m[1] + "=" + m[2]);
+        }
+        if (pct !== 100) keep.push(name + "=" + Math.round(pct));
+        A.screenScales = keep.join("\n");
+    }
+
     function applyMode(name, res, hz) {
         const m = Services.Compositor.monitors.find(x => x.name === name);
         if (!m) return;

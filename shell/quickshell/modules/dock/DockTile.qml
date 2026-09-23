@@ -44,7 +44,7 @@ Item {
     // the dock uses. Until the surface stopped being resized to the pill on
     // every frame of this, no easing here could have looked smooth.
     Behavior on implicitWidth {
-        NumberAnimation { duration: 260; easing.type: Easing.OutQuint }
+        NumberAnimation { duration: Config.Appearance.anim(260); easing.type: Easing.OutQuint }
     }
 
     Rectangle {
@@ -55,7 +55,7 @@ Item {
              : (root.hovered ? Config.Appearance.hover : "transparent"))
         border.width: root.active && !root.accentFilled ? 1 : 0
         border.color: Config.Appearance.seam
-        Behavior on color { ColorAnimation { duration: 120 } }
+        Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
     }
 
     Row {
@@ -80,7 +80,7 @@ Item {
             // or the Row would reflow the glyph sideways halfway through.
             visible: root.showLabel || opacity > 0.01
             opacity: root.showLabel ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 140 } }
+            Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(140) } }
             text: root.label
             font.pixelSize: Config.Appearance.fs(Config.Appearance.dockLabelSize)
             font.weight: Font.DemiBold
@@ -104,7 +104,7 @@ Item {
                 height: 2.5
                 radius: 1.25
                 color: root.active ? Config.Appearance.accent : Config.Appearance.ink3
-                Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                Behavior on width { NumberAnimation { duration: Config.Appearance.anim(140); easing.type: Easing.OutCubic } }
             }
         }
     }

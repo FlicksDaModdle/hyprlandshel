@@ -49,7 +49,7 @@ PanelSurface {
                 radius: 9
                 color: Config.Appearance.dnd ? Config.Appearance.accent
                      : (dndHover.hovered ? Config.Appearance.sel : Config.Appearance.hover)
-                Behavior on color { ColorAnimation { duration: 140 } }
+                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(140) } }
 
                 Row {
                     id: dndRow
@@ -82,7 +82,7 @@ PanelSurface {
                 height: 28
                 radius: 9
                 color: clearHover.hovered ? Config.Appearance.sel : Config.Appearance.hover
-                Behavior on color { ColorAnimation { duration: 120 } }
+                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
 
                 StyledText {
                     id: clearLabel

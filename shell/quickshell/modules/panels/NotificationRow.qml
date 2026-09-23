@@ -25,7 +25,7 @@ Rectangle {
 
     radius: Config.Appearance.rCard
     color: hover.hovered ? Config.Appearance.sel : Config.Appearance.hover
-    Behavior on color { ColorAnimation { duration: 120 } }
+    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
 
     implicitHeight: body.implicitHeight + 24
 

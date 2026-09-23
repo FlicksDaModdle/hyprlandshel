@@ -39,7 +39,7 @@ Item {
                 anchors.fill: parent
                 radius: Config.Appearance.rCap
                 color: arrowHover.hovered ? Config.Appearance.hover : "transparent"
-                Behavior on color { ColorAnimation { duration: 120 } }
+                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
             }
 
             MonoIcon {
@@ -68,7 +68,7 @@ Item {
                     anchors.fill: parent
                     radius: Config.Appearance.rCap
                     color: entryHover.hovered ? Config.Appearance.hover : "transparent"
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
                 }
 
                 IconImage {

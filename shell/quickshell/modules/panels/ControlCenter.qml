@@ -21,7 +21,7 @@ PanelSurface {
     implicitWidth: 384
     implicitHeight: expanded ? expandedView.implicitHeight : mainView.implicitHeight
 
-    Behavior on implicitHeight { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+    Behavior on implicitHeight { NumberAnimation { duration: Config.Appearance.anim(180); easing.type: Easing.OutCubic } }
 
     // ── main ──────────────────────────────────────────────────────────────
     Column {
@@ -84,7 +84,7 @@ PanelSurface {
                 height: 30
                 radius: 9
                 color: themeHover.hovered ? Config.Appearance.sel : Config.Appearance.hover
-                Behavior on color { ColorAnimation { duration: 120 } }
+                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
 
                 Row {
                     id: themeRow
@@ -148,7 +148,7 @@ PanelSurface {
                             clip: true
                             color: tile.modelData.on ? Config.Appearance.accent
                                  : (tileArea.containsMouse ? Config.Appearance.sel : Config.Appearance.hover)
-                            Behavior on color { ColorAnimation { duration: 140 } }
+                            Behavior on color { ColorAnimation { duration: Config.Appearance.anim(140) } }
 
                             // Bottom rail, brighter when the tile is on.
                             Rectangle {
@@ -414,7 +414,7 @@ PanelSurface {
                                 && root.askingSsid === entry.modelData.key
                             height: asking ? 44 + 40 : 44
                             Behavior on height {
-                                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                                NumberAnimation { duration: Config.Appearance.anim(140); easing.type: Easing.OutCubic }
                             }
                             clip: true
 
@@ -426,7 +426,7 @@ PanelSurface {
                                 radius: Config.Appearance.rSm
                                 color: entry.modelData.current ? Config.Appearance.sel
                                      : (entryHover.hovered ? Config.Appearance.hover : "transparent")
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
                             }
 
                             Row {

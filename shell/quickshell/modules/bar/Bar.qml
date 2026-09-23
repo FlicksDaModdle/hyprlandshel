@@ -28,6 +28,31 @@ Variants {
         // so it sees undefined once on the way up. null is the same thing to
         // setScreen (use the default) and doesn't warn; the binding
         // re-evaluates to the real screen the moment modelData lands.
+        // ...and nothing is drawn until it is a real one. `?? null` means
+        // "the default screen" to setScreen, so during an output change —
+        // plugging a monitor in, or changing a scale, which makes Hyprland
+        // re-enumerate — a surface whose modelData has momentarily gone
+        // would land on the default output instead. Two bars on one monitor
+        // is what that looks like from the outside.
+        readonly property bool hasScreen: !!modelData
+        visible: hasScreen
+
+        // What this output's shell is scaled to, relative to the rest.
+        //
+        // A layer-shell surface is specified in logical pixels, so the
+        // compositor's own scale multiplies everything on that output —
+        // the shell along with the applications. Running a laptop panel at
+        // a scale that makes applications legible therefore makes the bar
+        // large to match, and there was no way to say otherwise. This is
+        // the shell's correction, per output: a 150% laptop can carry an
+        // 85% bar while the monitor beside it stays at 100.
+        //
+        // Applied to the numbers rather than by scaling the whole bar with
+        // a transform, which would resample the text.
+        readonly property real us:
+            Config.Appearance.screenScale(modelData ? modelData.name : "")
+        function u(px) { return Math.max(1, Math.round(px * us)); }
+
         screen: modelData ?? null
         color: "transparent"
 
@@ -35,8 +60,8 @@ Variants {
         anchors.left: true
         anchors.right: true
 
-        implicitHeight: Config.Appearance.barHeight
-        exclusiveZone: Config.Appearance.barHeight
+        implicitHeight: bar.u(Config.Appearance.barHeight)
+        exclusiveZone: bar.u(Config.Appearance.barHeight)
 
         WlrLayershell.namespace: "quickshell:bar"
         WlrLayershell.layer: WlrLayer.Top
@@ -88,6 +113,7 @@ Variants {
             spacing: 10
 
             Workspaces {
+                barScale: bar.us
                 anchors.verticalCenter: parent.verticalCenter
             }
 
@@ -115,7 +141,7 @@ Variants {
                     anchors.centerIn: parent
                     anchors.verticalCenterOffset: -1
                     text: Services.Compositor.activeClass || "Desktop"
-                    font.pixelSize: Config.Appearance.fs(Config.Appearance.barAppSize)
+                    font.pixelSize: Config.Appearance.fs(bar.u(Config.Appearance.barAppSize))
                     font.weight: Font.Bold
                     font.letterSpacing: 0.16
                     color: Config.Appearance.ink
@@ -151,7 +177,7 @@ Variants {
                 width: Math.min(implicitWidth, Math.max(0, bar.width - left.x - right.width - 420))
                 elide: Text.ElideRight
                 text: Services.Compositor.activeTitle
-                font.pixelSize: Config.Appearance.fs(Config.Appearance.barTitleSize)
+                font.pixelSize: Config.Appearance.fs(bar.u(Config.Appearance.barTitleSize))
                 font.weight: Font.Normal
                 color: Config.Appearance.ink3
             }
@@ -187,7 +213,7 @@ Variants {
                 MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: Config.Appearance.dnd ? "bellOff" : "bell"
-                    size: Config.Appearance.barIconSize
+                    size: bar.u(Config.Appearance.barIconSize)
                     inkColor: Config.Appearance.dnd ? Config.Appearance.ink3 : Config.Appearance.ink
                     monochrome: true
                 }
@@ -204,7 +230,7 @@ Variants {
                         id: badge
                         anchors.centerIn: parent
                         text: Services.Notifications.count
-                        font.pixelSize: Config.Appearance.fs(Config.Appearance.barBadgeSize)
+                        font.pixelSize: Config.Appearance.fs(bar.u(Config.Appearance.barBadgeSize))
                         font.weight: Font.Bold
                         color: Config.Appearance.inkOnAccent
                     }
@@ -226,7 +252,7 @@ Variants {
                     MonoIcon {
                         anchors.verticalCenter: parent.verticalCenter
                         name: Services.Network.icon
-                        size: Config.Appearance.barIconSize
+                        size: bar.u(Config.Appearance.barIconSize)
                         inkColor: Config.Appearance.ink
                         monochrome: true
                     }
@@ -246,7 +272,7 @@ Variants {
                     MonoIcon {
                         anchors.verticalCenter: parent.verticalCenter
                         name: Services.Audio.icon
-                        size: Config.Appearance.barIconSize
+                        size: bar.u(Config.Appearance.barIconSize)
                         inkColor: Config.Appearance.ink
                         monochrome: true
                     }
@@ -272,7 +298,7 @@ Variants {
                         MonoIcon {
                             anchors.fill: parent
                             name: bar.charging ? "batteryCharging" : "battery"
-                            size: Config.Appearance.barIconSize
+                            size: bar.u(Config.Appearance.barIconSize)
                             inkColor: Config.Appearance.ink
                         }
 
@@ -312,7 +338,7 @@ Variants {
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: bar.timeText
-                    font.pixelSize: Config.Appearance.fs(Config.Appearance.barClockSize)
+                    font.pixelSize: Config.Appearance.fs(bar.u(Config.Appearance.barClockSize))
                     font.weight: Font.DemiBold
                     color: Config.Appearance.ink
                 }
@@ -335,7 +361,7 @@ Variants {
                 MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "power"
-                    size: Config.Appearance.barIconSize
+                    size: bar.u(Config.Appearance.barIconSize)
                     inkColor: Config.UiState.powerOpen ? Config.Appearance.inkOnAccent : Config.Appearance.ink
                     monochrome: true
                 }

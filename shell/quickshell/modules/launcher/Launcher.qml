@@ -31,6 +31,13 @@ Variants {
         // so it sees undefined once on the way up. null is the same thing to
         // setScreen (use the default) and doesn't warn.
         screen: modelData ?? null
+        // ...and nothing is drawn until it is a real one. `?? null` means
+        // "the default screen" to setScreen, so during an output change —
+        // plugging a monitor in, or changing a scale, which makes Hyprland
+        // re-enumerate — a surface whose modelData has momentarily gone
+        // would land on the default output instead. Two bars on one monitor
+        // is what that looks like from the outside.
+        readonly property bool hasScreen: !!modelData
         readonly property bool isPrimary: Services.Compositor.isFocusedScreen(modelData)
 
         readonly property bool wanted:
@@ -115,13 +122,13 @@ Variants {
         property real morphFade: 0      // the contents
 
         Behavior on morph {
-            NumberAnimation { duration: 340; easing.type: Easing.OutQuint }
+            NumberAnimation { duration: Config.Appearance.anim(340); easing.type: Easing.OutQuint }
         }
         Behavior on morphY {
-            NumberAnimation { duration: 460; easing.type: Easing.OutQuint }
+            NumberAnimation { duration: Config.Appearance.anim(460); easing.type: Easing.OutQuint }
         }
         Behavior on morphFade {
-            NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+            NumberAnimation { duration: Config.Appearance.anim(260); easing.type: Easing.OutCubic }
         }
         Component.onCompleted: {
             morph = wanted ? 1 : 0;
@@ -502,7 +509,7 @@ Variants {
                         border.width: searchInput.activeFocus ? 2 : 1
                         border.color: searchInput.activeFocus
                                       ? Config.Appearance.accent : Config.Appearance.edge
-                        Behavior on border.color { ColorAnimation { duration: 140 } }
+                        Behavior on border.color { ColorAnimation { duration: Config.Appearance.anim(140) } }
 
                         MonoIcon {
                             id: searchIcon
@@ -635,7 +642,7 @@ Variants {
                             height: launcher.z(25)
                             radius: Config.Appearance.rSm
                             color: allHover.hovered ? Config.Appearance.accent : Config.Appearance.hover
-                            Behavior on color { ColorAnimation { duration: 140 } }
+                            Behavior on color { ColorAnimation { duration: Config.Appearance.anim(140) } }
 
                             Row {
                                 id: allRow
@@ -690,7 +697,7 @@ Variants {
                                            ? Config.Appearance.sel : "transparent"
                                     border.width: gridItem.selected ? 1 : 0
                                     border.color: Config.Appearance.seam
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
                                 }
 
                                 Column {
@@ -770,7 +777,7 @@ Variants {
                                     radius: launcher.z(3)
                                     color: launcher.page === index
                                            ? Config.Appearance.accent : Config.Appearance.div
-                                    Behavior on width { NumberAnimation { duration: 160 } }
+                                    Behavior on width { NumberAnimation { duration: Config.Appearance.anim(160) } }
 
                                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                                     TapHandler {
@@ -846,7 +853,7 @@ Variants {
                                         anchors.fill: parent
                                         radius: Config.Appearance.rSm
                                         color: recentHover.hovered ? Config.Appearance.sel : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
                                     }
 
                                     Row {
@@ -1000,7 +1007,7 @@ Variants {
                                 radius: Config.Appearance.rSm
                                 color: resultRow.selected ? Config.Appearance.accent
                                      : (resultHover.hovered ? Config.Appearance.hover : "transparent")
-                                Behavior on color { ColorAnimation { duration: 100 } }
+                                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(100) } }
                             }
 
                             Row {

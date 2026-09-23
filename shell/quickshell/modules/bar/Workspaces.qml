@@ -12,6 +12,14 @@ import "../common"
 Item {
     id: root
 
+    // The switcher's own size, on top of whatever this output's bar is
+    // scaled to. It is the widest thing on the left of the bar and the
+    // first thing to feel too big.
+    property real barScale: 1
+    readonly property real ws:
+        barScale * Math.max(60, Math.min(160, Config.Appearance.workspaceScale)) / 100
+    function w(px) { return Math.max(1, Math.round(px * ws)); }
+
     readonly property var slots: Services.Compositor.workspaceSlots
     property int hoveredId: -1
 
@@ -44,16 +52,16 @@ Item {
                 readonly property bool urgent: modelData.urgent
                 readonly property bool expanded: focused || hovered || urgent
 
-                width: expanded ? 26 : 16
-                height: 22
-                Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                width: root.w(expanded ? 26 : 16)
+                height: root.w(22)
+                Behavior on width { NumberAnimation { duration: Config.Appearance.anim(220); easing.type: Easing.OutCubic } }
 
                 Rectangle {
                     anchors.fill: parent
                     radius: Config.Appearance.rCap
                     color: pill.focused ? Config.Appearance.accent
                          : (pill.hovered ? Config.Appearance.sel : "transparent")
-                    Behavior on color { ColorAnimation { duration: 160 } }
+                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(160) } }
                 }
 
                 StyledText {
@@ -61,12 +69,12 @@ Item {
                     visible: pill.expanded
                     opacity: pill.expanded ? 1 : 0
                     text: pill.modelData.id
-                    font.pixelSize: Config.Appearance.fs(11)
+                    font.pixelSize: Config.Appearance.fs(root.w(11))
                     font.weight: Font.Bold
                     font.letterSpacing: 0.2
                     color: pill.focused ? Config.Appearance.inkOnAccent
                          : (pill.urgent ? Config.Appearance.accent : Config.Appearance.ink2)
-                    Behavior on opacity { NumberAnimation { duration: 140 } }
+                    Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(140) } }
                 }
 
                 // Bead for the collapsed state: solid when the workspace has
@@ -74,13 +82,13 @@ Item {
                 Rectangle {
                     anchors.centerIn: parent
                     visible: !pill.expanded
-                    width: pill.occupied ? 7 : 5
+                    width: root.w(pill.occupied ? 7 : 5)
                     height: width
                     radius: 2.5
                     color: pill.occupied ? Config.Appearance.ink2 : "transparent"
                     border.width: pill.occupied ? 0 : 1.5
                     border.color: Config.Appearance.div
-                    Behavior on width { NumberAnimation { duration: 160 } }
+                    Behavior on width { NumberAnimation { duration: Config.Appearance.anim(160) } }
                 }
 
                 // MouseArea rather than Hover/Tap handlers: it grabs the

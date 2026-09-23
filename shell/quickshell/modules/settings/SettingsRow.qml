@@ -94,6 +94,7 @@ Item {
                 case "action": return actionComponent;
                 case "text":   return textComponent;
                 case "keybind": return keybindComponent;
+                case "monitors": return monitorsComponent;
                 default:       return infoComponent;
                 }
             }
@@ -385,7 +386,7 @@ Item {
                     inkColor: Config.Appearance.ink3
                     monochrome: true
                     rotation: menuRoot.open ? 180 : 0
-                    Behavior on rotation { NumberAnimation { duration: 160 } }
+                    Behavior on rotation { NumberAnimation { duration: Config.Appearance.anim(160) } }
                 }
 
                 HoverHandler { id: menuHover; cursorShape: Qt.PointingHandCursor }
@@ -788,6 +789,20 @@ Item {
 
             HoverHandler { id: actionHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.spec.set() }
+        }
+    }
+
+    // The display arrangement. Wider and taller than any other control
+    // because it is a picture of your desk rather than a value.
+    Component {
+        id: monitorsComponent
+        MonitorMap {
+            implicitWidth: 360
+            implicitHeight: 190
+            monitors: root.spec.monitors || []
+            selected: root.spec.value || ""
+            onPicked: name => { if (root.spec.pick) root.spec.pick(name); }
+            onMoved: (name, x, y) => { if (root.spec.set) root.spec.set(name, x, y); }
         }
     }
 

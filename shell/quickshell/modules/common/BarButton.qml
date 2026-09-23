@@ -36,7 +36,7 @@ Item {
             color: root.open
                    ? (root.accentWhenOpen ? Config.Appearance.accent : Config.Appearance.sel)
                    : (root.hovered && root.interactive ? Config.Appearance.hover : "transparent")
-            Behavior on color { ColorAnimation { duration: 120 } }
+            Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
         },
 
         Row {

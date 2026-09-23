@@ -634,6 +634,53 @@ the way up; they fade in over the back half, when there is something to
 see through. The dock's pill fades out as it goes, since two of them on
 screen at once would give it away.
 
+### Shell size per display, and why it is needed
+
+A layer-shell surface is specified in logical pixels, so the compositor's
+own scale multiplies everything on that output — the shell along with the
+applications. Running a laptop panel at a scale that makes applications
+legible therefore makes the bar large to match, and there was no way to
+say otherwise.
+
+Settings → Display → "Shell size on this display" is the shell's own
+correction, per output: a 150% laptop can carry an 85% bar while the
+monitor beside it stays at 100. It is applied to the numbers rather than
+by scaling the bar with a transform, which would resample the text.
+
+Kept as `name=percent` lines in theme.json, one per output, so an output
+named by its description — "Dell Inc. DELL U2720Q" — survives being a key.
+
+Separately: every per-screen surface now draws nothing until it has a real
+screen. `screen: modelData ?? null` means "the default screen" to
+setScreen, so during an output change — plugging a monitor in, or changing
+a scale, which makes Hyprland re-enumerate — a surface whose modelData had
+momentarily gone would land on the default output instead. Two bars on one
+monitor is what that looks like.
+
+### Idle timers
+
+Settings → Display → "When you leave it alone": screen off, sleep, lock.
+hypridle owns this and is configured by a file rather than any control
+interface, so `services/Idle.qml` reads and writes
+`~/.config/hypr/hypridle.conf` and restarts the daemon.
+
+The file is not ours — people put their own listeners in it — so the three
+this panel manages live inside a marked block and everything outside it is
+carried across untouched. `idletest.js` covers that, and that saving twice
+produces the same file: joining "whatever was left" to the block grew it by
+a newline on every save, which is what the Kvantum config used to do, and
+the reason anything here that rewrites a file gets a fixpoint test.
+
+### Arranging displays
+
+Settings → Display → Arrangement draws the desktop plane to scale and lets
+you drag a screen to where it actually is. Released within 60 logical
+pixels of touching another, it lands exactly flush: Hyprland's positions
+are absolute, and a one-pixel gap between two outputs is a column of
+desktop the pointer cannot cross, so "nearly aligned" is never what was
+meant. `snaptest.js` covers the eight cases, including a scaled laptop,
+which snaps by its logical size rather than its pixels.
+
 ### The dock's surface spans the whole edge
 
 Not the pill. The pill is centred inside it and input is masked to the

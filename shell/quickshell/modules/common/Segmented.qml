@@ -45,7 +45,7 @@ Item {
                               : (segHover.hovered ? Config.Appearance.sel : "transparent")
                 implicitWidth: segLabel.implicitWidth + root.segmentPadding * 2
                 implicitHeight: 26
-                Behavior on color { ColorAnimation { duration: 140 } }
+                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(140) } }
 
                 StyledText {
                     id: segLabel

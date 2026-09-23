@@ -158,10 +158,10 @@ WlSessionLock {
                     // A wrong password nudges the card, the standard cue.
                     SequentialAnimation {
                         id: shake
-                        NumberAnimation { target: shakeShift; property: "x"; to: 9;  duration: 45 }
-                        NumberAnimation { target: shakeShift; property: "x"; to: -9; duration: 70 }
-                        NumberAnimation { target: shakeShift; property: "x"; to: 5;  duration: 60 }
-                        NumberAnimation { target: shakeShift; property: "x"; to: 0;  duration: 50 }
+                        NumberAnimation { target: shakeShift; property: "x"; to: 9;  duration: Config.Appearance.anim(45) }
+                        NumberAnimation { target: shakeShift; property: "x"; to: -9; duration: Config.Appearance.anim(70) }
+                        NumberAnimation { target: shakeShift; property: "x"; to: 5;  duration: Config.Appearance.anim(60) }
+                        NumberAnimation { target: shakeShift; property: "x"; to: 0;  duration: Config.Appearance.anim(50) }
                     }
 
                     Column {
@@ -202,7 +202,7 @@ WlSessionLock {
                             border.width: 1
                             border.color: surface.failed ? Config.Appearance.accent : Config.Appearance.edge
                             clip: true
-                            Behavior on border.color { ColorAnimation { duration: 160 } }
+                            Behavior on border.color { ColorAnimation { duration: Config.Appearance.anim(160) } }
 
                             StyledText {
                                 anchors.left: parent.left

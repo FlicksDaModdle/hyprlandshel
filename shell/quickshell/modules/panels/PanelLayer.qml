@@ -26,6 +26,13 @@ Variants {
         // setScreen (use the default) and doesn't warn; the binding
         // re-evaluates to the real screen the moment modelData lands.
         screen: modelData ?? null
+        // ...and nothing is drawn until it is a real one. `?? null` means
+        // "the default screen" to setScreen, so during an output change —
+        // plugging a monitor in, or changing a scale, which makes Hyprland
+        // re-enumerate — a surface whose modelData has momentarily gone
+        // would land on the default output instead. Two bars on one monitor
+        // is what that looks like from the outside.
+        readonly property bool hasScreen: !!modelData
         visible: Config.UiState.anyPanelOpen && isPrimary
         color: "transparent"
         exclusiveZone: 0
@@ -71,30 +78,34 @@ Variants {
         readonly property real panelRight: layer.width - Config.Appearance.panelEdgeGap
         readonly property real panelTop: Config.Appearance.panelTop
 
-        ControlCenter {
-            id: cc
-            visible: Config.UiState.controlCenterOpen
+        Entrance {
+            shown: Config.UiState.controlCenterOpen
             x: layer.panelRight - width
             y: layer.panelTop
-            opacity: visible ? 1 : 0
+            ControlCenter {
+                id: cc
+            }
         }
 
-        NotificationCenter {
-            visible: Config.UiState.notificationsOpen
+        Entrance {
+            shown: Config.UiState.notificationsOpen
             x: layer.panelRight - width
             y: layer.panelTop
+            NotificationCenter {}
         }
 
-        CalendarPanel {
-            visible: Config.UiState.calendarOpen
+        Entrance {
+            shown: Config.UiState.calendarOpen
             x: layer.panelRight - width
             y: layer.panelTop
+            CalendarPanel {}
         }
 
-        PowerMenu {
-            visible: Config.UiState.powerOpen
+        Entrance {
+            shown: Config.UiState.powerOpen
             x: layer.panelRight - width
             y: layer.panelTop
+            PowerMenu {}
         }
 
         // The bar's window menu hangs under its button rather than at the

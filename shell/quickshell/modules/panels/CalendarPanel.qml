@@ -151,7 +151,7 @@ PanelSurface {
                 radius: 9
                 color: modelData.today ? Config.Appearance.accent
                      : (modelData.day > 0 && cellHover.hovered ? Config.Appearance.hover : "transparent")
-                Behavior on color { ColorAnimation { duration: 120 } }
+                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
 
                 StyledText {
                     anchors.centerIn: parent

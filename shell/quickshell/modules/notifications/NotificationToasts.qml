@@ -57,8 +57,8 @@ PanelWindow {
 
                 opacity: shown ? 1 : 0
                 x: shown ? 0 : 28
-                Behavior on opacity { NumberAnimation { duration: 180 } }
-                Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(180) } }
+                Behavior on x { NumberAnimation { duration: Config.Appearance.anim(220); easing.type: Easing.OutCubic } }
 
                 NotificationRow {
                     id: card

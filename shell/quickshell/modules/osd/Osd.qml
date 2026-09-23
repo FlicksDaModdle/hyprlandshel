@@ -59,7 +59,7 @@ PanelWindow {
         // Rise into place, matching the dock's own reveal easing.
         opacity: osd.visible ? 1 : 0
         transform: Translate { y: osd.visible ? 0 : 12 }
-        Behavior on opacity { NumberAnimation { duration: 140 } }
+        Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(140) } }
 
         Row {
             anchors.fill: parent
@@ -91,7 +91,7 @@ PanelWindow {
                         height: parent.height
                         radius: 4
                         color: Config.Appearance.accent
-                        Behavior on width { NumberAnimation { duration: 90 } }
+                        Behavior on width { NumberAnimation { duration: Config.Appearance.anim(90) } }
                     }
                 }
             }

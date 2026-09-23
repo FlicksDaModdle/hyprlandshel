@@ -50,8 +50,8 @@ PanelSurface {
                         Math.min(frame.host.height - height, Config.UiState.settingsY))
              : Math.round((frame.host.height - height) / 2)))
 
-    Behavior on width  { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-    Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+    Behavior on width  { NumberAnimation { duration: Config.Appearance.anim(140); easing.type: Easing.OutCubic } }
+    Behavior on height { NumberAnimation { duration: Config.Appearance.anim(140); easing.type: Easing.OutCubic } }
 
     // ── title bar ─────────────────────────────────────────────────────
     Item {
@@ -279,7 +279,7 @@ PanelSurface {
                                     radius: Config.Appearance.rSm
                                     color: entry.active ? Config.Appearance.sel
                                          : (entryArea.containsMouse ? Config.Appearance.hover : "transparent")
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
                                 }
 
                                 Rectangle {
@@ -293,7 +293,7 @@ PanelSurface {
                                     radius: 1
                                     color: Config.Appearance.accent
                                     opacity: entry.active ? 1 : 0
-                                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                                    Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(180) } }
                                 }
 
                                 Row {

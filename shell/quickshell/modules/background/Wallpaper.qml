@@ -22,6 +22,13 @@ Variants {
         // setScreen (use the default) and doesn't warn; the binding
         // re-evaluates to the real screen the moment modelData lands.
         screen: modelData ?? null
+        // ...and nothing is drawn until it is a real one. `?? null` means
+        // "the default screen" to setScreen, so during an output change —
+        // plugging a monitor in, or changing a scale, which makes Hyprland
+        // re-enumerate — a surface whose modelData has momentarily gone
+        // would land on the default output instead. Two bars on one monitor
+        // is what that looks like from the outside.
+        readonly property bool hasScreen: !!modelData
         color: "transparent"
         exclusiveZone: 0
 

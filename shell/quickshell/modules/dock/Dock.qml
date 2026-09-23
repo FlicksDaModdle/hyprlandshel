@@ -24,6 +24,13 @@ Variants {
         // setScreen (use the default) and doesn't warn; the binding
         // re-evaluates to the real screen the moment modelData lands.
         screen: modelData ?? null
+        // ...and nothing is drawn until it is a real one. `?? null` means
+        // "the default screen" to setScreen, so during an output change —
+        // plugging a monitor in, or changing a scale, which makes Hyprland
+        // re-enumerate — a surface whose modelData has momentarily gone
+        // would land on the default output instead. Two bars on one monitor
+        // is what that looks like from the outside.
+        readonly property bool hasScreen: !!modelData
         color: "transparent"
         exclusiveZone: 0
         visible: !Config.UiState.locked
@@ -87,7 +94,7 @@ Variants {
         readonly property real pillHiddenPos: tooltipRoom + panelBreadth + 20
 
         property real pillPos: revealed ? pillShownPos : pillHiddenPos
-        Behavior on pillPos { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        Behavior on pillPos { NumberAnimation { duration: Config.Appearance.anim(260); easing.type: Easing.OutCubic } }
 
         // The surface spans the whole edge and the pill is centred inside
         // it, rather than the surface being cut to the pill.
@@ -262,7 +269,7 @@ Variants {
             opacity: (Config.Appearance.launcherMorph
                       && Config.UiState.launcherOpen && dock.onFocusedScreen) ? 0 : 1
             visible: opacity > 0.01
-            Behavior on opacity { NumberAnimation { duration: 90 } }
+            Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(90) } }
 
             // The mockup's `inset 0 1px 0 var(--gloss)` reads as a soft
             // highlight on a translucent panel over a darker backdrop. Drawn

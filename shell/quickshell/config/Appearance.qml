@@ -44,6 +44,16 @@ Singleton {
 
             // Bar
             property int barHeight: 40                // 32-56 px
+            property int workspaceScale: 100          // 60-160 % of the switcher
+            // One multiplier over every animation in the shell. 0 turns
+            // them off outright rather than making them very fast, since
+            // "instant" is what people who turn animations down want.
+            property int animSpeed: 100               // 0-250 %
+            // Per-output shell scale, as {"eDP-1": 85, "DP-1": 100}. The
+            // compositor's own scale makes everything on that output
+            // bigger, the shell included; this is how much of that the
+            // shell gives back.
+            property string screenScales: ""
             property bool clock24: true
             property bool showTray: true
             property bool trayOpen: false
@@ -221,6 +231,9 @@ Singleton {
     property alias tint: prefs.tint
     property alias wallpaper: prefs.wallpaper
     property alias barHeight: prefs.barHeight
+    property alias workspaceScale: prefs.workspaceScale
+    property alias animSpeed: prefs.animSpeed
+    property alias screenScales: prefs.screenScales
     property alias clock24: prefs.clock24
     property alias showTray: prefs.showTray
     property alias trayOpen: prefs.trayOpen
@@ -522,4 +535,35 @@ Singleton {
     readonly property real panelGap: 10
     readonly property real panelEdgeGap: 12
     readonly property real panelTop: barHeight + panelGap
+
+    // ── animation ─────────────────────────────────────────────────────────
+    // Every duration in the shell goes through this, so one slider governs
+    // the lot and 0% is genuinely instant rather than merely brisk. Qt
+    // treats a zero-length NumberAnimation as "jump there", which is what
+    // is wanted.
+    function anim(ms) {
+        if (animSpeed <= 0) return 0;
+        return Math.max(1, Math.round(ms * 100 / Math.max(10, animSpeed)));
+    }
+    // A few places want to know without asking for a number.
+    readonly property bool animated: animSpeed > 0
+
+    // ── per-output scale ──────────────────────────────────────────────────
+    // A laptop panel run at a compositor scale that makes applications
+    // legible makes the shell large to match, because a layer-shell surface
+    // is specified in logical pixels and the compositor multiplies them.
+    // This is the shell's own correction, per output, so a 150% laptop can
+    // carry a 100% bar while the desktop monitor beside it is unchanged.
+    readonly property var screenScaleMap: {
+        const out = ({});
+        for (const line of String(screenScales || "").split("\n")) {
+            const m = /^\s*([^=]+?)\s*=\s*(\d+)\s*$/.exec(line);
+            if (m) out[m[1]] = Math.max(40, Math.min(200, parseInt(m[2], 10)));
+        }
+        return out;
+    }
+    function screenScale(name) {
+        const v = screenScaleMap[name || ""];
+        return (v === undefined ? 100 : v) / 100;
+    }
 }
