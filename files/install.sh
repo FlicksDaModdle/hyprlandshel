@@ -180,6 +180,108 @@ if command -v update-desktop-database >/dev/null 2>&1; then
         && printf '  refreshed the desktop database\n'
 fi
 
+# ── file dialogs ─────────────────────────────────────────────────────────
+#
+# Which program shows a "Save as…" is not decided by the MIME database and
+# not by the browser. Firefox asks xdg-desktop-portal, which picks a
+# *backend* per interface from its own configuration, and on a machine with
+# the KDE backend installed the one answering FileChooser is Dolphin's.
+# That is why saving a download kept opening Dolphin however `xdg-mime
+# default` was set: the choice was never in that file.
+#
+# This points FileChooser at the backend just installed, and leaves every
+# other interface — screenshot, screencast, the rest — exactly as it was.
+head1 "File dialogs"
+
+# The config xdg-desktop-portal reads is named after the desktop, so ask
+# the session rather than assuming. Run from a bare TTY there is nothing to
+# ask, and hyprland is the right guess for this shell.
+DESK="$(printf '%s' "${XDG_CURRENT_DESKTOP:-hyprland}" | cut -d: -f1 | tr '[:upper:]' '[:lower:]')"
+PORTAL_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/xdg-desktop-portal"
+PORTAL_CONF="$PORTAL_DIR/${DESK}-portals.conf"
+PORTAL_KEY="org.freedesktop.impl.portal.FileChooser"
+PORTAL_LINE="$PORTAL_KEY=hyprshell"
+
+if ! command -v xdg-desktop-portal >/dev/null 2>&1 \
+   && [ ! -e /usr/libexec/xdg-desktop-portal ] \
+   && [ ! -e /usr/lib/xdg-desktop-portal ]; then
+    warn "xdg-desktop-portal" "not installed — browsers will use their own dialogs"
+elif [ "$MODE" = check ]; then
+    if [ -r "$PORTAL_CONF" ] && grep -q "^[[:space:]]*$PORTAL_LINE" "$PORTAL_CONF"; then
+        ok "portal config" "already points at hyprshell"
+    else
+        warn "portal config" "would set $PORTAL_KEY in $PORTAL_CONF"
+    fi
+elif [ -r "$PORTAL_CONF" ] && grep -q "^[[:space:]]*$PORTAL_LINE" "$PORTAL_CONF"; then
+    ok "portal config" "already points at hyprshell"
+else
+    mkdir -p "$PORTAL_DIR"
+    if [ ! -e "$PORTAL_CONF" ]; then
+        # default= is what answers every interface this does not
+        # implement, and leaving it out would answer none of them.
+        cat > "$PORTAL_CONF" <<PORTALEOF
+[preferred]
+default=$DESK;gtk
+$PORTAL_LINE
+PORTALEOF
+        ok "portal config" "wrote $PORTAL_CONF"
+    else
+        cp -p "$PORTAL_CONF" "$PORTAL_CONF.before-hyprshell"
+        if grep -q "^[[:space:]]*$PORTAL_KEY[[:space:]]*=" "$PORTAL_CONF"; then
+            sed -i "s|^[[:space:]]*$PORTAL_KEY[[:space:]]*=.*|$PORTAL_LINE|" "$PORTAL_CONF"
+        elif grep -q '^\[preferred\]' "$PORTAL_CONF"; then
+            sed -i "0,/^\[preferred\]/s||[preferred]\n$PORTAL_LINE|" "$PORTAL_CONF"
+        else
+            printf '\n[preferred]\n%s\n' "$PORTAL_LINE" >> "$PORTAL_CONF"
+        fi
+        ok "portal config" "updated $PORTAL_CONF"
+        printf '  %skept the previous one as %s.before-hyprshell%s\n' \
+               "$DIM" "$PORTAL_CONF" "$RST"
+    fi
+    printf '  %sxdg-desktop-portal reads this once, at start:%s\n' "$DIM" "$RST"
+    printf '  %s  systemctl --user restart xdg-desktop-portal%s\n' "$DIM" "$RST"
+fi
+
+# Where xdg-desktop-portal looks for backends at all.
+#
+# It reads the list from XDG_DATA_DIRS, whose default is /usr/local/share
+# and /usr/share — and *not* ~/.local/share, which is where this installs
+# by default. The .portal file just installed would then never be read:
+# the backend would sit on the bus, correctly registered, and nothing
+# would ever ask it for a dialog. No error anywhere, dialogs simply
+# keep opening in whatever was answering before.
+SHARE="$PREFIX/share"
+case ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
+    *":$SHARE:"*)
+        [ "$MODE" = check ] || ok "portal search path" "$SHARE is on XDG_DATA_DIRS" ;;
+    *)
+        if [ "$MODE" = check ]; then
+            warn "portal search path" "$SHARE is not on XDG_DATA_DIRS"
+        else
+            ENVD="${XDG_CONFIG_HOME:-$HOME/.config}/environment.d"
+            mkdir -p "$ENVD"
+            # The value is written out in full rather than as
+            # $SHARE:${XDG_DATA_DIRS}: environment.d expands an unset
+            # variable to nothing, and the trailing colon that leaves
+            # behind means "the current directory" to some readers of
+            # this list.
+            cat > "$ENVD/50-hyprshell-files.conf" <<ENVEOF
+# Written by hyprshell-files' install.sh.
+#
+# xdg-desktop-portal finds file-dialog backends under XDG_DATA_DIRS, which
+# does not include this prefix by default.
+XDG_DATA_DIRS=$SHARE:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
+ENVEOF
+            warn "portal search path" "$SHARE was not on XDG_DATA_DIRS"
+            printf '  %swrote %s/50-hyprshell-files.conf%s\n' \
+                   "$DIM" "$ENVD" "$RST"
+            printf '  %sit applies at the next login, or now with:%s\n' "$DIM" "$RST"
+            printf '  %s  systemctl --user set-environment XDG_DATA_DIRS=%s:%s%s\n' \
+                   "$DIM" "$SHARE" "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" "$RST"
+            printf '  %s  systemctl --user restart xdg-desktop-portal%s\n' "$DIM" "$RST"
+        fi ;;
+esac
+
 case ":${PATH}:" in
     *":$PREFIX/bin:"*) ;;
     *) printf '\n  %snote%s %s/bin is not on your PATH.\n' "$YEL" "$RST" "$PREFIX" ;;
@@ -189,6 +291,12 @@ cat <<EOF
 
   Run it:      hyprshell-files [directory]
   Default it:  xdg-mime default hyprshell-files.desktop inode/directory
+
+  It also answers two things the desktop asks of a file manager: "show in
+  file manager" (org.freedesktop.FileManager1), and the file dialogs
+  browsers put up when saving or attaching (the FileChooser portal). Both
+  start it on demand through the session bus — there is nothing to leave
+  running.
 
   It follows the shell's theme.json when that is installed, and keeps its
   own settings in \$XDG_CONFIG_HOME/hyprshell-files/settings.json.

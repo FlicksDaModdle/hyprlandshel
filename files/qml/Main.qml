@@ -20,7 +20,7 @@ Window {
     height: 700
     minimumWidth: 640
     minimumHeight: 420
-    visible: true
+    visible: !portalOnly
     title: files.cwd === "" ? "Files"
                             : "Files — " + FilesService.pretty(files.cwd)
     color: "transparent"
@@ -68,6 +68,28 @@ Window {
             // The sheet needs the entry, which only exists once the
             // listing has come back.
             files.pendingProperties = files.svc.basename(paths[0]);
+        }
+    }
+
+    // Dialogs asked for over the portal. One window each, keyed by the
+    // token the portal handed us, because a browser downloading two things
+    // at once asks twice and neither answer may go to the wrong caller.
+    Component {
+        id: dialogComponent
+        FileDialog {}
+    }
+
+    Connections {
+        target: Portal
+        function onDialogRequested(token, mode, title, appId, startFolder,
+                                   suggestedName, multiple, directory, filters) {
+            const dlg = dialogComponent.createObject(null, {
+                token: token, mode: mode, startFolder: startFolder,
+                suggestedName: suggestedName, multiple: multiple,
+                directory: directory, filters: filters
+            });
+            if (!dlg) { Portal.finish(token, []); return; }
+            dlg.chosen.connect(function (t, paths) { Portal.finish(t, paths); });
         }
     }
 

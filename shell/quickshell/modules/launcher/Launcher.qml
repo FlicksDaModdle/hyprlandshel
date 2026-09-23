@@ -1164,9 +1164,42 @@ Variants {
 
                 Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
 
+                // The button that opened this, still where it was.
+                //
+                // With the morph on, the panel's footer ends up exactly
+                // where the dock's pill was — so the Start tile that was
+                // pressed to open the launcher is *underneath* it, and
+                // pressing there again did nothing: the panel swallows
+                // the click that the catcher behind would have turned
+                // into a close. Same glyph, same corner, and it collapses
+                // the panel back into the dock.
                 Rectangle {
+                    id: startTile
                     anchors.left: parent.left
                     anchors.leftMargin: launcher.z(7)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: launcher.z(28)
+                    height: launcher.z(28)
+                    radius: Config.Appearance.rSm
+                    color: startHover.hovered ? Config.Appearance.accent
+                                              : Config.Appearance.sel
+
+                    MonoIcon {
+                        anchors.centerIn: parent
+                        name: "grid"
+                        size: launcher.z(15)
+                        inkColor: startHover.hovered ? Config.Appearance.inkOnAccent
+                                                     : Config.Appearance.ink2
+                        monochrome: true
+                    }
+
+                    HoverHandler { id: startHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: launcher.close() }
+                }
+
+                Rectangle {
+                    anchors.left: startTile.right
+                    anchors.leftMargin: launcher.z(6)
                     anchors.verticalCenter: parent.verticalCenter
                     width: userRow.implicitWidth + 14
                     height: launcher.z(30)

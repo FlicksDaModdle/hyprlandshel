@@ -1013,9 +1013,19 @@ PanelSurface {
             anchors.centerIn: parent
             visible: !frame.app.loading && frame.app.visibleEntries.length === 0
                      && !frame.app.creatingSomething
-            text: frame.app.inTrash ? "The trash is empty"
-                : (frame.app.entries.length > 0 ? "Nothing here but hidden files"
-                                                : "This folder is empty")
+            // In the order the reasons actually apply: a folder with
+            // things in it is never "empty", and saying it is sends
+            // someone looking for a file that is right there. A search
+            // and a dialog's kind filter each hide entries the same way
+            // hidden files do, and each used to be reported as the
+            // other.
+            text: frame.app.entries.length === 0
+                  ? (frame.app.inTrash ? "The trash is empty" : "This folder is empty")
+                : frame.app.filter.trim() !== ""
+                  ? "No matches for \u201C" + frame.app.filter.trim() + "\u201D"
+                : frame.app.kindFilter.length > 0
+                  ? "Nothing here of the kind that was asked for"
+                : "Nothing here but hidden files"
             font.pixelSize: Appearance.fs(13)
             color: Appearance.ink3
         }

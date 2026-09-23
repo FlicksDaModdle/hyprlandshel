@@ -38,6 +38,7 @@ target_link_libraries(hyprshell-backend PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6:
 qt_add_executable(hyprshell-files
     src/main.cpp
     src/filemanager1.cpp src/filemanager1.h
+    src/portal.cpp src/portal.h
 )
 
 # The QML is a resource rather than files on disk, so the installed binary
@@ -67,6 +68,8 @@ qt_add_qml_module(hyprshell-files
         qml/PlaceRow.qml
         qml/ListHeader.qml
         qml/NameTip.qml
+        qml/FileDialog.qml
+        qml/DialogButton.qml
         qml/GroupHeading.qml
         qml/DragBadge.qml
         qml/Properties.qml
@@ -96,6 +99,7 @@ include(GNUInstallDirs)
 # launching through the desktop entry (an application menu, a launcher's
 # search results, xdg-open on a folder) finds nothing, while typing the same
 # name in a terminal works. An absolute path has no such ambiguity.
+
 # D-Bus activation for org.freedesktop.FileManager1.
 #
 # Without this, "show in file manager" only reaches this program when it
@@ -105,11 +109,25 @@ include(GNUInstallDirs)
 configure_file(org.freedesktop.FileManager1.service.in
                ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.FileManager1.service @ONLY)
 
+# And the same for the file-dialog portal backend, which xdg-desktop-portal
+# starts the first time anything puts up a "Save as…".
+configure_file(portal.service.in
+               ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.impl.portal.desktop.hyprshell.service @ONLY)
+
 configure_file(hyprshell-files.desktop.in
                ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files.desktop @ONLY)
 
 install(TARGETS hyprshell-files
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# The portal backend: a .portal file naming the interface it implements and
+# the desktop it applies to, and a D-Bus service file so xdg-desktop-portal
+# can start it on demand — it will, the first time anything asks for a file.
+install(FILES hyprshell.portal
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/xdg-desktop-portal/portals)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.impl.portal.desktop.hyprshell.service
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
+
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.FileManager1.service
         DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
 

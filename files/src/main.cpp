@@ -10,6 +10,7 @@
 #include <QDBusConnection>
 
 #include "filemanager1.h"
+#include "portal.h"
 
 // Hyprshell Files: the shell's file manager, as its own application.
 //
@@ -44,6 +45,17 @@ int main(int argc, char *argv[]) {
     // browser and "Show in file manager" anywhere else reach this rather
     // than whatever else registered it. Attached before the engine loads
     // so a call that arrives during startup is queued rather than missed.
+    // --portal means "you were started by xdg-desktop-portal to answer a
+    // file dialog", so there is no browser window to show until one is
+    // asked for.
+    const bool portalOnly = args.contains(QStringLiteral("--portal"));
+
+    FileChooserPortal portal;
+    if (!portal.attach() && portalOnly) {
+        qWarning("could not take org.freedesktop.impl.portal.desktop.hyprshell");
+        return 1;
+    }
+
     FileManager1 fileManager;
     const bool fmOwned = fileManager.attach();
     if (!fmOwned) {
@@ -60,8 +72,36 @@ int main(int argc, char *argv[]) {
     engine.addImportPath(QStringLiteral("qrc:/"));
     engine.rootContext()->setContextProperty(QStringLiteral("FileManager1"),
                                              &fileManager);
+    engine.rootContext()->setContextProperty(QStringLiteral("Portal"), &portal);
+    engine.rootContext()->setContextProperty(QStringLiteral("portalOnly"),
+                                             portalOnly);
     engine.load(QUrl(QStringLiteral("qrc:/Hyprshell/qml/Main.qml")));
     if (engine.rootObjects().isEmpty()) return 1;
+
+    // Started to answer a file dialog, this has no window of its own, and
+    // a dialog closing therefore leaves none — which by default is Qt's
+    // signal to exit. Exiting right there would drop the reply still
+    // queued on the connection, and the caller would see a dialog that
+    // was answered by nothing at all.
+    //
+    // So: the quit is ours to decide, and it waits. Two minutes idle is
+    // long enough for the reply to have gone and for a second dialog —
+    // a browser saving two things — to arrive without a round trip
+    // through D-Bus activation, and short enough not to leave a hidden
+    // process behind for the rest of the session.
+    if (portalOnly) {
+        app.setQuitOnLastWindowClosed(false);
+        auto *linger = new QTimer(&app);
+        linger->setSingleShot(true);
+        linger->setInterval(120000);
+        QObject::connect(linger, &QTimer::timeout, &app, [&portal] {
+            if (!portal.busy()) QGuiApplication::quit();
+        });
+        QObject::connect(&portal, &FileChooserPortal::idle,
+                         linger, QOverload<>::of(&QTimer::start));
+        // And if nothing ever asks — started, then forgotten — go anyway.
+        linger->start();
+    }
 
     // A way to see what the window looks like without a display, for
     // debugging a rendering problem and for checking a change from a
@@ -80,7 +120,18 @@ int main(int argc, char *argv[]) {
             const int delay =
                 qEnvironmentVariableIntValue("HYPRSHELL_FILES_SHOT_DELAY", &ok);
             QTimer::singleShot(ok && delay > 0 ? delay : 1500, &app, [w, shot] {
-                const QImage img = w->grabWindow();
+                // Whatever is on top, not whatever loaded first: a dialog
+                // is created at run time and is not among the engine's
+                // root objects, so grabbing those photographs the window
+                // behind the thing under test.
+                QQuickWindow *target = w;
+                const auto tops = QGuiApplication::topLevelWindows();
+                for (auto it = tops.crbegin(); it != tops.crend(); ++it) {
+                    if (auto *q = qobject_cast<QQuickWindow *>(*it)) {
+                        if (q->isVisible()) { target = q; break; }
+                    }
+                }
+                const QImage img = target->grabWindow();
                 if (img.save(shot)) qWarning("wrote %s", qUtf8Printable(shot));
                 else qWarning("could not write %s", qUtf8Printable(shot));
                 QGuiApplication::quit();

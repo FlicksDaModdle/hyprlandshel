@@ -158,6 +158,92 @@ QtObject {
         return out;
     }
 
+    // ── a file dialog's filters ──────────────────────────────────────────
+    //
+    // A caller says what it will accept in two shapes: globs ("*.png") and
+    // MIME types ("image/jpeg", "image/*"). Globs are translated straight
+    // to a regular expression. MIME types are resolved through the tables
+    // below, because a `find` listing carries no types and asking the
+    // system per file would be a subprocess a row.
+    //
+    // A type the tables do not know matches *everything* rather than
+    // nothing. A dialog that hides the file someone came to attach is a
+    // worse failure than one showing a few it will not take, and the
+    // second is recoverable where the first looks like the file is gone.
+
+    readonly property var mimeExts: ({
+        "image/png": ["png"], "image/jpeg": ["jpg", "jpeg"], "image/gif": ["gif"],
+        "image/webp": ["webp"], "image/svg+xml": ["svg"], "image/bmp": ["bmp"],
+        "image/avif": ["avif"], "image/tiff": ["tiff", "tif"],
+        "image/x-icon": ["ico"], "image/vnd.microsoft.icon": ["ico"],
+        "application/pdf": ["pdf"], "application/json": ["json"],
+        "application/zip": ["zip"], "application/gzip": ["gz", "tgz"],
+        "application/x-tar": ["tar"], "application/epub+zip": ["epub"],
+        "text/plain": ["txt", "log", "md"], "text/csv": ["csv"],
+        "text/html": ["html", "htm"], "text/markdown": ["md"],
+        "audio/mpeg": ["mp3"], "audio/flac": ["flac"],
+        "audio/ogg": ["ogg", "opus"], "audio/wav": ["wav"], "audio/mp4": ["m4a"],
+        "video/mp4": ["mp4"], "video/x-matroska": ["mkv"],
+        "video/webm": ["webm"], "video/quicktime": ["mov"]
+    })
+
+    // For "image/*" and the like.
+    readonly property var mimeGroups: ({
+        image: ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico",
+                "avif", "tiff", "tif"],
+        audio: ["mp3", "flac", "ogg", "opus", "wav", "m4a", "aac"],
+        video: ["mp4", "mkv", "webm", "mov", "avi"],
+        text: ["txt", "md", "log", "csv", "html", "htm", "json", "xml",
+               "yaml", "yml", "toml", "ini", "conf"]
+    })
+
+    // The suffixes a MIME pattern stands for, or null when it stands for
+    // something this does not know.
+    function mimeSuffixes(type) {
+        const t = String(type).toLowerCase();
+        if (root.mimeExts[t] !== undefined) return root.mimeExts[t];
+        const slash = t.indexOf("/");
+        if (slash > 0 && t.slice(slash + 1) === "*") {
+            const g = root.mimeGroups[t.slice(0, slash)];
+            if (g !== undefined) return g;
+        }
+        return null;
+    }
+
+    // Turns a list of patterns into a test on a name, or null for "no
+    // restriction" — which is what an empty list, a "*" and an unknown
+    // MIME type all mean.
+    function matcher(patterns) {
+        if (!patterns || patterns.length === 0) return null;
+        const res = [];
+        for (const raw of patterns) {
+            const p = String(raw || "").trim();
+            if (p === "" || p === "*" || p === "*.*") return null;
+            if (p.indexOf("/") >= 0) {
+                const exts = root.mimeSuffixes(p);
+                if (exts === null) return null;
+                for (const e of exts)
+                    res.push(new RegExp("\\." + e + "$", "i"));
+                continue;
+            }
+            res.push(root.globRe(p));
+        }
+        if (res.length === 0) return null;
+        return name => res.some(re => re.test(name));
+    }
+
+    // A glob as a regular expression. Everything a regex would read as
+    // syntax is escaped first, so "file(1).*" cannot become a group.
+    function globRe(glob) {
+        let out = "";
+        for (const ch of String(glob)) {
+            if (ch === "*") out += ".*";
+            else if (ch === "?") out += ".";
+            else out += ch.replace(/[.\\+^$|()\[\]{}]/g, "\\$&");
+        }
+        return new RegExp("^" + out + "$", "i");
+    }
+
     // Comparing two names the way a person reads them, so "file2" comes
     // before "file10".
     //

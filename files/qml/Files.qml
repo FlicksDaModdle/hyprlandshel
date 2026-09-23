@@ -60,8 +60,17 @@ QtObject {
     // The sidebar can be put away, for a narrow window.
     property bool showSidebar: true
 
+    // What a file dialog will accept, as a list of patterns. Empty means
+    // everything, which is what an ordinary window always is.
+    property var kindFilter: []
+
     readonly property var visibleEntries: {
         let all = root.showHidden ? root.entries : root.entries.filter(e => !e.hidden);
+        // Folders are never filtered out: the file someone is after is
+        // usually in one of them, and a dialog that hides the way there
+        // is a dialog that cannot be used.
+        const kind = root.svc.matcher(root.kindFilter);
+        if (kind) all = all.filter(e => e.dir || kind(e.name));
         const q = root.filter.trim().toLowerCase();
         if (q !== "") all = all.filter(e => e.name.toLowerCase().indexOf(q) >= 0);
         return root.svc.sortEntries(all, root.sortBy, root.sortReverse);
@@ -179,8 +188,15 @@ QtObject {
 
     function up() { if (canUp) root.go(root.svc.parent(root.cwd)); }
 
+    // Opening something in a dialog means choosing it, not launching it —
+    // a Save dialog that started the document you were about to overwrite
+    // would be a trap. The dialog sets `dialogMode` and listens instead.
+    property bool dialogMode: false
+    signal activateRequested(var entry)
+
     function activate(entry) {
         if (!entry) return;
+        if (root.dialogMode) { root.activateRequested(entry); return; }
         if (entry.dir) root.go(root.svc.join(root.cwd, entry.name));
         else root.svc.open(root.svc.join(root.cwd, entry.name));
     }
