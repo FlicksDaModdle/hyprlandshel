@@ -440,5 +440,8 @@ Singleton {
         fontconf.setText(fontconfWanted);
         kdeColors.reload();
         applyKde();
+        // So that `ipc call shell syncTheming` regenerates everything the
+        // shell owns, not only the parts that existed when it was written.
+        applyAccentFiles();
     }
 }
