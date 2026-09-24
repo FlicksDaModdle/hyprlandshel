@@ -53,36 +53,76 @@ bad()  { printf '    %s✗%s %s\n' "$RED" "$RST" "$1"; }
 
 # ── where are the profiles? ───────────────────────────────────────────
 #
-# profiles.ini is the only authority. Its Path= is relative to the
-# directory holding it unless IsRelative=0, and a Flatpak or snap Firefox
-# keeps its own tree somewhere else entirely — so all the usual roots are
-# looked at rather than only ~/.mozilla.
+# profiles.ini is the only authority, and there is no single place it
+# lives. ~/.mozilla/firefox is the old answer; a Firefox built with XDG
+# base directories — which is what Arch and its derivatives ship — puts
+# it under ~/.config instead, and a Flatpak or snap keeps a tree of its
+# own. Every Gecko browser downstream of Firefox has its own directory
+# again.
+#
+# So: the known places first, and then a search, because this list will
+# be out of date again.
+XDG="${XDG_CONFIG_HOME:-$HOME/.config}"
 roots="$HOME/.mozilla/firefox
+$XDG/mozilla/firefox
 $HOME/.var/app/org.mozilla.firefox/.mozilla/firefox
 $HOME/snap/firefox/common/.mozilla/firefox
 $HOME/.librewolf
-$HOME/.var/app/io.gitlab.librewolf-community/.librewolf"
+$XDG/librewolf
+$HOME/.var/app/io.gitlab.librewolf-community/.librewolf
+$HOME/.zen
+$XDG/zen
+$HOME/.var/app/app.zen_browser.zen/.zen
+$HOME/.floorp
+$XDG/floorp
+$HOME/.waterfox
+$XDG/waterfox
+$HOME/.mullvad-browser
+$HOME/.tor-browser"
+
+read_ini() {
+    root="$1"
+    ini="$root/profiles.ini"
+    [ -f "$ini" ] || return
+    # Path= lines, resolved against the root. sed rather than a real ini
+    # parser because this is the one key that matters and the format has
+    # not moved in twenty years.
+    sed -n 's/^[Pp]ath=//p' "$ini" | tr -d '\r' | while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        case "$rel" in
+            /*) dir="$rel" ;;
+            *)  dir="$root/$rel" ;;
+        esac
+        [ -d "$dir" ] && printf '%s\n' "$dir"
+    done
+}
 
 profiles=""
 if [ -n "$ONLY" ]; then
     profiles="$ONLY"
 else
     for root in $roots; do
-        ini="$root/profiles.ini"
-        [ -f "$ini" ] || continue
-        # Path= lines, resolved against the root. sed rather than a real
-        # ini parser because this is the one key that matters and the
-        # format has not moved in twenty years.
-        paths=$(sed -n 's/^[Pp]ath=//p' "$ini" | tr -d '\r')
-        for p in $paths; do
-            case "$p" in
-                /*) dir="$p" ;;
-                *)  dir="$root/$p" ;;
-            esac
-            [ -d "$dir" ] && profiles="$profiles
-$dir"
-        done
+        found=$(read_ini "$root")
+        [ -n "$found" ] && profiles="$profiles
+$found"
     done
+
+    # Nothing in any of the known places. Rather than give up — which is
+    # what sent someone to about:profiles to read the path out by hand —
+    # look for profiles.ini anywhere it could reasonably be. Bounded
+    # depth so this stays quick, and the cache directories are skipped
+    # because Firefox keeps a *second* tree there with the same profile
+    # names in it and it is not the one to install into.
+    if [ -z "$(printf '%s' "$profiles" | tr -d '[:space:]')" ]; then
+        printf '  %snot in any of the usual places — searching…%s\n\n' "$DIM" "$RST"
+        for ini in $(find "$HOME" -maxdepth 6 -name profiles.ini \
+                          -not -path "*/.cache/*" -not -path "*/Trash/*" \
+                          2>/dev/null); do
+            found=$(read_ini "$(dirname "$ini")")
+            [ -n "$found" ] && profiles="$profiles
+$found"
+        done
+    fi
 fi
 
 profiles=$(printf '%s\n' "$profiles" | sed '/^$/d')
@@ -91,10 +131,11 @@ printf '\n%sFirefox chrome%s\n\n' "$BOLD" "$RST"
 
 if [ -z "$profiles" ]; then
     bad "no Firefox profiles found"
-    printf '\n  Looked in:\n'
+    printf '\n  Looked in each of these, then searched %s for a profiles.ini:\n' "$HOME"
     for root in $roots; do printf '    %s%s%s\n' "$DIM" "$root" "$RST"; done
-    printf '\n  Start Firefox once so it makes a profile, or pass one:\n'
-    printf '    ./install.sh --profile ~/.mozilla/firefox/xxxx.default\n\n'
+    printf '\n  Firefox will tell you itself: open %sabout:profiles%s and read\n' "$BOLD" "$RST"
+    printf '  the "Root Directory" row. Then:\n'
+    printf '    ./install.sh --profile <that path>\n\n'
     exit 1
 fi
 

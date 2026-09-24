@@ -28,6 +28,27 @@ import it — the same split kitty's palette uses, so the part you might
 edit stays where you left it and the part the shell owns is rewritten
 underneath. Change the accent in Settings and this changes with it.
 
+## Where it looks
+
+There is no single place a Firefox profile lives. `~/.mozilla/firefox` is
+the old answer; a Firefox built with XDG base directories — which is what
+Arch and its derivatives ship — puts it under `~/.config/mozilla/firefox`
+instead, and Flatpak, snap and every Gecko fork have trees of their own.
+`install.sh` knows the usual ones and then searches `$HOME` for a
+`profiles.ini` if none of them turn up, so a browser it has never heard
+of still works.
+
+If it still finds nothing, Firefox will tell you itself: open
+`about:profiles` and read the **Root Directory** row, then
+
+```
+./install.sh --profile <that path>
+```
+
+Note that is the *Root* directory and not the *Local* one. The local one
+is under `~/.cache` and holds a second copy of the profile with the same
+name; installing into that does nothing and looks like it worked.
+
 ## Two things to know
 
 **Firefox reads chrome stylesheets once, at startup.** A theme change in
