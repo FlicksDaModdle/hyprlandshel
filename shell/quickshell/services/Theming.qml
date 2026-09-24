@@ -86,6 +86,11 @@ Singleton {
         running: true
         onTriggered: {
             root.primed = true;
+            // The accent files are written unconditionally on the way up:
+            // unlike kitty's include there is nothing to install first, so
+            // "does the file already say this" is the only guard needed and
+            // applyAccentFiles() does that itself.
+            root.applyAccentFiles();
             // Reconcile once. If theme.json was edited while the shell was
             // down, the file on disk names the wrong palette and nothing else
             // would ever notice — dark hasn't *changed*, it was simply read.
@@ -101,6 +106,85 @@ Singleton {
         include.setText(wanted);
         signalKitty();
     }
+
+    // ── fastfetch, and anything else that wants the accent ────────────────
+    //
+    // fastfetch has no include directive, so its colours cannot be pushed
+    // into a config someone else owns without rewriting that file. Two
+    // things are written instead, and neither touches config.jsonc:
+    //
+    //   presets/hyprshell.jsonc   a complete preset, used with
+    //                             `fastfetch --config <that path>`
+    //   hyprshell/accent          the accent as #rrggbb on one line, for
+    //                             `fastfetch --color-keys "$(cat …)"` —
+    //                             which keeps whatever config.jsonc says
+    //                             and only recolours the keys
+    //
+    // The second is deliberately generic: it is one line of hex that any
+    // program, prompt or script can read, and the shell is the only thing
+    // that knows what the accent currently is.
+    readonly property string accentHex: String(Config.Appearance.accent)
+    readonly property string ffDir: kdeDir + "/fastfetch/presets"
+
+    readonly property string ffWanted:
+        '{\n'
+        + '  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",\n'
+        + '\n'
+        + '  // Written by the shell (services/Theming.qml) whenever the accent\n'
+        + '  // or the theme changes. Edits here are overwritten; put your own\n'
+        + '  // settings in config.jsonc and use --color-keys instead, with the\n'
+        + '  // hex in ~/.config/hyprshell/accent.\n'
+        + '  //\n'
+        + '  //   fastfetch --config ' + ffDir + '/hyprshell.jsonc\n'
+        + '\n'
+        + '  "logo": { "type": "none" },\n'
+        + '  "display": {\n'
+        + '    "color": {\n'
+        + '      "keys": "' + accentHex + '",\n'
+        + '      "title": "' + accentHex + '"\n'
+        + '    },\n'
+        + '    "separator": ": "\n'
+        + '  }\n'
+        + '}\n'
+
+    readonly property string accentWanted: accentHex + "\n"
+
+    FileView {
+        id: ffPreset
+        path: root.ffDir + "/hyprshell.jsonc"
+        preload: true
+        printErrors: false
+        atomicWrites: true
+    }
+
+    FileView {
+        id: accentFile
+        path: root.kdeDir + "/hyprshell/accent"
+        preload: true
+        printErrors: false
+        atomicWrites: true
+    }
+
+    // The directories have to exist before a FileView can write into them.
+    Process { id: themeDirs }
+
+    function applyAccentFiles() {
+        themeDirs.command = ["mkdir", "-p", root.ffDir, root.kdeDir + "/hyprshell"];
+        themeDirs.running = true;
+        accentWrite.restart();
+    }
+
+    Timer {
+        id: accentWrite
+        interval: 120
+        onTriggered: {
+            if (ffPreset.text() !== root.ffWanted) ffPreset.setText(root.ffWanted);
+            if (accentFile.text() !== root.accentWanted)
+                accentFile.setText(root.accentWanted);
+        }
+    }
+
+    onAccentHexChanged: if (primed) applyAccentFiles();
 
     // ── KDE / Qt applications ─────────────────────────────────────────────
     // Dolphin, Ark, Okular and the rest read their colours from kdeglobals,
