@@ -137,6 +137,7 @@ Item {
                         { t: "ellipse", i: "ellipse", n: "Ellipse" },
                         { t: "arc",     i: "arc",     n: "Arc" },
                         { t: "poly",    i: "poly",    n: "Polyline — click each corner, right-click to finish" },
+                        { t: "pen",     i: "pen",     n: "Pen — click for a corner, drag for a curve; click the first point to close" },
                         { t: "dot",     i: "dot",     n: "Dot" }
                     ]
 
@@ -413,6 +414,114 @@ Item {
                         }
                     }
 
+                    // Turning. The slider is for finding an angle and the
+                    // readout is for knowing which one you found — a
+                    // knob on the canvas can place it but cannot say
+                    // that it is at 45 and not 44.
+                    Row {
+                        width: parent.width
+                        spacing: 10
+                        visible: !!doc.current && doc.current.kind !== "circle"
+                                 && doc.current.kind !== "dot"
+
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Turn"
+                            font.pixelSize: Config.Appearance.fs(12)
+                            color: Config.Appearance.ink2
+                        }
+                        FillSlider {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 130
+                            // -180…180 mapped onto the trough.
+                            value: doc.current ? ((doc.current.rot || 0) + 180) / 360 : 0.5
+                            onMoved: v => doc.update({ rot: Math.round(v * 360 - 180) }, true)
+                            onReleased: v => doc.update({ rot: Math.round(v * 360 - 180) })
+                        }
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: (doc.current ? Math.round(doc.current.rot || 0) : 0) + "°"
+                            font.pixelSize: Config.Appearance.fs(11)
+                            color: Config.Appearance.ink3
+                        }
+                    }
+
+                    // What a point-based shape needs and a primitive does
+                    // not.
+                    Column {
+                        width: parent.width
+                        spacing: 6
+                        visible: !!doc.current
+                                 && (doc.current.kind === "path" || doc.current.kind === "poly")
+
+                        Row {
+                            width: parent.width
+                            spacing: 10
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Closed"
+                                font.pixelSize: Config.Appearance.fs(12)
+                                color: Config.Appearance.ink2
+                            }
+                            Toggle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: !!(doc.current && doc.current.closed)
+                                onToggled: doc.toggleClosed()
+                            }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: doc.current && doc.current.kind === "path"
+                                      ? (doc.current.nodes.length + " points") : ""
+                                font.pixelSize: Config.Appearance.fs(10)
+                                color: Config.Appearance.ink3
+                            }
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: 6
+                            visible: doc.current && doc.current.kind === "path"
+                                     && doc.selectedNode >= 0
+
+                            Repeater {
+                                model: [
+                                    { n: "Corner / smooth", op: "corner" },
+                                    { n: "Split", op: "split" },
+                                    { n: "Remove", op: "delete" }
+                                ]
+                                Rectangle {
+                                    id: nodeBtn
+                                    required property var modelData
+                                    width: (side.width - 12) / 3
+                                    height: 28
+                                    radius: Config.Appearance.rSm
+                                    color: nodeHover.hovered ? Config.Appearance.hover
+                                                             : "transparent"
+                                    border.width: 1
+                                    border.color: Config.Appearance.rule
+                                    StyledText {
+                                        anchors.centerIn: parent
+                                        width: parent.width - 8
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
+                                        text: nodeBtn.modelData.n
+                                        font.pixelSize: Config.Appearance.fs(10.5)
+                                        color: Config.Appearance.ink2
+                                    }
+                                    HoverHandler {
+                                        id: nodeHover
+                                        cursorShape: Qt.PointingHandCursor
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: doc.pathNodeOp(nodeBtn.modelData.op,
+                                                                  doc.selectedNode)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Row {
                         width: parent.width
                         spacing: 6
@@ -632,6 +741,8 @@ Item {
     // Only these can be filled — a line or an arc has no inside, and an
     // open polyline's is whatever the closing straight line makes it.
     function canFill(kind) {
+        if (kind === "path" || kind === "poly")
+            return !!(doc.current && doc.current.closed);
         return kind === "rect" || kind === "circle" || kind === "ellipse";
     }
 

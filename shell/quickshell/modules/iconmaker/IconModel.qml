@@ -17,6 +17,10 @@ QtObject {
 
     property var shapes: []
     property int selected: -1
+    // Which node of the selected path was last touched, for the
+    // operations that act on one rather than on the whole shape.
+    property int selectedNode: -1
+    onSelectedChanged: model.selectedNode = -1
 
     readonly property var current: (selected >= 0 && selected < shapes.length)
                                    ? shapes[selected] : null
@@ -154,6 +158,16 @@ QtObject {
                 s.pts[i] += dx; s.pts[i + 1] += dy;
             }
             break;
+        case "path":
+            // The handles travel with their nodes. They are stored as
+            // absolute points, so moving the node alone would leave the
+            // curve behind and turn the shape inside out.
+            for (const nd of s.nodes) {
+                nd.x += dx; nd.y += dy;
+                if (nd.hi) { nd.hi.x += dx; nd.hi.y += dy; }
+                if (nd.ho) { nd.ho.x += dx; nd.ho.y += dy; }
+            }
+            break;
         default:
             s.cx += dx; s.cy += dy; break;   // circle, ellipse, arc, dot
         }
@@ -186,6 +200,18 @@ QtObject {
             // that wanders while you drag a different handle is worse
             // than one that sits somewhere slightly generous.
             return { x: s.cx - s.r, y: s.cy - s.r, w: s.r * 2, h: s.r * 2 };
+        case "path": {
+            // The nodes, not the handles: a handle flung well outside
+            // the shape would drag the bounding box — and the centre it
+            // rotates about — out with it.
+            let a0 = Infinity, b0 = Infinity, a1 = -Infinity, b1 = -Infinity;
+            for (const nd of (s.nodes || [])) {
+                a0 = Math.min(a0, nd.x); a1 = Math.max(a1, nd.x);
+                b0 = Math.min(b0, nd.y); b1 = Math.max(b1, nd.y);
+            }
+            if (a0 === Infinity) return { x: 0, y: 0, w: 0, h: 0 };
+            return { x: a0, y: b0, w: a1 - a0, h: b1 - b0 };
+        }
         case "poly": {
             let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
             for (let i = 0; i + 1 < s.pts.length; i += 2) {
@@ -203,6 +229,14 @@ QtObject {
     // bounding box would make the empty middle of a circle select it
     // while the ring next to it selects whatever is behind.
     function distanceTo(s, px, py) {
+        // A turned shape is measured in its own frame. Rotating the
+        // pointer back is one operation; rotating the geometry forward
+        // would be one per segment, per kind, and would have to be got
+        // right seven times.
+        if (s.rot) {
+            const local = Compose.unmapperFor(s)(px, py);
+            px = local.x; py = local.y;
+        }
         switch (s.kind) {
         case "line":
             return model.distToSegment(px, py, s.x1, s.y1, s.x2, s.y2);
@@ -228,6 +262,37 @@ QtObject {
             }
             return model.distToRectEdge(px, py, s.x, s.y, s.w, s.h);
         }
+        case "path": {
+            // Curves are flattened and measured as the straight lines
+            // they are drawn as anyway. Twelve steps is finer than the
+            // grid this is all snapped to.
+            const nodes = s.nodes || [];
+            let best = Infinity;
+            const seg = (a, b) => {
+                if (!a.ho && !b.hi)
+                    return model.distToSegment(px, py, a.x, a.y, b.x, b.y);
+                const c1 = a.ho || { x: a.x, y: a.y };
+                const c2 = b.hi || { x: b.x, y: b.y };
+                let d = Infinity, prev = { x: a.x, y: a.y };
+                for (let k = 1; k <= 12; k++) {
+                    const t = k / 12, u = 1 - t;
+                    const pt = {
+                        x: u*u*u*a.x + 3*u*u*t*c1.x + 3*u*t*t*c2.x + t*t*t*b.x,
+                        y: u*u*u*a.y + 3*u*u*t*c1.y + 3*u*t*t*c2.y + t*t*t*b.y
+                    };
+                    d = Math.min(d, model.distToSegment(px, py, prev.x, prev.y, pt.x, pt.y));
+                    prev = pt;
+                }
+                return d;
+            };
+            for (let i = 1; i < nodes.length; i++)
+                best = Math.min(best, seg(nodes[i - 1], nodes[i]));
+            if (s.closed && nodes.length > 2)
+                best = Math.min(best, seg(nodes[nodes.length - 1], nodes[0]));
+            // A filled path is solid, so anywhere inside it is a hit.
+            if (s.fill && s.closed && model.insidePath(s, px, py)) return 0;
+            return best;
+        }
         case "poly": {
             let best = Infinity;
             for (let i = 0; i + 3 < s.pts.length; i += 2)
@@ -242,6 +307,21 @@ QtObject {
         }
         }
         return Infinity;
+    }
+
+    // Even-odd crossing count against the node polygon. The handles are
+    // ignored: this decides whether a click is inside a filled shape,
+    // and being a curve's width out at the edge of one costs nothing.
+    function insidePath(s, px, py) {
+        const nodes = s.nodes || [];
+        let inside = false;
+        for (let i = 0, j = nodes.length - 1; i < nodes.length; j = i++) {
+            const a = nodes[i], b = nodes[j];
+            if ((a.y > py) !== (b.y > py)
+                && px < (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x)
+                inside = !inside;
+        }
+        return inside;
     }
 
     function distToSegment(px, py, x1, y1, x2, y2) {
@@ -279,38 +359,88 @@ QtObject {
     // what it changes. The canvas draws these and hands back a moved one.
     function handlesFor(s) {
         if (!s) return [];
+        // Worked out in the shape's own frame and then turned, so every
+        // kind below can be written as though nothing were rotated.
+        const map = Compose.mapperFor(s);
+        const out = [];
+        // `from` is where a handle hangs off, for the stalk the canvas
+        // draws back to it — a bezier handle floating on its own is
+        // impossible to attribute once two nodes are close together.
+        const put = (id, x, y, role, from) => {
+            const p = map(x, y);
+            const f = from ? map(from.x, from.y) : null;
+            out.push({ id: id, role: role || "point", x: p.x, y: p.y,
+                       fromX: f ? f.x : p.x, fromY: f ? f.y : p.y,
+                       hasStalk: !!f });
+        };
+
         switch (s.kind) {
         case "line":
-            return [{ id: "p1", x: s.x1, y: s.y1 }, { id: "p2", x: s.x2, y: s.y2 }];
+            put("p1", s.x1, s.y1); put("p2", s.x2, s.y2); break;
         case "rect":
-            return [{ id: "tl", x: s.x, y: s.y },
-                    { id: "br", x: s.x + s.w, y: s.y + s.h }];
+            put("tl", s.x, s.y); put("br", s.x + s.w, s.y + s.h); break;
         case "circle":
         case "dot":
-            return [{ id: "r", x: s.cx + s.r, y: s.cy }];
+            put("r", s.cx + s.r, s.cy); break;
         case "ellipse":
-            return [{ id: "rx", x: s.cx + s.rx, y: s.cy },
-                    { id: "ry", x: s.cx, y: s.cy + s.ry }];
+            put("rx", s.cx + s.rx, s.cy); put("ry", s.cx, s.cy + s.ry); break;
         case "arc": {
             const a = deg => ({ x: s.cx + s.r * Math.cos(deg * Math.PI / 180),
                                 y: s.cy + s.r * Math.sin(deg * Math.PI / 180) });
             const p0 = a(s.a0), p1 = a(s.a1);
-            return [{ id: "a0", x: p0.x, y: p0.y },
-                    { id: "a1", x: p1.x, y: p1.y },
-                    { id: "r", x: s.cx, y: s.cy + s.r }];
+            put("a0", p0.x, p0.y); put("a1", p1.x, p1.y);
+            put("r", s.cx, s.cy + s.r);
+            break;
         }
-        case "poly": {
-            const out = [];
+        case "poly":
             for (let i = 0; i + 1 < s.pts.length; i += 2)
-                out.push({ id: "p" + (i / 2), x: s.pts[i], y: s.pts[i + 1] });
-            return out;
+                put("p" + (i / 2), s.pts[i], s.pts[i + 1]);
+            break;
+        case "path":
+            // The node, then its two handles where it has them, marked
+            // so the canvas can draw them differently — a point you are
+            // placing and a curve you are shaping are not the same
+            // gesture and should not look the same.
+            for (let i = 0; i < (s.nodes || []).length; i++) {
+                const nd = s.nodes[i];
+                put("n" + i, nd.x, nd.y, "node");
+                if (nd.hi) put("n" + i + "i", nd.hi.x, nd.hi.y, "bezier", nd);
+                if (nd.ho) put("n" + i + "o", nd.ho.x, nd.ho.y, "bezier", nd);
+            }
+            break;
         }
+
+        // The rotation knob, above the shape, on the end of a stalk so
+        // it is never sitting on top of a corner handle. A circle and a
+        // dot have nothing to turn, so they do not get one.
+        if (s.kind !== "circle" && s.kind !== "dot") {
+            const b = model.boundsOf(s);
+            put("rot", b.x + b.w / 2, b.y - 2.2, "rot",
+                { x: b.x + b.w / 2, y: b.y });
         }
-        return [];
+        return out;
     }
 
     // Moving handle `id` to (x, y). Returns the fields to write.
     function dragHandle(s, id, x, y) {
+        // The pointer comes in grid coordinates; everything below works
+        // in the shape's own, so a turned shape's handles drag the way
+        // they look rather than at an angle to it.
+        if (s.rot && id !== "rot") {
+            const local = Compose.unmapperFor(s)(x, y);
+            x = local.x; y = local.y;
+        }
+
+        if (id === "rot") {
+            const c = Compose.centreOf(s);
+            // The knob sits above the shape, so straight up is no
+            // rotation — measured from due north rather than due east.
+            let deg = Math.atan2(y - c.y, x - c.x) * 180 / Math.PI + 90;
+            while (deg <= -180) deg += 360;
+            while (deg > 180) deg -= 360;
+            return { rot: Math.round(deg * 10) / 10 };
+        }
+
         switch (s.kind) {
         case "line":
             return id === "p1" ? { x1: x, y1: y } : { x2: x, y2: y };
@@ -353,8 +483,91 @@ QtObject {
             pts[i] = x; pts[i + 1] = y;
             return { pts: pts };
         }
+        case "path": {
+            const m = /^n(\d+)([io])?$/.exec(id);
+            if (!m) return {};
+            const i = parseInt(m[1], 10);
+            const nodes = JSON.parse(JSON.stringify(s.nodes));
+            const nd = nodes[i];
+            if (!nd) return {};
+
+            if (!m[2]) {
+                // The node itself, handles in tow.
+                const dx = x - nd.x, dy = y - nd.y;
+                nd.x = x; nd.y = y;
+                if (nd.hi) { nd.hi.x += dx; nd.hi.y += dy; }
+                if (nd.ho) { nd.ho.x += dx; nd.ho.y += dy; }
+                return { nodes: nodes };
+            }
+
+            const which = m[2] === "i" ? "hi" : "ho";
+            const other = m[2] === "i" ? "ho" : "hi";
+            nd[which] = { x: x, y: y };
+            // A smooth node keeps its two handles opposite and equal, so
+            // the curve runs through it rather than kinking. A corner
+            // node is the one you mark when you want the kink.
+            if (!nd.corner && nd[other])
+                nd[other] = { x: 2 * nd.x - x, y: 2 * nd.y - y };
+            return { nodes: nodes };
+        }
         }
         return {};
+    }
+
+    // ── path nodes ────────────────────────────────────────────────────
+    //
+    // The operations a point-based shape needs that a primitive does
+    // not: nodes come and go, and each one is either a corner or smooth.
+    function pathNodeOp(op, index) {
+        const s = model.current;
+        if (!s || s.kind !== "path") return;
+        const nodes = JSON.parse(JSON.stringify(s.nodes));
+
+        if (op === "delete") {
+            // Two nodes is the least that still draws a line.
+            if (nodes.length <= 2) return;
+            nodes.splice(index, 1);
+            model.update({ nodes: nodes });
+            return;
+        }
+
+        if (op === "corner") {
+            const nd = nodes[index];
+            if (!nd) return;
+            if (nd.corner) {
+                // Back to smooth: give it handles along the line between
+                // its neighbours, which is what smooth means here.
+                nd.corner = false;
+                const prev = nodes[index - 1] || nodes[nodes.length - 1];
+                const next = nodes[index + 1] || nodes[0];
+                if (prev && next) {
+                    const dx = (next.x - prev.x) / 4, dy = (next.y - prev.y) / 4;
+                    nd.hi = { x: nd.x - dx, y: nd.y - dy };
+                    nd.ho = { x: nd.x + dx, y: nd.y + dy };
+                }
+            } else {
+                nd.corner = true;
+                delete nd.hi;
+                delete nd.ho;
+            }
+            model.update({ nodes: nodes });
+            return;
+        }
+
+        if (op === "split") {
+            // A node halfway along the segment that follows this one.
+            const a = nodes[index], b = nodes[index + 1] || (s.closed ? nodes[0] : null);
+            if (!a || !b) return;
+            nodes.splice(index + 1, 0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2,
+                                         corner: true });
+            model.update({ nodes: nodes });
+        }
+    }
+
+    function toggleClosed() {
+        const s = model.current;
+        if (!s || (s.kind !== "path" && s.kind !== "poly")) return;
+        model.update({ closed: !s.closed });
     }
 
     // ── saving ────────────────────────────────────────────────────────

@@ -384,6 +384,13 @@ var icons = {
     },
     dot: {
         dots: [{ cx: 12, cy: 12, r: 4.5, c: "ink" }]
+    },
+    pen: {
+        // A nib with a node on its point, which is what the tool does:
+        // it puts points down.
+        ink: "M4 20 L6.5 13.5 L15 5 A2.12 2.12 0 0 1 19 9 L10.5 17.5 Z",
+        acc: "M6.5 13.5 L10.5 17.5",
+        dots: [{ cx: 4, cy: 20, r: 1.3, c: "acc" }]
     }
 
 };
