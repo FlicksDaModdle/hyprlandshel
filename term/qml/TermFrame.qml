@@ -19,7 +19,7 @@ Rectangle {
     readonly property int viewCols: view.cols
 
     readonly property var sessions: frame.host.sessions
-    readonly property bool showTabs: sessions.length > 1
+    readonly property bool showTabs: sessions.length > 0
 
     radius: frame.host.maximised ? 0 : Appearance.rPanel
     color: Appearance.bg
@@ -178,9 +178,12 @@ Rectangle {
 
     // ── tabs ──────────────────────────────────────────────────────────────
     //
-    // Only when there is more than one. A single session needs no tab to
-    // say so, and a strip that is always there is a row of chrome doing
-    // nothing on most windows.
+    // Always, including for a single session. It was hidden until there
+    // were two on the grounds that one tab says nothing — but a strip
+    // that appears when you open a second tab also makes the window jump
+    // and the grid reflow underneath whatever is running, and it hides
+    // where the tabs are from anyone who has not found them yet. A fixed
+    // row of chrome costs 34px and never moves.
     Item {
         id: tabStrip
         visible: frame.showTabs
