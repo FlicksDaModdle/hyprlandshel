@@ -82,6 +82,46 @@ PanelSurface {
                 font.weight: Font.DemiBold
                 color: Config.Appearance.ink
             }
+
+            Item { width: parent.width - 260; height: 1 }
+
+            // Offered here because this is where you find out the icon
+            // you wanted does not exist.
+            Rectangle {
+                id: makeBtn
+                anchors.verticalCenter: parent.verticalCenter
+                width: makeRow.implicitWidth + 20
+                height: 26
+                radius: Config.Appearance.rSm
+                color: makeHover.hovered ? Config.Appearance.accent : Config.Appearance.sel
+
+                Row {
+                    id: makeRow
+                    anchors.centerIn: parent
+                    spacing: 6
+                    MonoIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "plus"
+                        size: 13
+                        inkColor: makeHover.hovered ? Config.Appearance.inkOnAccent
+                                                    : Config.Appearance.ink2
+                        monochrome: true
+                    }
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Make one"
+                        font.pixelSize: Config.Appearance.fs(11)
+                        color: makeHover.hovered ? Config.Appearance.inkOnAccent
+                                                 : Config.Appearance.ink2
+                    }
+                }
+
+                HoverHandler { id: makeHover; cursorShape: Qt.PointingHandCursor }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: Config.UiState.openIconMaker()
+                }
+            }
         }
 
         Rectangle {

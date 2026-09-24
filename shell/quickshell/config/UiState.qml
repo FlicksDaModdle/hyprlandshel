@@ -88,6 +88,10 @@ Singleton {
     // Control center drill-down: "", "Wi-Fi" or "Bluetooth".
     property string ccExpanded: ""
 
+    // The icon maker. A window of its own rather than a panel, like
+    // Settings — it is a thing you sit in front of for a while.
+    property bool iconMakerOpen: false
+
     // Which pinned tile is having its icon changed, "" for none.
     property string iconPickerFor: ""
     readonly property bool iconPickerOpen: iconPickerFor !== ""
@@ -179,6 +183,11 @@ Singleton {
     }
 
     // Opens the grid of every glyph, to put one on a pinned tile.
+    // Not through closeAll(): the maker is a window, and closing every
+    // panel because one opened would take the icon picker away — which
+    // is where "make a new one" is offered from in the first place.
+    function openIconMaker() { iconMakerOpen = true; }
+
     function openIconPicker(key) {
         closeAll();
         if (key) iconPickerFor = key;

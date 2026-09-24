@@ -356,7 +356,36 @@ var icons = {
     font: {
         ink: "M6.5 16.5L11.25 5.5L16 16.5 M8.4 12.75H14.1",
         acc: "M5 20H19"
+    },
+
+    // ── the icon maker's own tools ────────────────────────────────────
+    //
+    // Same 24 grid and same monoline weight as everything above, so the
+    // tool rail reads as part of the shell rather than as a toolbar
+    // borrowed from somewhere else.
+    cursor: {
+        ink: "M6 3 L6 17.5 L9.6 14.2 L12 19.8 L14.4 18.8 L12 13.4 L17.5 12.8 Z"
+    },
+    circle: {
+        ink: circle(12, 12, 7)
+    },
+    ellipse: {
+        ink: ellipse(12, 12, 8.5, 5.5)
+    },
+    arc: {
+        ink: "M4 16 A8 8 0 0 1 20 16",
+        dots: [{ cx: 4, cy: 16, r: 1.2, c: "acc" },
+               { cx: 20, cy: 16, r: 1.2, c: "acc" }]
+    },
+    poly: {
+        ink: "M4 18 L9.5 9 L14 13.5 L20 5",
+        dots: [{ cx: 9.5, cy: 9, r: 1.2, c: "acc" },
+               { cx: 14, cy: 13.5, r: 1.2, c: "acc" }]
+    },
+    dot: {
+        dots: [{ cx: 12, cy: 12, r: 4.5, c: "ink" }]
     }
+
 };
 
 // Every glyph the pack really has, captured before the aliases below are

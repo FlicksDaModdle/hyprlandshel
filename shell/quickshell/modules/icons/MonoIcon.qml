@@ -55,13 +55,22 @@ Item {
                                     ? Shape.CurveRenderer : Shape.GeometryRenderer
     readonly property bool multisample: smoothing === "layer"
 
+    // A glyph handed over directly, for something that is being drawn
+    // and has no name yet. The icon maker's previews are the real
+    // MonoIcon at the real sizes, which is the only way to find out at
+    // 16px that what reads beautifully at 48 is a smudge — and an
+    // unsaved drawing cannot be looked up by name, because there is
+    // nothing to look up.
+    property var specOverride: null
+
     // The built-in pack first, then the ones you made.
     //
     // That order and not the other way round: a user glyph that happened
     // to be called "folder" would otherwise replace the folder icon
     // everywhere in the shell, including in places that are not apps at
     // all. Names are how icons are referred to, so the pack owns its own.
-    readonly property var spec: IconData.icons[name]
+    readonly property var spec: root.specOverride
+                                || IconData.icons[name]
                                 || Config.UserIcons.spec(name)
                                 || ({})
     readonly property color accent: monochrome ? inkColor : accentColor
