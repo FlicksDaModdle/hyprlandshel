@@ -60,6 +60,14 @@ if [ -z "$FOUND" ]; then
     note "Nothing else below can take effect until this is 1."
 fi
 
+# prefs.js is written when Firefox exits, not when a pref is changed, so
+# a value set in about:config a minute ago is not in the file yet. This
+# check reads the file, so it can be a whole session behind the truth.
+if pgrep -x firefox >/dev/null 2>&1 || pgrep -x firefox-bin >/dev/null 2>&1; then
+    note "firefox is running: it writes prefs.js when it exits, so what is above"
+    note "may be one session out of date. What the dialogs do is the real answer."
+fi
+
 # ── 2. the backend has to be installed where the portal looks ────────────
 head1 "Is the backend where xdg-desktop-portal looks?"
 DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
@@ -296,7 +304,13 @@ FM1=org.freedesktop.FileManager1
 # not assumed — so an entry of ours under ~/.local/share beats Dolphin's
 # under /usr/share. Provided the bus has read it.
 CLAIMS=
+SEENDIRS=
 for d in "${XDG_DATA_HOME:-$HOME/.local/share}" "${DLIST[@]}"; do
+    # ~/.local/share is both XDG_DATA_HOME and, once the environment.d
+    # file this ships is in effect, the head of XDG_DATA_DIRS. Without
+    # this the same file is read twice and reported as a rival to itself.
+    case ":$SEENDIRS:" in *":$d:"*) continue ;; esac
+    SEENDIRS="$SEENDIRS:$d"
     f="$d/dbus-1/services/$FM1.service"
     [ -r "$f" ] || continue
     who=$(sed -n 's/^Exec=//p' "$f" | cut -d' ' -f1)
@@ -342,9 +356,25 @@ if command -v xdg-mime >/dev/null 2>&1; then
     case "$FOLDER" in
         hyprshell-files.desktop) ok "folders open with hyprshell-files.desktop" ;;
         "")  bad "nothing is set to open folders"
-             note "xdg-mime default hyprshell-files.desktop inode/directory" ;;
+             note "xdg-mime default hyprshell-files.desktop inode/directory"
+             note "(that command prints nothing when it works)" ;;
         *)   bad "folders open with $FOLDER"
-             note "xdg-mime default hyprshell-files.desktop inode/directory" ;;
+             note "xdg-mime default hyprshell-files.desktop inode/directory"
+             note "(that command prints nothing when it works)" ;;
+    esac
+fi
+
+# And what GIO thinks, which is not always the same thing: it is GIO that
+# most applications ask, and it reads its own order of mimeapps.list
+# files. A disagreement here is a folder that opens somewhere else than
+# the line above promises.
+if command -v gio >/dev/null 2>&1; then
+    GFOLDER=$(gio mime inode/directory 2>/dev/null | sed -n 's/.*: *//p' | head -1)
+    case "$GFOLDER" in
+        *hyprshell-files.desktop*) ok "GIO agrees: hyprshell-files.desktop" ;;
+        "") warn "GIO has no default for inode/directory" ;;
+        *)  bad "GIO opens folders with $GFOLDER"
+            note "GIO is what most applications ask, so this is the one that counts." ;;
     esac
 fi
 
