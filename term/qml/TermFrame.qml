@@ -59,12 +59,18 @@ Rectangle {
                 color: Appearance.accent
             }
 
+            // The same 20px as the file manager's folder, and not
+            // monochrome: the glyph has an accent element — the line after
+            // the prompt — and drawing it in ink made the one icon on the
+            // desktop that did not carry the accent. The concept's 15px is
+            // in its own scale; this is the one the rest of the shell
+            // actually ships.
             MonoIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "terminal"
-                size: 15
+                size: 20
                 inkColor: Appearance.ink2
-                monochrome: true
+                accentColor: Appearance.accent
             }
 
             StyledText {
@@ -109,7 +115,7 @@ Rectangle {
                     MonoIcon {
                         anchors.centerIn: parent
                         name: parent.modelData.glyph
-                        size: 13
+                        size: 17
                         inkColor: hover.hovered && parent.modelData.danger
                                   ? Appearance.inkOnAccent : Appearance.ink2
                         monochrome: true
