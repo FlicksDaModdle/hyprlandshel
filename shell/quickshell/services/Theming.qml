@@ -149,10 +149,12 @@ Singleton {
 
     readonly property string accentWanted: accentHex + "\n"
 
+    // No preload on either: preloading is a read, and a read of a file
+    // that is not there yet is a failure to no purpose. Nothing here ever
+    // reads these back.
     FileView {
         id: ffPreset
         path: root.ffDir + "/hyprshell.jsonc"
-        preload: true
         printErrors: false
         atomicWrites: true
     }
@@ -160,7 +162,6 @@ Singleton {
     FileView {
         id: accentFile
         path: root.kdeDir + "/hyprshell/accent"
-        preload: true
         printErrors: false
         atomicWrites: true
     }
@@ -176,11 +177,20 @@ Singleton {
 
     Timer {
         id: accentWrite
-        interval: 120
+        interval: 200
         onTriggered: {
-            if (ffPreset.text() !== root.ffWanted) ffPreset.setText(root.ffWanted);
-            if (accentFile.text() !== root.accentWanted)
-                accentFile.setText(root.accentWanted);
+            // Written, not compared.
+            //
+            // Both of these usually do not exist yet — the whole point is
+            // to create them — and asking a FileView for the text of a
+            // file that is not there is not a question with a safe
+            // answer. Whatever it does, it happens *before* the write in a
+            // "only if different" guard, which is how the first version of
+            // this managed to produce neither file and say nothing about
+            // it. Writing the same bytes twice costs nothing; these are
+            // rewritten only when the accent changes.
+            ffPreset.setText(root.ffWanted);
+            accentFile.setText(root.accentWanted);
         }
     }
 

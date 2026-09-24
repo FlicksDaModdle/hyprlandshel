@@ -473,6 +473,27 @@ if [ "$MODE" != shell-only ]; then
     fi
 fi
 
+# ── the files the shell generates ────────────────────────────────────────────
+#
+# The shell writes several files from your theme: kitty's palette include,
+# a fontconfig, kdeglobals for KDE applications, a fastfetch preset and the
+# accent as one line of hex. They are written when it starts and whenever
+# the theme changes — so after an install they are still whatever the
+# *previous* version of the shell wrote, and anything newly added does not
+# exist at all until the next login.
+#
+# A running shell has just had its QML replaced under it and reloads
+# itself, so this waits a moment and then asks it to regenerate.
+if command -v qs >/dev/null 2>&1 && pgrep -x qs >/dev/null 2>&1; then
+    head1 "Generated files"
+    sleep 2
+    if qs -c hyprshell ipc call shell syncTheming >/dev/null 2>&1; then
+        ok "regenerated" "from your theme.json"
+    else
+        warn "not regenerated" "the running shell did not answer — restart it"
+    fi
+fi
+
 # ── next steps ───────────────────────────────────────────────────────────────
 head1 "Next"
 cat <<EOF
