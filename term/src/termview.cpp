@@ -294,6 +294,20 @@ void TermView::selectAll() {
 
 void TermView::mousePressEvent(QMouseEvent *event) {
     forceActiveFocus();
+
+    // A program that asked for the mouse gets the mouse. vim, less and
+    // htop all do, and inventing arrow keys for them would be answering a
+    // question they did not ask.
+    if (m_term && m_term->mouseEnabled() && event->button() == Qt::LeftButton) {
+        int row, col;
+        cellFor(event->position(), &row, &col);
+        m_term->sendMouse(row, col, 1, true, static_cast<int>(event->modifiers()));
+        m_mouseToTerm = true;
+        event->accept();
+        return;
+    }
+    m_mouseToTerm = false;
+
     if (event->button() == Qt::MiddleButton) {
         // The primary selection, pasted — the oldest gesture on this
         // desktop and the one people miss most when it is absent.
@@ -312,6 +326,14 @@ void TermView::mousePressEvent(QMouseEvent *event) {
 }
 
 void TermView::mouseMoveEvent(QMouseEvent *event) {
+    if (m_mouseToTerm) {
+        if (!m_term) return;
+        int row, col;
+        cellFor(event->position(), &row, &col);
+        m_term->sendMouse(row, col, 0, false, static_cast<int>(event->modifiers()));
+        event->accept();
+        return;
+    }
     if (!m_selecting) return;
     cellFor(event->position(), &m_selRow1, &m_selCol1);
     const bool had = m_hasSelection;
@@ -322,12 +344,30 @@ void TermView::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void TermView::mouseReleaseEvent(QMouseEvent *event) {
+    if (m_mouseToTerm) {
+        if (m_term) {
+            int row, col;
+            cellFor(event->position(), &row, &col);
+            m_term->sendMouse(row, col, 1, false, static_cast<int>(event->modifiers()));
+        }
+        m_mouseToTerm = false;
+        event->accept();
+        return;
+    }
+
+    const bool dragged = m_hasSelection;
     m_selecting = false;
-    if (m_hasSelection) {
+    if (dragged) {
         // Selecting puts it on the primary selection, which is what the
         // middle button pastes. Nothing is put on the clipboard until
         // someone asks for it.
         QGuiApplication::clipboard()->setText(selectedText(), QClipboard::Selection);
+    } else if (m_term && event->button() == Qt::LeftButton) {
+        // A click that did not become a drag is a click, and a click in a
+        // line of text means "put the cursor here" everywhere else.
+        int row, col;
+        cellFor(event->position(), &row, &col);
+        m_term->placeCursor(row, col);
     }
     event->accept();
 }

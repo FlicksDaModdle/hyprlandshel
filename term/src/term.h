@@ -45,6 +45,11 @@ class Term : public QObject {
     Q_PROPERTY(int cursorRow READ cursorRow NOTIFY cursorChanged)
     Q_PROPERTY(int cursorCol READ cursorCol NOTIFY cursorChanged)
     Q_PROPERTY(bool running READ running NOTIFY runningChanged)
+    // Whether the program on the far side asked for mouse events. When it
+    // has, the mouse is its business and nothing here may invent keys for
+    // it; when it has not, a click is the terminal's to interpret.
+    Q_PROPERTY(bool mouseEnabled READ mouseEnabled NOTIFY mouseEnabledChanged)
+    Q_PROPERTY(bool altScreen READ altScreen NOTIFY altScreenChanged)
 
 public:
     explicit Term(QObject *parent = nullptr);
@@ -62,6 +67,15 @@ public:
     // key is a Qt::Key, mods a Qt::KeyboardModifiers. `text` is what the
     // keyboard produced, which is what ordinary typing sends.
     Q_INVOKABLE void sendKey(int key, int mods, const QString &text);
+    // A click, where the program wants clicks.
+    Q_INVOKABLE void sendMouse(int row, int col, int button, bool pressed, int mods);
+
+    // Put the shell's cursor where the pointer is, by sending the arrows
+    // that would have taken it there. A terminal has no other way: the
+    // line being edited belongs to the shell, which is told about keys and
+    // nothing else.
+    Q_INVOKABLE void placeCursor(int row, int col);
+
     Q_INVOKABLE void scrollBy(int lines);
     Q_INVOKABLE void scrollToBottom();
 
@@ -76,6 +90,8 @@ public:
     int cursorRow() const { return m_cursorPos.row; }
     int cursorCol() const { return m_cursorPos.col; }
     bool running() const;
+    bool mouseEnabled() const { return m_mouse != 0; }
+    bool altScreen() const { return m_altScreen; }
 
     // For the view. `row` is in view coordinates: 0 is the top visible
     // line, which is a scrollback line when the view is scrolled up.
@@ -96,6 +112,8 @@ signals:
     void scrollOffsetChanged();
     void cursorChanged();
     void runningChanged();
+    void mouseEnabledChanged();
+    void altScreenChanged();
     void bell();
     void exited(int code);
 
@@ -129,6 +147,9 @@ private:
     // Bounded, or a build log is a memory leak with a cursor in it.
     static constexpr int kScrollbackMax = 10000;
     int m_scrollOffset = 0;
+
+    int m_mouse = 0;
+    bool m_altScreen = false;
 
     VTermPos m_cursorPos { 0, 0 };
     bool m_cursorVisible = true;

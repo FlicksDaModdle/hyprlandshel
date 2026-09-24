@@ -116,5 +116,8 @@ private:
 
     bool m_hasSelection = false;
     bool m_selecting = false;
+    // This press was forwarded to the program, so the release and any
+    // movement in between belong to it as well.
+    bool m_mouseToTerm = false;
     int m_selRow0 = 0, m_selCol0 = 0, m_selRow1 = 0, m_selCol1 = 0;
 };

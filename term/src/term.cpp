@@ -123,6 +123,45 @@ void Term::setScrollOffset(int off) {
     markDamaged();
 }
 
+void Term::sendMouse(int row, int col, int button, bool pressed, int mods) {
+    if (!m_pty) return;
+    VTermModifier vmod = VTERM_MOD_NONE;
+    if (mods & Qt::ShiftModifier)   vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_SHIFT);
+    if (mods & Qt::AltModifier)     vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_ALT);
+    if (mods & Qt::ControlModifier) vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_CTRL);
+    vterm_mouse_move(m_vt, row, col, vmod);
+    if (button > 0) vterm_mouse_button(m_vt, button, pressed, vmod);
+}
+
+// Clicking into the line being edited.
+//
+// The shell owns that line; the terminal only forwards keys. So a click
+// is turned into the keys that would have got the cursor there — as many
+// lefts or rights as the distance, counted through the wrap, because a
+// long command line is one line however many rows it occupies.
+//
+// Refused rather than guessed at in three cases: in the alternate screen
+// arrows mean whatever the full-screen program says they mean and are
+// certainly not cursor movement; while scrolled up the rows on screen
+// are not the rows the shell is editing; and beyond a few lines' worth of
+// distance a click is far more likely to be aimed at old output than at
+// the prompt, where a thousand arrow keys would be a mess to undo.
+void Term::placeCursor(int row, int col) {
+    if (!m_pty || m_altScreen || m_scrollOffset != 0) return;
+    if (m_cols <= 0) return;
+
+    const int delta = (row - m_cursorPos.row) * m_cols + (col - m_cursorPos.col);
+    if (delta == 0) return;
+    if (qAbs(delta) > m_cols * 6) return;
+
+    QByteArray keys;
+    const char *arrow = delta > 0 ? "\x1b[C" : "\x1b[D";
+    keys.reserve(qAbs(delta) * 3);
+    for (int i = 0; i < qAbs(delta); ++i) keys.append(arrow, 3);
+    m_pty->write(keys);
+    scrollToBottom();
+}
+
 void Term::scrollBy(int lines) { setScrollOffset(m_scrollOffset + lines); }
 void Term::scrollToBottom() { setScrollOffset(0); }
 
@@ -226,8 +265,14 @@ int Term::onSetTermProp(VTermProp prop, VTermValue *val, void *user) {
         // Nothing scrolls back out of the alternate screen, and a view
         // still scrolled up when `less` starts would be showing history
         // that the program does not know is there.
+        t->m_altScreen = val->boolean;
+        emit t->altScreenChanged();
         t->setScrollOffset(0);
         t->markDamaged();
+        return 1;
+    case VTERM_PROP_MOUSE:
+        t->m_mouse = val->number;
+        emit t->mouseEnabledChanged();
         return 1;
     default:
         return 0;
