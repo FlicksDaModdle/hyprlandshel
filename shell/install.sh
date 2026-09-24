@@ -473,6 +473,30 @@ if [ "$MODE" != shell-only ]; then
     fi
 fi
 
+# ── the files other programs read ────────────────────────────────────────────
+#
+# The accent, written out where anything else can read it: a fastfetch
+# preset and one line of hex. The shell writes these itself whenever the
+# accent changes, but only while it is running — so they are written here
+# too, and exist from the moment this finishes rather than from the next
+# time the shell starts.
+#
+# The accent is resolved by tools/accent-files.py exactly as
+# config/Appearance.qml resolves it, reading the palette out of that file
+# rather than carrying a copy.
+if command -v python3 >/dev/null 2>&1; then
+    head1 "Accent"
+    if _accent=$(python3 "$SRC/tools/accent-files.py" \
+                 "$QS_DIR/config/Appearance.qml" "$CONFIG_HOME" 2>/dev/null); then
+        ok "fastfetch preset" "$CONFIG_HOME/fastfetch/presets/hyprshell.jsonc"
+        ok "accent" "$_accent — $CONFIG_HOME/hyprshell/accent"
+    else
+        warn "accent files" "could not be written"
+    fi
+else
+    warn "python3" "not installed — the accent files are left to the shell"
+fi
+
 # ── the files the shell generates ────────────────────────────────────────────
 #
 # The shell writes several files from your theme: kitty's palette include,
