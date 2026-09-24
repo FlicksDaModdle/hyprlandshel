@@ -114,6 +114,15 @@ Variants {
             CalendarPanel {}
         }
 
+        // Centred under the bar, where its pill is, rather than at the
+        // right gutter the other dropdowns share.
+        Entrance {
+            shown: Config.UiState.mediaOpen
+            x: Math.round((layer.width - width) / 2)
+            y: layer.panelTop
+            MediaPanel {}
+        }
+
         Entrance {
             shown: Config.UiState.powerOpen
             x: layer.panelRight - width

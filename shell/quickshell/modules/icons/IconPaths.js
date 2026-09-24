@@ -311,6 +311,26 @@ var icons = {
     skipBack: { ink: "M18.5 5.5l-9 6.5 9 6.5V5.5Z M6 5.5v13" },
     skipForward: { ink: "M5.5 5.5l9 6.5-9 6.5V5.5Z M18 5.5v13" },
 
+    // Two routes crossing, one of them the accent — which is the whole
+    // idea of shuffle, and reads at 15px where a pair of tangled arrows
+    // does not.
+    shuffle: {
+        ink: "M4 6h3.2l9.6 12H20 M17.5 15.5L20 18l-2.5 2.5",
+        acc: "M4 18h3.2l9.6-12H20 M17.5 3.5L20 6l-2.5 2.5"
+    },
+    // A loop drawn as two half-tracks so the accent can carry the return
+    // leg. repeatOne is the same loop with a mark in the middle: this pack
+    // has no numerals, and a "1" at 15px would be a smudge anyway.
+    repeat: {
+        ink: "M4 12.5V11a3.5 3.5 0 0 1 3.5-3.5H19 M16.5 4.5L19.5 7.5 16.5 10.5",
+        acc: "M20 11.5V13a3.5 3.5 0 0 1-3.5 3.5H5 M7.5 13.5L4.5 16.5 7.5 19.5"
+    },
+    repeatOne: {
+        ink: "M4 12.5V11a3.5 3.5 0 0 1 3.5-3.5H19 M16.5 4.5L19.5 7.5 16.5 10.5",
+        acc: "M20 11.5V13a3.5 3.5 0 0 1-3.5 3.5H5 M7.5 13.5L4.5 16.5 7.5 19.5",
+        dots: [{ cx: 12, cy: 12, r: 1.6, c: "acc" }]
+    },
+
     // Power / battery
     battery: {
         ink: join(rrect(2.5, 7.5, 16.5, 9, 2.5), "M21.5 10.8v2.4"),

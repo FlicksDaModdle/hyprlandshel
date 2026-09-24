@@ -172,25 +172,60 @@ Variants {
                 anchors.verticalCenter: parent.verticalCenter
                 barWindow: bar
             }
+        }
 
-            // Live window title, which is the other thing the mockup's
-            // header area conveys ("~/dots" beside Terminal).
-            StyledText {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: text !== "" && !Config.Appearance.showTasks
-                width: Math.min(implicitWidth, Math.max(0, bar.width - left.x - right.width - 420))
-                elide: Text.ElideRight
-                text: Services.Compositor.activeTitle
-                font.pixelSize: Config.Appearance.fs(bar.u(Config.Appearance.barTitleSize))
-                font.weight: Font.Normal
-                color: Config.Appearance.ink3
-            }
+        // ══ the middle ═══════════════════════════════════════════════════
+        //
+        // The window title and the task buttons used to sit at the end of
+        // the left Row, capped by a guess at how much of the bar to leave
+        // alone. Now that something is centred on the bar, the thing they
+        // must not reach is the pill, and neither a Row nor a guess can
+        // say where that is — so they are anchored between the left
+        // cluster and the pill and given exactly what is left.
+        //
+        // The pill's own width comes from `room`, which reads the two
+        // clusters and not these, so nothing here feeds back into it.
+        readonly property real middleRoom: Math.max(0,
+            (media.visible ? media.x : right.x) - (left.x + left.width) - 22)
 
-            TaskButtons {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: Config.Appearance.showTasks
-                maxWidth: Math.max(0, bar.width - 560)
-            }
+        // Live window title, which is the other thing the mockup's
+        // header area conveys ("~/dots" beside Terminal).
+        StyledText {
+            anchors.left: left.right
+            anchors.leftMargin: 10
+            anchors.verticalCenter: parent.verticalCenter
+            visible: text !== "" && !Config.Appearance.showTasks
+            width: Math.min(implicitWidth, bar.middleRoom)
+            elide: Text.ElideRight
+            text: Services.Compositor.activeTitle
+            font.pixelSize: Config.Appearance.fs(bar.u(Config.Appearance.barTitleSize))
+            font.weight: Font.Normal
+            color: Config.Appearance.ink3
+        }
+
+        TaskButtons {
+            anchors.left: left.right
+            anchors.leftMargin: 10
+            anchors.verticalCenter: parent.verticalCenter
+            visible: Config.Appearance.showTasks
+            maxWidth: bar.middleRoom
+        }
+
+        // ══ what is playing ══════════════════════════════════════════════
+        //
+        // Centred on the bar itself rather than placed between the two
+        // clusters, as in the mockup — a pill that drifted with the length
+        // of the focused window's title would never be in the same place
+        // twice. It is told how much room there is between them and gives
+        // up its text, and then itself, rather than running underneath.
+        MediaPill {
+            id: media
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            barScale: bar.us
+            // Centred, so what it has is the narrower of the two sides,
+            // doubled. Neither cluster's width depends on the pill.
+            room: bar.width - 2 * Math.max(left.x + left.width, right.width + 10) - 16
         }
 
         // ══ right cluster ════════════════════════════════════════════════
