@@ -27,7 +27,46 @@ TermView::TermView(QQuickItem *parent) : QQuickPaintedItem(parent) {
     // puts the rest of the line in the wrong place.
     m_font.setKerning(false);
     m_font.setFixedPitch(true);
+
+    // Half a second on, half a second off, which is roughly what every
+    // text box on the desktop does. Off entirely when the program says so
+    // — some ask for a steady cursor, and a full-screen program redrawing
+    // under a blinking caret looks like a fault.
+    m_blink.setInterval(530);
+    connect(&m_blink, &QTimer::timeout, this, [this] {
+        if (!m_term || !m_term->cursorBlink() || !m_focused) {
+            m_blinkOn = true;
+            m_blink.stop();
+            update();
+            return;
+        }
+        // It stops blinking once you have stopped working.
+        //
+        // A caret that blinks for ever is a thing moving in the corner of
+        // your eye in a window you are only reading. Ten seconds after
+        // the last keystroke it goes solid and stays there — still
+        // visible, still saying where typing would go, no longer asking
+        // for attention. The next key starts it again.
+        if (m_idle.hasExpired(10000)) {
+            m_blinkOn = true;
+            m_blink.stop();
+            update();
+            return;
+        }
+        m_blinkOn = !m_blinkOn;
+        update();
+    });
+
     remeasure();
+}
+
+// Solid, and counting again from now.
+void TermView::wake() {
+    m_blinkOn = true;
+    m_idle.restart();
+    if (m_term && m_term->cursorBlink() && m_focused) m_blink.start();
+    else m_blink.stop();
+    update();
 }
 
 void TermView::setTerm(Term *t) {
@@ -36,9 +75,13 @@ void TermView::setTerm(Term *t) {
     m_term = t;
     if (m_term) {
         connect(m_term, &Term::damaged, this, [this] { update(); });
-        connect(m_term, &Term::cursorChanged, this, [this] { update(); });
+        // A cursor that moved is a cursor you are looking at: the blink
+        // starts again from solid, the way a caret does when you type.
+        connect(m_term, &Term::cursorChanged, this, [this] { wake(); });
+        connect(m_term, &Term::cursorStyleChanged, this, [this] { wake(); });
         connect(m_term, &Term::scrollOffsetChanged, this, [this] { update(); });
         relayout();
+        wake();
     }
     emit termChanged();
     update();
@@ -66,7 +109,7 @@ void TermView::setFocused(bool f) {
     if (f == m_focused) return;
     m_focused = f;
     emit focusedChanged();
-    update();
+    wake();
 }
 
 void TermView::remeasure() {
@@ -86,6 +129,9 @@ void TermView::remeasure() {
     // position is the closest thing a font says about its own stems.
     m_stemWidth = qMax<qreal>(1, qRound(fm.lineWidth() > 0 ? fm.lineWidth()
                                                            : m_font.pixelSize() / 14.0));
+    // A caret, not a rule: thin enough to sit between two characters,
+    // thick enough to see. Two pixels at the default size.
+    m_caretWidth = qMax<qreal>(2, qRound(m_font.pixelSize() / 7.0));
     emit fontChanged();
     relayout();
     update();
@@ -234,20 +280,39 @@ void TermView::paint(QPainter *painter) {
         }
     }
 
-    // The cursor, on the live screen only: a block where it is, hollow
-    // when the window does not have the keyboard, which is how you tell
-    // at a glance whether typing will go here.
-    if (m_term->cursorVisible() && m_term->scrollOffset() == 0) {
-        const QRectF c(m_term->cursorCol() * m_cellW,
-                       m_term->cursorRow() * m_cellH, m_cellW, m_cellH);
-        if (m_focused) {
+    // The cursor, on the live screen only.
+    //
+    // A thin bar at the left of the cell by default — a caret, sitting
+    // between characters, which is where the next one goes and is what
+    // every other text box on the machine draws. A block covers the
+    // character it is on and says less. The program can still ask for
+    // something else: vim wants a block in normal mode, where the cursor
+    // really is *on* a character rather than between two.
+    //
+    // Hollow when the window does not have the keyboard, which is how you
+    // tell at a glance whether typing will go here.
+    if (m_term->cursorVisible() && m_term->scrollOffset() == 0 && m_blinkOn) {
+        const QRectF cell(m_term->cursorCol() * m_cellW,
+                          m_term->cursorRow() * m_cellH, m_cellW, m_cellH);
+        const int shape = m_term->cursorShape();
+
+        if (!m_focused) {
+            painter->setPen(m_cursorColor);
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRect(cell.adjusted(0.5, 0.5, -0.5, -0.5));
+        } else if (shape == 1) {
+            // A block, drawn by inverting what is under it, so the
+            // character it covers stays readable.
             painter->save();
             painter->setCompositionMode(QPainter::CompositionMode_Difference);
-            painter->fillRect(c, Qt::white);
+            painter->fillRect(cell, Qt::white);
             painter->restore();
+        } else if (shape == 2) {
+            painter->fillRect(QRectF(cell.left(), cell.bottom() - m_caretWidth,
+                                     cell.width(), m_caretWidth), m_cursorColor);
         } else {
-            painter->setPen(m_cursorColor);
-            painter->drawRect(c.adjusted(0.5, 0.5, -0.5, -0.5));
+            painter->fillRect(QRectF(cell.left(), cell.top(),
+                                     m_caretWidth, cell.height()), m_cursorColor);
         }
     }
 }
@@ -431,5 +496,6 @@ void TermView::keyPressEvent(QKeyEvent *event) {
 
     if (m_hasSelection) clearSelection();
     m_term->sendKey(event->key(), static_cast<int>(mods), event->text());
+    wake();
     event->accept();
 }

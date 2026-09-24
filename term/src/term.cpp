@@ -47,6 +47,12 @@ Term::Term(QObject *parent) : QObject(parent) {
     vterm_screen_enable_altscreen(m_screen, 1);
     vterm_screen_reset(m_screen, 1);
 
+    // After the reset, not before: resetting announces the terminal's
+    // properties through the same callback the program uses, so a default
+    // set first would simply be overwritten by libvterm's own.
+    m_cursorShape = VTERM_PROP_CURSORSHAPE_BAR_LEFT;
+    m_cursorBlink = true;
+
     m_repaint.setSingleShot(true);
     m_repaint.setInterval(8);   // about a frame
     connect(&m_repaint, &QTimer::timeout, this, &Term::damaged);
@@ -268,6 +274,16 @@ int Term::onSetTermProp(VTermProp prop, VTermValue *val, void *user) {
         t->m_altScreen = val->boolean;
         emit t->altScreenChanged();
         t->setScrollOffset(0);
+        t->markDamaged();
+        return 1;
+    case VTERM_PROP_CURSORSHAPE:
+        t->m_cursorShape = val->number;
+        emit t->cursorStyleChanged();
+        t->markDamaged();
+        return 1;
+    case VTERM_PROP_CURSORBLINK:
+        t->m_cursorBlink = val->boolean;
+        emit t->cursorStyleChanged();
         t->markDamaged();
         return 1;
     case VTERM_PROP_MOUSE:

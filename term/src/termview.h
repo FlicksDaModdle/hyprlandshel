@@ -3,6 +3,8 @@
 #include <QColor>
 #include <QFont>
 #include <QQuickPaintedItem>
+#include <QElapsedTimer>
+#include <QTimer>
 #include <QtQml/qqmlregistration.h>
 
 #include "term.h"
@@ -95,6 +97,8 @@ protected:
 
 private:
     void remeasure();
+    // Make the cursor solid and restart the blink from now.
+    void wake();
     void relayout();
     // Cell under a point, clamped into the grid.
     void cellFor(const QPointF &p, int *row, int *col) const;
@@ -107,6 +111,10 @@ private:
     qreal m_cellH = 16;
     qreal m_baseline = 12;
     qreal m_stemWidth = 1;
+    qreal m_caretWidth = 2;
+    QTimer m_blink;
+    QElapsedTimer m_idle;
+    bool m_blinkOn = true;
     bool m_focused = true;
     int m_rows = 0;
     int m_cols = 0;

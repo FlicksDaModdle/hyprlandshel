@@ -42,6 +42,12 @@ class Term : public QObject {
     Q_PROPERTY(int scrollOffset READ scrollOffset WRITE setScrollOffset
                NOTIFY scrollOffsetChanged)
     Q_PROPERTY(bool cursorVisible READ cursorVisible NOTIFY cursorChanged)
+    // 1 block, 2 underline, 3 bar — libvterm's numbering, which is
+    // DECSCUSR's. A bar unless the program says otherwise; vim asks for a
+    // block in normal mode and a bar in insert, and being told is better
+    // than having an opinion.
+    Q_PROPERTY(int cursorShape READ cursorShape NOTIFY cursorStyleChanged)
+    Q_PROPERTY(bool cursorBlink READ cursorBlink NOTIFY cursorStyleChanged)
     Q_PROPERTY(int cursorRow READ cursorRow NOTIFY cursorChanged)
     Q_PROPERTY(int cursorCol READ cursorCol NOTIFY cursorChanged)
     Q_PROPERTY(bool running READ running NOTIFY runningChanged)
@@ -87,6 +93,8 @@ public:
     int scrollOffset() const { return m_scrollOffset; }
     void setScrollOffset(int off);
     bool cursorVisible() const { return m_cursorVisible; }
+    int cursorShape() const { return m_cursorShape; }
+    bool cursorBlink() const { return m_cursorBlink; }
     int cursorRow() const { return m_cursorPos.row; }
     int cursorCol() const { return m_cursorPos.col; }
     bool running() const;
@@ -111,6 +119,7 @@ signals:
     void scrollbackChanged();
     void scrollOffsetChanged();
     void cursorChanged();
+    void cursorStyleChanged();
     void runningChanged();
     void mouseEnabledChanged();
     void altScreenChanged();
@@ -153,6 +162,8 @@ private:
 
     VTermPos m_cursorPos { 0, 0 };
     bool m_cursorVisible = true;
+    int m_cursorShape = 3;          // VTERM_PROP_CURSORSHAPE_BAR_LEFT
+    bool m_cursorBlink = true;
 
     QColor m_defaultFg { "#e8e6e3" };
     QColor m_defaultBg { "#1a1a18" };
