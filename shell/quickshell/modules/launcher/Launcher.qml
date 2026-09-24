@@ -740,7 +740,8 @@ Variants {
                         }
 
                         HoverHandler { id: escHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: launcher.close() }
+                        // What the key does, since it is labelled for it.
+                        TapHandler { onTapped: launcher.close(true) }
                     }
                 }
 
@@ -1281,6 +1282,14 @@ Variants {
                 // the click that the catcher behind would have turned
                 // into a close. Same glyph, same corner, and it collapses
                 // the panel back into the dock.
+                //
+                // close(true), not close(): the argument is what says the
+                // dock stays out to be collapsed into. Without it this
+                // button said "I am done" — the panel went, and with
+                // auto-hide on the dock went with it, from under a
+                // pointer that was resting on the very button it had just
+                // pressed. The comment above has always claimed this
+                // behaviour; only the call was wrong.
                 Rectangle {
                     id: startTile
                     anchors.left: parent.left
@@ -1302,7 +1311,7 @@ Variants {
                     }
 
                     HoverHandler { id: startHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: launcher.close() }
+                    TapHandler { onTapped: launcher.close(true) }
                 }
 
                 Rectangle {
