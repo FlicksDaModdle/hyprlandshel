@@ -10,6 +10,11 @@
   without restarting anything. The real chrome has parts this does not
   draw, and Firefox will have its own opinion about a few of them.
 
+  It used to draw the address bar focused, with its accent ring, as
+  though that were how it sits — so a real browser looked wrong beside
+  it for having no ring when nothing was in the bar. Both states are
+  shown now, labelled.
+
   The palettes below are the ones the shell generates, light and dark,
   with the default accent.
 -->
@@ -151,7 +156,14 @@
     color: var(--hs-ink3);
   }
   .urlbar.focus { box-shadow: inset 0 0 0 2px var(--hs-accent); }
-  .urlbar .host { color: var(--hs-ink); font-weight: 600; }
+  /* Firefox does not embolden the host — it dims everything either side
+   * of it. Drawing it bold here promised something the browser has no
+   * way to deliver. */
+  .urlbar .host { color: var(--hs-ink); }
+  .urlbar .rest { color: var(--hs-ink3); }
+  .state { font-size: 10px; color: var(--hs-ink3); width: 54px; flex: none;
+           text-align: right; }
+  .barrow { display: flex; align-items: center; gap: 10px; }
 
   /* ── bookmarks ──────────────────────────────────────────────────── */
   .marks {
@@ -208,7 +220,8 @@
 <header class="row">
   <div>
     <h1>Firefox, in the shell's design language</h1>
-    <p class="sub">A drawing of the chrome, not a photograph of it — same colours, radii and spacing as the stylesheets apply.</p>
+    <p class="sub">A drawing of the chrome, not a photograph of it — same colours, radii and spacing as the stylesheets apply.<br>
+    Firefox reads its chrome stylesheet once, at startup: a change to the accent, the rounding or light/dark lands in the palette at once and in the browser at its next launch.</p>
   </div>
   <button class="mode" onclick="
     const r = document.documentElement;
@@ -228,9 +241,9 @@
       <div class="btn"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></div>
       <div class="btn"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
       <div class="btn"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></div>
-      <div class="urlbar focus">
+      <div class="urlbar">
         <svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:var(--hs-accent);stroke-width:2"><rect x="4" y="10" width="16" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-        <span><span class="host">quickshell.org</span>/docs/configuration</span>
+        <span><span class="host">quickshell.org</span><span class="rest">/docs/configuration</span></span>
       </div>
       <div class="btn"><svg viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg></div>
       <div class="btn"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></div>
@@ -238,6 +251,23 @@
 
     <div class="marks">
       <span>Hyprland wiki</span><span>Quickshell</span><span>MDN</span><span>freedesktop</span>
+    </div>
+  </div>
+
+  <div class="marks" style="padding-top:8px;gap:10px;flex-direction:column;align-items:stretch">
+    <div class="barrow">
+      <div class="state">resting</div>
+      <div class="urlbar" style="flex:1">
+        <svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:var(--hs-accent);stroke-width:2"><rect x="4" y="10" width="16" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        <span><span class="host">quickshell.org</span><span class="rest">/docs/configuration</span></span>
+      </div>
+    </div>
+    <div class="barrow" style="padding-bottom:8px">
+      <div class="state">focused</div>
+      <div class="urlbar focus" style="flex:1">
+        <svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:var(--hs-accent);stroke-width:2"><rect x="4" y="10" width="16" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        <span><span class="host">quickshell.org</span><span class="rest">/docs/configuration</span></span>
+      </div>
     </div>
   </div>
 

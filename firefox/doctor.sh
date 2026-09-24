@@ -204,12 +204,15 @@ if pgrep -x firefox >/dev/null 2>&1 || pgrep -x firefox-bin >/dev/null 2>&1; the
 
     if [ "$started" -gt "$installed" ] && [ "$installed" -gt 0 ]; then
         ok "Firefox has been started since the stylesheet and palette last changed"
+        note "so the accent it is showing is the one in the palette above"
     else
         bad "Firefox has been running since before the last change"
         note "it reads chrome CSS once, at startup — quit it fully and start it again."
-        note "that goes for a theme change too: changing the accent, the rounding"
-        note "or light/dark rewrites the palette at once, and the browser sees it"
-        note "at its next launch. there is no way to make a running one notice."
+        note ""
+        note "this is also the answer to \"I changed the accent and Firefox did"
+        note "not\". The palette above is already the new colour — the browser is"
+        note "still showing the one it read when it started. Quit it and start it"
+        note "again. There is no way to make a running Firefox re-read this."
         note "closing the window is not always enough; check with: pgrep -x firefox"
     fi
 else

@@ -339,11 +339,22 @@ toolbarbutton.bookmark-item {
   fill: var(--hs-ink, #201e1d) !important;
 }
 
-/* The padlock and the shield, which say something rather than doing
- * something, so they take the accent when there is something to say. */
-#identity-box[pageproxystate="valid"].verifiedDomain image,
+/* The padlock, which says something rather than does something — so it
+ * takes the accent, the way the shell marks the one thing in a row that
+ * carries meaning. Not only on an EV certificate: every https page. */
+#identity-box image,
+#identity-icon,
+#identity-box[pageproxystate="valid"] #identity-icon,
 #tracking-protection-icon-container[active] image {
   fill: var(--hs-accent, #ec3013) !important;
+  opacity: 1 !important;
+}
+
+/* ...but not on a page with nothing to say about it, where a coloured
+ * icon would be claiming something. */
+#identity-box[pageproxystate="invalid"] image,
+#identity-box.unknownIdentity image {
+  fill: var(--hs-ink3, #6b6868) !important;
 }
 
 .toolbarbutton-1[open] > .toolbarbutton-icon,
@@ -412,6 +423,20 @@ panel,
   --menuitem-hover-background-color: var(--hs-sel, rgba(32,30,29,.10));
   --panel-shadow-margin: 4px;
   font-size: 12px !important;
+
+  /* The seam, painted as a background rather than drawn as a pseudo
+   * element: a menupopup is its own window and a ::before inside one
+   * is laid out against the scrollbox rather than the box you can see.
+   * A 2px background strip along the top needs no positioning context
+   * and cannot escape the rounded corners. */
+  background-image: linear-gradient(to right,
+      var(--hs-accent, #ec3013) 0,
+      var(--hs-accent, #ec3013) 40px,
+      var(--hs-seam, rgba(236,48,19,.18)) 40px,
+      var(--hs-seam, rgba(236,48,19,.18)) 100%) !important;
+  background-repeat: no-repeat !important;
+  background-size: 100% 2px !important;
+  background-position: left top !important;
 }
 
 /* A submenu is a menupopup inside a menu, and is reached by neither of
@@ -488,7 +513,10 @@ menupopup > .popup-internal-box,
 menupopup::part(content),
 panel::part(content) {
   appearance: none !important;
-  background-color: var(--hs-menu, #fbfafa) !important;
+  /* Transparent, not the menu colour: this box covers the whole popup
+   * including the 2px the seam is painted on, and filling it would
+   * paint the seam out. */
+  background-color: transparent !important;
   color: var(--hs-ink, #201e1d) !important;
   border: 1px solid var(--hs-edge, rgba(32,30,29,.14)) !important;
   border-radius: var(--hs-r, 14px) !important;
