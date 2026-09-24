@@ -1,5 +1,7 @@
 import QtQuick
+import Quickshell.Io
 import "../icons/Trace.js" as Trace
+import "../icons/Svg.js" as Svg
 
 // Reads an image file and hands back shapes.
 //
@@ -48,12 +50,28 @@ Item {
     // and a stray one would trace whatever was last drawn a second time.
     property bool wanted: false
 
+    // An SVG is already the answer.
+    //
+    // It is a list of curves. Rasterising it to 96 pixels and walking
+    // the staircase back out gives an approximation of something exact,
+    // and every logo imported that way came back soft where it should
+    // have been crisp. So SVG files are read and only bitmaps are
+    // traced.
+    readonly property bool isSvg: /\.svgz?($|\?)/i.test(String(root.source))
+
     function run() {
         if (String(root.source) === "") return;
         root.busy = true;
         root.wanted = true;
         root.note = "";
         watchdog.restart();
+
+        if (root.isSvg) {
+            // A reload rather than a first read: the path may not have
+            // changed, and the sliders do not apply to this path anyway.
+            svgFile.reload();
+            return;
+        }
         if (root.canvasCan("loadImage")) sheet.loadImage(root.source);
         // The probe may already have it, in which case nothing else is
         // coming and the paint has to be asked for.
@@ -72,6 +90,29 @@ Item {
     // Nothing here should take a second, let alone for ever. If it does,
     // say so: a spinner that never stops tells you nothing about what
     // went wrong, and this one ran for a week.
+    FileView {
+        id: svgFile
+        path: root.isSvg ? String(root.source).replace(/^file:\/\//, "") : ""
+        printErrors: false
+        onLoaded: {
+            if (!root.wanted) return;
+            root.wanted = false;
+            let out;
+            try {
+                out = Svg.parse(svgFile.text());
+            } catch (err) {
+                root.give("Could not read that SVG: " + err);
+                return;
+            }
+            root.busy = false;
+            watchdog.stop();
+            if (out.error) { root.failed(out.error); return; }
+            root.note = out.note || "";
+            root.traced(out.shapes);
+        }
+        onLoadFailed: if (root.wanted) root.give("Could not open that file.")
+    }
+
     Timer {
         id: watchdog
         interval: 8000
@@ -94,16 +135,30 @@ Item {
     Image {
         id: probe
         source: root.source
-        // Loaded for its measurements, never shown — by having no size,
-        // not by being invisible. Invisibility is what stopped the
-        // Canvas beside it from ever painting, and there is no reason to
-        // find out the hard way whether it also affects loading.
-        width: 0
-        height: 0
+        // Never shown — by being off the side of the window, not by
+        // being invisible. Invisibility is what stopped the Canvas
+        // beside it from ever painting, and there is no reason to find
+        // out the hard way whether it also affects loading.
         x: -8192
         y: -8192
         asynchronous: true
         cache: false
+
+        // The scaling happens here, not on the canvas.
+        //
+        // drawImage was being asked to fit the picture into the 24-unit
+        // square and was drawing it at full size instead, so a 361px
+        // logo landed in a 96px canvas and only its top-left corner was
+        // traced — the answer looked like a crop because it was one.
+        //
+        // sourceSize is a bound on the loaded image, aspect preserved,
+        // and it is the well-trodden path: every Image in every QML
+        // application uses it. For an SVG it is better than a bound —
+        // the file is rasterised at this size rather than at its
+        // nominal one and then resampled, so the trace sees clean edges
+        // instead of somebody else's scaling.
+        sourceSize.width: root.traceSize
+        sourceSize.height: root.traceSize
         onStatusChanged: {
             if (status === Image.Error && root.wanted)
                 root.give("Could not read that file — is it an image?");
@@ -121,15 +176,17 @@ Item {
     // is the fallback for everything it can answer.
     function canvasCan(fn) { return typeof sheet[fn] === "function"; }
 
-    // The natural size, whichever way this build will give it up.
-    function sourceSize() {
-        if (probe.status === Image.Ready) {
-            const ss = probe.sourceSize;
-            if (ss && ss.width > 0 && ss.height > 0) return ss;
-            if (probe.implicitWidth > 0 && probe.implicitHeight > 0)
-                return Qt.size(probe.implicitWidth, probe.implicitHeight);
-        }
-        return null;
+    // How big the loaded image actually is, after sourceSize has bounded
+    // it. implicitWidth and implicitHeight are that; sourceSize is only
+    // what was asked for.
+    function loadedSize() {
+        if (probe.status !== Image.Ready) return null;
+        const w = probe.implicitWidth, h = probe.implicitHeight;
+        // Finite and positive, checked rather than assumed: a NaN slips
+        // through `w <= 0` untouched, and a NaN width is what turns a
+        // scale factor into Infinity and a draw into a crop.
+        if (!(w > 0) || !(h > 0) || !isFinite(w) || !isFinite(h)) return null;
+        return Qt.size(w, h);
     }
 
     Canvas {
@@ -174,14 +231,14 @@ Item {
 
                 // Fitted, not stretched: a wide logo squashed into a square
                 // traces as a squashed logo.
-                const sz = root.sourceSize();
-                if (!sz || sz.width <= 0 || sz.height <= 0) {
+                const sz = root.loadedSize();
+                if (!sz) {
                     root.give("That file has no picture in it.");
                     return;
                 }
-                const k = Math.min(sheet.width / sz.width, sheet.height / sz.height);
-                const w = Math.max(1, Math.round(sz.width * k));
-                const h = Math.max(1, Math.round(sz.height * k));
+                // Already the right size, so this only centres it.
+                const w = Math.min(sz.width, sheet.width);
+                const h = Math.min(sz.height, sheet.height);
                 const dx = Math.round((sheet.width - w) / 2);
                 const dy = Math.round((sheet.height - h) / 2);
                 // Two ways to name the picture, because only one of
@@ -200,18 +257,38 @@ Item {
                 for (const what of [root.source, probe]) {
                     ctx.clearRect(0, 0, sheet.width, sheet.height);
                     try {
-                        ctx.drawImage(what, dx, dy, w, h);
+                        // Three arguments, not five: the picture is
+                        // already the size it should be, and asking
+                        // drawImage to resize it is what cropped it.
+                        ctx.drawImage(what, dx, dy);
                     } catch (e) {
                         continue;
                     }
                     const got = ctx.getImageData(0, 0, sheet.width, sheet.height).data;
-                    let painted = false;
-                    for (let i = 0; i < count; i++)
-                        if (got[i * 4 + 3] !== 0) { painted = true; break; }
-                    if (painted) { px = got; break; }
+                    // Where did it actually land? Not just "did
+                    // anything land", because a picture drawn at full
+                    // size into a small canvas lands everywhere — and
+                    // that is a crop, which passed as success once
+                    // already and came back as a logo with three
+                    // quarters missing.
+                    let x0 = sheet.width, y0 = sheet.height, x1 = -1, y1 = -1;
+                    for (let i = 0; i < count; i++) {
+                        if (got[i * 4 + 3] === 0) continue;
+                        const x = i % sheet.width, y = (i - x) / sheet.width;
+                        if (x < x0) x0 = x;
+                        if (x > x1) x1 = x;
+                        if (y < y0) y0 = y;
+                        if (y > y1) y1 = y;
+                    }
+                    if (x1 < 0) continue;                    // nothing drawn
+                    if (x0 < dx - 1 || y0 < dy - 1
+                        || x1 > dx + w || y1 > dy + h) continue;   // not where it was put
+                    px = got;
+                    break;
                 }
                 if (px === null) {
-                    root.give("Nothing was drawn from that file — the image may be empty.");
+                    root.give("Could not draw that file into the grid — "
+                              + "it may be empty, or too large to place.");
                     return;
                 }
 
