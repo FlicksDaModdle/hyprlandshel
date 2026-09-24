@@ -92,10 +92,15 @@ void TermView::remeasure() {
 }
 
 void TermView::relayout() {
-    if (!m_term || m_cellW <= 0 || m_cellH <= 0) return;
+    if (m_cellW <= 0 || m_cellH <= 0) return;
     const int cols = qMax(1, static_cast<int>(width() / m_cellW));
     const int rows = qMax(1, static_cast<int>(height() / m_cellH));
-    m_term->setSize(rows, cols);
+    if (cols != m_cols || rows != m_rows) {
+        m_cols = cols;
+        m_rows = rows;
+        emit gridChanged();
+    }
+    if (m_term) m_term->setSize(rows, cols);
 }
 
 void TermView::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) {
@@ -341,6 +346,13 @@ void TermView::keyPressEvent(QKeyEvent *event) {
     // The two bindings a terminal has to answer itself, because ^C and ^V
     // are already taken by the program on the other end.
     if ((mods & Qt::ControlModifier) && (mods & Qt::ShiftModifier)) {
+        switch (event->key()) {
+        case Qt::Key_T: emit newTabRequested();      event->accept(); return;
+        case Qt::Key_W: emit closeTabRequested();    event->accept(); return;
+        case Qt::Key_Tab:
+        case Qt::Key_Backtab: emit previousTabRequested(); event->accept(); return;
+        default: break;
+        }
         if (event->key() == Qt::Key_C) {
             if (m_hasSelection)
                 QGuiApplication::clipboard()->setText(selectedText());
@@ -353,6 +365,19 @@ void TermView::keyPressEvent(QKeyEvent *event) {
             return;
         }
         if (event->key() == Qt::Key_A) { selectAll(); event->accept(); return; }
+    }
+
+    if (mods & Qt::ControlModifier) {
+        if (event->key() == Qt::Key_Tab) { emit nextTabRequested(); event->accept(); return; }
+        if (event->key() == Qt::Key_PageDown) { emit nextTabRequested(); event->accept(); return; }
+        if (event->key() == Qt::Key_PageUp) { emit previousTabRequested(); event->accept(); return; }
+    }
+    // Alt and a digit goes straight to that tab, counting from one, which
+    // is where every browser and terminal puts it.
+    if ((mods & Qt::AltModifier) && event->key() >= Qt::Key_1 && event->key() <= Qt::Key_9) {
+        emit tabRequested(event->key() - Qt::Key_1);
+        event->accept();
+        return;
     }
 
     // Shift+PageUp/Down is scrollback everywhere else; it should be here.

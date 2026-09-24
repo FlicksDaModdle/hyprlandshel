@@ -324,6 +324,42 @@ void Term::sendKey(int key, int mods, const QString &text) {
     if (mods & Qt::AltModifier)     vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_ALT);
     if (mods & Qt::ControlModifier) vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_CTRL);
 
+    // ── the word-wise editing keys ────────────────────────────────────
+    //
+    // These are the ones people expect to behave the way they do in a text
+    // box: ctrl and an arrow moves a word, ctrl and a delete key removes
+    // one. The arrows are fine as libvterm sends them — CSI 1;5D and its
+    // friends are what every shell already binds — but the delete keys are
+    // not: ctrl-backspace comes out as CSI 127;5u, which is the newer
+    // kitty keyboard protocol, and readline, fish and zsh bind none of it.
+    // The key looked swallowed.
+    //
+    // So those two are sent as the sequences shells have bound for
+    // decades. Nothing else here is special-cased, because nothing else
+    // needed to be — checked by reading the bytes back off a pty rather
+    // than by assuming.
+    if (mods & Qt::ControlModifier) {
+        if (key == Qt::Key_Backspace) {
+            // Alt-backspace: backward-kill-word. Bound in bash, zsh and
+            // fish, and stops at punctuation the way a text box does —
+            // unlike ^W, which runs to the previous space.
+            m_pty->write(QByteArrayLiteral("\x1b\x7f"));
+            scrollToBottom();
+            return;
+        }
+        if (key == Qt::Key_Delete) {
+            // Alt-d: kill-word, the same thing forwards.
+            //
+            // Split across two literals on purpose: "\x1bd" is one hex
+            // escape, not ESC followed by 'd' — the compiler reads as many
+            // hex digits as it can and hands back a single truncated byte.
+            // It sent 0xbd, which is not a key anything has ever bound.
+            m_pty->write(QByteArrayLiteral("\x1b" "d"));
+            scrollToBottom();
+            return;
+        }
+    }
+
     VTermKey vkey = VTERM_KEY_NONE;
     switch (key) {
     case Qt::Key_Return:

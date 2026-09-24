@@ -32,6 +32,12 @@ class TermView : public QQuickPaintedItem {
     Q_PROPERTY(qreal cellWidth READ cellWidth NOTIFY fontChanged)
     Q_PROPERTY(qreal cellHeight READ cellHeight NOTIFY fontChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY selectionChanged)
+    // The grid this item's size works out to. Every session in the window
+    // is kept at this size, not only the one on screen: a program in a
+    // background tab that thinks the window is still 80x24 redraws itself
+    // wrongly the moment you switch back to it.
+    Q_PROPERTY(int rows READ rows NOTIFY gridChanged)
+    Q_PROPERTY(int cols READ cols NOTIFY gridChanged)
 
 public:
     explicit TermView(QQuickItem *parent = nullptr);
@@ -55,6 +61,8 @@ public:
     qreal cellWidth() const { return m_cellW; }
     qreal cellHeight() const { return m_cellH; }
     bool hasSelection() const { return m_hasSelection; }
+    int rows() const { return m_rows; }
+    int cols() const { return m_cols; }
 
     Q_INVOKABLE QString selectedText() const;
     Q_INVOKABLE void clearSelection();
@@ -66,6 +74,16 @@ signals:
     void paletteChanged();
     void focusedChanged();
     void selectionChanged();
+    void gridChanged();
+
+    // Raised for the window to act on: a terminal's own tab keys are the
+    // ones a program on the far side can never be given, because they are
+    // how you get away from it.
+    void newTabRequested();
+    void closeTabRequested();
+    void nextTabRequested();
+    void previousTabRequested();
+    void tabRequested(int index);
 
 protected:
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
@@ -90,6 +108,8 @@ private:
     qreal m_baseline = 12;
     qreal m_stemWidth = 1;
     bool m_focused = true;
+    int m_rows = 0;
+    int m_cols = 0;
 
     QColor m_selectionColor { 120, 160, 255, 90 };
     QColor m_cursorColor { "#ec3013" };
