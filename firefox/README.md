@@ -80,6 +80,24 @@ That last one catches most of it. Firefox reads chrome CSS once, on the
 way up, and closing the window does not always end the process — check
 with `pgrep -x firefox`.
 
+## Two places that need more than a colour
+
+**Menus are painted by GTK, not by Firefox.** A `menupopup` on Linux has
+`appearance: auto`, which means the platform draws the box and a
+background colour set on it is ignored. Every menu rule here turns that
+off first with `appearance: none`, and then has to supply the border, the
+radius and the padding itself, because those were the platform's too.
+
+**The top strip is a lightweight theme.** Firefox's built-in Light and
+Dark are lightweight themes, and which element their accent colour lands
+on has moved between releases — so setting `--lwt-accent-color` and
+stopping there left the strip in Firefox's own grey while everything
+below it took the shell's. Every box in that strip is named directly,
+`background-image` is turned off alongside the colour (an image over the
+right colour looks exactly like the wrong colour), and
+`--lwt-accent-color-inactive` is set as well, or an unfocused window is
+the one part still looking like stock Firefox.
+
 ## If something looks wrong
 
 The stylesheets name Firefox's own internal element ids, and Firefox

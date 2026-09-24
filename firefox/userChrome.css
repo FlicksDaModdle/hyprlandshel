@@ -79,10 +79,48 @@
   font-family: var(--hs-font, "Inter"), system-ui, sans-serif !important;
 }
 
+/* The whole of the top strip, named piece by piece.
+ *
+ * Setting --lwt-accent-color and leaving it there was not enough. A
+ * built-in theme is a lightweight theme, and which element the accent
+ * colour actually lands on has moved between releases — so the strip
+ * kept Firefox's own dark grey while everything below it took the
+ * shell's. Naming the boxes directly is the part that does not move.
+ *
+ * background-image too, and not only the colour: a lightweight theme
+ * paints through --lwt-header-image, and an image over the right colour
+ * looks exactly like the wrong colour.
+ */
 #main-window,
-#navigator-toolbox {
+#navigator-toolbox,
+#titlebar,
+#toolbar-menubar,
+#TabsToolbar,
+#TabsToolbar-customization-target,
+#tabbrowser-tabs {
   background-color: var(--hs-frame, #f3f2f2) !important;
+  background-image: none !important;
   color: var(--hs-ink, #201e1d) !important;
+}
+
+/* An unfocused window gets its own colour, and without this one it is
+ * the only part of the browser that still looks like stock Firefox —
+ * which is easy to miss, because you have to click away to see it. */
+:root {
+  --lwt-accent-color-inactive: var(--hs-frame, #f3f2f2) !important;
+  --lwt-header-image: none !important;
+  --lwt-frame: var(--hs-frame, #f3f2f2) !important;
+  --lwt-tab-line-color: var(--hs-accent, #ec3013) !important;
+}
+
+/* The window buttons sit in this strip and inherit its colour. */
+.titlebar-buttonbox-container,
+.titlebar-button {
+  background-color: transparent !important;
+}
+
+.titlebar-button:hover {
+  background-color: var(--hs-hover, rgba(32,30,29,.07)) !important;
 }
 
 /* The seam. Two pixels of accent running out of the left edge and fading
@@ -295,28 +333,90 @@ toolbarbutton.bookmark-item {
 
 /* ══ menus and panels ═════════════════════════════════════════════════ */
 
+/* `appearance: none` is the whole fix here, and without it nothing else
+ * on a menu does anything.
+ *
+ * On Linux a menupopup is drawn by GTK, not by Firefox: the element has
+ * appearance: auto and the platform paints the box. Setting a background
+ * colour on something the toolkit is painting is ignored, which is why
+ * the right-click menu stayed GTK grey while every panel around it took
+ * the shell's colours. Turning the native appearance off hands the
+ * painting back to CSS.
+ *
+ * That also means the border, the radius and the padding have to be
+ * given here — there is no longer a platform box supplying them. */
 menupopup,
-panel {
+panel,
+#contentAreaContextMenu,
+#tabContextMenu,
+#toolbar-context-menu,
+#placesContext {
+  appearance: none !important;
+  -moz-appearance: none !important;
+  background-color: var(--hs-menu, #fbfafa) !important;
+  color: var(--hs-ink, #201e1d) !important;
+  border: 1px solid var(--hs-edge, rgba(32,30,29,.14)) !important;
+  border-radius: var(--hs-r, 14px) !important;
+  padding: 4px !important;
+  --panel-background: var(--hs-menu, #fbfafa);
+  --panel-color: var(--hs-ink, #201e1d);
   --panel-border-radius: var(--hs-r, 14px);
+  --panel-border-color: var(--hs-edge, rgba(32,30,29,.14));
+  --panel-padding: 4px;
   font-size: 12px !important;
 }
 
+/* A submenu is a menupopup inside a menu, and is reached by neither of
+ * the ids above. */
+menu > menupopup {
+  appearance: none !important;
+  background-color: var(--hs-menu, #fbfafa) !important;
+}
+
 menupopup > menuitem,
-menupopup > menu {
+menupopup > menu,
+menupopup > menucaption {
+  appearance: none !important;
+  -moz-appearance: none !important;
   border-radius: var(--hs-r-sm, 9px) !important;
   padding-block: 5px !important;
+  padding-inline: 10px !important;
   margin-inline: 4px !important;
+  color: var(--hs-ink, #201e1d) !important;
 }
 
 menupopup > menuitem[_moz-menuactive="true"],
-menupopup > menu[_moz-menuactive="true"] {
+menupopup > menu[_moz-menuactive="true"],
+menupopup > menuitem:hover,
+menupopup > menu:hover {
   background-color: var(--hs-sel, rgba(32,30,29,.10)) !important;
   color: var(--hs-ink, #201e1d) !important;
 }
 
+/* Greyed-out entries, which otherwise come out at full strength once the
+ * native appearance is off — the dimming was the platform's. */
+menupopup > menuitem[disabled="true"],
+menupopup > menu[disabled="true"],
+menupopup > menuitem[disabled="true"][_moz-menuactive="true"] {
+  color: var(--hs-ink3, #6b6868) !important;
+  background-color: transparent !important;
+}
+
+/* The keyboard shortcut down the right-hand side. */
+menupopup > menuitem > .menu-accel,
+menupopup .menu-accel-container,
+menupopup .menu-iconic-accel {
+  color: var(--hs-ink3, #6b6868) !important;
+}
+
 menuseparator {
+  appearance: none !important;
+  -moz-appearance: none !important;
   border-top: 1px solid var(--hs-rule, rgba(32,30,29,.09)) !important;
   border-bottom: 0 !important;
+  margin-block: 4px !important;
+  margin-inline: 10px !important;
+  padding: 0 !important;
 }
 
 /* ══ findbar, sidebar, the rest ═══════════════════════════════════════ */
