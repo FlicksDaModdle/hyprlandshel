@@ -51,6 +51,21 @@ Note that is the *Root* directory and not the *Local* one. The local one
 is under `~/.cache` and holds a second copy of the profile with the same
 name; installing into that does nothing and looks like it worked.
 
+## Two prefs, not one
+
+`install.sh` sets both, in each profile's `user.js`.
+
+`toolkit.legacyUserProfileCustomizations.stylesheets` lets Firefox read
+`chrome/userChrome.css` at all; it has been off by default since Firefox
+69.
+
+`widget.gtk.native-context-menus` is the one that is not obvious. With it
+on — the default on Linux — a right-click menu is a real GTK menu widget
+rather than a XUL popup, drawn by the toolkit, and **no chrome CSS can
+touch it**. Every menu rule here is inert while it is true, which looks
+exactly like the rules being wrong. Turning it off hands the menu back to
+Firefox to draw, and then the stylesheet reaches it.
+
 ## Two things to know
 
 **Firefox reads chrome stylesheets once, at startup.** A theme change in
@@ -58,10 +73,11 @@ the shell lands in the colours file immediately and in the browser at its
 next launch. There is no supported way to make a running Firefox notice —
 kitty has a signal for it, Firefox has nothing.
 
-**`toolkit.legacyUserProfileCustomizations.stylesheets` has to be true**,
-which it has not been by default since Firefox 69. `install.sh` sets it
-in each profile's `user.js`, merging rather than replacing, since that is
-a file people keep their own settings in.
+That goes for every theme change, not only the first install. Changing
+the accent, the rounding or light/dark rewrites the palette immediately,
+and the browser picks it up at its next launch. The corner radius does
+follow the shell's rounding slider — 0% gives square corners, 160% gives
+22px — but you will not see it move until you restart the browser.
 
 ## If it looks like nothing happened
 

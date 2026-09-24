@@ -167,24 +167,54 @@ fi
 
 # user.js, merged rather than replaced: it is a file people keep their own
 # settings in, and this owns exactly one line of it.
+# Two prefs, not one.
+#
+#   toolkit.legacyUserProfileCustomizations.stylesheets
+#     lets Firefox read chrome/userChrome.css at all. Off by default
+#     since Firefox 69.
+#
+#   widget.gtk.native-context-menus
+#     the one that is not obvious. With this on — which is the default
+#     on Linux — a right-click menu is a real GTK menu widget rather
+#     than a XUL popup, so it is drawn by the toolkit and no chrome CSS
+#     can touch it. Every rule for menus in userChrome.css is simply
+#     inert while it is true, which looks exactly like the rules being
+#     wrong. Turning it off gives the menu back to Firefox to draw, and
+#     then the stylesheet reaches it.
 set_pref() {
     js="$1/user.js"
-    key='toolkit.legacyUserProfileCustomizations.stylesheets'
     touch "$js"
+
     if [ "$MODE" = uninstall ]; then
-        if grep -q "$key" "$js" 2>/dev/null; then
-            sed -i "/$key/d;/Hyprshell chrome:/d" "$js"
-            did "user.js — removed the stylesheets pref"
+        if grep -q 'Hyprshell chrome:' "$js" 2>/dev/null; then
+            sed -i '/Hyprshell chrome:/,+1d' "$js"
+            did "user.js — removed our prefs"
         fi
         return
     fi
-    if grep -q "user_pref(\"$key\", *true)" "$js" 2>/dev/null; then
-        skip "user.js — already set"
+
+    changed=0
+    # key, value, why
+    while IFS='|' read -r key val why; do
+        [ -n "$key" ] || continue
+        if grep -q "user_pref(\"$key\", *$val)" "$js" 2>/dev/null; then
+            continue
+        fi
+        # Ours to rewrite: the comment line above it goes too.
+        sed -i "\|$key|{x;/Hyprshell chrome:/d;x;d}" "$js" 2>/dev/null \
+            || sed -i "\|$key|d" "$js"
+        printf '// Hyprshell chrome: %s\nuser_pref("%s", %s);\n' \
+               "$why" "$key" "$val" >> "$js"
+        changed=$((changed + 1))
+    done <<PREFS
+toolkit.legacyUserProfileCustomizations.stylesheets|true|lets Firefox read chrome/userChrome.css
+widget.gtk.native-context-menus|false|so chrome CSS can reach the right-click menu
+PREFS
+
+    if [ "$changed" -gt 0 ]; then
+        did "user.js — set $changed pref(s)"
     else
-        sed -i "/$key/d;/Hyprshell chrome:/d" "$js"
-        printf '// Hyprshell chrome: lets Firefox read chrome/userChrome.css\nuser_pref("%s", true);\n' \
-               "$key" >> "$js"
-        did "user.js — set the stylesheets pref"
+        skip "user.js — already set"
     fi
 }
 

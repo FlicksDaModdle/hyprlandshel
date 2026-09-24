@@ -45,6 +45,7 @@ if [ -f "$COLORS" ]; then
     if grep -q -- '--hs-accent' "$COLORS"; then
         note "accent is $(sed -n 's/.*--hs-accent: *\([^;]*\);.*/\1/p' "$COLORS" | head -1)"
         note "scheme is $(sed -n 's/.*color-scheme: *\([^;]*\);.*/\1/p' "$COLORS" | head -1)"
+        note "corners are $(sed -n 's/.*--hs-r: *\([^;]*\);.*/\1/p' "$COLORS" | head -1)"
     else
         bad "it has no --hs-accent in it — is it the file the shell writes?"
     fi
@@ -153,6 +154,20 @@ while IFS= read -r prof; do
     pj="$prof/prefs.js"
     ujs=$(grep -h "$PREF" "$js" 2>/dev/null | tail -1)
     pjs=$(grep -h "$PREF" "$pj" 2>/dev/null | tail -1)
+
+    # The one that makes every menu rule inert without saying so: with
+    # native GTK context menus on, a right-click menu is a toolkit
+    # widget and no chrome CSS reaches it at all.
+    nat="$prof/user.js"
+    if grep -qh 'widget.gtk.native-context-menus", *false' "$nat" 2>/dev/null; then
+        ok "right-click menus are Firefox's to draw, so CSS reaches them"
+    elif grep -qh 'widget.gtk.native-context-menus", *false' "$pj" 2>/dev/null; then
+        ok "right-click menus are Firefox's to draw (set by hand, that is fine)"
+    else
+        bad "right-click menus are still GTK's — no CSS can touch them"
+        note "run ./install.sh, or set in about:config:"
+        note "  widget.gtk.native-context-menus = false"
+    fi
     if printf '%s' "$ujs" | grep -q 'true'; then
         ok "user.js sets the stylesheets pref"
     elif printf '%s' "$ujs" | grep -q 'false'; then
@@ -183,11 +198,18 @@ if pgrep -x firefox >/dev/null 2>&1 || pgrep -x firefox-bin >/dev/null 2>&1; the
         [ "$t" -gt "$installed" ] && installed=$t
     done <<< "$profiles"
 
+    palette_t=0
+    [ -f "$COLORS" ] && palette_t=$(stat -c %Y "$COLORS" 2>/dev/null || echo 0)
+    [ "$palette_t" -gt "$installed" ] && installed=$palette_t
+
     if [ "$started" -gt "$installed" ] && [ "$installed" -gt 0 ]; then
-        ok "Firefox has been started since the stylesheet was installed"
+        ok "Firefox has been started since the stylesheet and palette last changed"
     else
-        bad "Firefox has been running since before the stylesheet was installed"
-        note "it reads chrome CSS once, at startup — quit it fully and start it again"
+        bad "Firefox has been running since before the last change"
+        note "it reads chrome CSS once, at startup — quit it fully and start it again."
+        note "that goes for a theme change too: changing the accent, the rounding"
+        note "or light/dark rewrites the palette at once, and the browser sees it"
+        note "at its next launch. there is no way to make a running one notice."
         note "closing the window is not always enough; check with: pgrep -x firefox"
     fi
 else

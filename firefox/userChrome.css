@@ -43,7 +43,11 @@
    * simply ignored, which is why the explicit rules below exist too. */
   --toolbar-bgcolor: var(--hs-chrome, #fbfafa) !important;
   --toolbar-color: var(--hs-ink, #201e1d) !important;
-  --toolbarbutton-icon-fill: var(--hs-ink, #201e1d) !important;
+  /* ink2, not ink. A toolbar full of full-strength icons shouts as
+   * loudly as the page; in the shell's own bars they sit a step back
+   * and come forward on hover. */
+  --toolbarbutton-icon-fill: var(--hs-ink2, #605d5d) !important;
+  --toolbarbutton-icon-fill-opacity: 1 !important;
   --toolbarbutton-hover-background: var(--hs-hover, rgba(32,30,29,.07)) !important;
   --toolbarbutton-active-background: var(--hs-sel, rgba(32,30,29,.10)) !important;
   --toolbarbutton-border-radius: var(--hs-r-sm, 9px) !important;
@@ -250,6 +254,17 @@
   box-shadow: inset 0 0 0 1px var(--hs-edge, rgba(32,30,29,.14)) !important;
 }
 
+/* Firefox grows the bar when its results are open and rounds only the
+ * top; the shell has one shape for a field and does not change it. */
+#urlbar[open] > #urlbar-background {
+  border-radius: var(--hs-r, 14px) !important;
+}
+
+#urlbar-input-container {
+  padding-block: 0 !important;
+  border: 0 !important;
+}
+
 /* Focus is a 2px accent ring drawn inside the edge, which is what the
  * shell's own search field does. */
 #urlbar[focused="true"] > #urlbar-background,
@@ -267,10 +282,15 @@
   color: var(--hs-ink3, #6b6868) !important;
 }
 
-/* The domain in ink, the rest of the URL dimmed — the shell shows a path
- * the same way, with the part that matters carrying the weight. */
-#urlbar-input:not(:focus) {
-  color: var(--hs-ink3, #6b6868) !important;
+/* The domain in ink, the rest of the URL dimmed.
+ *
+ * Firefox does that itself — it draws the part either side of the host
+ * at reduced opacity — so the only thing needed here is the full-weight
+ * colour to dim *from*. Setting ink3 on the whole input, which is what
+ * this did first, dimmed the domain along with everything else and left
+ * the whole address looking greyed out. */
+#urlbar-input {
+  color: var(--hs-ink, #201e1d) !important;
 }
 
 #identity-box,
@@ -305,9 +325,25 @@ toolbarbutton.bookmark-item {
   border-radius: var(--hs-r-sm, 9px) !important;
 }
 
+.toolbarbutton-1 > .toolbarbutton-icon,
+#identity-box image,
+#page-action-buttons image,
+.urlbar-icon {
+  fill: var(--hs-ink2, #605d5d) !important;
+  opacity: 1 !important;
+}
+
 .toolbarbutton-1:not([disabled]):hover > .toolbarbutton-icon,
 .toolbarbutton-1:not([disabled]):hover > .toolbarbutton-badge-stack {
   background-color: var(--hs-hover, rgba(32,30,29,.07)) !important;
+  fill: var(--hs-ink, #201e1d) !important;
+}
+
+/* The padlock and the shield, which say something rather than doing
+ * something, so they take the accent when there is something to say. */
+#identity-box[pageproxystate="valid"].verifiedDomain image,
+#tracking-protection-icon-container[active] image {
+  fill: var(--hs-accent, #ec3013) !important;
 }
 
 .toolbarbutton-1[open] > .toolbarbutton-icon,
