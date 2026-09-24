@@ -115,9 +115,19 @@ private:
     // Make the cursor solid and restart the blink from now.
     void wake();
     void relayout();
-    // Cell under a point, clamped into the grid.
-    void cellFor(const QPointF &p, int *row, int *col) const;
+    // Cell under a point, as a line id and a column. For selection,
+    // which has to outlive scrolling.
+    void cellFor(const QPointF &p, qint64 *line, int *col) const;
+    // The same point as a row of the view. For everything the program
+    // on the far side is told about — mouse reports and cursor
+    // placement are about where something is on screen now, and mean
+    // nothing in terms of a line that scrolled past an hour ago.
+    void viewCellFor(const QPointF &p, int *row, int *col) const;
+    // Takes a view row, because that is what painting has.
     bool inSelection(int row, int col) const;
+    // The pointer says what it does: an I-beam over text, an arrow when
+    // a program has asked for the mouse and the pointer is its to use.
+    void refreshCursor();
 
     Term *m_term = nullptr;
     QFont m_font;
@@ -142,5 +152,13 @@ private:
     // This press was forwarded to the program, so the release and any
     // movement in between belong to it as well.
     bool m_mouseToTerm = false;
-    int m_selRow0 = 0, m_selCol0 = 0, m_selRow1 = 0, m_selCol1 = 0;
+    // Line ids, not view rows. A selection kept in view rows travels up
+    // the screen as you scroll, because view row 4 is a different line
+    // after every wheel click — see Term::lineIdFor.
+    qint64 m_selRow0 = 0, m_selRow1 = 0;
+    int m_selCol0 = 0, m_selCol1 = 0;
+    // Where the pointer last was, so that scrolling in the middle of a
+    // drag can extend the selection to whatever is now under it without
+    // waiting for the mouse to move.
+    QPointF m_lastPointer;
 };

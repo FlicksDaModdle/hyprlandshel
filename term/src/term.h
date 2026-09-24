@@ -90,6 +90,35 @@ public:
     QString title() const { return m_title; }
     QString cwd() const { return m_cwd; }
     int scrollbackLines() const { return static_cast<int>(m_scrollback.size()); }
+
+    // ── line identity ─────────────────────────────────────────────────
+    //
+    // A row number counted from the top of the view is not a place in
+    // the text: scroll by one and every line has a different number,
+    // and a selection stored that way slides up the screen as you
+    // scroll — which is exactly what it did.
+    //
+    // So each line gets an id that never changes. Ids count from the
+    // oldest line the scrollback has ever held, including the ones it
+    // has since dropped — m_firstLineId is the id of scrollback[0] and
+    // grows as lines fall off the far end, so an id stays attached to
+    // its own line even when the buffer overflows.
+    //
+    //   scrollback[i]   -> m_firstLineId + i
+    //   screen row s    -> m_firstLineId + scrollbackLines() + s
+    //
+    // and both reduce to the same expression in terms of a view row,
+    // which is why there is only one of these.
+    qint64 lineIdFor(int viewRow) const {
+        return m_firstLineId + scrollbackLines() + viewRow - m_scrollOffset;
+    }
+    int viewRowFor(qint64 id) const {
+        return static_cast<int>(id - m_firstLineId - scrollbackLines() + m_scrollOffset);
+    }
+    qint64 firstLineId() const { return m_firstLineId; }
+    qint64 lastLineId() const { return m_firstLineId + scrollbackLines() + m_rows - 1; }
+
+    Q_INVOKABLE QString textOfLines(qint64 id0, int col0, qint64 id1, int col1) const;
     int scrollOffset() const { return m_scrollOffset; }
     void setScrollOffset(int off);
     bool cursorVisible() const { return m_cursorVisible; }
@@ -177,6 +206,9 @@ private:
     // Bounded, or a build log is a memory leak with a cursor in it.
     static constexpr int kScrollbackMax = 10000;
     int m_scrollOffset = 0;
+    // The id of scrollback[0]; see lineIdFor(). Grows when the oldest
+    // lines are dropped, so ids never repeat and never shift.
+    qint64 m_firstLineId = 0;
 
     int m_mouse = 0;
     bool m_altScreen = false;

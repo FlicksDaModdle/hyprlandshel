@@ -204,6 +204,16 @@ QColor Term::toColor(const VTermColor &c, bool background) const {
     return background ? m_defaultBg : m_defaultFg;
 }
 
+// The same as textOfRange, addressed by line id rather than by where a
+// line happens to be sitting in the view.
+QString Term::textOfLines(qint64 id0, int col0, qint64 id1, int col1) const {
+    if (id1 < id0 || (id1 == id0 && col1 < col0)) {
+        std::swap(id0, id1);
+        std::swap(col0, col1);
+    }
+    return textOfRange(viewRowFor(id0), col0, viewRowFor(id1), col1);
+}
+
 QString Term::textOfRange(int row0, int col0, int row1, int col1) const {
     if (row1 < row0 || (row1 == row0 && col1 < col0)) {
         std::swap(row0, row1);
@@ -317,8 +327,13 @@ int Term::onPushLine(int cols, const VTermScreenCell *cells, void *user) {
     QVector<VTermScreenCell> line(cols);
     std::memcpy(line.data(), cells, sizeof(VTermScreenCell) * cols);
     t->m_scrollback.push_back(std::move(line));
-    while (static_cast<int>(t->m_scrollback.size()) > kScrollbackMax)
+    while (static_cast<int>(t->m_scrollback.size()) > kScrollbackMax) {
         t->m_scrollback.pop_front();
+        // The oldest line is gone, so scrollback[0] is now the line
+        // after it. Without this every id below would shift by one and
+        // a selection made an hour ago would quietly move.
+        t->m_firstLineId++;
+    }
     // Looking at history while the live screen scrolls should keep the
     // same lines in view, so the offset follows the line that was added.
     if (t->m_scrollOffset > 0

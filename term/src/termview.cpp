@@ -2,6 +2,7 @@
 #include "boxdraw.h"
 
 #include <QClipboard>
+#include <QCursor>
 #include <QFontDatabase>
 #include <QFontMetricsF>
 #include <QGuiApplication>
@@ -16,7 +17,15 @@ TermView::TermView(QQuickItem *parent) : QQuickPaintedItem(parent) {
     // written and correct and simply never called, because the item was
     // not listening for that button.
     setAcceptedMouseButtons(Qt::LeftButton | Qt::MiddleButton | Qt::RightButton);
-    setAcceptHoverEvents(false);
+    // Hover events on, for the pointer shape.
+    //
+    // A QQuickItem's cursor is applied as the pointer moves over it, and
+    // an item that accepts no hover events is not somewhere the window
+    // looks. Nothing here handles hover for its own sake — there is no
+    // override — so this costs an event nobody reads and buys an I-beam
+    // that actually appears.
+    setAcceptHoverEvents(true);
+    setCursor(QCursor(Qt::IBeamCursor));
     setFocus(true);
     // The grid is opaque and painted edge to edge, so the item does not
     // need the alpha channel it would otherwise composite through.
@@ -73,6 +82,15 @@ void TermView::wake() {
     update();
 }
 
+// An I-beam over text, an arrow once a program has asked for the mouse:
+// in `less` or `htop` the pointer is a pointing device again, not a way
+// of selecting words, and an I-beam there would be promising something
+// that does not happen.
+void TermView::refreshCursor() {
+    setCursor(QCursor((m_term && m_term->mouseEnabled()) ? Qt::ArrowCursor
+                                                         : Qt::IBeamCursor));
+}
+
 void TermView::setTerm(Term *t) {
     if (m_term == t) return;
     if (m_term) m_term->disconnect(this);
@@ -84,6 +102,9 @@ void TermView::setTerm(Term *t) {
         connect(m_term, &Term::cursorChanged, this, [this] { wake(); });
         connect(m_term, &Term::cursorStyleChanged, this, [this] { wake(); });
         connect(m_term, &Term::scrollOffsetChanged, this, [this] { update(); });
+        connect(m_term, &Term::mouseEnabledChanged, this,
+                &TermView::refreshCursor);
+        refreshCursor();
         relayout();
         wake();
     }
@@ -336,26 +357,50 @@ void TermView::paint(QPainter *painter) {
 }
 
 // ── selection ────────────────────────────────────────────────────────────
-void TermView::cellFor(const QPointF &p, int *row, int *col) const {
+void TermView::viewCellFor(const QPointF &p, int *row, int *col) const {
+    if (!m_term) { *row = 0; *col = 0; return; }
     *row = qBound(0, static_cast<int>(p.y() / m_cellH),
-                  m_term ? m_term->rows() + m_term->scrollOffset() - 1 : 0);
-    *col = qBound(0, static_cast<int>(p.x() / m_cellW),
-                  m_term ? m_term->cols() - 1 : 0);
+                  m_term->rows() + m_term->scrollOffset() - 1);
+    *col = qBound(0, static_cast<int>(p.x() / m_cellW), m_term->cols() - 1);
+}
+
+void TermView::cellFor(const QPointF &p, qint64 *line, int *col) const {
+    if (!m_term) { *line = 0; *col = 0; return; }
+    const int viewRow = qBound(0, static_cast<int>(p.y() / m_cellH),
+                               m_term->rows() + m_term->scrollOffset() - 1);
+    *line = qBound(m_term->firstLineId(), m_term->lineIdFor(viewRow),
+                   m_term->lastLineId());
+    *col = qBound(0, static_cast<int>(p.x() / m_cellW), m_term->cols() - 1);
 }
 
 bool TermView::inSelection(int row, int col) const {
-    if (!m_hasSelection) return false;
-    int r0 = m_selRow0, c0 = m_selCol0, r1 = m_selRow1, c1 = m_selCol1;
+    if (!m_hasSelection || !m_term) return false;
+    // `row` is where the line is now; the selection is which lines.
+    const qint64 id = m_term->lineIdFor(row);
+    qint64 r0 = m_selRow0, r1 = m_selRow1;
+    int c0 = m_selCol0, c1 = m_selCol1;
     if (r1 < r0 || (r1 == r0 && c1 < c0)) { std::swap(r0, r1); std::swap(c0, c1); }
-    if (row < r0 || row > r1) return false;
-    if (row == r0 && col < c0) return false;
-    if (row == r1 && col > c1) return false;
+    if (id < r0 || id > r1) return false;
+    if (id == r0 && col < c0) return false;
+    if (id == r1 && col > c1) return false;
     return true;
 }
 
 QString TermView::selectedText() const {
+    // HYPRSHELL_TERM_SELLOG=1 prints what is selected and where.
+    //
+    // A selection is two numbers and a highlight, and a highlight looks
+    // the same whichever line it is on — so "the selection moved when I
+    // scrolled" cannot be told from "it did not" by looking. This says
+    // which lines, by id, and what scrolling state they were read in.
+    if (qEnvironmentVariableIsSet("HYPRSHELL_TERM_SELLOG") && m_term)
+        fprintf(stderr, "[sel] lines %lld:%d..%lld:%d  view=%d off=%d sb=%d\n",
+                (long long) m_selRow0, m_selCol0, (long long) m_selRow1, m_selCol1,
+                m_term->viewRowFor(m_selRow0), m_term->scrollOffset(),
+                m_term->scrollbackLines());
+
     if (!m_hasSelection || !m_term) return QString();
-    return m_term->textOfRange(m_selRow0, m_selCol0, m_selRow1, m_selCol1);
+    return m_term->textOfLines(m_selRow0, m_selCol0, m_selRow1, m_selCol1);
 }
 
 void TermView::clearSelection() {
@@ -367,8 +412,8 @@ void TermView::clearSelection() {
 
 void TermView::selectAll() {
     if (!m_term) return;
-    m_selRow0 = 0; m_selCol0 = 0;
-    m_selRow1 = m_term->rows() + m_term->scrollOffset() - 1;
+    m_selRow0 = m_term->firstLineId(); m_selCol0 = 0;
+    m_selRow1 = m_term->lastLineId();
     m_selCol1 = m_term->cols() - 1;
     m_hasSelection = true;
     emit selectionChanged();
@@ -383,7 +428,7 @@ void TermView::mousePressEvent(QMouseEvent *event) {
     // question they did not ask.
     if (m_term && m_term->mouseEnabled() && event->button() == Qt::LeftButton) {
         int row, col;
-        cellFor(event->position(), &row, &col);
+        viewCellFor(event->position(), &row, &col);
         m_term->sendMouse(row, col, 1, true, static_cast<int>(event->modifiers()));
         m_mouseToTerm = true;
         event->accept();
@@ -417,6 +462,7 @@ void TermView::mousePressEvent(QMouseEvent *event) {
         event->accept();
         return;
     }
+    m_lastPointer = event->position();
     cellFor(event->position(), &m_selRow0, &m_selCol0);
     m_selRow1 = m_selRow0;
     m_selCol1 = m_selCol0;
@@ -429,12 +475,13 @@ void TermView::mouseMoveEvent(QMouseEvent *event) {
     if (m_mouseToTerm) {
         if (!m_term) return;
         int row, col;
-        cellFor(event->position(), &row, &col);
+        viewCellFor(event->position(), &row, &col);
         m_term->sendMouse(row, col, 0, false, static_cast<int>(event->modifiers()));
         event->accept();
         return;
     }
     if (!m_selecting) return;
+    m_lastPointer = event->position();
     cellFor(event->position(), &m_selRow1, &m_selCol1);
     const bool had = m_hasSelection;
     m_hasSelection = (m_selRow1 != m_selRow0 || m_selCol1 != m_selCol0);
@@ -447,7 +494,7 @@ void TermView::mouseReleaseEvent(QMouseEvent *event) {
     if (m_mouseToTerm) {
         if (m_term) {
             int row, col;
-            cellFor(event->position(), &row, &col);
+            viewCellFor(event->position(), &row, &col);
             m_term->sendMouse(row, col, 1, false, static_cast<int>(event->modifiers()));
         }
         m_mouseToTerm = false;
@@ -466,7 +513,7 @@ void TermView::mouseReleaseEvent(QMouseEvent *event) {
         // A click that did not become a drag is a click, and a click in a
         // line of text means "put the cursor here" everywhere else.
         int row, col;
-        cellFor(event->position(), &row, &col);
+        viewCellFor(event->position(), &row, &col);
         m_term->placeCursor(row, col);
     }
     event->accept();
@@ -490,7 +537,20 @@ QString TermView::clipboardText() const {
 void TermView::wheelEvent(QWheelEvent *event) {
     if (!m_term) return;
     const int steps = event->angleDelta().y() / 40;
-    if (steps != 0) m_term->scrollBy(steps);
+    if (steps != 0) {
+        m_term->scrollBy(steps);
+        // Scrolling in the middle of a drag is "select more", so the far
+        // end follows whatever has arrived under the pointer. Without
+        // this it waits for the mouse to move, which it is not doing —
+        // the hand is on the wheel.
+        if (m_selecting) {
+            cellFor(m_lastPointer, &m_selRow1, &m_selCol1);
+            const bool had = m_hasSelection;
+            m_hasSelection = (m_selRow1 != m_selRow0 || m_selCol1 != m_selCol0);
+            if (had != m_hasSelection) emit selectionChanged();
+            update();
+        }
+    }
     event->accept();
 }
 
