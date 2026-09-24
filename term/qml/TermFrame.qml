@@ -382,14 +382,6 @@ Rectangle {
         }
     }
 
-    // Clicking anywhere in the body puts the keyboard back in the grid,
-    // which is what a terminal window is for.
-    MouseArea {
-        anchors.fill: view
-        acceptedButtons: Qt.NoButton
-        onPressed: view.forceActiveFocus()
-    }
-
     // Anywhere else dismisses the menu, and the click that dismisses it
     // does nothing else — clicking away from a menu is how you say "not
     // that", and landing a selection or a cursor move at the same time
