@@ -2,6 +2,16 @@
 Description=Hyprshell Files portal backend (file dialogs)
 Documentation=https://flatpak.github.io/xdg-desktop-portal/docs/
 PartOf=graphical-session.target
+# No start rate limiting.
+#
+# This is started on demand, once per file dialog. With the default limit
+# a handful of failures close together — an upgrade replacing the binary
+# mid-install, an older copy still holding the bus name — puts the unit
+# in a failed state, and systemd then refuses to start it at all. Every
+# file dialog on the desktop stops working, and stays broken after the
+# cause is gone, until someone runs `systemctl --user reset-failed`.
+# Failing each time is recoverable; being refused is not.
+StartLimitIntervalSec=0
 
 [Service]
 Type=dbus
@@ -11,3 +21,13 @@ ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/hyprshell-files --portal
 # should go when the session does rather than outlive it invisibly.
 Slice=session.slice
 TimeoutStopSec=5
+# Killed is not failed.
+#
+# This is started on demand and has no clean way to be stopped, so it
+# gets killed — by an upgrade, by a session ending, by someone clearing
+# out an old copy by hand. Without this, systemd records that as a
+# failure and the unit lands in a state it refuses to start from, which
+# takes every file dialog on the desktop down with it until it is
+# cleared. `systemctl --user reset-failed hyprshell-files-portal.service`
+# is the cure if you meet it on an older install.
+SuccessExitStatus=SIGTERM SIGINT SIGKILL

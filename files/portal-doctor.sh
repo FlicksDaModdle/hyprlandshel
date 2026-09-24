@@ -137,6 +137,16 @@ if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/d
         bad "systemd does not know $UNIT"
         note "Run ./install.sh, then: systemctl --user daemon-reload"
     fi
+    # A failed unit is refused rather than retried, so file dialogs stay
+    # broken after whatever caused the failure is long gone.
+    if systemctl --user is-failed --quiet "$UNIT" 2>/dev/null; then
+        bad "$UNIT is in a failed state"
+        note "systemd refuses to start a unit in this state, so nothing can open"
+        note "a dialog until it is cleared — whatever the cause was, and whether"
+        note "or not it is still there:"
+        note "  systemctl --user reset-failed $UNIT"
+        note "  journalctl --user -u $UNIT -n 30 --no-pager"
+    fi
     if systemctl --user show-environment 2>/dev/null | grep -q '^WAYLAND_DISPLAY='; then
         ok "the user manager has WAYLAND_DISPLAY"
     else

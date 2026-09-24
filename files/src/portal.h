@@ -68,6 +68,10 @@ signals:
     // cue to go — see main().
     void idle();
 
+    // Another backend has taken the bus name. Nothing more will be asked
+    // of this one, so it should finish what it has and go.
+    void displaced();
+
 public slots:
     // Called back from QML when the dialog closes. An empty list is a
     // cancellation.
@@ -84,6 +88,9 @@ private:
     // Checks, once the bus can answer, that the three methods a
     // FileChooser backend must have really made it onto it. See attach().
     void verifyExport();
+
+    // Notices when the name is taken away from us.
+    void watchForReplacement();
 
     static QVariantList parseFilters(const QVariantMap &options);
 

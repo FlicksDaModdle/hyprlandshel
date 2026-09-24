@@ -130,6 +130,15 @@ int main(int argc, char *argv[]) {
                          linger, QOverload<>::of(&QTimer::start));
         // And if nothing ever asks — started, then forgotten — go anyway.
         linger->start();
+
+        // Handed the name to a newer backend: finish what is open and go
+        // rather than waiting out the idle timer answering nothing.
+        QObject::connect(&portal, &FileChooserPortal::displaced, &app, [&portal] {
+            if (!portal.busy()) QGuiApplication::quit();
+        });
+        QObject::connect(&portal, &FileChooserPortal::idle, &app, [&portal] {
+            if (!portal.attached()) QGuiApplication::quit();
+        });
     }
 
     // A way to see what the window looks like without a display, for

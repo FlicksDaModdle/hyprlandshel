@@ -1,6 +1,9 @@
 #include "portal.h"
 
 #include <QDBusConnection>
+#include <QDBusConnectionInterface>
+#include <QDBusServiceWatcher>
+#include <QDBusReply>
 #include <QDBusMetaType>
 #include <QDBusObjectPath>
 #include <QDBusSignature>
@@ -43,9 +46,30 @@ bool FileChooserPortal::attach() {
     if (!bus.registerObject(QStringLiteral("/org/freedesktop/portal/desktop"),
                             this, QDBusConnection::ExportAdaptors))
         return false;
-    m_attached = bus.registerService(
-        QStringLiteral("org.freedesktop.impl.portal.desktop.hyprshell"));
-    if (m_attached) verifyExport();
+    // Taken with replacement both ways round.
+    //
+    // A backend left over from a previous install holds this name until
+    // it exits, and the one the bus has just started then cannot have
+    // it — so it gives up, systemd counts a failure, and after a few of
+    // those the unit is refused altogether and every file dialog on the
+    // desktop stops working until someone clears it by hand. Allowing
+    // replacement means a new backend takes over from an old one
+    // instead; asking to replace means it does so without waiting for
+    // the old one to notice.
+    QDBusConnectionInterface *iface = bus.interface();
+    const QString name =
+        QStringLiteral("org.freedesktop.impl.portal.desktop.hyprshell");
+    if (iface) {
+        const QDBusReply<QDBusConnectionInterface::RegisterServiceReply> reply =
+            iface->registerService(name,
+                                   QDBusConnectionInterface::ReplaceExistingService,
+                                   QDBusConnectionInterface::AllowReplacement);
+        m_attached = reply.isValid()
+                     && reply.value() == QDBusConnectionInterface::ServiceRegistered;
+    } else {
+        m_attached = bus.registerService(name);
+    }
+    if (m_attached) { verifyExport(); watchForReplacement(); }
     return m_attached;
 }
 
@@ -97,6 +121,29 @@ void FileChooserPortal::verifyExport() {
         QDBusConnection::sessionBus().unregisterService(
             QStringLiteral("org.freedesktop.impl.portal.desktop.hyprshell"));
         m_attached = false;
+    });
+}
+
+// The name was taken with AllowReplacement, so it can be taken back —
+// by the next backend an upgrade installs. Once it has been, nothing
+// will ever call this process again, and a portal backend sitting in
+// memory answering nothing is just a process to wonder about later.
+void FileChooserPortal::watchForReplacement() {
+    const QString name =
+        QStringLiteral("org.freedesktop.impl.portal.desktop.hyprshell");
+    // Owner change, not unregistration: a handover never leaves the name
+    // unowned, so serviceUnregistered — which fires only when the new
+    // owner is nobody — never came, and the displaced backend stayed up
+    // answering nothing. The owner is compared against this connection
+    // because taking the name in the first place is an owner change too.
+    auto *watcher = new QDBusServiceWatcher(
+        name, QDBusConnection::sessionBus(),
+        QDBusServiceWatcher::WatchForOwnerChange, this);
+    connect(watcher, &QDBusServiceWatcher::serviceOwnerChanged, this,
+            [this](const QString &, const QString &, const QString &newOwner) {
+        if (newOwner == QDBusConnection::sessionBus().baseService()) return;
+        m_attached = false;
+        emit displaced();
     });
 }
 
