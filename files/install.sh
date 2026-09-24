@@ -242,6 +242,34 @@ PORTALEOF
     printf '  %s  systemctl --user restart xdg-desktop-portal%s\n' "$DIM" "$RST"
 fi
 
+# The bus has to be told the backend exists.
+#
+# A bus daemon lists its activatable services when it starts and watches
+# the directories it found then — so an install that *creates*
+# ~/.local/share/dbus-1/services, which this one does on a first run,
+# leaves the file in a directory nothing is watching. The name stays
+# unknown however correct the file is, and every file dialog fails with
+# "The name is not activatable", which reads like a broken service
+# rather than an unread one. Asking for a reload here costs nothing and
+# saves that entire diagnosis.
+SVC=org.freedesktop.impl.portal.desktop.hyprshell
+if command -v gdbus >/dev/null 2>&1 && [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    gdbus call --session --dest org.freedesktop.DBus \
+          --object-path /org/freedesktop/DBus \
+          --method org.freedesktop.DBus.ReloadConfig >/dev/null 2>&1
+    case "$(gdbus call --session --dest org.freedesktop.DBus \
+            --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.ListActivatableNames 2>/dev/null)" in
+        *"$SVC"*) ok "session bus" "can start the backend on demand" ;;
+        *)        warn "session bus" "does not list $SVC yet"
+                  printf '  %sa fresh login will pick it up; or:%s\n' "$DIM" "$RST"
+                  printf '  %s  systemctl --user reload dbus.service%s\n' "$DIM" "$RST" ;;
+    esac
+elif [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    warn "session bus" "not reachable from here, so it was not told to re-read"
+    printf '  %srun this inside the session, or log out and back in%s\n' "$DIM" "$RST"
+fi
+
 # Anything the bus starts inherits the bus daemon's environment, which was
 # fixed before this session existed. Without WAYLAND_DISPLAY in it a Qt
 # program cannot find a display at all and dies during startup, and the
