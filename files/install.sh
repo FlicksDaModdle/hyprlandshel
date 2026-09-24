@@ -383,6 +383,14 @@ cat <<EOF
 
   If a dialog still opens in something else:  ./portal-doctor.sh
 
+  A file dialog should float rather than tile. That is the compositor's
+  decision, not this program's, and the rule for it lives in the shell's
+  Hyprland config — installed by ../shell/install.sh, not by this one.
+  For a config of your own, this is the rule, and \`hyprctl reload\`:
+
+      windowrulev2 = float, class:^(hyprshell-files-dialog)\$
+      windowrulev2 = size 940 620, class:^(hyprshell-files-dialog)\$
+
   It follows the shell's theme.json when that is installed, and keeps its
   own settings in \$XDG_CONFIG_HOME/hyprshell-files/settings.json.
 EOF
