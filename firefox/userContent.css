@@ -1,0 +1,113 @@
+/* Hyprshell — the pages Firefox draws itself.
+ *
+ * userChrome.css is the browser; this is the handful of pages that come
+ * from the browser rather than from the web: the new tab, about:blank,
+ * the reader, the error pages. Ordinary web content is not touched and
+ * must not be — a site's own colours are the site's business.
+ *
+ * The new tab page is the one people look at most, and the one that
+ * flashes white on every new tab if it is left alone.
+ */
+
+@import url("HYPRSHELL_COLORS_PATH");
+
+/* ══ new tab, home, blank ═════════════════════════════════════════════ */
+
+@-moz-document url("about:newtab"), url("about:home"), url("about:blank"),
+               url("about:privatebrowsing") {
+  :root,
+  body,
+  .outer-wrapper,
+  #root {
+    background-color: var(--hs-frame, #f3f2f2) !important;
+    color: var(--hs-ink, #201e1d) !important;
+    font-family: var(--hs-font, "Inter"), system-ui, sans-serif !important;
+  }
+
+  /* The search box on the new tab page, given the same shape as the
+   * address bar above it. */
+  .search-wrapper input,
+  .search-handoff-button {
+    background-color: var(--hs-field, #eae9e9) !important;
+    border-radius: var(--hs-r, 14px) !important;
+    border: 0 !important;
+    box-shadow: inset 0 0 0 1px var(--hs-edge, rgba(32,30,29,.14)) !important;
+    color: var(--hs-ink, #201e1d) !important;
+  }
+
+  .search-wrapper input:focus,
+  .search-handoff-button:focus {
+    box-shadow: inset 0 0 0 2px var(--hs-accent, #ec3013) !important;
+  }
+
+  /* Top sites, as the shell's tiles. */
+  .top-site-outer .tile {
+    border-radius: var(--hs-r, 14px) !important;
+    box-shadow: inset 0 0 0 1px var(--hs-rule, rgba(32,30,29,.09)) !important;
+  }
+
+  .top-site-outer .title {
+    color: var(--hs-ink2, #605d5d) !important;
+    font-size: 11px !important;
+  }
+
+  .card-outer {
+    border-radius: var(--hs-r, 14px) !important;
+  }
+}
+
+/* ══ the error and warning pages ══════════════════════════════════════ */
+
+@-moz-document url-prefix("about:neterror"), url-prefix("about:certerror"),
+               url-prefix("about:httpsonlyerror"), url-prefix("about:blocked") {
+  body {
+    background-color: var(--hs-frame, #f3f2f2) !important;
+    color: var(--hs-ink, #201e1d) !important;
+    font-family: var(--hs-font, "Inter"), system-ui, sans-serif !important;
+  }
+
+  .title-text,
+  h1 {
+    color: var(--hs-ink, #201e1d) !important;
+  }
+
+  button.primary {
+    background-color: var(--hs-accent, #ec3013) !important;
+    color: var(--hs-on-accent, #ffffff) !important;
+    border: 0 !important;
+    border-radius: var(--hs-r, 14px) !important;
+  }
+}
+
+/* ══ the reader ═══════════════════════════════════════════════════════ */
+
+@-moz-document url-prefix("about:reader") {
+  .reader-toolbar,
+  .toolbar {
+    background-color: var(--hs-chrome, #fbfafa) !important;
+    border: 1px solid var(--hs-edge, rgba(32,30,29,.14)) !important;
+    border-radius: var(--hs-r, 14px) !important;
+  }
+}
+
+/* ══ view-source ══════════════════════════════════════════════════════ */
+
+@-moz-document url-prefix("view-source:") {
+  body {
+    background-color: var(--hs-frame, #f3f2f2) !important;
+    color: var(--hs-ink, #201e1d) !important;
+    font-family: var(--hs-mono, "JetBrains Mono"), monospace !important;
+  }
+}
+
+/* ══ a scrollbar that matches the rest ════════════════════════════════ */
+/*
+ * On the browser's own pages only. A site that styles its own scrollbars
+ * keeps them.
+ */
+@-moz-document url-prefix("about:") {
+  * {
+    scrollbar-color: var(--hs-div, rgba(32,30,29,.18)) transparent !important;
+    scrollbar-width: thin !important;
+  }
+}

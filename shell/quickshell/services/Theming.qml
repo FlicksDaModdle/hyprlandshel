@@ -91,6 +91,10 @@ Singleton {
             // "does the file already say this" is the only guard needed and
             // applyAccentFiles() does that itself.
             root.applyAccentFiles();
+            // Same for the browser's palette: nothing has to be installed
+            // for the file to be worth writing, and applyFirefox() only
+            // writes when it would say something different.
+            root.applyFirefox();
             // Reconcile once. If theme.json was edited while the shell was
             // down, the file on disk names the wrong palette and nothing else
             // would ever notice — dark hasn't *changed*, it was simply read.
@@ -424,6 +428,103 @@ Singleton {
         atomicWrites: true
     }
 
+    // ── Firefox ───────────────────────────────────────────────────────────
+    //
+    // The browser's chrome, in the shell's colours. firefox/userChrome.css
+    // carries the design — the shapes, the radii, where the accent goes —
+    // and imports this file for what those shapes are painted in, which is
+    // the same split kitty's palette uses: the part you might edit stays
+    // put, and the part the shell owns is rewritten under it.
+    //
+    // It lives beside theme.json rather than in a Firefox profile because
+    // there may be several profiles, and a FileView needs one path. The
+    // installer writes this path into the @import at the top of each
+    // profile's userChrome.css.
+    //
+    // Firefox reads userChrome.css once, at startup. Writing this while a
+    // browser is open changes nothing until it restarts, and there is no
+    // supported way to make it notice — no SIGUSR1 as kitty has. The
+    // comment at the top of the generated file says so, because the
+    // alternative is someone changing the accent and concluding the theme
+    // is broken.
+    readonly property string firefoxPath:
+        Config.Appearance.configDir + "/firefox-colors.css"
+
+    function css(c) { return "#" + String(c).replace("#", "").slice(-6); }
+
+    // Alpha survives here, unlike in the KDE file: this is CSS, and a
+    // translucent hover over an opaque toolbar is exactly what the shell
+    // does. The ones that must be opaque are flattened with over().
+    function rgba(c) {
+        return "rgba(" + root.rgb(c) + "," + (Math.round(c.a * 1000) / 1000) + ")";
+    }
+
+    readonly property string firefoxWanted: {
+        const A = Config.Appearance;
+        // The browser window is opaque, so anything the shell draws with
+        // translucency has to be flattened against what is behind it —
+        // otherwise the desktop shows through a toolbar that is not
+        // actually transparent, which in Firefox means it shows nothing
+        // and the colour comes out wrong.
+        const chrome = root.over(A.panel, A.ground);
+        const menu = root.over(A.menuSurface, A.ground);
+        const selTab = root.over(A.sel, chrome);
+
+        return "/* Written by the shell — services/Theming.qml.\n"
+            + " *\n"
+            + " * Edit userChrome.css instead; this file is rewritten whenever the\n"
+            + " * theme changes and anything you put here will be lost.\n"
+            + " *\n"
+            + " * Firefox reads its chrome stylesheets once, when it starts. A\n"
+            + " * theme change lands here straight away and in the browser at its\n"
+            + " * next restart.\n"
+            + " */\n"
+            + ":root {\n"
+            + "  --hs-frame: " + css(A.ground) + ";\n"
+            + "  --hs-chrome: " + css(chrome) + ";\n"
+            + "  --hs-field: " + css(A.surface) + ";\n"
+            + "  --hs-menu: " + css(menu) + ";\n"
+            + "  --hs-sel-tab: " + css(selTab) + ";\n"
+            + "\n"
+            + "  --hs-ink: " + css(A.ink) + ";\n"
+            + "  --hs-ink2: " + css(A.ink2) + ";\n"
+            + "  --hs-ink3: " + css(A.ink3) + ";\n"
+            + "\n"
+            + "  --hs-accent: " + css(A.accent) + ";\n"
+            + "  --hs-on-accent: " + css(A.inkOnAccent) + ";\n"
+            + "  --hs-seam: " + rgba(A.seam) + ";\n"
+            + "\n"
+            + "  --hs-edge: " + rgba(A.edge) + ";\n"
+            + "  --hs-rule: " + rgba(A.rule) + ";\n"
+            + "  --hs-div: " + rgba(A.div) + ";\n"
+            + "  --hs-hover: " + rgba(A.hover) + ";\n"
+            + "  --hs-sel: " + rgba(A.sel) + ";\n"
+            + "\n"
+            + "  --hs-r: " + Math.round(A.r) + "px;\n"
+            + "  --hs-r-sm: " + Math.round(A.rSm) + "px;\n"
+            + "\n"
+            + "  --hs-font: \"" + A.fontFamily + "\";\n"
+            + "  --hs-mono: \"" + A.monoFamily + "\";\n"
+            + "\n"
+            + "  color-scheme: " + (A.dark ? "dark" : "light") + ";\n"
+            + "}\n";
+    }
+
+    FileView {
+        id: firefoxColors
+        path: root.firefoxPath
+        preload: true
+        printErrors: false
+        atomicWrites: true
+    }
+
+    function applyFirefox() {
+        if (firefoxColors.text() === firefoxWanted) return;
+        firefoxColors.setText(firefoxWanted);
+    }
+
+    onFirefoxWantedChanged: if (primed) applyFirefox()
+
     // Applications read fontconfig when they start, so this only reaches
     // things launched afterwards — including this shell. Nothing here can
     // change that, and pretending otherwise would be worse than saying so in
@@ -450,6 +551,8 @@ Singleton {
         fontconf.setText(fontconfWanted);
         kdeColors.reload();
         applyKde();
+        firefoxColors.reload();
+        firefoxColors.setText(firefoxWanted);
         // So that `ipc call shell syncTheming` regenerates everything the
         // shell owns, not only the parts that existed when it was written.
         applyAccentFiles();

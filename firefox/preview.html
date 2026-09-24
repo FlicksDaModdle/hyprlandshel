@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Hyprshell — Firefox chrome</title>
+<!--
+  What the theme is aiming at.
+
+  This is a drawing of a browser window, not a photograph of one: the
+  same colours, radii and spacing the stylesheets apply, laid out in
+  plain HTML so the look can be checked without installing anything and
+  without restarting anything. The real chrome has parts this does not
+  draw, and Firefox will have its own opinion about a few of them.
+
+  The palettes below are the ones the shell generates, light and dark,
+  with the default accent.
+-->
+<style>
+  :root[data-mode="light"] {
+    --hs-frame: #f3f2f2;
+    --hs-chrome: #f8f7f7;
+    --hs-field: #eae9e9;
+    --hs-menu: #f9f8f8;
+    --hs-sel-tab: #e3e2e2;
+    --hs-ink: #201e1d;
+    --hs-ink2: #605d5d;
+    --hs-ink3: #6b6868;
+    --hs-accent: #ec3013;
+    --hs-on-accent: #ffffff;
+    --hs-seam: rgba(236,48,19,0.18);
+    --hs-edge: rgba(32,30,29,0.14);
+    --hs-rule: rgba(32,30,29,0.09);
+    --hs-div: rgba(32,30,29,0.18);
+    --hs-hover: rgba(32,30,29,0.07);
+    --hs-sel: rgba(32,30,29,0.1);
+    --hs-r: 14px;
+    --hs-r-sm: 9px;
+    --hs-font: "Inter";
+    --hs-mono: "JetBrains Mono";
+    color-scheme: light;
+  }
+  :root[data-mode="dark"] {
+    --hs-frame: #201e1d;
+    --hs-chrome: #1e1c1b;
+    --hs-field: #2d2b2b;
+    --hs-menu: #232120;
+    --hs-sel-tab: #3c3a39;
+    --hs-ink: #f8f4f4;
+    --hs-ink2: #bab6b6;
+    --hs-ink3: #8a8686;
+    --hs-accent: #ec3013;
+    --hs-on-accent: #ffffff;
+    --hs-seam: rgba(236,48,19,0.24);
+    --hs-edge: rgba(248,244,244,0.16);
+    --hs-rule: rgba(248,244,244,0.1);
+    --hs-div: rgba(248,244,244,0.22);
+    --hs-hover: rgba(248,244,244,0.09);
+    --hs-sel: rgba(248,244,244,0.14);
+    --hs-r: 14px;
+    --hs-r-sm: 9px;
+    --hs-font: "Inter";
+    --hs-mono: "JetBrains Mono";
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    padding: 28px;
+    background: var(--hs-frame);
+    color: var(--hs-ink);
+    font-family: var(--hs-font), system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    align-items: center;
+  }
+
+  .window {
+    width: min(900px, 100%);
+    border-radius: var(--hs-r);
+    overflow: hidden;
+    background: var(--hs-frame);
+    box-shadow: 0 24px 60px -18px rgba(0,0,0,.45);
+    border: 1px solid var(--hs-edge);
+  }
+
+  /* ── the top chrome, and its seam ───────────────────────────────── */
+  .toolbox { position: relative; background: var(--hs-frame); }
+  .toolbox::after {
+    content: "";
+    position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+    background: linear-gradient(to right,
+      var(--hs-accent) 0, var(--hs-accent) 40px,
+      var(--hs-seam) 40px, var(--hs-seam) 100%);
+  }
+
+  /* ── tabs ───────────────────────────────────────────────────────── */
+  .tabs { display: flex; gap: 2px; padding: 0 6px; }
+  .tab {
+    position: relative;
+    display: flex; align-items: center; gap: 8px;
+    height: 34px; margin: 4px 0; padding: 0 12px;
+    border-radius: var(--hs-r-sm);
+    font-size: 12px; font-weight: 500;
+    color: var(--hs-ink2);
+    min-width: 0;
+  }
+  .tab .favicon {
+    width: 14px; height: 14px; border-radius: 4px; flex: none;
+    background: var(--hs-div);
+  }
+  .tab .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab .x { margin-left: 4px; color: var(--hs-ink3); font-size: 13px; }
+  .tab:not(.on):hover { background: var(--hs-hover); }
+  .tab.on {
+    background: var(--hs-sel-tab);
+    box-shadow: inset 0 0 0 1px var(--hs-edge);
+    color: var(--hs-ink);
+    font-weight: 700;
+  }
+  .tab.on .favicon { background: var(--hs-accent); }
+  .tab.on::after {
+    content: "";
+    position: absolute; left: 10px; right: 10px; bottom: 3px;
+    height: 2px; border-radius: 1px; background: var(--hs-accent);
+  }
+
+  /* ── the nav bar ────────────────────────────────────────────────── */
+  .nav {
+    display: flex; align-items: center; gap: 4px;
+    background: var(--hs-chrome);
+    padding: 6px 8px;
+  }
+  .btn {
+    width: 30px; height: 30px; flex: none;
+    border-radius: var(--hs-r-sm);
+    display: grid; place-items: center;
+    color: var(--hs-ink2);
+  }
+  .btn:hover { background: var(--hs-hover); }
+  .btn svg { width: 15px; height: 15px; fill: none;
+             stroke: currentColor; stroke-width: 2;
+             stroke-linecap: round; stroke-linejoin: round; }
+
+  .urlbar {
+    flex: 1; height: 30px; min-width: 0;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 12px;
+    border-radius: var(--hs-r);
+    background: var(--hs-field);
+    box-shadow: inset 0 0 0 1px var(--hs-edge);
+    font-size: 12.5px;
+    color: var(--hs-ink3);
+  }
+  .urlbar.focus { box-shadow: inset 0 0 0 2px var(--hs-accent); }
+  .urlbar .host { color: var(--hs-ink); font-weight: 600; }
+
+  /* ── bookmarks ──────────────────────────────────────────────────── */
+  .marks {
+    display: flex; align-items: center; gap: 2px;
+    background: var(--hs-chrome);
+    padding: 0 8px 6px;
+    font-size: 11.5px; color: var(--hs-ink2);
+  }
+  .marks span { padding: 4px 8px; border-radius: var(--hs-r-sm); }
+  .marks span:hover { background: var(--hs-hover); }
+
+  /* ── page area, and a menu over it ──────────────────────────────── */
+  .page {
+    height: 190px; background: var(--hs-frame);
+    display: grid; place-items: center;
+    position: relative;
+  }
+  .page .note { color: var(--hs-ink3); font-size: 11px; }
+
+  .menu {
+    position: absolute; right: 18px; top: 14px; width: 210px;
+    background: var(--hs-menu);
+    border: 1px solid var(--hs-edge);
+    border-radius: var(--hs-r);
+    overflow: hidden;
+    padding: 4px;
+    font-size: 12px;
+  }
+  .menu .seam { height: 2px; margin: -4px -4px 4px;
+                background: linear-gradient(to right,
+                  var(--hs-accent) 0, var(--hs-accent) 40px,
+                  var(--hs-seam) 40px, var(--hs-seam) 100%); }
+  .menu div.item { padding: 6px 10px; border-radius: var(--hs-r-sm);
+                   display: flex; justify-content: space-between; }
+  .menu div.item.on { background: var(--hs-sel); }
+  .menu .k { color: var(--hs-ink3); font-size: 10.5px; }
+  .menu hr { border: 0; border-top: 1px solid var(--hs-rule); margin: 4px 6px; }
+
+  /* ── the page's own furniture ───────────────────────────────────── */
+  h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+       margin: 0 0 2px; }
+  p.sub { margin: 0; font-size: 11.5px; color: var(--hs-ink3); }
+  header { width: min(900px, 100%); }
+  button.mode {
+    font: inherit; font-size: 11px; font-weight: 600;
+    background: var(--hs-accent); color: var(--hs-on-accent);
+    border: 0; border-radius: var(--hs-r); padding: 7px 14px;
+    cursor: pointer;
+  }
+  .row { display: flex; align-items: center; justify-content: space-between;
+         gap: 12px; }
+</style>
+
+<header class="row">
+  <div>
+    <h1>Firefox, in the shell's design language</h1>
+    <p class="sub">A drawing of the chrome, not a photograph of it — same colours, radii and spacing as the stylesheets apply.</p>
+  </div>
+  <button class="mode" onclick="
+    const r = document.documentElement;
+    r.dataset.mode = r.dataset.mode === 'dark' ? 'light' : 'dark';
+  ">Light / dark</button>
+</header>
+
+<div class="window">
+  <div class="toolbox">
+    <div class="tabs">
+      <div class="tab on"><span class="favicon"></span><span class="label">Hyprshell — a Hyprland desktop</span><span class="x">&times;</span></div>
+      <div class="tab"><span class="favicon"></span><span class="label">MDN Web Docs</span><span class="x">&times;</span></div>
+      <div class="tab"><span class="favicon"></span><span class="label">quickshell.org</span><span class="x">&times;</span></div>
+    </div>
+
+    <div class="nav">
+      <div class="btn"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></div>
+      <div class="btn"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+      <div class="btn"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></div>
+      <div class="urlbar focus">
+        <svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:var(--hs-accent);stroke-width:2"><rect x="4" y="10" width="16" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        <span><span class="host">quickshell.org</span>/docs/configuration</span>
+      </div>
+      <div class="btn"><svg viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg></div>
+      <div class="btn"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></div>
+    </div>
+
+    <div class="marks">
+      <span>Hyprland wiki</span><span>Quickshell</span><span>MDN</span><span>freedesktop</span>
+    </div>
+  </div>
+
+  <div class="page">
+    <span class="note">the page goes here — web content is never restyled</span>
+    <div class="menu">
+      <div class="seam"></div>
+      <div class="item">New tab<span class="k">Ctrl T</span></div>
+      <div class="item on">New window<span class="k">Ctrl N</span></div>
+      <div class="item">Bookmarks<span class="k">Ctrl Shift O</span></div>
+      <hr>
+      <div class="item">Settings<span class="k"></span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Follows the desktop unless you click the button.
+  document.documentElement.dataset.mode =
+    matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+</script>

@@ -1,0 +1,73 @@
+# Firefox, in the shell's design language
+
+The browser's chrome given the same vocabulary as the bar, the dock and
+the panels: 14px on anything that reads as a surface and 9px on anything
+that reads as a tile, one accent that marks what is selected and nothing
+else, ink in three weights, and the 2px accent seam under the top chrome.
+
+```
+./install.sh          into every Firefox profile it can find
+./install.sh --list   what it found, changing nothing
+./install.sh --uninstall
+```
+
+Then **restart Firefox**.
+
+## What is in here
+
+| | |
+|---|---|
+| `userChrome.css` | the browser: tabs, toolbar, address bar, menus, sidebar, findbar |
+| `userContent.css` | the pages Firefox draws itself: new tab, error pages, reader, view-source |
+| `preview.html` | a drawing of the result, to look at without installing |
+| `install.sh` | finds the profiles, installs, flips the one pref that is needed |
+
+The colours are not in any of these. The shell writes them to
+`~/.config/quickshell/hyprshell/firefox-colors.css` and the stylesheets
+import it — the same split kitty's palette uses, so the part you might
+edit stays where you left it and the part the shell owns is rewritten
+underneath. Change the accent in Settings and this changes with it.
+
+## Two things to know
+
+**Firefox reads chrome stylesheets once, at startup.** A theme change in
+the shell lands in the colours file immediately and in the browser at its
+next launch. There is no supported way to make a running Firefox notice —
+kitty has a signal for it, Firefox has nothing.
+
+**`toolkit.legacyUserProfileCustomizations.stylesheets` has to be true**,
+which it has not been by default since Firefox 69. `install.sh` sets it
+in each profile's `user.js`, merging rather than replacing, since that is
+a file people keep their own settings in.
+
+## If something looks wrong
+
+The stylesheets name Firefox's own internal element ids, and Firefox
+renames them between releases without notice — it is not a public
+interface. When a release moves one, the rule that named it stops
+matching and that one piece of chrome goes back to looking like stock
+Firefox while everything around it stays themed.
+
+That is the expected way this breaks, and it is easy to chase:
+
+1. open the Browser Toolbox — `Ctrl+Shift+Alt+I`, after enabling it in
+   Settings → Developer, or set `devtools.chrome.enabled` to true
+2. inspect the piece that went back to stock
+3. the id or class it really has now goes in the matching section here
+
+Each section of `userChrome.css` is labelled for that reason. Firefox's
+own `--toolbar-*`, `--tab-*` and `--panel-*` variables are set as well as
+the explicit rules: where those still exist they do the work for free,
+including in places these files never name, and where one has been
+renamed it is simply ignored.
+
+There is deliberately no `@namespace` line at the top. The usual advice
+adds one for the XUL namespace and it breaks the address bar, which is an
+HTML input — with a XUL-only namespace every selector below silently
+stops matching it.
+
+## What this does not touch
+
+Web content. `userContent.css` restyles `about:` pages, the error pages,
+the reader and view-source, and nothing else — a site's own colours are
+the site's business.
