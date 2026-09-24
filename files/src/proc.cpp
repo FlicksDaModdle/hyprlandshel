@@ -31,9 +31,34 @@ bool Proc::running() const {
 }
 
 void Proc::setRunning(bool r) {
-    if (r == running()) return;
-    if (r) start();
-    else if (m_proc) m_proc->kill();
+    if (r) {
+        // Starting something while something else is still going means
+        // "run this instead", not "never mind, carry on with the old
+        // one" — which is what returning early here used to mean.
+        //
+        // Every directory listing goes through one of these. Navigate
+        // while the folder you are leaving is still being read and the
+        // second listing was dropped: the window then showed the first
+        // folder's contents under the second folder's name, with
+        // nothing selected. "Show in file manager" on a window that was
+        // still opening hit it every time, because the folder it starts
+        // in and the folder it was asked for are always in flight
+        // together.
+        //
+        // start() disconnects the outgoing process before killing it, so
+        // the listing being replaced cannot deliver a result afterwards.
+        start();
+        emit runningChanged();
+        return;
+    }
+    if (!running()) return;
+    // Stopping is silent: a process killed on purpose has no result
+    // anyone is waiting for, and letting finished() through here would
+    // deliver whatever it had managed to write as though it were whole.
+    if (m_proc) {
+        m_proc->disconnect(this);
+        m_proc->kill();
+    }
     emit runningChanged();
 }
 
@@ -48,6 +73,11 @@ void Proc::start() {
     if (m_proc) {
         m_proc->disconnect(this);
         m_proc->kill();
+        // Reaped before it is deleted, or Qt warns that a QProcess was
+        // destroyed with the process still running. Nothing here ignores
+        // SIGKILL, so this returns at once; the budget is only so that a
+        // pathological case cannot hang the window.
+        m_proc->waitForFinished(100);
         m_proc->deleteLater();
     }
     m_out.clear();

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+GenericName=File Dialog
+Comment=The file dialog Files puts up for other applications
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/hyprshell-files --portal
+Icon=system-file-manager
+Terminal=false
+Categories=Utility;FileTools;FileManager;
+# Not an application anyone launches: it exists so that the dialog's own
+# app id resolves to a name and an icon in a task list or a dock, the
+# same way the file manager's does.
+NoDisplay=true
+StartupWMClass=hyprshell-files-dialog

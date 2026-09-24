@@ -500,12 +500,22 @@ hl.window_rule({
 -- puts them back when it closes, which is not what a dialog is for. It
 -- floats instead.
 --
--- Matched by title rather than class: it is the same program as the
--- window above, so the app id is the same, and Wayland has no window type
--- that says "dialog". The three titles are fixed in qml/FileDialog.qml
--- for this rule to match; both sides have to change together.
+-- The dialog carries an app id of its own — the portal backend is its
+-- own process and says so — which is what this matches.
 hl.window_rule({
     name  = "hyprshell-files-dialog",
+    match = { class = "^(hyprshell-files-dialog)$" },
+    float = true,
+    size  = { 940, 620 },
+})
+
+-- And the same by title, for a dialog that came up as a window of the
+-- file manager itself. That cannot happen as things stand — only the
+-- backend answers the portal — but the titles are fixed in
+-- qml/FileDialog.qml either way, and a rule that costs nothing is
+-- cheaper than a "Save as…" rearranging the workspace if it ever does.
+hl.window_rule({
+    name  = "hyprshell-files-dialog-by-title",
     match = {
         class = "^(hyprshell-files)$",
         title = "^(Save a file|Open a file|Choose a folder) — Files$",

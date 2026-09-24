@@ -22,11 +22,10 @@
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
 
-    app.setApplicationName(QStringLiteral("hyprshell-files"));
     app.setOrganizationName(QStringLiteral("hyprshell"));
     // Wayland takes the app id from here, which is what a Hyprland window
-    // rule matches on.
-    app.setDesktopFileName(QStringLiteral("hyprshell-files"));
+    // rule matches on. Set below, once it is known which of the two this
+    // process is.
 
     // An argument is a directory to open, so `hyprshell-files ~/Downloads`
     // and the desktop entry's inode/directory handler both work.
@@ -50,8 +49,38 @@ int main(int argc, char *argv[]) {
     // asked for.
     const bool portalOnly = args.contains(QStringLiteral("--portal"));
 
+    // A dialog gets its own app id, and it has to be set before any
+    // window exists: Qt sends this as the Wayland app_id when a surface
+    // is created, and as WM_CLASS on X11.
+    //
+    // It is how a compositor can tell a "Save as…" from the file manager
+    // itself. Both are this program, so both would otherwise carry the
+    // same id, and Wayland has no window type that says "this one is a
+    // dialog" — there is nothing else to match on but the title, which
+    // is a string that has to be kept in step by hand.
+    //
+    // Which is also why only this process answers the portal. A running
+    // file manager could take the name just as well, and then the dialog
+    // would be a window of *that* process, with the file manager's own
+    // app id on it, and the rule would not match. Leaving the name to
+    // the backend costs one small process and makes the id reliable.
+    //
+    // Both names, because the two windowing systems read different ones:
+    // Wayland's app_id comes from the desktop file name, X11's WM_CLASS
+    // from the application name. Setting one and checking the other is
+    // how this was got wrong the first time — WM_CLASS was still the
+    // file manager's while the desktop file name had changed.
+    //
+    // Nothing else depends on the application name: the settings file is
+    // ~/.config/hyprshell-files/settings.json by a path written out in
+    // full, so a dialog and the file manager still share one.
+    const QString appId = portalOnly ? QStringLiteral("hyprshell-files-dialog")
+                                     : QStringLiteral("hyprshell-files");
+    app.setApplicationName(appId);
+    app.setDesktopFileName(appId);
+
     FileChooserPortal portal;
-    if (!portal.attach() && portalOnly) {
+    if (portalOnly && !portal.attach()) {
         qWarning("could not take org.freedesktop.impl.portal.desktop.hyprshell");
         return 1;
     }

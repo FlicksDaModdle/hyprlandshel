@@ -121,6 +121,11 @@ configure_file(portal.systemd.service.in
 configure_file(hyprshell-files.desktop.in
                ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files.desktop @ONLY)
 
+# The dialog's own entry. Nothing launches it — it is there so the app id
+# a file dialog carries resolves to a name and an icon.
+configure_file(hyprshell-files-dialog.desktop.in
+               ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files-dialog.desktop @ONLY)
+
 install(TARGETS hyprshell-files
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
@@ -142,4 +147,5 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.FileManager1.service
         DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files.desktop
+              ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-files-dialog.desktop
         DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
