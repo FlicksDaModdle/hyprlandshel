@@ -21,6 +21,7 @@ Then **restart Firefox**.
 | `userContent.css` | the pages Firefox draws itself: new tab, error pages, reader, view-source |
 | `preview.html` | a drawing of the result, to look at without installing |
 | `install.sh` | finds the profiles, installs, flips the one pref that is needed |
+| `doctor.sh` | why it is not themed yet — walks the chain and names the broken link |
 
 The colours are not in any of these. The shell writes them to
 `~/.config/quickshell/hyprshell/firefox-colors.css` and the stylesheets
@@ -60,6 +61,24 @@ kitty has a signal for it, Firefox has nothing.
 which it has not been by default since Firefox 69. `install.sh` sets it
 in each profile's `user.js`, merging rather than replacing, since that is
 a file people keep their own settings in.
+
+## If it looks like nothing happened
+
+```
+./doctor.sh
+```
+
+Six separate things have to be true before any of this shows up, and all
+six fail the same way from the outside — a browser that looks exactly
+like stock Firefox, with no error anywhere, in any log. `doctor.sh` walks
+the chain and names the broken link: the palette, the profile Firefox is
+actually using, whether the stylesheet is there, whether its `@import`
+was substituted, whether the pref is set, and whether the browser has
+been restarted since.
+
+That last one catches most of it. Firefox reads chrome CSS once, on the
+way up, and closing the window does not always end the process — check
+with `pgrep -x firefox`.
 
 ## If something looks wrong
 
