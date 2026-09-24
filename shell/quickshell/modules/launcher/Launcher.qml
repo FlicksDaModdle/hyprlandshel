@@ -65,7 +65,7 @@ Variants {
         }
 
         onWantedChanged: {
-            if (wanted) { linger.stop(); lingering = false; }
+            if (wanted) { linger.stop(); lingering = false; resetInput(); }
             else if (visible && Config.Appearance.launcherMorph) {
                 lingering = true; linger.restart();
             }
@@ -464,15 +464,28 @@ Variants {
             Config.UiState.launcherOpen = false;
         }
 
-        onVisibleChanged: {
-            if (visible) {
-                query = "";
-                showAll = false;
-                page = 0;
-                selectedIndex = 0;
-                searchInput.forceActiveFocus();
-            }
+        // Opening is always a fresh start.
+        //
+        // The field is what has to be cleared, not the query: `query` is
+        // set *from* the field, so clearing it alone left the last search
+        // sitting in the box with the results hidden, because the query
+        // said there was nothing to search for.
+        //
+        // Called from both handlers below because either can be the one
+        // that happens. The surface stays up for a moment after closing
+        // so the collapse can be seen, and reopening inside that moment
+        // never made it invisible — so a close and a quick reopen kept
+        // the old search, which is the one case this is meant to catch.
+        function resetInput() {
+            searchInput.text = "";
+            query = "";
+            showAll = false;
+            page = 0;
+            selectedIndex = 0;
+            searchInput.forceActiveFocus();
         }
+
+        onVisibleChanged: if (visible) resetInput()
 
         onQueryChanged: selectedIndex = 0;
         onShowAllChanged: selectedIndex = 0;
