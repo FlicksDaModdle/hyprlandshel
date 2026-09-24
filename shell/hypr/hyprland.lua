@@ -473,6 +473,26 @@ hl.window_rule({
 -- `blur` field for them, unlike the layer rules above, where the opt-in is
 -- required.
 
+-- Firefox's Library — the window "Show all downloads" opens, and the
+-- same one for history and bookmarks.
+--
+-- Firefox has no setting for this: in normal browsing that button opens
+-- a window, full stop, and only a private window gets about:downloads as
+-- a tab instead. (A bookmark with a keyword pointing at about:downloads
+-- is the usual way to get a tab in normal browsing.) So it is treated
+-- for what it is — a utility window that should not rearrange the
+-- workspace for as long as it is up.
+--
+-- Matched by title because every Firefox window carries the same app id.
+-- "Library" is its English title; if the interface is in another
+-- language, `hyprctl clients` prints what to put here instead.
+hl.window_rule({
+    name  = "float-firefox-library",
+    match = { class = "^(firefox|firefox-esr|librewolf|zen)$", title = "^(Library)$" },
+    float = true,
+    size  = { 1000, 640 },
+})
+
 hl.window_rule({
     name  = "float-pavucontrol",
     match = { class = "^(org.pulseaudio.pavucontrol|pavucontrol)$" },
