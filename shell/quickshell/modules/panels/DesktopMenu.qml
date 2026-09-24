@@ -14,10 +14,17 @@ PanelSurface {
     showSeam: false
 
     readonly property var entries: [
+        // Through the launchers, not through `pinned[0].exec`.
+        //
+        // That index was whichever tile happened to be first on the dock,
+        // so reordering the dock changed what this menu opened; and both
+        // of those entries carry no exec any more, because finding the
+        // program is a job with more in it than a name — so it opened
+        // nothing at all.
         { n: "Open terminal here", k: "super ⏎", icon: "terminal",
-          run: () => Quickshell.execDetached(Config.Apps.pinned[0].exec) },
+          run: () => Config.Apps.launchTerm() },
         { n: "Open file manager",  k: "super E", icon: "folder",
-          run: () => Quickshell.execDetached(Config.Apps.pinned[1].exec) },
+          run: () => Config.Apps.launchFiles() },
         { n: "Overview",           k: "super ⇥", icon: "panelsTopLeft", rule: true,
           run: () => Config.UiState.toggleOverview() },
         { n: "Change wallpaper",   k: "",        icon: "image",

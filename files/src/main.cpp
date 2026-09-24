@@ -10,6 +10,7 @@
 #include <QDBusConnection>
 
 #include "filemanager1.h"
+#include "pick.h"
 #include "portal.h"
 
 // Hyprshell Files: the shell's file manager, as its own application.
@@ -49,6 +50,16 @@ int main(int argc, char *argv[]) {
     // asked for.
     const bool portalOnly = args.contains(QStringLiteral("--portal"));
 
+    // --pick puts up one dialog, prints what was chosen, and goes. It is
+    // how something that cannot make a portal call — the shell's own
+    // surfaces, a script — gets the same dialog as everything else.
+    Picker picker;
+    if (!picker.parse(args) && !picker.error().isEmpty()) {
+        qWarning("%s", qUtf8Printable(picker.error()));
+        return 2;
+    }
+    const bool pickOnly = picker.wanted();
+
     // A dialog gets its own app id, and it has to be set before any
     // window exists: Qt sends this as the Wayland app_id when a surface
     // is created, and as WM_CLASS on X11.
@@ -74,8 +85,13 @@ int main(int argc, char *argv[]) {
     // Nothing else depends on the application name: the settings file is
     // ~/.config/hyprshell-files/settings.json by a path written out in
     // full, so a dialog and the file manager still share one.
-    const QString appId = portalOnly ? QStringLiteral("hyprshell-files-dialog")
-                                     : QStringLiteral("hyprshell-files");
+    //
+    // A --pick dialog is a dialog, so it carries the dialog's id and gets
+    // the compositor rule that floats it rather than the file manager's,
+    // which would tile it into the workspace behind whatever asked.
+    const QString appId = (portalOnly || pickOnly)
+                              ? QStringLiteral("hyprshell-files-dialog")
+                              : QStringLiteral("hyprshell-files");
     app.setApplicationName(appId);
     app.setDesktopFileName(appId);
 
@@ -86,11 +102,17 @@ int main(int argc, char *argv[]) {
     }
 
     FileManager1 fileManager;
-    const bool fmOwned = fileManager.attach();
-    if (!fmOwned) {
-        qInfo("org.freedesktop.FileManager1 is held by another program; "
-              "\"show in file manager\" will keep going there. Close it, or "
-              "stop it starting, and run this again.");
+    // Not in --pick mode. That process lives for one dialog, and taking
+    // org.freedesktop.FileManager1 for the length of it would point every
+    // "show in file manager" on the desktop at something about to exit —
+    // and take the name off a real Files window that had it.
+    if (!pickOnly) {
+        const bool fmOwned = fileManager.attach();
+        if (!fmOwned) {
+            qInfo("org.freedesktop.FileManager1 is held by another program; "
+                  "\"show in file manager\" will keep going there. Close it, or "
+                  "stop it starting, and run this again.");
+        }
     }
 
     QQmlApplicationEngine engine;
@@ -104,6 +126,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty(QStringLiteral("Portal"), &portal);
     engine.rootContext()->setContextProperty(QStringLiteral("portalOnly"),
                                              portalOnly);
+    engine.rootContext()->setContextProperty(QStringLiteral("Picker"), &picker);
     engine.load(QUrl(QStringLiteral("qrc:/Hyprshell/qml/Main.qml")));
     if (engine.rootObjects().isEmpty()) return 1;
 
@@ -118,6 +141,17 @@ int main(int argc, char *argv[]) {
     // a browser saving two things — to arrive without a round trip
     // through D-Bus activation, and short enough not to leave a hidden
     // process behind for the rest of the session.
+    // One dialog, then gone — and the exit code is the picker's to set,
+    // so closing the last window must not pre-empt it. A dialog that is
+    // dismissed with the compositor's close rather than its own buttons
+    // would otherwise leave the process running with nothing on screen.
+    if (pickOnly) {
+        app.setQuitOnLastWindowClosed(false);
+        QObject::connect(&app, &QGuiApplication::lastWindowClosed, &app, [&picker] {
+            picker.finish({});
+        });
+    }
+
     if (portalOnly) {
         app.setQuitOnLastWindowClosed(false);
         auto *linger = new QTimer(&app);

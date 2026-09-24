@@ -106,7 +106,19 @@ Singleton {
 
     // The command behind a pinned slot, as one shell word list joined for
     // Lua. Used by the keybind generator, which has to put it in a string.
+    // What launches a pinned entry, as one shell line — which is the form
+    // a Hyprland keybind takes.
+    //
+    // Two of these carry no argv at all: the terminal and the file manager
+    // are found rather than named, because a bare name is looked up in the
+    // compositor's PATH and misses ~/.local/bin. Returning "" for them
+    // emitted `exec_cmd("")` into the generated keybinds, so rebinding
+    // Terminal or File manager in Settings produced a shortcut that did
+    // nothing. The finder script is the honest answer to "what launches
+    // it", and it is exactly what hyprland.lua's own binds run.
     function execFor(key) {
+        if (key === "appTerm") return termFinder;
+        if (key === "appFiles") return filesFinder;
         const e = pinned.find(x => x.key === key);
         return (e && e.exec && e.exec.length > 0) ? e.exec.join(" ") : "";
     }
@@ -119,10 +131,14 @@ Singleton {
     // keep their own list of which keys are special.
     readonly property var shellTiles: ({
         "appSettings": "openSettings",
-        // Not a shell surface any more, but still routed through the
-        // command table, because that is where the knowledge of how to find
-        // the binary lives.
-        "appFiles":    "openFiles"
+        // The next three are not shell surfaces any more, but they are
+        // still routed through the command table, because that is where
+        // the knowledge of how to find the binary lives. A tile whose
+        // `exec` is a bare name cannot look in ~/.local/bin, and cannot
+        // fall back to a different program when the first is not there.
+        "appFiles":    "openFiles",
+        "appTerm":     "openTerminal",
+        "appMusic":    "openMusic"
     })
 
     function isShellTile(key) { return !!shellTiles[key]; }
@@ -150,13 +166,57 @@ Singleton {
 
     function launchFiles(arg) { Quickshell.execDetached(filesCommand(arg)); }
 
+    // The Files app, run as one file dialog: it prints what was chosen on
+    // stdout, one path per line, and exits 1 if it was cancelled.
+    //
+    // This is how a shell surface gets a file dialog at all. An ordinary
+    // application asks the desktop portal and the portal asks this same
+    // program (see files/hyprshell.portal), but Quickshell has no file
+    // dialog and no way to make a portal call and wait for the Response
+    // signal that answers it — so the shell goes in the other door and
+    // runs the dialog itself.
+    //
+    // `filters` are "Name:*.a *.b" strings; `start` is a folder, or a
+    // file whose folder it opens in.
+    function filesPickCommand(start, filters) {
+        const cmd = ["sh", "-c", filesFinder, "pick-files", "--pick"];
+        if (start) { cmd.push("--start"); cmd.push(String(start)); }
+        for (const f of (filters || [])) { cmd.push("--filter"); cmd.push(f); }
+        return cmd;
+    }
+
+    // Launching the terminal, the same way as the file manager above and
+    // for the same reason: a bare name is looked up in Hyprland's PATH,
+    // not the one a login shell built, and ~/.local/bin is routinely
+    // missing from it.
+    //
+    // Whatever was there before is the fallback, in order, so uninstalling
+    // hyprshell-term leaves a working Terminal tile rather than a dead one.
+    readonly property string termFinder:
+        'command -v hyprshell-term >/dev/null 2>&1 && exec hyprshell-term "$@"; '
+        + 'for d in "$HOME/.local/bin" /usr/local/bin /usr/bin; do '
+        + '[ -x "$d/hyprshell-term" ] && exec "$d/hyprshell-term" "$@"; done; '
+        + 'for t in kitty foot alacritty wezterm xterm; do '
+        + 'command -v "$t" >/dev/null 2>&1 && exec "$t" "$@"; done; '
+        + 'notify-send "Terminal" "no terminal is installed" 2>/dev/null; exit 127'
+
+    // `Apps.termCommand()` opens a shell; `Apps.termCommand(["-e", "htop"])`
+    // runs something in one.
+    function termCommand(args) {
+        const cmd = ["sh", "-c", termFinder, "open-terminal"];
+        for (const a of (args || [])) cmd.push(String(a));
+        return cmd;
+    }
+
+    function launchTerm(args) { Quickshell.execDetached(termCommand(args)); }
+
     readonly property var defaultPinned: [
-        { key: "appTerm",     label: "Terminal", icon: "terminal",   exec: ["kitty"],    match: /^(kitty|foot|alacritty|wezterm|org\.wezfurlong\.wezterm)$/i },
+        { key: "appTerm",     label: "Terminal", icon: "terminal",   exec: [],           match: /^(hyprshell-term|kitty|foot|alacritty|wezterm|org\.wezfurlong\.wezterm)$/i },
         { key: "appFiles",    label: "Files",    icon: "folder",     exec: [],           match: /^(hyprshell-files|org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$/i },
         { key: "appWeb",      label: "Web",      icon: "globe",      exec: ["firefox"],  match: /^(firefox.*|chromium|google-chrome.*|brave-browser|zen.*)$/i },
         { key: "appCode",     label: "Code",     icon: "code",       exec: ["neovide"],  match: /^(neovide|code|code-oss|codium|dev\.zed\.Zed|jetbrains-.*)$/i },
         { key: "appNotes",    label: "Notes",    icon: "stickyNote", exec: ["obsidian"], match: /^(obsidian|org\.gnome\.TextEditor|logseq)$/i },
-        { key: "appMusic",    label: "Music",    icon: "music",      exec: ["kitty", "-e", "ncmpcpp"], match: /^(ncmpcpp|spotify|org\.gnome\.Rhythmbox3|io\.bassi\.Amberol)$/i },
+        { key: "appMusic",    label: "Music",    icon: "music",      exec: [],           match: /^(ncmpcpp|spotify|org\.gnome\.Rhythmbox3|io\.bassi\.Amberol)$/i },
         { key: "appSettings", label: "Settings", icon: "settings",   exec: [],           match: /^$/ }
         // appSettings matches nothing on purpose: the Settings window is a
         // Quickshell surface and carries Quickshell's app id, which the

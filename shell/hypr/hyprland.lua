@@ -23,7 +23,17 @@ hl.monitor({
 -- Edit these to match what's actually installed. Quickshell's dock reads
 -- the same set from quickshell/config/Apps.qml — keep the two in sync.
 
-local terminal    = "kitty"
+-- The shell's own terminal, found the way the file manager is (see
+-- `filesApp` further down for why a bare name is not enough). Whatever
+-- you had before is the fallback, so removing hyprshell-term does not
+-- leave you without a terminal.
+local terminal = 'command -v hyprshell-term >/dev/null 2>&1 && exec hyprshell-term "$@"; '
+    .. 'for d in "$HOME/.local/bin" /usr/local/bin /usr/bin; do '
+    .. '[ -x "$d/hyprshell-term" ] && exec "$d/hyprshell-term" "$@"; done; '
+    .. 'for t in kitty foot alacritty wezterm xterm; do '
+    .. 'command -v "$t" >/dev/null 2>&1 && exec "$t" "$@"; done; '
+    .. 'notify-send "Terminal" "no terminal is installed" 2>/dev/null'
+
 local fileManager = "nautilus"
 local browser     = "firefox"
 
@@ -105,6 +115,17 @@ hl.env("HYPRCURSOR_SIZE", "24")
 -- so client windows match the shell's own chrome instead of doubling it.
 hl.env("QT_QPA_PLATFORM", "wayland;xcb")
 hl.env("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1")
+
+-- Which terminal everything else on the desktop should open.
+--
+-- $TERMINAL is the oldest of the several answers to that question and
+-- still the most widely read: i3-sensible-terminal, xdg-terminal-exec's
+-- fallback, ranger, lf, nnn and a long tail of scripts all check it
+-- first. The freedesktop way is ~/.config/xdg-terminals.list, which
+-- term/install.sh writes; this is the half that costs one line and
+-- reaches everything started from this session.
+hl.env("TERMINAL", "hyprshell-term")
+hl.env("TERMCMD", "hyprshell-term")
 
 -------------------
 ---- AUTOSTART ----

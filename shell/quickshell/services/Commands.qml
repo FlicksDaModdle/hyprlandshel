@@ -59,6 +59,12 @@ Singleton {
         // anything else, and a real drag source, which a layer-shell
         // surface is not. An argument is a directory to open.
         "openFiles":           arg => Config.Apps.launchFiles(arg),
+        // The terminal is its own application too. An argument is a
+        // directory to start in, which is what "open a terminal here"
+        // means everywhere it is offered.
+        "openTerminal":        arg => Config.Apps.launchTerm(
+                                   arg ? ["--working-directory", arg] : []),
+        "openMusic":           () => Config.Apps.launchTerm(["-e", "ncmpcpp"]),
 
         // Appearance
         "toggleTheme":         () => Config.Appearance.toggleTheme(),

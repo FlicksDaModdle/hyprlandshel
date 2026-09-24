@@ -39,6 +39,7 @@ qt_add_executable(hyprshell-files
     src/main.cpp
     src/filemanager1.cpp src/filemanager1.h
     src/portal.cpp src/portal.h
+    src/pick.cpp src/pick.h
 )
 
 # The QML is a resource rather than files on disk, so the installed binary

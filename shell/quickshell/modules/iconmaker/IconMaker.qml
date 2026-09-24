@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import "../../config" as Config
 import "../common"
 import "../icons"
@@ -130,6 +131,52 @@ Item {
         // nothing.
         if (String(url) === String(root.importSource)) tracer.run();
         else root.importSource = url;
+    }
+
+    // Choosing one with the Files app.
+    //
+    // Dragging a file in only works if you already have a window open
+    // with it in view, and typing a path only works if you know it. This
+    // is the third way, and the one every other application has: the
+    // shell's own file dialog, which is the Files app run for a single
+    // dialog — see Apps.filesPickCommand.
+    property bool picking: false
+
+    function browse() {
+        if (root.picking) return;
+        root.picking = true;
+        chooser.command = Config.Apps.filesPickCommand(
+            root.importSource,
+            ["Images:*.png *.svg *.jpg *.jpeg *.webp *.bmp",
+             "Vector:*.svg",
+             "Bitmap:*.png *.jpg *.jpeg *.webp *.bmp"]);
+        chooser.running = true;
+    }
+
+    Process {
+        id: chooser
+        running: false
+
+        stdout: StdioCollector {
+            // What came back, if anything. A cancelled dialog prints
+            // nothing and exits 1, so there is no need to look at the
+            // exit code as well — and no need to depend on whether it
+            // arrives before or after the stream closes, which is not
+            // something to rely on.
+            onStreamFinished: {
+                const first = text.split("\n").map(l => l.trim()).filter(l => l !== "")[0];
+                if (first) root.importImage(root.asUrl(first));
+            }
+        }
+
+        onExited: code => {
+            root.picking = false;
+            // 0 chose something, 1 was cancelled; anything else means the
+            // dialog could not be run at all, and the drop zone would
+            // otherwise just go quiet as though nothing had happened.
+            if (code !== 0 && code !== 1)
+                root.notice = "Could not open the file dialog — is hyprshell-files installed?";
+        }
     }
 
     // ── window ────────────────────────────────────────────────────────
@@ -839,7 +886,9 @@ Item {
                             spacing: 2
                             StyledText {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                text: tracer.busy ? "Tracing…" : "Drop a logo here"
+                                text: tracer.busy ? "Tracing…"
+                                    : root.picking ? "Choosing…"
+                                    : "Drop a logo here"
                                 font.pixelSize: Config.Appearance.fs(12)
                                 font.weight: Font.DemiBold
                                 color: drop.containsDrag ? Config.Appearance.inkOnAccent
@@ -848,11 +897,25 @@ Item {
                             StyledText {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 visible: !root.compact
-                                text: "PNG or SVG with a transparent background"
+                                text: "…or click to choose one"
                                 font.pixelSize: Config.Appearance.fs(10)
                                 color: drop.containsDrag ? Config.Appearance.inkOnAccent
                                                          : Config.Appearance.ink3
                             }
+                        }
+
+                        // Clicking it opens the file dialog. Declared
+                        // before the DropArea so a drag still reaches
+                        // that — a MouseArea does not take drags, but
+                        // stacking order is the thing that decides which
+                        // of two overlapping items gets a press, and
+                        // leaving it to chance is how this sort of pair
+                        // stops working later.
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            enabled: !root.picking
+                            onClicked: root.browse()
                         }
 
                         DropArea {
@@ -864,6 +927,49 @@ Item {
                                 else if (ev.hasText)
                                     root.importImage(root.asUrl(ev.text.trim()));
                             }
+                        }
+                    }
+
+                    // An explicit way in as well: a drop zone that is
+                    // also a button is not a button anyone finds.
+                    Rectangle {
+                        width: parent.width
+                        height: 30
+                        radius: Config.Appearance.rPill
+                        color: browseHover.hovered && !root.picking
+                               ? Qt.lighter(Config.Appearance.accent, 1.08)
+                               : Config.Appearance.accent
+                        opacity: root.picking ? 0.5 : 1
+
+                        HoverHandler {
+                            id: browseHover
+                            cursorShape: Qt.PointingHandCursor
+                        }
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 7
+
+                            MonoIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: "folderOpen"
+                                size: 14
+                                monochrome: true
+                                inkColor: Config.Appearance.inkOnAccent
+                            }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Choose an image…"
+                                font.pixelSize: Config.Appearance.fs(11)
+                                font.weight: Font.DemiBold
+                                color: Config.Appearance.inkOnAccent
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !root.picking
+                            onClicked: root.browse()
                         }
                     }
 

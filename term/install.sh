@@ -106,14 +106,34 @@ command -v update-desktop-database >/dev/null 2>&1 \
     && update-desktop-database "$PREFIX/share/applications" 2>/dev/null \
     && printf '  refreshed the desktop database\n'
 
+# Make it the terminal the rest of the desktop opens, unless told not to.
+#
+# Offered rather than assumed when there is someone to ask: this changes
+# settings outside this program's own, and a build script that quietly
+# repoints the desktop's default terminal is not a good guest.
+if [ "${NO_DEFAULT:-}" = 1 ]; then
+    printf '  skipped making it the default terminal (NO_DEFAULT=1)\n'
+elif [ -t 0 ]; then
+    printf '\n  Make it the default terminal for the whole desktop? [Y/n] '
+    read -r answer
+    case "$answer" in
+        [Nn]*) printf '  left alone — run ./set-default-terminal.sh later\n' ;;
+        *)     sh "$SRC/set-default-terminal.sh" ;;
+    esac
+else
+    printf '\n  To make it the desktop default:  ./set-default-terminal.sh\n'
+fi
+
 cat <<EOS
 
   Run it:  hyprshell-term
            hyprshell-term -e <command>
+           hyprshell-term --working-directory ~/src
 
-  To make it the shell's terminal, set it in Settings → Apps, or edit
-  appTerm in shell/quickshell/config/Apps.qml. The shell's own Hyprland
-  config already carries a size rule for it.
+  The shell already opens this one: the dock's Terminal tile, super+Return,
+  "Open terminal here" and the Files app all look for it first and fall
+  back to whatever else you have. The shell's Hyprland config carries a
+  size rule for it and sets \$TERMINAL.
 
   It reads the shell's theme.json for its palette, and takes the grid
   font from monoFamily there.

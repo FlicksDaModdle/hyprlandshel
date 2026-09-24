@@ -20,7 +20,9 @@ Window {
     height: 700
     minimumWidth: 640
     minimumHeight: 420
-    visible: !portalOnly
+    // Neither a portal backend nor a --pick run has a browser window:
+    // both exist to put up one dialog and answer it.
+    visible: !portalOnly && !Picker.wanted
     title: files.cwd === "" ? "Files"
                             : "Files — " + FilesService.pretty(files.cwd)
     color: "transparent"
@@ -77,6 +79,21 @@ Window {
     Component {
         id: dialogComponent
         FileDialog {}
+    }
+
+    // `hyprshell-files --pick`. The same dialog the portal puts up, asked
+    // for on a command line, answering on stdout — see src/pick.h for why
+    // that door exists.
+    Component.onCompleted: {
+        if (!Picker.wanted) return;
+        const r = Picker.request;
+        const dlg = dialogComponent.createObject(null, {
+            token: "pick", mode: r.mode, startFolder: r.startFolder,
+            suggestedName: r.suggestedName, multiple: r.multiple,
+            directory: r.directory, filters: r.filters
+        });
+        if (!dlg) { Picker.finish([]); return; }
+        dlg.chosen.connect(function (t, paths) { Picker.finish(paths); });
     }
 
     Connections {

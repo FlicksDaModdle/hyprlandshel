@@ -7,5 +7,15 @@ Exec=@CMAKE_INSTALL_FULL_BINDIR@/hyprshell-term
 Icon=utilities-terminal
 Terminal=false
 Categories=System;TerminalEmulator;
+Keywords=shell;prompt;command line;cmd;console;
 StartupNotify=true
 StartupWMClass=hyprshell-term
+# Some desktops and file managers open a terminal by asking who handles
+# this scheme rather than by reading a setting.
+MimeType=x-scheme-handler/terminal;
+# Read by xdg-terminal-exec (the freedesktop default-terminal proposal) to
+# work out how to hand this program a command to run. Without it a caller
+# has to guess, and the guesses differ.
+X-TerminalArgExec=-e
+X-TerminalArgDir=--working-directory
+X-TerminalArgHold=

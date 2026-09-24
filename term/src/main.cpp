@@ -1,7 +1,10 @@
+#include <QDir>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QRegularExpression>
 #include <QTimer>
 #include <QImage>
 
@@ -22,15 +25,70 @@ int main(int argc, char *argv[]) {
     app.setApplicationName(QStringLiteral("hyprshell-term"));
     app.setDesktopFileName(QStringLiteral("hyprshell-term"));
 
-    // `hyprshell-term -e some command` runs that instead of a shell, which
-    // is what every launcher and file manager expects of a terminal.
+    // The command line every other program expects a terminal to have.
+    //
+    // This is not a matter of taste now that it is the desktop's default
+    // terminal: a file manager opening a shell in a folder, a .desktop
+    // entry with Terminal=true, `xdg-terminal-exec`, a script — each has
+    // its own idea of how to say "run this" and "start here", and a
+    // terminal that only knows one of them is a terminal that silently
+    // opens in the wrong place or ignores what it was asked to run.
+    //
+    //   -e ARGV...   |  -x ARGV...  |  -- ARGV...     what to run
+    //   --working-directory=DIR  |  -w DIR  |  --cd DIR   where to start
     QStringList command;
+    QString workdir;
     const QStringList args = app.arguments();
     for (int i = 1; i < args.size(); ++i) {
-        if (args.at(i) == QStringLiteral("-e") || args.at(i) == QStringLiteral("--")) {
+        const QString a = args.at(i);
+
+        static const QString wdEq = QStringLiteral("--working-directory=");
+        if (a.startsWith(wdEq)) { workdir = a.mid(wdEq.size()); continue; }
+        if ((a == QStringLiteral("--working-directory") || a == QStringLiteral("-w")
+             || a == QStringLiteral("--cd"))
+            && i + 1 < args.size()) {
+            workdir = args.at(++i);
+            continue;
+        }
+
+        // Everything after this is the command, including anything that
+        // looks like one of the flags above — those belong to it now.
+        if (a == QStringLiteral("-e") || a == QStringLiteral("-x")
+            || a == QStringLiteral("--")) {
             command = args.mid(i + 1);
             break;
         }
+    }
+
+    // `-e "ls -l"`: one argument with a space in it is a shell command,
+    // not a program whose name contains a space. Callers are split on
+    // which they mean — xterm takes it literally, gnome-terminal splits
+    // it — and the ones that pass a whole line are far more common.
+    //
+    // Guarded on the file not existing, so the rare caller that really
+    // does have a program with a space in its path still gets it: there
+    // is no guessing left in that case, only a fact on disk.
+    if (command.size() == 1) {
+        static const QRegularExpression space(QStringLiteral("\\s"));
+        const QString only = command.first();
+        if (only.contains(space) && !QFileInfo(only).isExecutable()) {
+            const QByteArray shell = qgetenv("SHELL");
+            command = QStringList {
+                shell.isEmpty() ? QStringLiteral("/bin/sh")
+                                : QString::fromLocal8Bit(shell),
+                QStringLiteral("-c"), only
+            };
+        }
+    }
+
+    // The shell is forked from this process, so its working directory is
+    // this one's. A directory that is not there is ignored rather than
+    // fatal: a stale bookmark in someone's file manager should open a
+    // terminal at home, not fail to open one.
+    if (!workdir.isEmpty()) {
+        const QFileInfo info(workdir);
+        if (info.isDir()) QDir::setCurrent(info.absoluteFilePath());
+        else qWarning("no such directory: %s", qUtf8Printable(workdir));
     }
 
     QQmlApplicationEngine engine;

@@ -68,7 +68,10 @@ QtObject {
     property bool showHidden: false
     property int iconSize: 100
     property string bookmarksRaw: ""
-    property string terminal: "kitty"
+    // Empty means "work it out": the shell's own terminal if it is
+    // installed, then $TERMINAL, then whatever else is about. Set it to a
+    // name in settings.json to pin it to one.
+    property string terminal: ""
     // Break a date-sorted listing into Today / Yesterday / … the way
     // Windows Explorer does. Only applies when sorting by date.
     property bool groupByDate: true
@@ -103,7 +106,7 @@ QtObject {
         root.showHidden = pref("showHidden", false);
         root.iconSize = pref("iconSize", 100);
         root.bookmarksRaw = pref("bookmarks", "");
-        root.terminal = pref("terminal", "kitty");
+        root.terminal = pref("terminal", "");
         root.groupByDate = pref("groupByDate", true);
         root.sizeWidth = pref("sizeWidth", 96);
         root.typeWidth = pref("typeWidth", 116);
@@ -1068,10 +1071,29 @@ QtObject {
     }
 
     function openTerminal(dir) {
-        // No dock table to ask in a standalone app, so the terminal is a
-        // setting of its own, defaulting to what the shell ships with.
-        const term = root.terminal;
-        Sys.execDetached(["sh", "-c",
-            'cd "$1" && exec ' + term, "open-term", dir]);
+        // No dock table to ask in a standalone app, so which terminal to
+        // open is worked out here.
+        //
+        // A name in settings.json wins, because someone who set one meant
+        // it. Otherwise: the shell's own terminal, then $TERMINAL — which
+        // the session sets and which is the answer every other program
+        // uses — then the usual suspects, so this still opens something
+        // on a machine that has none of ours.
+        //
+        // `cd` first rather than passing --working-directory, because not
+        // every terminal in that list spells it the same way, and a shell
+        // started in the right directory needs no flag at all.
+        const chosen = root.terminal.trim();
+        const script =
+            'cd "$1" || exit 1; '
+            + (chosen !== "" ? 'exec ' + chosen + '; ' : '')
+            + 'command -v hyprshell-term >/dev/null 2>&1 && exec hyprshell-term; '
+            + 'for d in "$HOME/.local/bin" /usr/local/bin /usr/bin; do '
+            + '[ -x "$d/hyprshell-term" ] && exec "$d/hyprshell-term"; done; '
+            + '[ -n "${TERMINAL:-}" ] && command -v "$TERMINAL" >/dev/null 2>&1 '
+            + '&& exec "$TERMINAL"; '
+            + 'for t in kitty foot alacritty wezterm konsole gnome-terminal xterm; do '
+            + 'command -v "$t" >/dev/null 2>&1 && exec "$t"; done';
+        Sys.execDetached(["sh", "-c", script, "open-term", dir]);
     }
 }
