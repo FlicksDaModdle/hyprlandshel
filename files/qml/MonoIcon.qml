@@ -101,7 +101,12 @@ Item {
         layer.smooth: true
         layer.textureSize: root.multisample
                            ? Qt.size(Math.ceil(width * 2), Math.ceil(height * 2))
-                           : undefined
+                           // Not undefined: textureSize is a QSize and
+                           // has no such value, so assigning it warned
+                           // once per glyph. Qt's own default is an
+                           // invalid QSize, meaning "use the item's
+                           // size", which is what this says.
+                           : Qt.size(-1, -1)
 
         // Filled accent region (palette's half-disc is the only one today).
         Shape {

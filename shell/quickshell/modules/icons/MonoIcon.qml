@@ -105,9 +105,18 @@ Item {
         layer.enabled: root.multisample
         layer.samples: 4
         layer.smooth: true
+        // An invalid size, not undefined, for the case where the layer
+        // is off.
+        //
+        // textureSize is a QSize and undefined is not one: assigning it
+        // printed a warning per glyph per frame, which on a desktop with
+        // a dock, a launcher and a settings window open is a wall of
+        // them. Qt's own default for this property is a default-
+        // constructed QSize, which is invalid and means "use the item's
+        // size" — Qt.size(-1, -1) is that, said out loud.
         layer.textureSize: root.multisample
                            ? Qt.size(Math.ceil(width * 2), Math.ceil(height * 2))
-                           : undefined
+                           : Qt.size(-1, -1)
 
         // Filled regions. Two of them, because a fill used to be accent
         // and nothing else — which was fine while the only one in the
