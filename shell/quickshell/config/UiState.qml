@@ -112,9 +112,9 @@ Singleton {
     // Generic toggle so IPC, keybinds and click handlers all go through one
     // path and can't leave two panels open at once.
     // Whether the dock should stay out after the launcher closes, to be
-    // collapsed back into. Escape means "put this back" and sets it;
-    // Super and the Start tile mean "I am done", and go through toggle()
-    // below, which clears it.
+    // collapsed back into. Escape and the Start tile mean "put this
+    // back"; Super means "I am done", and goes through toggle() below,
+    // which clears it.
     property bool holdDockAfterLauncher: false
 
     function toggle(name) {
@@ -124,6 +124,29 @@ Singleton {
     }
 
     function toggleLauncher() { toggle("launcher"); }
+
+    // The Start tile on the dock, which is a plain toggle and puts the
+    // dock back when it closes.
+    //
+    // It used to go through toggle(), and toggle() calls closeAll(),
+    // which clears the hold — so with auto-hide on, pressing Start to
+    // dismiss the launcher took the dock away with it. The pointer was
+    // on the dock at the time, having just pressed a button there, and
+    // the button vanished from under it. Super and Escape are the two
+    // ways to say "I am done" and "put this back"; a button you clicked
+    // is neither, and should simply undo itself.
+    //
+    // Closing sets the hold *before* clearing launcherOpen, and not
+    // through closeAll(), which would clear it again. The exit animation
+    // and the dock's own "stay out for a moment" both read the flag as
+    // the launcher closes, so setting it afterwards is setting it too
+    // late — this is the same order Escape uses, in Launcher.close().
+    function toggleLauncherFromDock() {
+        if (!launcherOpen) { toggle("launcher"); return; }
+        holdDockAfterLauncher = true;
+        launcherOpen = false;
+    }
+
     function toggleOverview() { toggle("overview"); }
     function toggleControlCenter() { toggle("controlCenter"); }
     function toggleNotifications() { toggle("notifications"); }

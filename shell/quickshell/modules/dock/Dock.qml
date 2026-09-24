@@ -159,9 +159,11 @@ Variants {
             else hideDelay.restart();
         }
 
-        // The mask covers the whole surface while revealed, so the
-        // window's own hover is enough — there is no untracked gap left
-        // between the edge strip and the pill.
+        // The window's own hover is enough, because the revealed mask runs
+        // unbroken from the pill down to the screen edge: there is no
+        // untracked gap between the edge strip and the pill for the
+        // pointer to cross on its way up. (It does not reach above the
+        // pill — see the mask below — but nothing approaches from there.)
         readonly property bool hoveredNow: windowHover.hovered
 
         Timer {
@@ -211,35 +213,54 @@ Variants {
         WlrLayershell.layer: WlrLayer.Top
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-        // Only the pill itself takes clicks; the tooltip headroom and edge
-        // gap around it stay click-through so the desktop underneath is
-        // still reachable.
-        // While hidden, only a thin strip along the screen edge takes input,
-        // so the desktop behind stays reachable. While revealed, the whole
-        // surface does — otherwise the pointer crosses untracked empty space
-        // between the strip and the pill, hover drops, and it retracts
-        // mid-approach.
-        // Revealed, this is the pill plus the room its tooltips need and a
-        // margin either side, so the pointer can approach without hover
-        // dropping in untracked space — but not the whole edge of the
-        // screen, which is what "the whole surface" would now mean.
-        // Hidden, it is the thin strip along the edge that brings it back,
-        // and that does span the edge so the pointer finds it anywhere.
+        // What takes clicks.
+        //
+        // Hidden: a thin strip along the screen edge, spanning it, so the
+        // pointer finds it anywhere.
+        //
+        // Revealed: the pill, a margin to either side of it so the pointer
+        // can approach along the edge without hover dropping in untracked
+        // space, and everything between the pill and the screen edge —
+        // but *nothing past the pill on the inward side*.
+        //
+        // That last part is the whole point. The surface is taller than
+        // the pill by the room its tooltips need, and the mask used to
+        // cover all of it. Tooltips are pictures, not buttons, so nothing
+        // there needs input — but with auto-hide on there is no exclusive
+        // zone, so a real window sits under that headroom, and a band
+        // across it as wide as the dock quietly swallowed every click.
         readonly property real maskPad: 40
+
+        // The four numbers, worked out once instead of four times inside
+        // the Region's bindings — and clamped, which is the part that
+        // matters: the pill's hidden position is deliberately outside the
+        // surface, so an unclamped height goes negative and the mask
+        // disappears just as the pointer is trying to find it.
+        //
+        // `- 3` keeps a strip along the screen edge inside the mask at all
+        // times. That strip is what the pointer lands on to bring the dock
+        // back, and it has to stay live through the whole slide up.
+        readonly property real maskNearEdge:
+            isLeft ? Math.max(3, Math.min(Math.ceil(pill.x + pill.width), width))
+                   : Math.max(0, Math.min(Math.round(pill.y), height - 3))
+
+        readonly property real maskX: !revealed || isLeft
+            ? 0 : Math.max(0, Math.round(pill.x - maskPad))
+        readonly property real maskY: revealed
+            ? (isLeft ? Math.max(0, Math.round(pill.y - maskPad)) : maskNearEdge)
+            : (isLeft ? 0 : height - 3)
+        readonly property real maskW: revealed
+            ? (isLeft ? maskNearEdge : Math.ceil(pill.width + maskPad * 2))
+            : (isLeft ? 3 : width)
+        readonly property real maskH: revealed
+            ? (isLeft ? Math.ceil(pill.height + maskPad * 2) : height - maskNearEdge)
+            : (isLeft ? height : 3)
+
         mask: Region {
-            x: dock.revealed && !dock.isLeft
-               ? Math.max(0, Math.round(pill.x - dock.maskPad)) : 0
-            y: dock.revealed
-               ? (dock.isLeft ? Math.max(0, Math.round(pill.y - dock.maskPad)) : 0)
-               : (dock.isLeft ? 0 : dock.height - 3)
-            width: dock.revealed
-                   ? (dock.isLeft ? dock.width
-                                  : Math.ceil(pill.width + dock.maskPad * 2))
-                   : (dock.isLeft ? 3 : dock.width)
-            height: dock.revealed
-                    ? (dock.isLeft ? Math.ceil(pill.height + dock.maskPad * 2)
-                                   : dock.height)
-                    : (dock.isLeft ? dock.height : 3)
+            x: dock.maskX
+            y: dock.maskY
+            width: dock.maskW
+            height: dock.maskH
         }
 
         HoverHandler { id: windowHover }
@@ -383,7 +404,7 @@ Variants {
                     // sized tight to its content, so a centered tooltip here
                     // would be clipped by the surface's own edge.
                     tooltipAlign: dock.isLeft ? Qt.AlignVCenter : Qt.AlignLeft
-                    onActivated: Config.UiState.toggleLauncher()
+                    onActivated: Config.UiState.toggleLauncherFromDock()
                 }
 
                 // ── Overview ──────────────────────────────────────────────
