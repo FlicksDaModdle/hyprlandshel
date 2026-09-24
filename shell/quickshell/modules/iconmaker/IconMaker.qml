@@ -97,31 +97,6 @@ Item {
     property int importThreshold: 128
     property real importDetail: 1
 
-    ImageTrace {
-        id: tracer
-        source: root.importSource
-        threshold: root.importThreshold
-        detail: root.importDetail
-
-        onTraced: shapes => {
-            if (!shapes || shapes.length === 0) {
-                root.notice = "Nothing came out of that image.";
-                return;
-            }
-            // Added to the drawing rather than replacing it, so a logo
-            // can be traced into something already begun — and so a
-            // second go at the sliders does not quietly throw away
-            // whatever else is on the canvas.
-            doc.replace(doc.shapes.concat(shapes), false);
-            doc.selected = doc.shapes.length - 1;
-            root.notice = tracer.note !== "" ? tracer.note
-                : (shapes.length === 1 ? "Traced 1 shape — pick it and set ink or accent."
-                   : "Traced " + shapes.length
-                     + " shapes — each one takes ink or accent on its own.");
-        }
-        onFailed: reason => root.notice = reason
-    }
-
     function importImage(url) {
         // Re-tracing the same file has to re-run: the sliders are the
         // whole point of the panel and a url that has not changed fires
@@ -162,6 +137,31 @@ Item {
         Item {
             anchors.fill: parent
             anchors.margins: 16
+
+            ImageTrace {
+                id: tracer
+                source: root.importSource
+                threshold: root.importThreshold
+                detail: root.importDetail
+
+                onTraced: shapes => {
+                    if (!shapes || shapes.length === 0) {
+                        root.notice = "Nothing came out of that image.";
+                        return;
+                    }
+                    // Added to the drawing rather than replacing it, so a logo
+                    // can be traced into something already begun — and so a
+                    // second go at the sliders does not quietly throw away
+                    // whatever else is on the canvas.
+                    doc.replace(doc.shapes.concat(shapes), false);
+                    doc.selected = doc.shapes.length - 1;
+                    root.notice = tracer.note !== "" ? tracer.note
+                        : (shapes.length === 1 ? "Traced 1 shape — pick it and set ink or accent."
+                           : "Traced " + shapes.length
+                             + " shapes — each one takes ink or accent on its own.");
+                }
+                onFailed: reason => root.notice = reason
+            }
 
             // ── tools ─────────────────────────────────────────────────
             Column {
