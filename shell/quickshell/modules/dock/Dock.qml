@@ -47,7 +47,18 @@ Variants {
         // Only the pill and its edge gap: the tooltip headroom above it is
         // part of the surface but not part of the dock, and reserving that
         // too would push every window down by a tooltip's height.
-        exclusiveZone: Config.Appearance.dockAutoHide
+        //
+        // Nothing is reserved until the settings have been read. They are
+        // read from disk asynchronously, so for the first moments of a
+        // session every preference is at its default — auto-hide off —
+        // and a dock that reserved its strip on the strength of that
+        // pushed every window aside for a dock that was about to turn out
+        // to be hidden. The correction that followed never reached the
+        // compositor, so the session stayed offset until auto-hide was
+        // toggled off and on by hand. Starting at nothing and growing
+        // once, if it turns out to be wanted, is the order that works.
+        exclusiveZone: (!Config.Appearance.settingsReady
+                        || Config.Appearance.dockAutoHide)
                        ? 0
                        // The pill, plus a gap on each side of it, less
                        // whatever Hyprland is already insetting windows by.
@@ -115,7 +126,10 @@ Variants {
             Config.UiState.launcherOpen && onFocusedScreen
         onLauncherHereChanged: {
             if (launcherHere) { afterLauncher = false; afterLauncherHold.stop(); }
-            else if (visible) { afterLauncher = true; afterLauncherHold.restart(); }
+            else if (visible && Config.UiState.holdDockAfterLauncher) {
+                afterLauncher = true;
+                afterLauncherHold.restart();
+            }
         }
         Timer {
             id: afterLauncherHold

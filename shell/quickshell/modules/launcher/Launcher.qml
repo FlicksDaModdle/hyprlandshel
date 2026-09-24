@@ -399,7 +399,12 @@ Variants {
             }
         }
 
-        function close() {
+        // `intoDock` says whether the dock should stay out to be
+        // collapsed into, rather than going away with the launcher. It is
+        // what tells Escape ("put this back") apart from Super and the
+        // Start tile ("I am done with the dock too").
+        function close(intoDock) {
+            Config.UiState.holdDockAfterLauncher = intoDock === true;
             Config.UiState.launcherOpen = false;
         }
 
@@ -580,29 +585,23 @@ Variants {
                             selectionColor: Config.Appearance.accent
                             selectedTextColor: Config.Appearance.inkOnAccent
 
-                            // Super closes it again.
+                            // Super is not answered here.
                             //
-                            // The compositor's own bind cannot: this
-                            // surface takes keyboard focus exclusively
-                            // while it is up, so Hyprland never sees the
-                            // key that opened it being pressed a second
-                            // time. The launcher has to answer for itself.
-                            // Meta_L and Meta_R both, and on release to
-                            // match the bindr that opens it — on press it
-                            // would close the moment you reached for a
-                            // Super combination.
-                            Keys.onReleased: event => {
-                                if (event.key === Qt.Key_Super_L
-                                    || event.key === Qt.Key_Super_R
-                                    || event.key === Qt.Key_Meta) {
-                                    event.accepted = true;
-                                    launcher.close();
-                                }
-                            }
+                            // It used to be: this surface takes keyboard
+                            // focus exclusively, so the reasoning went
+                            // that Hyprland could not see the key that
+                            // opened the launcher being pressed again.
+                            // It can — the bindr fires as it always did —
+                            // and with both of them answering, one closed
+                            // the launcher and the other toggled it
+                            // straight back open. Super appeared to do
+                            // nothing at all, which is worse than either
+                            // half on its own. The compositor's binding
+                            // is the one that toggles.
                             Keys.onEscapePressed: {
                                 if (launcher.query !== "") { launcher.query = ""; text = ""; }
                                 else if (launcher.showAll) launcher.showAll = false;
-                                else launcher.close();
+                                else launcher.close(true);
                             }
                             Keys.onReturnPressed: launcher.runSelection()
                             Keys.onEnterPressed: launcher.runSelection()

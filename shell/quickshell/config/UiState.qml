@@ -93,6 +93,9 @@ Singleton {
                                          || windowMenuOpen || appMenuOpen
 
     function closeAll() {
+        // Anything that closes everything is not a collapse back into the
+        // dock: only Escape is, and it sets this again on its way out.
+        holdDockAfterLauncher = false;
         launcherOpen = false;
         overviewOpen = false;
         controlCenterOpen = false;
@@ -108,6 +111,12 @@ Singleton {
 
     // Generic toggle so IPC, keybinds and click handlers all go through one
     // path and can't leave two panels open at once.
+    // Whether the dock should stay out after the launcher closes, to be
+    // collapsed back into. Escape means "put this back" and sets it;
+    // Super and the Start tile mean "I am done", and go through toggle()
+    // below, which clears it.
+    property bool holdDockAfterLauncher: false
+
     function toggle(name) {
         const was = root[name + "Open"];
         closeAll();

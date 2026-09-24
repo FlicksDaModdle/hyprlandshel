@@ -19,6 +19,30 @@ Singleton {
     readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config"))
                                         + "/quickshell/hyprshell"
 
+    // Whether it is safe yet to tell the compositor anything derived from
+    // these settings.
+    //
+    // theme.json is read asynchronously, so for the first moments of a
+    // session every property here holds its default rather than the
+    // user's value. Most of what reads them can wait a frame and look
+    // right afterwards. Reserving screen space cannot: a dock that
+    // reserved its strip on a default of "auto-hide off" pushed every
+    // window aside, and the correction a moment later never reached the
+    // compositor — the session stayed offset until auto-hide was toggled
+    // by hand. Changing it *after* the surfaces exist does work, which is
+    // what toggling by hand was doing.
+    //
+    // A timer rather than a load signal, because the load signal is not
+    // part of FileView's documented API and inventing one is a QML error
+    // that takes the whole shell down. What matters here is only "not in
+    // the first instants", and that is exactly what this says.
+    property bool settingsReady: false
+    Timer {
+        running: true
+        interval: 600
+        onTriggered: root.settingsReady = true
+    }
+
     FileView {
         id: store
         path: root.configDir + "/theme.json"
