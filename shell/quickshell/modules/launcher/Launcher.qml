@@ -425,6 +425,7 @@ Variants {
             case "network":   Config.UiState.openSettings("Network"); return;
             case "bluetooth": Config.UiState.openSettings("Bluetooth"); return;
             case "keybinds":  Config.UiState.openSettings("Keybinds"); return;
+            case "iconmaker": Config.UiState.openIconMaker(); break;
             case "wallpaper": Config.UiState.openSettings("Appearance"); return;
             case "lock":      Config.UiState.lock(); return;
             case "reload":    Services.Session.reloadShell(); break;

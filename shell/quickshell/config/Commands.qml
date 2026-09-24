@@ -20,6 +20,7 @@ Singleton {
         { key: "network",    label: "Network",      icon: "wifi",          cat: "System · wireless" },
         { key: "bluetooth",  label: "Bluetooth",    icon: "bluetooth",     cat: "System · paired devices" },
         { key: "keybinds",   label: "Keybinds",     icon: "keyboard",      cat: "Command · cheatsheet" },
+        { key: "iconmaker",  label: "Icon Maker",   icon: "palette",       cat: "Command · draw a shell icon" },
         { key: "wallpaper",  label: "Wallpaper",    icon: "image",         cat: "Command · change the ground" },
         { key: "reload",     label: "Reload shell", icon: "refresh",       cat: "Command · re-read the QML tree" },
         { key: "lock",       label: "Lock",         icon: "lock",          cat: "Session · lock the screen" },

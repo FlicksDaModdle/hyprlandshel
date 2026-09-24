@@ -19,13 +19,13 @@ PanelSurface {
 
     property string query: ""
 
-    // Built-in first, then yours. Sorted within each half rather than
-    // across both: a pack of 76 glyphs you did not draw is a reference,
-    // and the handful you did is a shelf — mixing them alphabetically
-    // buries yours somewhere around "g".
+    // Built-in first, in the order the pack is written — which groups
+    // related glyphs, where the alphabet scatters them — then yours, in
+    // the order you made them. Something you drew a minute ago is at the
+    // end of the list, which is where you will look for it.
     readonly property var allNames: {
         const mine = Config.UserIcons.names;
-        const builtin = IconData.names().sort();
+        const builtin = IconData.names();
         // A name in both is the pack's; MonoIcon resolves it that way too,
         // so offering it twice would be offering the same drawing twice.
         return builtin.concat(mine.filter(n => !IconData.has(n)));
@@ -81,46 +81,6 @@ PanelSurface {
                 font.pixelSize: Config.Appearance.fs(13)
                 font.weight: Font.DemiBold
                 color: Config.Appearance.ink
-            }
-
-            Item { width: parent.width - 260; height: 1 }
-
-            // Offered here because this is where you find out the icon
-            // you wanted does not exist.
-            Rectangle {
-                id: makeBtn
-                anchors.verticalCenter: parent.verticalCenter
-                width: makeRow.implicitWidth + 20
-                height: 26
-                radius: Config.Appearance.rSm
-                color: makeHover.hovered ? Config.Appearance.accent : Config.Appearance.sel
-
-                Row {
-                    id: makeRow
-                    anchors.centerIn: parent
-                    spacing: 6
-                    MonoIcon {
-                        anchors.verticalCenter: parent.verticalCenter
-                        name: "plus"
-                        size: 13
-                        inkColor: makeHover.hovered ? Config.Appearance.inkOnAccent
-                                                    : Config.Appearance.ink2
-                        monochrome: true
-                    }
-                    StyledText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "Make one"
-                        font.pixelSize: Config.Appearance.fs(11)
-                        color: makeHover.hovered ? Config.Appearance.inkOnAccent
-                                                 : Config.Appearance.ink2
-                    }
-                }
-
-                HoverHandler { id: makeHover; cursorShape: Qt.PointingHandCursor }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: Config.UiState.openIconMaker()
-                }
             }
         }
 

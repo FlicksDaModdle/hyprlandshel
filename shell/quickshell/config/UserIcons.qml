@@ -38,7 +38,14 @@ Singleton {
 
     // name → spec, in the shape MonoIcon reads.
     property var icons: ({})
-    readonly property var names: Object.keys(root.icons).sort()
+    // In the order they were made, not alphabetical.
+    //
+    // A JavaScript object keeps its string keys in insertion order, and
+    // both put() and parse() build the map by walking the old one and
+    // adding to the end — so the newest glyph is last here, last in the
+    // file, and last in the picker, which is where you look for the one
+    // you just drew. Sorted, it landed somewhere around "g".
+    readonly property var names: Object.keys(root.icons)
 
     function has(name) { return !!root.icons[name]; }
     function spec(name) { return root.icons[name] || null; }

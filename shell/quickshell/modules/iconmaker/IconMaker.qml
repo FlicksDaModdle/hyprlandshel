@@ -90,11 +90,31 @@ Item {
     // ── window ────────────────────────────────────────────────────────
     FloatingWindow {
         id: win
-        visible: Config.UiState.iconMakerOpen && !Config.UiState.locked
         title: "Icon Maker"
         color: Config.Appearance.sheet
         implicitWidth: 1000
         implicitHeight: 700
+
+        // Closing the window has to clear the flag that opens it.
+        //
+        // Without that, the maker opened exactly once per shell: the
+        // window's own close button hides the window but does not touch
+        // iconMakerOpen, which stays true. Opening it again writes true
+        // over true — no change, so nothing re-evaluates, so nothing
+        // happens, for the rest of the session. The flag said the window
+        // was up and the window was not.
+        //
+        // The Binding element is the belt to that pair of braces: it
+        // re-applies its value whenever it changes, so it also survives
+        // the property being written from somewhere else.
+        Binding {
+            target: win
+            property: "visible"
+            value: Config.UiState.iconMakerOpen && !Config.UiState.locked
+            restoreMode: Binding.RestoreNone
+        }
+
+        onVisibleChanged: if (!visible) Config.UiState.iconMakerOpen = false
 
         Item {
             anchors.fill: parent

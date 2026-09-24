@@ -171,6 +171,15 @@ Scope {
         id: toplevel
 
         visible: Config.UiState.settingsOpen && !Config.UiState.locked && root.tiled
+
+        // Closed by the compositor rather than by the X in its own title
+        // bar — Super+Q, or a titlebar the compositor draws — the window
+        // goes and settingsOpen stays true. Opening Settings again then
+        // writes true over true, which changes nothing, and Settings
+        // cannot be opened again for the rest of the session. The X
+        // button never had this because it clears the flag itself.
+        onVisibleChanged: if (!visible && Config.UiState.settingsOpen)
+                              Config.UiState.closeSettings()
         title: "Settings"
         color: Config.Appearance.sheet
 
