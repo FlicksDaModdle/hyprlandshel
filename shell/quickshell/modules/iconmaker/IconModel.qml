@@ -1,5 +1,7 @@
 import QtQuick
 import "../icons/Compose.js" as Compose
+import "../icons/Trace.js" as Trace
+import "../icons/Split.js" as Split
 
 // The drawing being edited: a list of shapes, an undo stack, and the
 // arithmetic for picking one up and moving it.
@@ -585,6 +587,53 @@ QtObject {
         const s = model.current;
         if (!s || (s.kind !== "path" && s.kind !== "poly")) return;
         model.update({ closed: !s.closed });
+    }
+
+    // ── splitting ─────────────────────────────────────────────────────
+    //
+    // A region drawn round part of a shape, and what is inside it
+    // becomes a shape of its own. That is the only way to colour part of
+    // something that arrived as one piece — a traced logo is one
+    // silhouette, and without this it can only ever be one colour.
+    //
+    // The new piece is given the accent, because that is what it was cut
+    // out for. It is one undo away from not having been.
+    property string splitError: ""
+
+    function splitByLasso(lasso) {
+        model.splitError = "";
+        let at = model.selected;
+        // Nothing selected: split whatever the lasso was drawn over,
+        // topmost first, rather than making the user select it and draw
+        // it again.
+        if (at < 0) {
+            let mid = { x: 0, y: 0 };
+            for (const p of lasso) { mid.x += p.x; mid.y += p.y; }
+            mid.x /= lasso.length; mid.y /= lasso.length;
+            at = model.hitTest(mid.x, mid.y, 3);
+            if (at < 0) {
+                model.splitError = "Draw the lasso over a shape to split it.";
+                return false;
+            }
+        }
+
+        const out = Split.split(model.shapes[at], lasso, Trace);
+        if (out.error) { model.splitError = out.error; return false; }
+
+        model.snapshot();
+        const next = model.shapes.slice();
+        const pieces = out.outside.concat(out.inside.map(s => {
+            const c = {};
+            for (const k in s) c[k] = s[k];
+            c.c = "acc";
+            return c;
+        }));
+        next.splice(at, 1, ...pieces);
+        model.shapes = next;
+        // The cut-out piece, so it can be recoloured straight away.
+        model.selected = at + out.outside.length;
+        model.changed();
+        return true;
     }
 
     // ── saving ────────────────────────────────────────────────────────

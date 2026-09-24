@@ -134,6 +134,31 @@ Item {
             }
         }
 
+        // The lasso, while it is being drawn.
+        Shape {
+            visible: canvas.lassoPts.length > 1
+            anchors.fill: parent
+            preferredRendererType: Shape.GeometryRenderer
+            ShapePath {
+                strokeColor: canvas.accent
+                fillColor: Qt.rgba(canvas.accent.r, canvas.accent.g,
+                                   canvas.accent.b, 0.12)
+                strokeWidth: 1.5 / canvas.px
+                capStyle: ShapePath.RoundCap
+                joinStyle: ShapePath.RoundJoin
+                PathSvg {
+                    path: {
+                        const p = canvas.lassoPts;
+                        if (p.length < 2) return "";
+                        let d = "M" + p[0].x + " " + p[0].y;
+                        for (let i = 1; i < p.length; i++)
+                            d += "L" + p[i].x + " " + p[i].y;
+                        return d + "Z";
+                    }
+                }
+            }
+        }
+
         // The shape being dragged out, before it is committed.
         Shape {
             visible: !!canvas.draft && canvas.draft.kind !== "dot"
@@ -311,6 +336,14 @@ Item {
     // does it: a click is a corner, a click held and dragged is a curve
     // whose handle you are pulling out as you go. Nothing else here can
     // draw a leaf or a teardrop, and the primitives were never going to.
+    // ── the lasso ─────────────────────────────────────────────────────
+    //
+    // Freehand, and not snapped: a region drawn round part of a shape is
+    // a gesture, not geometry, and quarter-unit steps make it jerk about
+    // under the pointer for no benefit at all — nothing is kept from it
+    // but which side of it things fell on.
+    property var lassoPts: []
+
     property var penNodes: []
     property bool penDragging: false
     // Where the pointer went down, which is the node; the drag from it
@@ -374,6 +407,12 @@ Item {
                 return;
             }
 
+            if (canvas.tool === "lasso") {
+                canvas.lassoPts = [{ x: canvas.toUnits(mouse.x),
+                                     y: canvas.toUnits(mouse.y) }];
+                return;
+            }
+
             if (canvas.tool === "pen") {
                 // Back on the first node closes the shape, which is how
                 // you say "that is the outline" rather than hunting for
@@ -420,6 +459,18 @@ Item {
         onPositionChanged: mouse => {
             const x = ux(mouse.x), y = ux(mouse.y);
 
+            if (canvas.tool === "lasso") {
+                if (canvas.lassoPts.length === 0) return;
+                const ux2 = canvas.toUnits(mouse.x), uy2 = canvas.toUnits(mouse.y);
+                const last = canvas.lassoPts[canvas.lassoPts.length - 1];
+                // Only when it has moved enough to matter: a point per
+                // mouse event is thousands of them for one gesture, and
+                // the region is the same shape without them.
+                if (Math.hypot(ux2 - last.x, uy2 - last.y) < 0.15) return;
+                canvas.lassoPts = canvas.lassoPts.concat([{ x: ux2, y: uy2 }]);
+                return;
+            }
+
             if (canvas.tool === "pen") {
                 if (canvas.penDragging) {
                     // Pulling a handle out of the node just placed. The
@@ -464,6 +515,12 @@ Item {
 
         onReleased: {
             canvas.movingShape = false;
+            if (canvas.tool === "lasso") {
+                const pts = canvas.lassoPts;
+                canvas.lassoPts = [];
+                if (pts.length >= 3) canvas.model.splitByLasso(pts);
+                return;
+            }
             if (canvas.tool === "pen") { canvas.penDragging = false; return; }
             if (!canvas.draft || canvas.tool === "poly") return;
             // A click with no drag is not a shape. Committing one gives a
@@ -526,7 +583,8 @@ Item {
         case Qt.Key_Backspace:
             canvas.model.removeSelected(); event.accepted = true; return;
         case Qt.Key_Escape:
-            if (canvas.penNodes.length > 0) {
+            if (canvas.lassoPts.length > 0) { canvas.lassoPts = []; }
+            else if (canvas.penNodes.length > 0) {
                 canvas.penNodes = []; canvas.penDragging = false; canvas.draft = null;
             } else if (canvas.polyPts.length > 0) {
                 canvas.polyPts = []; canvas.draft = null;

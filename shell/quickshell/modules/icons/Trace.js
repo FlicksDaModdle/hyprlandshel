@@ -267,6 +267,16 @@ function trace(alpha, w, h, opts) {
     var loops = stitch(boundaryEdges(inside, w, h));
     if (loops.length === 0) return { shapes: [], error: "Nothing to trace." };
 
+    // A caller that already knows where these pixels belong says so.
+    // `opts.map` takes a point — { x, y } in pixels — and returns one in
+    // whatever coordinates it wants, exactly like the fitting map below.
+    // and nothing is fitted or recentred. The lasso split works this
+    // way: it rasterises a shape that is already on the grid, cuts it,
+    // and traces the pieces back — and a piece that was refitted to
+    // fill the grid would no longer line up with the shape it came out
+    // of, which is the one thing it has to do.
+    if (opts.map) return { shapes: tracePieces(loops, opts.map, w, h, opts) };
+
     // Fit the drawing into the grid, keeping its proportions.
     var bw = (x1 - x0 + 1), bh = (y1 - y0 + 1);
     var span = units - margin * 2;
@@ -278,15 +288,15 @@ function trace(alpha, w, h, opts) {
                  y: Math.round((p.y * scale + offY) * 100) / 100 };
     };
 
-    // Simplified in pixels, where the tolerance means something.
-    //
-    // 1.4 and not the 0.75 this started at. Douglas-Peucker keeps every
-    // point further than the tolerance from the line it would be
-    // replaced by, and the staircase contributes half a pixel of that
-    // on its own — so at 0.75 a traced circle came back with 64 nodes
-    // and visible steps, where the same circle at 1.4 is 21 nodes and
-    // smooth. Measured, at a range of tolerances, on a circle whose
-    // answer is known.
+    return { shapes: tracePieces(loops, toGrid, w, h, opts) };
+}
+
+// Loops in pixels → shapes in whatever coordinates `toGrid` maps to.
+function tracePieces(loops, toGrid, w, h, opts) {
+    var detail = opts.detail === undefined ? 1 : opts.detail;
+    var minArea = opts.minArea === undefined ? 0.0006 : opts.minArea;
+    var cornerDeg = opts.cornerDeg === undefined ? 42 : opts.cornerDeg;
+    var smooth = opts.smooth !== false;
     // 1.2, with curves fitted afterwards. Straight lines needed a finer
     // tolerance than this to look smooth and a coarser one to be
     // editable, and there was no value that was both: at 0.75 a traced
@@ -305,7 +315,7 @@ function trace(alpha, w, h, opts) {
         (a > 0 ? outers : holes).push({ pts: pts, area: Math.abs(a) });
     }
     if (outers.length === 0)
-        return { shapes: [], error: "Nothing solid enough to trace." };
+        return [];
 
     // Biggest first, so the shape list reads outside in and the largest
     // part of a logo is the one selected first.
@@ -340,5 +350,5 @@ function trace(alpha, w, h, opts) {
             holes: mine.length > 0 ? mine : undefined
         });
     }
-    return { shapes: shapes };
+    return shapes;
 }

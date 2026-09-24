@@ -385,6 +385,14 @@ var icons = {
     dot: {
         dots: [{ cx: 12, cy: 12, r: 4.5, c: "ink" }]
     },
+    lasso: {
+        // A dashed loop with a tail, the way every selection tool draws
+        // itself.
+        ink: "M12 4.2 A7.8 5.6 0 0 1 19.8 9.8 M19.8 9.8 A7.8 5.6 0 0 1 15 15.1"
+             + " M9 15.1 A7.8 5.6 0 0 1 4.2 9.8 M4.2 9.8 A7.8 5.6 0 0 1 12 4.2",
+        acc: "M9 15.1 C9 18 10.5 19 12 19.8",
+        dots: [{ cx: 12, cy: 20.4, r: 1.3, c: "acc" }]
+    },
     pen: {
         // A nib with a node on its point, which is what the tool does:
         // it puts points down.

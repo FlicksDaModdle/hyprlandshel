@@ -87,6 +87,26 @@ Item {
 
     property string notice: ""
 
+    // ── fitting into whatever window it was given ─────────────────────
+    //
+    // A quarter-screen tile is a normal place for a window to end up,
+    // and this was laid out as though it would always have a thousand
+    // pixels: a fixed side column, a canvas sized from what was left,
+    // and a plain Column for the controls that simply ran off the
+    // bottom with no way to reach what it had cut off.
+    //
+    // So: the side column is a fraction of the width between sensible
+    // bounds, everything in it scrolls, and the canvas takes what
+    // remains down to a floor it will not go below.
+    readonly property real winW: win.width
+    readonly property real winH: win.height
+    // Narrow enough that the trimmings cost more than they give.
+    readonly property bool compact: winW < 720 || winH < 520
+    readonly property real sideWidth:
+        Math.max(196, Math.min(root.compact ? 220 : 268, root.winW * 0.32))
+    readonly property real railWidth: root.compact ? 38 : 44
+    readonly property real gutter: root.compact ? 10 : 14
+
     // ── importing a picture ───────────────────────────────────────────
     //
     // A logo you already have, turned into shapes rather than pasted in
@@ -135,8 +155,10 @@ Item {
         onVisibleChanged: if (!visible) Config.UiState.iconMakerOpen = false
 
         Item {
+            id: sheetArea
             anchors.fill: parent
-            anchors.margins: 16
+            anchors.margins: root.compact ? 10 : 16
+
 
             ImageTrace {
                 id: tracer
@@ -168,8 +190,8 @@ Item {
                 id: rail
                 anchors.left: parent.left
                 anchors.top: parent.top
-                width: 44
-                spacing: 6
+                width: root.railWidth
+                spacing: root.compact ? 3 : 6
 
                 Repeater {
                     model: [
@@ -181,6 +203,7 @@ Item {
                         { t: "arc",     i: "arc",     n: "Arc" },
                         { t: "poly",    i: "poly",    n: "Polyline — click each corner, right-click to finish" },
                         { t: "pen",     i: "pen",     n: "Pen — click for a corner, drag for a curve; click the first point to close" },
+                        { t: "lasso",   i: "lasso",   n: "Lasso — draw round part of a shape to split it off as its own piece" },
                         { t: "dot",     i: "dot",     n: "Dot" }
                     ]
 
@@ -188,8 +211,8 @@ Item {
                         id: toolBtn
                         required property var modelData
                         readonly property bool on: root.tool === modelData.t
-                        width: 44
-                        height: 38
+                        width: root.railWidth
+                        height: root.compact ? 32 : 38
                         radius: Config.Appearance.rSm
                         color: toolBtn.on ? Config.Appearance.accent
                              : (toolHover.hovered ? Config.Appearance.hover : "transparent")
@@ -216,10 +239,15 @@ Item {
             IconCanvas {
                 id: canvas
                 anchors.left: rail.right
-                anchors.leftMargin: 14
+                anchors.leftMargin: root.gutter
                 anchors.top: parent.top
-                width: Math.min(parent.height - bottomBar.height - 12,
-                                parent.width - rail.width - side.width - 42)
+                // Square, and as big as both axes allow — with a floor,
+                // because the alternative is a negative width, which
+                // draws nothing and looks like the grid has vanished.
+                readonly property real roomW: sheetArea.width - rail.width
+                                              - root.sideWidth - root.gutter * 2
+                readonly property real roomH: sheetArea.height - bottomBar.height - 12
+                width: Math.max(140, Math.min(roomW, roomH))
                 height: width
                 model: doc
                 tool: root.tool
@@ -228,12 +256,21 @@ Item {
                 nextWeight: root.nextWeight
             }
 
-            Row {
+            // A Flow, not a Row: in a narrow window these controls do
+            // not fit on one line, and a Row does not care — it draws
+            // them off the edge. The width comes from the frame rather
+            // than from the canvas, because the canvas's height is
+            // worked out from this bar's, and taking its width from the
+            // canvas would close that loop.
+            Flow {
                 id: bottomBar
-                anchors.left: canvas.left
+                anchors.left: rail.right
+                anchors.leftMargin: root.gutter
+                anchors.right: side.left
+                anchors.rightMargin: root.gutter
                 anchors.top: canvas.bottom
                 anchors.topMargin: 12
-                spacing: 10
+                spacing: 8
 
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
@@ -250,7 +287,7 @@ Item {
                     onSelected: v => root.snap = parseFloat(v)
                 }
 
-                Item { width: 12; height: 1 }
+                Item { width: root.compact ? 2 : 12; height: 1 }
 
                 // A fixed list, with availability worked out in the
                 // delegate rather than carried as a field in the array.
@@ -313,20 +350,35 @@ Item {
             }
 
             // ── the side column ───────────────────────────────────────
-            Column {
+            //
+            // Everything in here scrolls. It was a plain Column pinned
+            // top and bottom, which in a short window simply cut its own
+            // contents off — the Save button and the icons you had made
+            // were below the fold with no way to reach them, and nothing
+            // said so.
+            Flickable {
                 id: side
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: 268
-                spacing: 14
+                width: root.sideWidth
+                contentWidth: width
+                contentHeight: sideCol.implicitHeight
+                clip: true
+                interactive: contentHeight > height
+                boundsBehavior: Flickable.StopAtBounds
+
+            Column {
+                id: sideCol
+                width: side.width
+                spacing: root.compact ? 10 : 14
 
                 // Previews, drawn by the very component the dock uses, at
                 // the sizes it uses — an icon that reads at 48 and turns
                 // to mud at 16 is the failure this is here to catch.
                 Rectangle {
                     width: parent.width
-                    height: 92
+                    height: root.compact ? 74 : 92
                     radius: Config.Appearance.rSm
                     color: Config.Appearance.ground
                     border.width: 1
@@ -334,7 +386,7 @@ Item {
 
                     Row {
                         anchors.centerIn: parent
-                        spacing: 22
+                        spacing: root.compact ? 12 : 22
 
                         Repeater {
                             model: [48, 24, 16]
@@ -435,7 +487,7 @@ Item {
                         }
                         FillSlider {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 150
+                            width: Math.max(80, sideCol.width - 110)
                             // Up to half the short side, which is where a
                             // rounded box becomes a stadium.
                             value: doc.current && doc.current.kind === "rect"
@@ -468,7 +520,7 @@ Item {
                         }
                         FillSlider {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 130
+                            width: Math.max(70, sideCol.width - 130)
                             // -180…180 mapped onto the trough.
                             value: doc.current ? ((doc.current.rot || 0) + 180) / 360 : 0.5
                             onMoved: v => doc.update({ rot: Math.round(v * 360 - 180) }, true)
@@ -528,7 +580,7 @@ Item {
                                 Rectangle {
                                     id: nodeBtn
                                     required property var modelData
-                                    width: (side.width - 12) / 3
+                                    width: (sideCol.width - 12) / 3
                                     height: 28
                                     radius: Config.Appearance.rSm
                                     color: nodeHover.hovered ? Config.Appearance.hover
@@ -567,7 +619,7 @@ Item {
                             model: [{ n: "Bring forward", d: 1 }, { n: "Send back", d: -1 }]
                             Rectangle {
                                 required property var modelData
-                                width: (side.width - 6) / 2
+                                width: (sideCol.width - 6) / 2
                                 height: 28
                                 radius: Config.Appearance.rSm
                                 color: orderHover.hovered ? Config.Appearance.hover
@@ -650,7 +702,7 @@ Item {
 
                         Rectangle {
                             id: saveBtn
-                            width: (side.width - 6) * 0.62
+                            width: (sideCol.width - 6) * 0.62
                             height: 32
                             radius: Config.Appearance.rSm
                             readonly property bool ready: root.nameOk && doc.draws()
@@ -675,7 +727,7 @@ Item {
                         }
 
                         Rectangle {
-                            width: (side.width - 6) * 0.38
+                            width: (sideCol.width - 6) * 0.38
                             height: 32
                             radius: Config.Appearance.rSm
                             color: newHover.hovered ? Config.Appearance.hover : "transparent"
@@ -703,7 +755,7 @@ Item {
                     Rectangle {
                         id: dropZone
                         width: parent.width
-                        height: 54
+                        height: root.compact ? 40 : 54
                         radius: Config.Appearance.rSm
                         color: drop.containsDrag ? Config.Appearance.accent
                                                  : Config.Appearance.ground
@@ -724,6 +776,7 @@ Item {
                             }
                             StyledText {
                                 anchors.horizontalCenter: parent.horizontalCenter
+                                visible: !root.compact
                                 text: "PNG or SVG with a transparent background"
                                 font.pixelSize: Config.Appearance.fs(10)
                                 color: drop.containsDrag ? Config.Appearance.inkOnAccent
@@ -796,7 +849,7 @@ Item {
                         }
                         FillSlider {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 70
+                            width: Math.max(48, (sideCol.width - 108) / 2)
                             value: root.importThreshold / 255
                             onMoved: v => root.importThreshold = Math.round(v * 255)
                             onReleased: v => { root.importThreshold = Math.round(v * 255);
@@ -810,7 +863,7 @@ Item {
                         }
                         FillSlider {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 70
+                            width: Math.max(48, (sideCol.width - 108) / 2)
                             // 0.3 to 3.3, so the middle is about right.
                             value: (root.importDetail - 0.3) / 3
                             onMoved: v => root.importDetail = 0.3 + v * 3
@@ -829,17 +882,18 @@ Item {
                     color: Config.Appearance.ink3
                 }
 
-                Flickable {
+                // No Flickable of its own: the whole column scrolls, and
+                // a scrolling strip inside a scrolling column is a
+                // pointer trap — whichever one takes the wheel, it is
+                // not the one under it.
+                Item {
                     width: parent.width
-                    height: Math.max(40, side.height - y - 8)
-                    contentHeight: saved.height
-                    clip: true
-                    interactive: contentHeight > height
+                    height: saved.height
 
                     Grid {
                         id: saved
                         width: parent.width
-                        columns: 5
+                        columns: Math.max(3, Math.floor(width / 52))
 
                         Repeater {
                             model: Config.UserIcons.names
@@ -878,6 +932,7 @@ Item {
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -928,6 +983,15 @@ Item {
     property var liveGlyph: ({})
     Connections {
         target: doc
-        function onChanged() { root.liveGlyph = doc.glyph(); }
+        function onChanged() {
+            root.liveGlyph = doc.glyph();
+            // A lasso that caught nothing, or everything, has to say so
+            // — otherwise the gesture simply does nothing and the tool
+            // looks broken.
+            if (doc.splitError !== "") {
+                root.notice = doc.splitError;
+                doc.splitError = "";
+            }
+        }
     }
 }
