@@ -70,6 +70,16 @@ public:
     Q_INVOKABLE void clearSelection();
     Q_INVOKABLE void selectAll();
 
+    // The same two things the keyboard shortcuts do, so the menu and the
+    // shortcuts cannot drift apart — there is one copy and one paste.
+    Q_INVOKABLE void copy();
+    Q_INVOKABLE void paste();
+    // What a paste would put in, so a menu can grey the entry out. Read
+    // when the menu opens rather than watched: the clipboard is a shared
+    // resource and polling it to keep a property warm means asking the
+    // owning application for its contents on a timer.
+    Q_INVOKABLE QString clipboardText() const;
+
 signals:
     void termChanged();
     void fontChanged();
@@ -86,6 +96,11 @@ signals:
     void nextTabRequested();
     void previousTabRequested();
     void tabRequested(int index);
+
+    // A right-click, in this item's coordinates. The menu is built in
+    // QML, because it is a piece of the window's chrome and looks like
+    // the rest of it.
+    void contextMenuRequested(qreal x, qreal y);
 
 protected:
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;

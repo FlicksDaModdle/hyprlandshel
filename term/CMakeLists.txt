@@ -52,6 +52,7 @@ qt_add_qml_module(hyprshell-term
         qml/Main.qml
         qml/Appearance.qml
         qml/TermFrame.qml
+        qml/TermMenu.qml
         qml/MonoIcon.qml
         qml/StyledText.qml
     RESOURCES

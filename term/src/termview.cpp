@@ -11,7 +11,11 @@
 
 TermView::TermView(QQuickItem *parent) : QQuickPaintedItem(parent) {
     setFlag(ItemHasContents, true);
-    setAcceptedMouseButtons(Qt::LeftButton | Qt::MiddleButton);
+    // The right button too, for the context menu. A QQuickItem is only
+    // sent the buttons it names here — the menu's press handler was
+    // written and correct and simply never called, because the item was
+    // not listening for that button.
+    setAcceptedMouseButtons(Qt::LeftButton | Qt::MiddleButton | Qt::RightButton);
     setAcceptHoverEvents(false);
     setFocus(true);
     // The grid is opaque and painted edge to edge, so the item does not
@@ -387,6 +391,23 @@ void TermView::mousePressEvent(QMouseEvent *event) {
     }
     m_mouseToTerm = false;
 
+    if (event->button() == Qt::RightButton) {
+        // The selection is left exactly as it is: the first thing most
+        // people do with this menu is right-click text they have just
+        // dragged over and choose Copy, and starting a fresh selection
+        // under the pointer — which is what the code below does — would
+        // throw away what they meant to copy.
+        //
+        // It is not forwarded to a program that asked for the mouse,
+        // unlike the left button. Nothing was forwarding it before
+        // either, so no program loses anything, and a menu that appears
+        // everywhere except inside vim would be worse than one that does
+        // not appear at all.
+        emit contextMenuRequested(event->position().x(), event->position().y());
+        event->accept();
+        return;
+    }
+
     if (event->button() == Qt::MiddleButton) {
         // The primary selection, pasted — the oldest gesture on this
         // desktop and the one people miss most when it is absent.
@@ -449,6 +470,21 @@ void TermView::mouseReleaseEvent(QMouseEvent *event) {
         m_term->placeCursor(row, col);
     }
     event->accept();
+}
+
+void TermView::copy() {
+    if (!m_hasSelection) return;
+    QGuiApplication::clipboard()->setText(selectedText());
+}
+
+void TermView::paste() {
+    if (!m_term) return;
+    const QString text = QGuiApplication::clipboard()->text();
+    if (!text.isEmpty()) m_term->sendText(text);
+}
+
+QString TermView::clipboardText() const {
+    return QGuiApplication::clipboard()->text();
 }
 
 void TermView::wheelEvent(QWheelEvent *event) {
@@ -514,7 +550,7 @@ void TermView::keyPressEvent(QKeyEvent *event) {
     // selection is cleared, so the next ^C interrupts.
     if ((mods & Qt::ControlModifier) && !(mods & Qt::ShiftModifier)
         && event->key() == Qt::Key_C && m_hasSelection) {
-        QGuiApplication::clipboard()->setText(selectedText());
+        copy();
         clearSelection();
         event->accept();
         return;
@@ -523,7 +559,7 @@ void TermView::keyPressEvent(QKeyEvent *event) {
     // Shift-Insert is the X11 paste, and it is what a great many people
     // still press.
     if ((mods & Qt::ShiftModifier) && event->key() == Qt::Key_Insert) {
-        m_term->sendText(QGuiApplication::clipboard()->text());
+        paste();
         event->accept();
         return;
     }
@@ -537,13 +573,12 @@ void TermView::keyPressEvent(QKeyEvent *event) {
         default: break;
         }
         if (event->key() == Qt::Key_C) {
-            if (m_hasSelection)
-                QGuiApplication::clipboard()->setText(selectedText());
+            copy();
             event->accept();
             return;
         }
         if (event->key() == Qt::Key_V) {
-            m_term->sendText(QGuiApplication::clipboard()->text());
+            paste();
             event->accept();
             return;
         }

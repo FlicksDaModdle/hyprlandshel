@@ -353,6 +353,11 @@ Rectangle {
         onPreviousTabRequested: frame.host.stepTab(-1)
         onTabRequested: index => frame.host.selectTab(index)
 
+        onContextMenuRequested: (x, y) => {
+            const p = view.mapToItem(frame, x, y);
+            contextMenu.openAt(p.x, p.y);
+        }
+
         // Every session, not just the one on screen. A program in a
         // background tab that still believes the window is the size it was
         // when it last had the screen redraws itself wrongly the moment it
@@ -380,5 +385,26 @@ Rectangle {
         anchors.fill: view
         acceptedButtons: Qt.NoButton
         onPressed: view.forceActiveFocus()
+    }
+
+    // Anywhere else dismisses the menu, and the click that dismisses it
+    // does nothing else — clicking away from a menu is how you say "not
+    // that", and landing a selection or a cursor move at the same time
+    // would be acting on it anyway.
+    MouseArea {
+        anchors.fill: parent
+        visible: contextMenu.open
+        z: 899
+        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+        onPressed: {
+            contextMenu.close();
+            view.forceActiveFocus();
+        }
+    }
+
+    TermMenu {
+        id: contextMenu
+        view: view
+        host: frame.host
     }
 }
