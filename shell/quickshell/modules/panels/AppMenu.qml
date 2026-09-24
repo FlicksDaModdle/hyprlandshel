@@ -39,8 +39,15 @@ PanelSurface {
             out.push({ n: "Open new window", icon: "plus",
                        run: () => Quickshell.execDetached([cls]) });
         }
+        // Offered for the Settings tile too, unlike the two below it: a
+        // different picture cannot break a tile, where a different
+        // application or no tile at all can.
+        if (pinned) {
+            out.push({ n: "Change icon…", icon: "palette", rule: out.length > 0,
+                       run: () => Config.UiState.openIconPicker(root.key) });
+        }
         if (pinned && !isShellTile) {
-            out.push({ n: "Choose application…", icon: "grid", rule: out.length > 0,
+            out.push({ n: "Choose application…", icon: "grid", rule: false,
                        run: () => Config.UiState.pickAppFor(root.key) });
             out.push({ n: "Unpin from dock", icon: "minus",
                        run: () => { Config.Apps.unpin(root.key);

@@ -91,6 +91,19 @@ Singleton {
         save(next);
     }
 
+    // Just the glyph, leaving everything else about the tile alone.
+    //
+    // Not assign() with only the icon filled in: assign() rebuilds the
+    // match regex from the exec it is given, so calling it to change a
+    // picture would quietly re-point the tile at a different application.
+    function setIcon(key, icon) {
+        if (!key || !icon) return;
+        save(pinned.map(e => e.key !== key ? e : ({
+            key: e.key, label: e.label, icon: icon,
+            exec: e.exec || [], match: e.match
+        })));
+    }
+
     // The command behind a pinned slot, as one shell word list joined for
     // Lua. Used by the keybind generator, which has to put it in a string.
     function execFor(key) {

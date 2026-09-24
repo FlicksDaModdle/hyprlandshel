@@ -359,6 +359,16 @@ var icons = {
     }
 };
 
+// Every glyph the pack really has, captured before the aliases below are
+// added — those are second names for icons already in this list, and a
+// picker that showed them would offer the same drawing eight times.
+var canonical = Object.keys(icons);
+
+function names() {
+    return canonical.slice();
+}
+
+
 // Aliases so callers can use either the mockup's ICONS keys or plain names.
 icons.appTerm = icons.terminal;
 icons.appFiles = icons.folder;

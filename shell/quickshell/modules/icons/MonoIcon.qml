@@ -55,7 +55,15 @@ Item {
                                     ? Shape.CurveRenderer : Shape.GeometryRenderer
     readonly property bool multisample: smoothing === "layer"
 
-    readonly property var spec: IconData.icons[name] || ({})
+    // The built-in pack first, then the ones you made.
+    //
+    // That order and not the other way round: a user glyph that happened
+    // to be called "folder" would otherwise replace the folder icon
+    // everywhere in the shell, including in places that are not apps at
+    // all. Names are how icons are referred to, so the pack owns its own.
+    readonly property var spec: IconData.icons[name]
+                                || Config.UserIcons.spec(name)
+                                || ({})
     readonly property color accent: monochrome ? inkColor : accentColor
 
     // The stroke is compensated for the scale, so every glyph lands 2

@@ -88,9 +88,13 @@ Singleton {
     // Control center drill-down: "", "Wi-Fi" or "Bluetooth".
     property string ccExpanded: ""
 
+    // Which pinned tile is having its icon changed, "" for none.
+    property string iconPickerFor: ""
+    readonly property bool iconPickerOpen: iconPickerFor !== ""
+
     readonly property bool anyPanelOpen: controlCenterOpen || notificationsOpen
                                          || calendarOpen || powerOpen || desktopMenuOpen
-                                         || windowMenuOpen || appMenuOpen
+                                         || windowMenuOpen || appMenuOpen || iconPickerOpen
 
     function closeAll() {
         // Anything that closes everything is not a collapse back into the
@@ -106,6 +110,7 @@ Singleton {
         windowMenuOpen = false;
         appMenuOpen = false;
         appPickerFor = "";
+        iconPickerFor = "";
         ccExpanded = "";
     }
 
@@ -171,6 +176,12 @@ Singleton {
         appMenuLabel = label || "";
         appMenuIcon = icon || "";
         appMenuOpen = true;
+    }
+
+    // Opens the grid of every glyph, to put one on a pinned tile.
+    function openIconPicker(key) {
+        closeAll();
+        if (key) iconPickerFor = key;
     }
 
     // Opens the launcher as a chooser: picking an entry assigns it to `key`

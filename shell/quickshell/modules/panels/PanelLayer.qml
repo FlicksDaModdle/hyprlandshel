@@ -145,6 +145,19 @@ Variants {
         // the desktop menu, but it prefers to sit *above* the click, since
         // the dock it is usually launched from is at the bottom of the
         // screen and a menu hanging down from there would be off it.
+        // Centred rather than at the pointer: it is a sheet of eighty-odd
+        // glyphs, not a short list of verbs, and hanging that off a dock
+        // tile would put most of it off the bottom of the screen.
+        Entrance {
+            shown: Config.UiState.iconPickerOpen
+            x: Math.round((layer.width - width) / 2)
+            y: Math.round((layer.height - height) / 2)
+            IconPicker {
+                id: iconPick
+                visible: Config.UiState.iconPickerOpen
+            }
+        }
+
         AppMenu {
             id: appCtx
             visible: Config.UiState.appMenuOpen
