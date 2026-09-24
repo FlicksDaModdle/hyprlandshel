@@ -38,6 +38,27 @@ Singleton {
 
     // name → spec, in the shape MonoIcon reads.
     property var icons: ({})
+
+    // Whether the file has actually been read.
+    //
+    // This matters more than it looks. Saving rewrites the whole file
+    // from `icons`, and `icons` starts empty — so a save made before the
+    // read has landed writes an empty file over a full one and takes
+    // every icon you ever made with it. Nothing about that is visible:
+    // the icon you just saved is in memory and on screen, and the loss
+    // only shows up at the next start, which is exactly how it was
+    // reported.
+    //
+    // It is not a narrow race either. Quickshell's FileView cancels an
+    // in-flight *read* when a write starts (cancelAsync disowns the
+    // reader and drops it), so one early save does not just miss the
+    // file — it stops `loaded` from ever arriving, and the store stays
+    // empty for the rest of the session. Every later save then rewrites
+    // the file from nothing.
+    //
+    // So: nothing writes until this is true, and put() makes it true by
+    // reading first.
+    property bool ready: false
     // In the order they were made, not alphabetical.
     //
     // A JavaScript object keeps its string keys in insertion order, and
@@ -87,6 +108,31 @@ Singleton {
         return draws ? out : null;
     }
 
+    // The one place the store is filled, so "we have read the file" and
+    // "here is what was in it" can never disagree.
+    function adopt(text) {
+        root.parse(text);
+        root.ready = true;
+    }
+
+    // Read the file now if it has not been read yet, and say whether the
+    // store can be trusted afterwards.
+    //
+    // Asking for the text is what forces the read: `blockLoading` on the
+    // FileView below makes text() wait for the file rather than handing
+    // back an empty string while a read is still in the air, and the
+    // read emits loaded or loadFailed on its way through.
+    //
+    // The return value is `ready` and nothing else — in particular this
+    // does not adopt whatever text() gave back. A read that fails on
+    // permissions also returns an empty string, and taking that for "you
+    // have no icons" is the very thing being guarded against.
+    function ensureLoaded() {
+        if (root.ready) return true;
+        file.text();
+        return root.ready;
+    }
+
     function parse(text) {
         if (!text || text.trim() === "") { root.icons = ({}); return; }
         let doc;
@@ -115,6 +161,8 @@ Singleton {
     function put(name, glyph) {
         const g = root.clean(glyph);
         if (!name || !g) return false;
+        // Refuses rather than saving one icon over all the others.
+        if (!root.ensureLoaded()) return false;
         const next = {};
         for (const k in root.icons) next[k] = root.icons[k];
         next[name] = g;
@@ -124,6 +172,7 @@ Singleton {
     }
 
     function remove(name) {
+        if (!root.ensureLoaded()) return;
         if (!root.icons[name]) return;
         const next = {};
         for (const k in root.icons) if (k !== name) next[k] = root.icons[k];
@@ -131,24 +180,68 @@ Singleton {
         root.flush();
     }
 
-    // Writing goes through setText, and setText on a FileView whose load
-    // failed does nothing at all — which is exactly the state a first run
-    // is in, since the file does not exist yet. So a missing file is
-    // written empty the moment it is found missing, below, and by the
-    // time anything saves there is a file to save into.
-    function flush() { file.setText(root.serialise()); }
+    // A missing file is written empty the moment it is found missing, so
+    // that by the time anything saves there is a file to save into.
+    //
+    // The guard is the same one as everywhere else: a store that has not
+    // read the file does not get to write it.
+    function flush() {
+        if (!root.ready) {
+            console.warn("UserIcons: refusing to write " + root.path
+                         + " before it has been read — nothing was saved.");
+            return;
+        }
+        file.setText(root.serialise());
+    }
 
     FileView {
         id: file
         path: root.path
         watchChanges: true
         printErrors: false
+
+        // Read it as soon as the store exists, and let text() block if
+        // someone asks before that read has landed.
+        //
+        // The blocking is the point. This is a few kilobytes of JSON on
+        // local disk — the case Quickshell's own documentation names for
+        // blockLoading — and the alternative is a save racing the read
+        // that should have told it what was already there.
+        preload: true
+        blockLoading: true
+        // Every save completes before the click that caused it returns.
+        // An async write can be cancelled by the next operation on this
+        // view, and a cancelled write is silent.
+        blockWrites: true
+
         // Edited by hand, or by a second shell instance. Either way the
         // icons on screen should be the ones in the file.
         onFileChanged: reload()
-        onLoaded: root.parse(file.text())
+        onLoaded: root.adopt(file.text())
+
         onLoadFailed: error => {
-            if (error === FileViewError.FileNotFound) file.setText(root.serialise());
+            if (error === FileViewError.FileNotFound) {
+                // First run. Nothing to read is itself an answer: there
+                // are no icons, and it is now safe to write.
+                root.icons = ({});
+                root.ready = true;
+                file.setText(root.serialise());
+                return;
+            }
+            // Anything else — a permission, a directory that is not
+            // there — must not be read as "you have no icons", or the
+            // next save would write that over the file that has them.
+            // So the store stays not-ready, and saving refuses.
+            console.warn("UserIcons: could not read " + root.path
+                         + " (error " + error + "). Icons cannot be saved"
+                         + " until this is fixed.");
+        }
+
+        // Writing is the whole point of this file, and it used to fail in
+        // silence: printErrors is off, and there was no handler.
+        onSaveFailed: error => {
+            console.warn("UserIcons: could not write " + root.path
+                         + " (error " + error + "). Your icons were not saved.");
         }
     }
 }

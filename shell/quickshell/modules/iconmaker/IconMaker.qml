@@ -80,7 +80,14 @@ Item {
 
     function save() {
         if (!root.nameOk || !doc.draws()) return;
-        Config.UserIcons.put(root.trimmedName, doc.glyph());
+        // A save that did not happen used to look exactly like one that
+        // did: the icon appeared in the list beside it either way, and
+        // the only place the difference showed was the next start.
+        if (!Config.UserIcons.put(root.trimmedName, doc.glyph())) {
+            root.notice = "Could not save — the icon file could not be read "
+                          + "or written. See the shell's log.";
+            return;
+        }
         root.loadedAs = root.trimmedName;
         root.notice = "Saved as “" + root.trimmedName + "”";
     }
