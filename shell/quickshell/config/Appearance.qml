@@ -181,8 +181,8 @@ Singleton {
             // Optional, on top of the overall size. These stretch the panel
             // in one direction without touching the other or the content:
             // the type and the padding stay put, the room around them grows.
-            property int launcherWide: 100             // 100-200 % width
-            property int launcherTall: 100             // 100-200 % height
+            property int launcherWide: 100             // 50-200 % width
+            property int launcherTall: 100             // 50-200 % height
             property int launcherIconScale: 100        // 50-200 % glyph
 
             // How much of the window shows through a dropdown or the colour
@@ -304,7 +304,7 @@ Singleton {
     // is a column, not a row. Three across and half as tall again reads as
     // a start menu rather than a strip. Both are still stretchable — Wider
     // and Taller under Shell -> Launcher.
-    readonly property var launcherBase: ({ w: 480, h: 660, tile: 60, icon: 22,
+    readonly property var launcherBase: ({ w: 420, h: 720, tile: 60, icon: 22,
                                            cols: 3 })
 
     // Everything the launcher measures itself by, derived. Nothing else in
@@ -319,6 +319,14 @@ Singleton {
         Math.round(launcherScaled(launcherBase.w) * launcherStretch(launcherWide))
     readonly property int launcherHeight:
         Math.round(launcherScaled(launcherBase.h) * launcherStretch(launcherTall))
+    // The height setting as a plain multiplier, because the launcher needs
+    // it as one: it is spent on rows of apps rather than on empty panel,
+    // so the panel grows because there is more in it. A ceiling alone —
+    // which is all this used to be — did nothing at all, since the panel
+    // was already shorter than it.
+    readonly property real launcherHeightStretch: launcherStretch(launcherTall)
+    readonly property real launcherWidthStretch: launcherStretch(launcherWide)
+
     readonly property int launcherTileSize: launcherScaled(launcherBase.tile)
     readonly property int launcherIconSize:
         Math.round(launcherScaled(launcherBase.icon)

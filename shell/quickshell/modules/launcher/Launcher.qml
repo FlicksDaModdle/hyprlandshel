@@ -98,9 +98,27 @@ Variants {
         readonly property bool isLeft: Config.Appearance.dockLeft
         // Geometry is a preference now — Settings → Shell → Launcher. The grid
         // reflows to the column count rather than assuming four across.
-        readonly property real panelWidth: Config.Appearance.launcherWidth
+        // Never wider than the dock it grows out of.
+        //
+        // The morph is the pill stretching into the panel, and a panel
+        // wider than the pill it came from reads as two different things
+        // rather than one thing changing shape. Only while morphing: a
+        // panel that opens on its own is not growing out of anything and
+        // has no reason to be measured against it. The floor is so that a
+        // dock with two icons on it cannot squeeze the launcher into a
+        // strip.
+        readonly property real panelWidth: {
+            const want = Config.Appearance.launcherWidth;
+            if (!launcher.morphing) return want;
+            return Math.max(340, Math.min(want, Config.UiState.dockPillWidth));
+        }
         readonly property real panelHeight: Config.Appearance.launcherHeight
         readonly property int gridColumns: Math.max(3, Config.Appearance.launcherColumns)
+        // Height is spent on rows, not on empty panel. Three is the shape
+        // the launcher was drawn with; the setting moves it from there,
+        // and the panel follows because there is more in it.
+        readonly property int gridRows:
+            Math.max(2, Math.round(3 * Config.Appearance.launcherHeightStretch))
         readonly property real gridTile: Config.Appearance.launcherTileSize
         readonly property real gridIcon: Config.Appearance.launcherIconSize
 
@@ -189,7 +207,7 @@ Variants {
                 kind: "command", key: c.key, label: c.label, icon: c.icon, cat: c.cat, exec: []
             })))
 
-        readonly property int perPage: gridColumns * 3
+        readonly property int perPage: gridColumns * gridRows
         readonly property int pageCount: Math.max(1, Math.ceil(pinnedItems.length / perPage))
         property int page: 0
         readonly property var pageItems: pinnedItems.slice(page * perPage, (page + 1) * perPage)

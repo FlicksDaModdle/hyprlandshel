@@ -139,20 +139,35 @@ PanelSurface {
         anchors.top: parent.top
         height: 40
 
+        // Dragging the bar moves the window.
+        //
+        // This used to bail out whenever the host said `tiled`, which for
+        // an application window is always — so the title bar could not be
+        // dragged at all. Tiled is not a reason to refuse: moveTo() hands
+        // the drag to the compositor, and dragging a tiled window is how
+        // you swap it with another one. The compositor decides what the
+        // gesture means; this only has to start it.
         MouseArea {
             anchors.fill: parent
-            cursorShape: (frame.host.tiled || frame.host.maximised)
-                             ? Qt.ArrowCursor : Qt.OpenHandCursor
+            cursorShape: Qt.OpenHandCursor
             property real pressX: 0
             property real pressY: 0
-            onPressed: mouse => { pressX = mouse.x; pressY = mouse.y; }
+            // Started once per press, and only after the pointer has
+            // actually travelled: the compositor takes the pointer for the
+            // whole drag, so starting on the press itself would eat the
+            // double-click that maximises.
+            property bool moving: false
+            onPressed: mouse => { pressX = mouse.x; pressY = mouse.y; moving = false; }
+            onReleased: moving = false
             onPositionChanged: mouse => {
-                if (!pressed || frame.host.tiled || frame.host.maximised) return;
+                if (!pressed || moving) return;
+                if (Math.abs(mouse.x - pressX) < 4 && Math.abs(mouse.y - pressY) < 4)
+                    return;
+                moving = true;
                 const p = mapToItem(null, mouse.x, mouse.y);
                 frame.host.moveTo(Math.round(p.x - pressX), Math.round(p.y - pressY));
             }
-            onDoubleClicked: if (!frame.host.tiled)
-                                 frame.host.toggleMaximised()
+            onDoubleClicked: frame.host.toggleMaximised()
         }
 
         Row {

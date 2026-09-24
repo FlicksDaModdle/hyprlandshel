@@ -428,15 +428,16 @@ Scope {
                  + "grows from it.",
               type: "toggle", value: A.launcherMorph,
               set: v => A.launcherMorph = v },
-            { n: "Wider", s: "Extra width, spent on more columns rather than "
-                 + "more space between the same tiles",
-              type: "slider", min: 100, max: 200, unit: "%",
+            { n: "Width", s: "Spent on more columns rather than on more space "
+                 + "between the same tiles. Below 100% the menu is narrower "
+                 + "and holds fewer. While it grows out of the dock it is "
+                 + "never wider than the dock itself.",
+              type: "slider", min: 50, max: 200, unit: "%",
               value: A.launcherWide, set: v => A.launcherWide = v },
-            { n: "Taller", s: "How tall the menu is allowed to get. It is as "
-                 + "tall as what is in it and no taller, so raising this "
-                 + "only shows when the results would otherwise be cut "
-                 + "off — it does not add empty panel.",
-              type: "slider", min: 100, max: 200, unit: "%",
+            { n: "Height", s: "Spent on more rows of apps, so the menu is "
+                 + "taller because there is more in it rather than because "
+                 + "there is more empty panel. Below 100% it shows fewer.",
+              type: "slider", min: 50, max: 200, unit: "%",
               value: A.launcherTall, set: v => A.launcherTall = v },
             { n: "Icon size", s: "The glyph inside each tile, without "
                  + "changing the tile",
@@ -446,7 +447,8 @@ Scope {
               type: "info",
               value: A.launcherWidth + " × " + A.launcherHeight + " px, "
                      + A.launcherColumns + " columns, "
-                     + A.launcherIconSize + " px icons" },
+                     + Math.max(2, Math.round(3 * A.launcherHeightStretch))
+                     + " rows, " + A.launcherIconSize + " px icons" },
 
             { type: "header", n: "Text", s: "" },
             { n: "Entry names", s: "App and command names in the grid and results",

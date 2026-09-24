@@ -103,9 +103,30 @@ Variants {
         // the pointer is inside can retract it.
         property bool hoverLatch: false
 
+        // The launcher shrinking back into the pill has to land on a pill
+        // that is still there. With auto-hide on, closing the launcher
+        // used to drop the last reason to be out, so the dock slid away
+        // underneath the collapse and Escape looked like dismissing the
+        // whole thing rather than putting it back. It stays out for a
+        // moment afterwards, which is long enough to see what happened
+        // and to reach it.
+        property bool afterLauncher: false
+        readonly property bool launcherHere:
+            Config.UiState.launcherOpen && onFocusedScreen
+        onLauncherHereChanged: {
+            if (launcherHere) { afterLauncher = false; afterLauncherHold.stop(); }
+            else if (visible) { afterLauncher = true; afterLauncherHold.restart(); }
+        }
+        Timer {
+            id: afterLauncherHold
+            interval: 1400
+            onTriggered: dock.afterLauncher = false
+        }
+
         readonly property bool revealed: !Config.Appearance.dockAutoHide
                                          || hoverLatch
-                                         || (Config.UiState.launcherOpen && onFocusedScreen)
+                                         || launcherHere
+                                         || afterLauncher
 
         onHoveredNowChanged: {
             if (hoveredNow) { hideDelay.stop(); hoverLatch = true; }
