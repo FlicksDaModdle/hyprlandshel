@@ -99,6 +99,11 @@ When the shell has never written a palette, `hyprshell-defaults.css`
 stands in, and that one follows the system — with no shell to ask, it is
 the only opinion available.
 
+**A shell that was already running when you installed this has no Firefox
+support in it**, so it will never write a palette and `syncTheming` on it
+does nothing. Reload it first — `super+shift+R`, or `qs -c hyprshell ipc
+call shell reloadShell` — and then restart Firefox.
+
 ## Two places that need more than a colour
 
 **Menus are painted by GTK, not by Firefox.** A `menupopup` on Linux has

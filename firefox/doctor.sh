@@ -36,7 +36,12 @@ PREF='toolkit.legacyUserProfileCustomizations.stylesheets'
 # ── 1. the palette the shell writes ───────────────────────────────────
 head1 "The palette"
 if [ -f "$COLORS" ]; then
-    ok "$COLORS"
+    if grep -q 'written by firefox/install.sh' "$COLORS" 2>/dev/null; then
+        bad "$COLORS is an old placeholder, not the shell's palette"
+        note "it is light whatever your browser is set to. ./install.sh clears it."
+    else
+        ok "$COLORS"
+    fi
     if grep -q -- '--hs-accent' "$COLORS"; then
         note "accent is $(sed -n 's/.*--hs-accent: *\([^;]*\);.*/\1/p' "$COLORS" | head -1)"
         note "scheme is $(sed -n 's/.*color-scheme: *\([^;]*\);.*/\1/p' "$COLORS" | head -1)"
@@ -250,7 +255,14 @@ fi
 if [ -n "$shell_theme" ] && [ -n "$palette_scheme" ] \
    && [ "$shell_theme" != "$palette_scheme" ] && [ "$shell_theme" != "auto" ]; then
     bad "the shell is $shell_theme but the palette says $palette_scheme"
-    note "the shell has not rewritten it. run:"
+    note "the shell has not rewritten it."
+    note ""
+    note "reload the shell first — super+shift+R, or:"
+    note "  qs -c hyprshell ipc call shell reloadShell"
+    note "a shell that was already running when this was installed has no"
+    note "Firefox support in it, and syncTheming on that one writes nothing."
+    note ""
+    note "then, if it still disagrees:"
     note "  qs -c hyprshell ipc call shell syncTheming"
 fi
 

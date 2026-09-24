@@ -139,6 +139,22 @@ if [ -z "$profiles" ]; then
     exit 1
 fi
 
+# An earlier version of this script wrote a placeholder palette when the
+# shell had not written one — hardcoded light, which gave a browser set
+# to dark a light address bar. It is still on disk for anyone who ran
+# that version, it still wins over the defaults because it is imported
+# after them, and nothing would ever replace it but the shell.
+#
+# So it is cleared out here. The defaults take over immediately and the
+# shell's own palette lands on top whenever it next runs.
+if [ "$MODE" = install ] && [ -f "$COLORS" ] \
+   && grep -q 'written by firefox/install.sh' "$COLORS" 2>/dev/null; then
+    rm -f "$COLORS"
+    printf '  %sremoved a stale placeholder palette%s\n' "$YEL" "$RST"
+    printf '    %s%s%s\n' "$DIM" "$COLORS" "$RST"
+    printf '    %sit was light whatever your browser was set to%s\n\n' "$DIM" "$RST"
+fi
+
 # The shell writes the palette. When it has not yet — the shell is not
 # running, or has not reached its first theme pass — there is nothing to
 # write here: hyprshell-defaults.css is installed beside the stylesheets
