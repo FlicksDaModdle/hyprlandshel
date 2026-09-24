@@ -37,7 +37,12 @@
 //   { kind: "path", closed: false, nodes: [
 //       { x, y },                          a corner
 //       { x, y, hi: {x,y}, ho: {x,y} }     handles in and out
-//   ] }
+//   ], holes: [ [ …nodes… ], … ] }
+//
+// `holes` are further closed subpaths inside the first, emitted after
+// it. They exist because a traced logo has them — the middle of a
+// letter O — and under the odd-even fill rule MonoIcon uses, a subpath
+// inside another punches through it.
 //
 // Handles are absolute points, not offsets, because every one of them is
 // something you drag: an offset would have to be re-derived from its
@@ -244,7 +249,14 @@ function pathFor(s) {
         }
         return polyPath(pts, s.closed === true);
     }
-    case "path":    return nodePath(s.nodes, s.closed === true, map);
+    case "path": {
+        var d = nodePath(s.nodes, s.closed === true, map);
+        for (var hI = 0; hI < (s.holes || []).length; hI++) {
+            var hd = nodePath(s.holes[hI], true, map);
+            if (hd !== "") d += " " + hd;
+        }
+        return d;
+    }
     // A dot is not a path. It is a filled disc, and MonoIcon draws those
     // as rectangles with a radius rather than as geometry, because at
     // 1px across a stroked circle is a smudge and a filled one is a dot.
@@ -255,12 +267,12 @@ function pathFor(s) {
 
 // Which of MonoIcon's five path buckets a shape belongs in.
 //
-// `fill` is accent-only there, so a filled shape is an accent shape
-// whatever colour it was given — the maker greys the choice out rather
-// than letting it lie.
+// A filled shape goes to whichever fill bucket matches its colour. It
+// used to go to `fill` regardless, because that was the only one there
+// was, and the maker had to say "always accent" next to the toggle.
 function bucketFor(s) {
     if (s.kind === "dot") return "dots";
-    if (s.fill) return "fill";
+    if (s.fill) return s.c === "acc" ? "fill" : "fillInk";
     var base = s.c === "acc" ? "acc" : "ink";
     return s.sw === 3 ? base + "W" : base;
 }
@@ -269,7 +281,7 @@ function bucketFor(s) {
 // open it again; see UserIcons.qml.
 function compose(shapes) {
     var out = { shapes: shapes ? shapes.slice() : [] };
-    var parts = { ink: [], acc: [], inkW: [], accW: [], fill: [] };
+    var parts = { ink: [], acc: [], inkW: [], accW: [], fill: [], fillInk: [] };
     var dots = [];
 
     for (var i = 0; i < (shapes || []).length; i++) {
@@ -295,6 +307,6 @@ function compose(shapes) {
 // so the maker should say so before it gets that far.
 function draws(shapes) {
     var g = compose(shapes);
-    return !!(g.ink || g.acc || g.inkW || g.accW || g.fill
+    return !!(g.ink || g.acc || g.inkW || g.accW || g.fill || g.fillInk
               || (g.dots && g.dots.length > 0));
 }

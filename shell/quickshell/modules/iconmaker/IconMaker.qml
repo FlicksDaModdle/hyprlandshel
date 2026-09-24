@@ -87,6 +87,49 @@ Item {
 
     property string notice: ""
 
+    // ── importing a picture ───────────────────────────────────────────
+    //
+    // A logo you already have, turned into shapes rather than pasted in
+    // as a picture. What comes back is ordinary paths, so it takes the
+    // accent like everything else and follows it when you change it —
+    // which is the part an imported PNG could never do.
+    property url importSource: ""
+    property int importThreshold: 128
+    property real importDetail: 1
+
+    ImageTrace {
+        id: tracer
+        source: root.importSource
+        threshold: root.importThreshold
+        detail: root.importDetail
+
+        onTraced: shapes => {
+            if (!shapes || shapes.length === 0) {
+                root.notice = "Nothing came out of that image.";
+                return;
+            }
+            // Added to the drawing rather than replacing it, so a logo
+            // can be traced into something already begun — and so a
+            // second go at the sliders does not quietly throw away
+            // whatever else is on the canvas.
+            doc.replace(doc.shapes.concat(shapes), false);
+            doc.selected = doc.shapes.length - 1;
+            root.notice = tracer.note !== "" ? tracer.note
+                : (shapes.length === 1 ? "Traced 1 shape — pick it and set ink or accent."
+                   : "Traced " + shapes.length
+                     + " shapes — each one takes ink or accent on its own.");
+        }
+        onFailed: reason => root.notice = reason
+    }
+
+    function importImage(url) {
+        // Re-tracing the same file has to re-run: the sliders are the
+        // whole point of the panel and a url that has not changed fires
+        // nothing.
+        if (String(url) === String(root.importSource)) tracer.run();
+        else root.importSource = url;
+    }
+
     // ── window ────────────────────────────────────────────────────────
     FloatingWindow {
         id: win
@@ -376,14 +419,7 @@ Item {
                             checked: !!(doc.current && doc.current.fill)
                             onToggled: v => doc.update({ fill: v })
                         }
-                        StyledText {
-                            anchors.verticalCenter: parent.verticalCenter
-                            // Saying it rather than letting it surprise
-                            // someone: MonoIcon only ever fills in accent.
-                            text: "always accent"
-                            font.pixelSize: Config.Appearance.fs(10)
-                            color: Config.Appearance.ink3
-                        }
+
                     }
 
                     Row {
@@ -657,6 +693,135 @@ Item {
                     }
                 }
 
+                Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
+
+                // ── import ────────────────────────────────────────────
+                Column {
+                    width: parent.width
+                    spacing: 8
+
+                    Rectangle {
+                        id: dropZone
+                        width: parent.width
+                        height: 54
+                        radius: Config.Appearance.rSm
+                        color: drop.containsDrag ? Config.Appearance.accent
+                                                 : Config.Appearance.ground
+                        border.width: 1
+                        border.color: drop.containsDrag ? Config.Appearance.accent
+                                                        : Config.Appearance.edge
+
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 2
+                            StyledText {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: tracer.busy ? "Tracing…" : "Drop a logo here"
+                                font.pixelSize: Config.Appearance.fs(12)
+                                font.weight: Font.DemiBold
+                                color: drop.containsDrag ? Config.Appearance.inkOnAccent
+                                                         : Config.Appearance.ink
+                            }
+                            StyledText {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: "PNG or SVG with a transparent background"
+                                font.pixelSize: Config.Appearance.fs(10)
+                                color: drop.containsDrag ? Config.Appearance.inkOnAccent
+                                                         : Config.Appearance.ink3
+                            }
+                        }
+
+                        DropArea {
+                            id: drop
+                            anchors.fill: parent
+                            onDropped: ev => {
+                                if (ev.hasUrls && ev.urls.length > 0)
+                                    root.importImage(ev.urls[0]);
+                                else if (ev.hasText)
+                                    root.importImage(root.asUrl(ev.text.trim()));
+                            }
+                        }
+                    }
+
+                    // Typed or pasted, for anyone whose file manager is
+                    // not the one in front of them.
+                    Rectangle {
+                        width: parent.width
+                        height: 30
+                        radius: Config.Appearance.rPill
+                        color: Config.Appearance.sel
+                        border.width: 1
+                        border.color: pathField.activeFocus ? Config.Appearance.accent
+                                                            : Config.Appearance.edge
+
+                        TextInput {
+                            id: pathField
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            verticalAlignment: Text.AlignVCenter
+                            clip: true
+                            color: Config.Appearance.ink
+                            font.family: Config.Appearance.fontFamily
+                            font.pixelSize: Config.Appearance.fs(11)
+                            selectByMouse: true
+                            selectionColor: Config.Appearance.accent
+                            selectedTextColor: Config.Appearance.inkOnAccent
+                            onAccepted: if (text.trim() !== "")
+                                            root.importImage(root.asUrl(text.trim()))
+
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: pathField.text === ""
+                                text: "…or a path, then Enter"
+                                font.pixelSize: Config.Appearance.fs(11)
+                                color: Config.Appearance.ink3
+                            }
+                        }
+                    }
+
+                    // The two knobs that decide what a trace looks like.
+                    // Re-tracing on release rather than on every frame:
+                    // it reads a whole image each time.
+                    Row {
+                        width: parent.width
+                        spacing: 8
+                        visible: String(root.importSource) !== ""
+
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Cutoff"
+                            font.pixelSize: Config.Appearance.fs(11)
+                            color: Config.Appearance.ink2
+                        }
+                        FillSlider {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 70
+                            value: root.importThreshold / 255
+                            onMoved: v => root.importThreshold = Math.round(v * 255)
+                            onReleased: v => { root.importThreshold = Math.round(v * 255);
+                                               tracer.run(); }
+                        }
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Detail"
+                            font.pixelSize: Config.Appearance.fs(11)
+                            color: Config.Appearance.ink2
+                        }
+                        FillSlider {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 70
+                            // 0.3 to 3.3, so the middle is about right.
+                            value: (root.importDetail - 0.3) / 3
+                            onMoved: v => root.importDetail = 0.3 + v * 3
+                            onReleased: v => { root.importDetail = 0.3 + v * 3;
+                                               tracer.run(); }
+                        }
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
+
                 // ── what you have made ────────────────────────────────
                 StyledText {
                     text: "Your icons"
@@ -736,6 +901,16 @@ Item {
         case "delete":    doc.removeSelected(); break;
         case "clear":     doc.clear(); break;
         }
+    }
+
+    // A dropped file arrives as a url; a typed one is a path and has to
+    // be made into one, or Qt reads it as relative to the shell.
+    function asUrl(text) {
+        if (text.startsWith("file://")) return text;
+        if (text.startsWith("~/"))
+            return "file://" + Quickshell.env("HOME") + text.slice(1);
+        if (text.startsWith("/")) return "file://" + text;
+        return text;
     }
 
     // Only these can be filled — a line or an arc has no inside, and an

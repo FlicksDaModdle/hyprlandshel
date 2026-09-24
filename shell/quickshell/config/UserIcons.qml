@@ -52,7 +52,7 @@ Singleton {
 
     // Everything a glyph may carry. Anything else in the file is dropped
     // on the way in rather than handed to the renderer.
-    readonly property var pathKeys: ["ink", "acc", "inkW", "accW", "fill"]
+    readonly property var pathKeys: ["ink", "acc", "inkW", "accW", "fill", "fillInk"]
 
     // A hand-edited or half-written file should cost you your icons, not
     // your shell. Every field is checked and anything unrecognised is

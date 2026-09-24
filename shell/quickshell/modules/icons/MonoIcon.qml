@@ -109,13 +109,34 @@ Item {
                            ? Qt.size(Math.ceil(width * 2), Math.ceil(height * 2))
                            : undefined
 
-        // Filled accent region (palette's half-disc is the only one today).
+        // Filled regions. Two of them, because a fill used to be accent
+        // and nothing else — which was fine while the only one in the
+        // pack was palette's half-disc, and wrong the moment a logo
+        // traced from an image wanted to be a plain ink silhouette.
+        //
+        // Odd-even, stated rather than left to the default: a traced
+        // shape carries its holes as further subpaths, and under a
+        // winding rule the hole in a letter O fills in.
+        Shape {
+            visible: !!root.spec.fillInk
+            anchors.fill: parent
+            preferredRendererType: root.renderer
+            ShapePath {
+                fillColor: root.inkColor
+                fillRule: ShapePath.OddEvenFill
+                strokeWidth: 0
+                strokeColor: "transparent"
+                PathSvg { path: root.spec.fillInk || "" }
+            }
+        }
+
         Shape {
             visible: !!root.spec.fill
             anchors.fill: parent
             preferredRendererType: root.renderer
             ShapePath {
                 fillColor: root.accent
+                fillRule: ShapePath.OddEvenFill
                 strokeWidth: 0
                 strokeColor: "transparent"
                 PathSvg { path: root.spec.fill || "" }

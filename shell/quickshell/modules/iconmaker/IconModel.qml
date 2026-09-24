@@ -167,6 +167,10 @@ QtObject {
                 if (nd.hi) { nd.hi.x += dx; nd.hi.y += dy; }
                 if (nd.ho) { nd.ho.x += dx; nd.ho.y += dy; }
             }
+            // A traced shape's holes are part of it. Left behind, the
+            // hole in a letter O stays put while the letter slides away.
+            for (const hole of (s.holes || []))
+                for (const nd of hole) { nd.x += dx; nd.y += dy; }
             break;
         default:
             s.cx += dx; s.cy += dy; break;   // circle, ellipse, arc, dot
@@ -291,6 +295,12 @@ QtObject {
                 best = Math.min(best, seg(nodes[nodes.length - 1], nodes[0]));
             // A filled path is solid, so anywhere inside it is a hit.
             if (s.fill && s.closed && model.insidePath(s, px, py)) return 0;
+            // The holes count as edges too, so a traced letter can be
+            // picked up by the inside of its counter.
+            for (const hole of (s.holes || []))
+                for (let i = 0, j = hole.length - 1; i < hole.length; j = i++)
+                    best = Math.min(best, model.distToSegment(
+                        px, py, hole[i].x, hole[i].y, hole[j].x, hole[j].y));
             return best;
         }
         case "poly": {
@@ -313,15 +323,22 @@ QtObject {
     // ignored: this decides whether a click is inside a filled shape,
     // and being a curve's width out at the edge of one costs nothing.
     function insidePath(s, px, py) {
-        const nodes = s.nodes || [];
-        let inside = false;
-        for (let i = 0, j = nodes.length - 1; i < nodes.length; j = i++) {
-            const a = nodes[i], b = nodes[j];
-            if ((a.y > py) !== (b.y > py)
-                && px < (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x)
-                inside = !inside;
-        }
-        return inside;
+        const ring = (pts) => {
+            let hit = false;
+            for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+                const a = pts[i], b = pts[j];
+                if ((a.y > py) !== (b.y > py)
+                    && px < (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x)
+                    hit = !hit;
+            }
+            return hit;
+        };
+        if (!ring(s.nodes || [])) return false;
+        // Odd-even, the same rule the renderer fills by: inside a hole
+        // is outside the shape, so clicking the middle of an O picks up
+        // whatever is behind it rather than the O.
+        for (const hole of (s.holes || [])) if (ring(hole)) return false;
+        return true;
     }
 
     function distToSegment(px, py, x1, y1, x2, y2) {
