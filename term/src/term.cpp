@@ -50,7 +50,7 @@ Term::Term(QObject *parent) : QObject(parent) {
     // After the reset, not before: resetting announces the terminal's
     // properties through the same callback the program uses, so a default
     // set first would simply be overwritten by libvterm's own.
-    m_cursorShape = VTERM_PROP_CURSORSHAPE_BAR_LEFT;
+    m_appCursorShape = VTERM_PROP_CURSORSHAPE_BAR_LEFT;
     m_cursorBlink = true;
 
     m_repaint.setSingleShot(true);
@@ -220,7 +220,7 @@ QString Term::textOfRange(int row0, int col0, int row1, int col1) const {
             if (cell.width == 0) continue;
             if (cell.chars[0] == 0) { line.append(QChar(' ')); continue; }
             for (int i = 0; i < VTERM_MAX_CHARS_PER_CELL && cell.chars[i]; ++i)
-                line.append(QString::fromUcs4(&cell.chars[i], 1));
+                line.append(QChar::fromUcs4(cell.chars[i]));
         }
         // Trailing blanks are padding, not content: a copied line should
         // not carry the rest of the terminal's width with it.
@@ -273,11 +273,14 @@ int Term::onSetTermProp(VTermProp prop, VTermValue *val, void *user) {
         // that the program does not know is there.
         t->m_altScreen = val->boolean;
         emit t->altScreenChanged();
+        // Leaving or entering it changes which shape is drawn — see
+        // cursorShape().
+        emit t->cursorStyleChanged();
         t->setScrollOffset(0);
         t->markDamaged();
         return 1;
     case VTERM_PROP_CURSORSHAPE:
-        t->m_cursorShape = val->number;
+        t->m_appCursorShape = val->number;
         emit t->cursorStyleChanged();
         t->markDamaged();
         return 1;

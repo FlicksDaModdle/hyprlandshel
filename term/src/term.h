@@ -93,7 +93,28 @@ public:
     int scrollOffset() const { return m_scrollOffset; }
     void setScrollOffset(int off);
     bool cursorVisible() const { return m_cursorVisible; }
-    int cursorShape() const { return m_cursorShape; }
+    // What to draw, which is not always what the program asked for.
+    //
+    // DECSCUSR — ESC [ n SP q — lets a program pick the cursor's shape,
+    // and fish sends one on every prompt: CachyOS's config asks for a
+    // block. So the caret turned back into a block the moment a real
+    // shell was underneath it, on a machine where the default had never
+    // been touched.
+    //
+    // At a shell prompt the shape carries no information — it is just a
+    // house style, and the house style here is a caret. Inside a
+    // full-screen program it carries a great deal: vim says which mode
+    // you are in with it, and overriding that would be taking something
+    // away. The alternate screen is exactly that line, so the program is
+    // obeyed there and nowhere else.
+    //
+    // HYPRSHELL_TERM_APP_CURSOR=1 obeys it everywhere, for anyone who
+    // wants their shell to decide.
+    int cursorShape() const {
+        static const bool obey = qEnvironmentVariableIsSet("HYPRSHELL_TERM_APP_CURSOR");
+        if (obey || m_altScreen) return m_appCursorShape;
+        return 3;   // VTERM_PROP_CURSORSHAPE_BAR_LEFT
+    }
     bool cursorBlink() const { return m_cursorBlink; }
     int cursorRow() const { return m_cursorPos.row; }
     int cursorCol() const { return m_cursorPos.col; }
@@ -162,7 +183,7 @@ private:
 
     VTermPos m_cursorPos { 0, 0 };
     bool m_cursorVisible = true;
-    int m_cursorShape = 3;          // VTERM_PROP_CURSORSHAPE_BAR_LEFT
+    int m_appCursorShape = 3;       // what the program last asked for
     bool m_cursorBlink = true;
 
     QColor m_defaultFg { "#e8e6e3" };

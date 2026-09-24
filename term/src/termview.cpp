@@ -213,7 +213,7 @@ void TermView::paint(QPainter *painter) {
                 QString glyph;
                 if (next.chars[0] == 0) glyph = QStringLiteral(" ");
                 else for (int i = 0; i < VTERM_MAX_CHARS_PER_CELL && next.chars[i]; ++i)
-                    glyph.append(QString::fromUcs4(&next.chars[i], 1));
+                    glyph.append(QChar::fromUcs4(next.chars[i]));
                 run.append(glyph);
                 // What each entry in the run is worth, in cells. A CJK
                 // character is two, and drawing it as one put every
