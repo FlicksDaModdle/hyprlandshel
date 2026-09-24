@@ -110,7 +110,24 @@ Singleton {
 
     function rememberDisplay(name, mode, scale) {
         const map = displayMap();
-        map[name] = { mode: mode, scale: scale };
+        const had = map[name] || ({});
+        map[name] = { mode: mode, scale: scale, position: had.position };
+        prefs.displays = JSON.stringify(map);
+    }
+
+    // Where the output sits on the desktop plane, kept beside its mode and
+    // scale because Hyprland's monitor line carries all three at once.
+    //
+    // Without this, an arrangement dragged into place in Settings lasted
+    // until the next login and then went back to however Hyprland chose to
+    // lay the outputs out — which for two monitors is left-to-right in
+    // whatever order they were detected, and is exactly what someone
+    // opening that panel is trying to change.
+    function rememberDisplayPosition(name, x, y) {
+        const map = displayMap();
+        const had = map[name] || ({});
+        map[name] = { mode: had.mode, scale: had.scale,
+                      position: Math.round(x) + "x" + Math.round(y) };
         prefs.displays = JSON.stringify(map);
     }
 
@@ -124,10 +141,22 @@ Singleton {
         for (let i = 0; i < live.length; i++) {
             const m = live[i];
             const want = map[m.name];
-            if (!want || !want.mode) continue;
-            Services.Compositor.setMonitor({
-                output: m.name, mode: want.mode, scale: want.scale || 1
-            });
+            if (!want) continue;
+            // An entry may hold only a position — an arrangement dragged
+            // into place without the mode ever being touched. The monitor
+            // line needs a mode regardless, so its current one is filled
+            // in rather than the entry being skipped, which is what used
+            // to happen and why positions never came back.
+            const ipc = m.lastIpcObject || ({});
+            const mode = want.mode
+                || ((ipc.width || m.width) + "x" + (ipc.height || m.height)
+                    + "@" + (Math.round((ipc.refreshRate || 60) * 1000) / 1000));
+            const spec = { output: m.name, mode: mode,
+                           scale: want.scale || m.scale || 1 };
+            // Left out when unknown, so Hyprland places it as it likes
+            // rather than being told to put it at the origin.
+            if (want.position) spec.position = want.position;
+            Services.Compositor.setMonitor(spec);
         }
     }
 

@@ -47,6 +47,23 @@ Variants {
         // animation to see.
         property bool lingering: false
         visible: wanted || lingering
+        // Closing into a dock that is not going to be there.
+        //
+        // Shrinking back into the pill is the right ending when the pill
+        // stays — you watch the panel become the thing you opened it
+        // from. With auto-hide on there is no pill to become: it draws
+        // itself back down to a dock shape and then that shape vanishes
+        // too, which is two endings for one gesture and reads as a
+        // stutter. So on an auto-hiding dock the panel goes as itself:
+        // down a little and out, in one movement, and the dock is simply
+        // gone behind it.
+        readonly property bool exitAway:
+            Config.Appearance.dockAutoHide && !Config.UiState.holdDockAfterLauncher
+        property real exit: 0
+        Behavior on exit {
+            NumberAnimation { duration: Config.Appearance.anim(210); easing.type: Easing.OutCubic }
+        }
+
         onWantedChanged: {
             if (wanted) { linger.stop(); lingering = false; }
             else if (visible && Config.Appearance.launcherMorph) {
@@ -54,13 +71,27 @@ Variants {
             }
             // Drives the morph too: one handler, because QML keeps only the
             // last handler declared for a signal and silently drops the rest.
-            launcher.morph = wanted ? 1 : 0;
-            launcher.morphY = wanted ? 1 : 0;
+            if (wanted) {
+                launcher.exit = 0;
+                launcher.morph = 1;
+                launcher.morphY = 1;
+            } else if (launcher.exitAway && launcher.morphing) {
+                // The shape is left where it is and the whole panel
+                // leaves; letting morph fall here as well would put the
+                // pill back on the way out, which is the thing being
+                // avoided.
+                launcher.exit = 1;
+            } else {
+                launcher.morph = 0;
+                launcher.morphY = 0;
+            }
             // Closing, the contents go first and quickly: the shape should
             // look empty before it starts shrinking, not shrink around
-            // text that is still legible.
+            // text that is still legible. Not when the panel is leaving
+            // whole — there the contents should still be in it.
             fadeDelay.stop();
-            if (wanted) fadeDelay.restart(); else launcher.morphFade = 0;
+            if (wanted) fadeDelay.restart();
+            else if (!launcher.exitAway) launcher.morphFade = 0;
         }
         // Opening, the fade waits for the shape to be most of the way
         // there. A Timer rather than a longer easing because the delay
@@ -70,7 +101,21 @@ Variants {
             interval: 150
             onTriggered: launcher.morphFade = 1
         }
-        Timer { id: linger; interval: 260; onTriggered: launcher.lingering = false }
+        Timer {
+            id: linger
+            interval: 260
+            onTriggered: {
+                launcher.lingering = false;
+                // Back to the closed shape now that nothing is on screen,
+                // or the next opening would start from a panel that is
+                // already the right size and appear with no movement at
+                // all.
+                launcher.morph = 0;
+                launcher.morphY = 0;
+                launcher.morphFade = 0;
+                launcher.exit = 0;
+            }
+        }
 
         anchors.top: true
         // Covers the whole output, exclusive zones and all.
@@ -131,8 +176,19 @@ Variants {
         // shape is right; what it needed was to be the same shape, larger.
         readonly property real zoom: Math.max(40, Config.Appearance.launcherSize) / 100
         function z(px) { return Math.round(px * zoom); }
-        readonly property real dockOffset: Config.Appearance.dockEdgeGap
-                                           + Config.Appearance.dockPanelBreadth + 12
+        // The dock's own measurements, on the output the dock is drawn on.
+        //
+        // The pill's width and height arrive already scaled — the dock
+        // publishes what it drew — but the gaps around it are settings,
+        // and reading them raw put the launcher a few pixels off the dock
+        // on any screen with a shell scale of its own.
+        readonly property real us:
+            Config.Appearance.screenScale(modelData ? modelData.name : "")
+        function u(px) { return Math.max(1, Math.round(px * us)); }
+        readonly property real dockGap: u(Config.Appearance.dockEdgeGap)
+
+        readonly property real dockOffset: dockGap
+                                           + u(Config.Appearance.dockPanelBreadth) + 12
 
         // Where the panel's near edge sits. Growing out of the dock, it
         // takes the dock's room as well: the pill has faded out by then, so
@@ -140,7 +196,7 @@ Variants {
         // where the thing you clicked used to be. Without the morph the
         // dock is still there and the panel clears it, as before.
         readonly property real nearEdge: Config.Appearance.launcherMorph
-                                         ? Config.Appearance.dockEdgeGap
+                                         ? dockGap
                                          : dockOffset
 
         // ── the morph ─────────────────────────────────────────────────────
@@ -181,11 +237,11 @@ Variants {
         readonly property real pillW: Config.UiState.dockPillWidth
         readonly property real pillH: Config.UiState.dockPillHeight
         readonly property real pillX: launcher.isLeft
-            ? Config.Appearance.dockEdgeGap
+            ? launcher.dockGap
             : Math.round((launcher.width - pillW) / 2)
         readonly property real pillY: launcher.isLeft
             ? Math.round((launcher.height - pillH) / 2)
-            : launcher.height - Config.Appearance.dockEdgeGap - pillH
+            : launcher.height - launcher.dockGap - pillH
 
         function lerp(a, b) { return a + (b - a) * launcher.morph; }
         function lerpY(a, b) { return a + (b - a) * launcher.morphY; }
@@ -472,9 +528,22 @@ Variants {
             // you are typing into to jump.
             property real restingHeight: 0
 
+            // One height, whatever is in it.
+            //
+            // It used to be the taller of the content and the resting
+            // layout, so a search with many matches grew the panel and a
+            // search with few shrank it — the window changing size under
+            // the thing you are typing into, on every keystroke. The size
+            // is the one the settings ask for now, and a long list
+            // scrolls inside it, which is what a list is for.
+            // Before the resting layout has ever been measured — the very
+            // first frame — fall back to what is in it, or the panel
+            // opens at nothing.
+            readonly property real naturalHeight:
+                panel.restingHeight > 0 ? panel.restingHeight
+                                        : body.implicitHeight + footer.height
             readonly property real targetHeight:
-                Math.min(Math.max(body.implicitHeight + footer.height,
-                                  panel.restingHeight),
+                Math.min(panel.naturalHeight,
                          Math.min(launcher.panelHeight,
                                   launcher.height - launcher.nearEdge - 24))
             height: launcher.morphing
@@ -507,8 +576,12 @@ Variants {
 
             x: launcher.morphing ? Math.round(launcher.lerp(launcher.pillX, targetX))
                                  : targetX
-            y: launcher.morphing ? Math.round(launcher.lerpY(launcher.pillY, targetY))
-                                 : targetY
+            // The exit slides it towards the edge it came from, so it
+            // leaves the way a dock does rather than dissolving in place.
+            y: (launcher.morphing ? Math.round(launcher.lerpY(launcher.pillY, targetY))
+                                  : targetY)
+               + (launcher.isLeft ? 0 : Math.round(launcher.exit * launcher.z(56)))
+            opacity: 1 - launcher.exit
 
             // Swallow clicks so they don't reach the catcher behind.
             MouseArea { anchors.fill: parent }
@@ -1032,12 +1105,17 @@ Variants {
                         id: results
                         x: 8
                         width: parent.width - 16
-                        // Grows with the panel: a taller launcher should show more
-                        // results, not the same nine with empty space under them.
-                        // 356 was a fixed cap that made the height setting look
-                        // like it did nothing while searching.
-                        height: Math.min(Math.max(140, launcher.panelHeight - 204),
-                                         Math.max(64, contentHeight))
+                        // Whatever room is left, and no more. The panel is
+                        // the size the settings ask for, so a long list
+                        // scrolls rather than pushing the window taller —
+                        // which it used to do on every keystroke, under
+                        // the very field being typed into.
+                        //
+                        // The subtraction is the two things above it in
+                        // this column: the search field and the list's own
+                        // heading.
+                        height: Math.max(64, body.height - launcher.z(50)
+                                             - launcher.z(40) - launcher.z(8))
                         clip: true
                         spacing: launcher.z(1)
                         boundsBehavior: Flickable.StopAtBounds

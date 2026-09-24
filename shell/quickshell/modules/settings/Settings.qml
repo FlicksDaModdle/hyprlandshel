@@ -731,7 +731,13 @@ Scope {
                         scale: x.scale || 1, focused: x.focused })),
                     value: m.name,
                     pick: n => root.displayPickRaw = n,
-                    set: (n, px, py) => Services.Compositor.setMonitorPosition(n, px, py) });
+                    set: (n, px, py) => {
+                        Services.Compositor.setMonitorPosition(n, px, py);
+                        // Remembered, like the mode and the scale beside
+                        // it: a runtime monitor line is gone at the next
+                        // login.
+                        Services.Devices.rememberDisplayPosition(n, px, py);
+                    } });
                 rows.push({ n: "Position", s: "Top-left corner in the layout, in logical pixels",
                     type: "info", value: m.x + ", " + m.y });
             }

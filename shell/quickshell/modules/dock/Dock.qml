@@ -81,19 +81,31 @@ Variants {
         visible: hasScreen && !Config.UiState.locked
 
         readonly property bool isLeft: Config.Appearance.dockLeft
-        readonly property real tileSize: Config.Appearance.dockTileSize
-        readonly property real iconSize: Config.Appearance.dockIconSize
-        readonly property real padH: Config.Appearance.dockPadH
-        readonly property real padV: Config.Appearance.dockPadV
-        readonly property real tileSpacing: Config.Appearance.dockTileSpacing
-        readonly property real edgeGap: Config.Appearance.dockEdgeGap
+
+        // Per-output scale, the same one the bar uses.
+        //
+        // Without it, Settings → Displays → Shell scale moved the bar on
+        // one monitor and left the dock the same size on both — which is
+        // exactly the half-applied look the setting exists to fix. Every
+        // measurement below goes through u(), so one number changes all
+        // of them together.
+        readonly property real us:
+            Config.Appearance.screenScale(modelData ? modelData.name : "")
+        function u(px) { return Math.max(1, Math.round(px * us)); }
+
+        readonly property real tileSize: u(Config.Appearance.dockTileSize)
+        readonly property real iconSize: u(Config.Appearance.dockIconSize)
+        readonly property real padH: u(Config.Appearance.dockPadH)
+        readonly property real padV: u(Config.Appearance.dockPadV)
+        readonly property real tileSpacing: u(Config.Appearance.dockTileSpacing)
+        readonly property real edgeGap: u(Config.Appearance.dockEdgeGap)
         // The shell owns this and writes it to Hyprland (Settings → Shell →
         // Hyprland → Outer gaps), so reading the preference is reading what
         // the compositor is actually doing.
         readonly property real gapsOut: Math.max(0, Config.Appearance.gapsOut)
         // Headroom reserved above the pill for tiles' hover tooltips.
-        readonly property real tooltipRoom: Config.Appearance.dockTooltipRoom
-        readonly property real panelBreadth: Config.Appearance.dockPanelBreadth
+        readonly property real tooltipRoom: u(Config.Appearance.dockTooltipRoom)
+        readonly property real panelBreadth: u(Config.Appearance.dockPanelBreadth)
 
         // Is this the screen the user is actually on? The launcher is global
         // state, so without this every dock on every monitor slid out when

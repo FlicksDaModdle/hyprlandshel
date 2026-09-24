@@ -32,14 +32,16 @@ Singleton {
     // by hand. Changing it *after* the surfaces exist does work, which is
     // what toggling by hand was doing.
     //
-    // A timer rather than a load signal, because the load signal is not
-    // part of FileView's documented API and inventing one is a QML error
-    // that takes the whole shell down. What matters here is only "not in
-    // the first instants", and that is exactly what this says.
+    // Set by the FileView below when the file has actually been read, with
+    // a timer behind it: a read that never finishes — a file on a mount
+    // that is not there, a permission that is wrong — would otherwise
+    // leave the dock reserving nothing for the rest of the session. The
+    // timer is longer than any local read and does no harm when the
+    // signal has already done the job.
     property bool settingsReady: false
     Timer {
-        running: true
-        interval: 600
+        running: !root.settingsReady
+        interval: 3000
         onTriggered: root.settingsReady = true
     }
 
@@ -50,9 +52,15 @@ Singleton {
         printErrors: false
         onFileChanged: reload()
         onAdapterUpdated: writeAdapter()
+        onLoaded: root.settingsReady = true
         // A missing file is normal on first run: write defaults out so the
         // file exists and is editable by hand.
-        onLoadFailed: error => { if (error === FileViewError.FileNotFound) writeAdapter(); }
+        onLoadFailed: error => {
+            if (error === FileViewError.FileNotFound) writeAdapter();
+            // Defaults are the answer either way, and they are already
+            // here, so nothing is waiting on a file that is not coming.
+            root.settingsReady = true;
+        }
 
         JsonAdapter {
             id: prefs
