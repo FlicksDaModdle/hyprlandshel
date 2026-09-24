@@ -113,8 +113,20 @@ while IFS= read -r prof; do
     fi
     ok "chrome/userChrome.css is ours"
 
+    if [ -f "$prof/chrome/hyprshell-defaults.css" ]; then
+        ok "chrome/hyprshell-defaults.css is there"
+    else
+        bad "no chrome/hyprshell-defaults.css beside it"
+        note "without it, a missing palette falls back to light whatever the"
+        note "browser is set to. run ./install.sh"
+    fi
+
     # ── 4. does its @import point at a file that exists ───────────────
-    imp=$(sed -n 's/^@import url("\(.*\)");$/\1/p' "$uc" | head -1)
+    # The shell's palette, which is the second import — the first is the
+    # defaults sitting beside this file. Taking the first was how this
+    # started reporting on the wrong one the moment there were two.
+    imp=$(sed -n 's/^@import url("\(.*\)");$/\1/p' "$uc" \
+          | grep -v 'hyprshell-defaults\.css' | head -1)
     if [ -z "$imp" ]; then
         bad "it has no @import line at all"
     elif [ "$imp" = "HYPRSHELL_COLORS_PATH" ]; then
@@ -178,12 +190,69 @@ else
     note "start it, and it will read the stylesheet on the way up"
 fi
 
-# ── and the thing that is not this theme's doing ──────────────────────
-head1 "One more"
-warn "Firefox's own light/dark is separate from the shell's"
-note "if they disagree, the parts Firefox draws itself fight the stylesheet"
-note "about:addons → Themes → pick Light or Dark to match, or run:"
-note "  gsettings set org.gnome.desktop.interface color-scheme prefer-dark"
+# ── light against dark ────────────────────────────────────────────────
+#
+# The one that produces the most confusing result of all, because
+# nothing is broken: the chrome is exactly the colour it was told to be,
+# and it is the wrong one. A light palette under a dark GTK gives a menu
+# with the platform's dark box and this theme's dark-on-dark text, which
+# reads as "the theme is broken" rather than as "these two disagree".
+head1 "Light against dark"
+
+palette_scheme=""
+[ -f "$COLORS" ] && palette_scheme=$(sed -n 's/.*color-scheme: *\([a-z]*\);.*/\1/p' "$COLORS" | head -1)
+
+shell_theme=""
+tj="$CONF/quickshell/hyprshell/theme.json"
+[ -f "$tj" ] && shell_theme=$(sed -n 's/.*"theme" *: *"\([a-z]*\)".*/\1/p' "$tj" | head -1)
+
+gtk_scheme=""
+if command -v gsettings >/dev/null 2>&1; then
+    gtk_scheme=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null \
+                 | tr -d "'")
+fi
+
+ff_theme=""
+while IFS= read -r prof; do
+    [ -n "$prof" ] || continue
+    # 0 is dark, 1 is light, 2 is follow the system.
+    t=$(grep -h 'browser.theme.toolbar-theme' "$prof/prefs.js" 2>/dev/null \
+        | sed -n 's/.*, *\([0-9]*\));.*/\1/p' | tail -1)
+    [ -n "$t" ] && ff_theme="$t"
+done <<< "$profiles"
+case "$ff_theme" in
+    0) ff_theme=dark ;; 1) ff_theme=light ;; 2) ff_theme="follows the system" ;;
+    *) ff_theme="" ;;
+esac
+
+printf '  %-22s %s\n' "this theme's palette" "${palette_scheme:-unknown}"
+printf '  %-22s %s\n' "the shell" "${shell_theme:-unknown}"
+printf '  %-22s %s\n' "GTK / the portal" "${gtk_scheme:-unknown}"
+printf '  %-22s %s\n' "Firefox's own theme" "${ff_theme:-unknown}"
+printf '\n'
+
+if [ -z "$palette_scheme" ]; then
+    warn "no palette, so the defaults are in force and follow the system"
+elif [ "$palette_scheme" = "light" ] && \
+     { [ "${gtk_scheme}" = "prefer-dark" ] || [ "$ff_theme" = "dark" ]; }; then
+    bad "the palette is LIGHT and the browser around it is DARK"
+    note "the chrome is doing what it was told — it was told the wrong thing."
+    note "the palette follows the SHELL, so either put the shell in dark mode"
+    note "(Settings → Appearance) and it will follow, or put Firefox in light."
+elif [ "$palette_scheme" = "dark" ] && \
+     { [ "${gtk_scheme}" = "default" ] || [ "$ff_theme" = "light" ]; }; then
+    bad "the palette is DARK and the browser around it is LIGHT"
+    note "set Firefox to dark in about:addons → Themes, or the shell to light."
+else
+    ok "nothing obviously disagreeing"
+fi
+
+if [ -n "$shell_theme" ] && [ -n "$palette_scheme" ] \
+   && [ "$shell_theme" != "$palette_scheme" ] && [ "$shell_theme" != "auto" ]; then
+    bad "the shell is $shell_theme but the palette says $palette_scheme"
+    note "the shell has not rewritten it. run:"
+    note "  qs -c hyprshell ipc call shell syncTheming"
+fi
 
 if [ "$BROKEN" -eq 0 ]; then
     printf '\n%sEverything this can check is in order.%s\n' "$GRN" "$RST"

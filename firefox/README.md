@@ -20,6 +20,7 @@ Then **restart Firefox**.
 | `userChrome.css` | the browser: tabs, toolbar, address bar, menus, sidebar, findbar |
 | `userContent.css` | the pages Firefox draws itself: new tab, error pages, reader, view-source |
 | `preview.html` | a drawing of the result, to look at without installing |
+| `hyprshell-defaults.css` | the palette when the shell has not written one — light and dark, following the system |
 | `install.sh` | finds the profiles, installs, flips the one pref that is needed |
 | `doctor.sh` | why it is not themed yet — walks the chain and names the broken link |
 
@@ -79,6 +80,24 @@ been restarted since.
 That last one catches most of it. Firefox reads chrome CSS once, on the
 way up, and closing the window does not always end the process — check
 with `pgrep -x firefox`.
+
+## Light against dark
+
+The palette follows **the shell**, not Firefox and not GTK. If the shell
+is light and Firefox is dark you get a light address bar with Firefox's
+own white icons on it, and a menu with the platform's dark box and this
+theme's dark text inside it — which reads as a broken theme rather than
+as two settings disagreeing. Nothing is broken; the chrome is exactly the
+colour it was told to be.
+
+`./doctor.sh` prints all four opinions — this theme's palette, the shell,
+GTK, and Firefox's own theme — and says when they disagree. Put the shell
+in the mode you want (Settings → Appearance) and the browser follows it
+at its next start.
+
+When the shell has never written a palette, `hyprshell-defaults.css`
+stands in, and that one follows the system — with no shell to ask, it is
+the only opinion available.
 
 ## Two places that need more than a colour
 

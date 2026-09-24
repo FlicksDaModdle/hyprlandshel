@@ -1,0 +1,75 @@
+/* The palette to use when the shell has not written one.
+ *
+ * This is not a placeholder to be replaced — it is installed beside
+ * userChrome.css and imported *before* the shell's file, so the shell's
+ * values land on top of these and these are what remain when the shell
+ * has never run, is not installed, or writes to a path this profile
+ * cannot read.
+ *
+ * It exists because the first version of this had the defaults inline,
+ * as the fallback argument of every var(), and there is only room for
+ * one of those — so they were all the light palette. A browser set to
+ * dark whose shell had not written a palette yet came out with light
+ * fields, light toolbars and Firefox's own white icons on top of them.
+ * Every var() still carries an inline fallback as a last resort, but
+ * nothing should ever reach them.
+ *
+ * Unlike the shell's file this follows the *system*, because with no
+ * shell to ask that is the only opinion available.
+ */
+
+:root {
+  --hs-frame: #f3f2f2;
+  --hs-chrome: #fbfafa;
+  --hs-field: #eae9e9;
+  --hs-menu: #fbfafa;
+  --hs-sel-tab: #eae9e9;
+
+  --hs-ink: #201e1d;
+  --hs-ink2: #605d5d;
+  --hs-ink3: #6b6868;
+
+  --hs-accent: #ec3013;
+  --hs-on-accent: #ffffff;
+  --hs-seam: rgba(236, 48, 19, 0.18);
+
+  --hs-edge: rgba(32, 30, 29, 0.14);
+  --hs-rule: rgba(32, 30, 29, 0.09);
+  --hs-div: rgba(32, 30, 29, 0.18);
+  --hs-hover: rgba(32, 30, 29, 0.07);
+  --hs-sel: rgba(32, 30, 29, 0.1);
+
+  --hs-r: 14px;
+  --hs-r-sm: 9px;
+
+  --hs-font: "Inter";
+  --hs-mono: "JetBrains Mono";
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hs-frame: #201e1d;
+    --hs-chrome: #1e1c1b;
+    --hs-field: #2d2b2b;
+    --hs-menu: #232120;
+    --hs-sel-tab: #3c3a39;
+
+    --hs-ink: #f8f4f4;
+    --hs-ink2: #bab6b6;
+    --hs-ink3: #8a8686;
+
+    --hs-accent: #ec3013;
+    --hs-on-accent: #ffffff;
+    --hs-seam: rgba(236, 48, 19, 0.24);
+
+    --hs-edge: rgba(248, 244, 244, 0.16);
+    --hs-rule: rgba(248, 244, 244, 0.1);
+    --hs-div: rgba(248, 244, 244, 0.22);
+    --hs-hover: rgba(248, 244, 244, 0.09);
+    --hs-sel: rgba(248, 244, 244, 0.14);
+
+    color-scheme: dark;
+  }
+}

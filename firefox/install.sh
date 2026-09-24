@@ -139,50 +139,15 @@ if [ -z "$profiles" ]; then
     exit 1
 fi
 
-# ── the palette the stylesheets import ────────────────────────────────
+# The shell writes the palette. When it has not yet — the shell is not
+# running, or has not reached its first theme pass — there is nothing to
+# write here: hyprshell-defaults.css is installed beside the stylesheets
+# and carries a light and a dark palette that follow the system, and the
+# shell's file lands on top of it whenever it appears.
 #
-# Normally the shell has already written this. If it has not — the shell
-# is not running, or has not reached its first theme pass — a default one
-# goes in, so the browser is themed rather than half-themed. The shell
-# overwrites it the moment it next runs.
-if [ "$MODE" = install ] && [ ! -f "$COLORS" ]; then
-    mkdir -p "$(dirname "$COLORS")"
-    cat > "$COLORS" <<'DEFAULTS'
-/* Placeholder, written by firefox/install.sh because the shell had not
- * written one yet. The shell replaces this whenever the theme changes. */
-:root {
-  --hs-frame: #f3f2f2;
-  --hs-chrome: #fbfafa;
-  --hs-field: #eae9e9;
-  --hs-menu: #fbfafa;
-  --hs-sel-tab: #eae9e9;
-
-  --hs-ink: #201e1d;
-  --hs-ink2: #605d5d;
-  --hs-ink3: #6b6868;
-
-  --hs-accent: #ec3013;
-  --hs-on-accent: #ffffff;
-  --hs-seam: rgba(236,48,19,0.18);
-
-  --hs-edge: rgba(32,30,29,0.14);
-  --hs-rule: rgba(32,30,29,0.09);
-  --hs-div: rgba(32,30,29,0.18);
-  --hs-hover: rgba(32,30,29,0.07);
-  --hs-sel: rgba(32,30,29,0.1);
-
-  --hs-r: 14px;
-  --hs-r-sm: 9px;
-
-  --hs-font: "Inter";
-  --hs-mono: "JetBrains Mono";
-
-  color-scheme: light;
-}
-DEFAULTS
-    printf '  wrote a placeholder palette at\n    %s%s%s\n' "$DIM" "$COLORS" "$RST"
-    printf '  %s(the shell replaces it on its next theme pass)%s\n\n' "$DIM" "$RST"
-fi
+# This used to drop a placeholder palette in instead, hardcoded light,
+# which gave a browser set to dark a light address bar with Firefox's own
+# white icons on it.
 
 # user.js, merged rather than replaced: it is a file people keep their own
 # settings in, and this owns exactly one line of it.
@@ -223,6 +188,9 @@ printf '%s\n' "$profiles" | while IFS= read -r prof; do
     fi
 
     if [ "$MODE" = uninstall ]; then
+        [ -f "$prof/chrome/hyprshell-defaults.css" ] \
+            && rm -f "$prof/chrome/hyprshell-defaults.css" \
+            && did "removed hyprshell-defaults.css"
         for f in userChrome.css userContent.css; do
             if [ -f "$prof/chrome/$f" ] \
                && grep -q 'Hyprshell' "$prof/chrome/$f" 2>/dev/null; then
@@ -241,6 +209,10 @@ printf '%s\n' "$profiles" | while IFS= read -r prof; do
     fi
 
     mkdir -p "$prof/chrome"
+    # Imported by both sheets, by a relative url, so it needs no
+    # substitution — only to be next to them.
+    cp "$SRC/hyprshell-defaults.css" "$prof/chrome/hyprshell-defaults.css"
+    did "installed hyprshell-defaults.css"
     for f in userChrome.css userContent.css; do
         # Someone else's stylesheet is not ours to throw away.
         if [ -f "$prof/chrome/$f" ] \

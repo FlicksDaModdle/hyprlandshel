@@ -9,6 +9,7 @@
  * flashes white on every new tab if it is left alone.
  */
 
+@import url("hyprshell-defaults.css");
 @import url("HYPRSHELL_COLORS_PATH");
 
 /* ══ new tab, home, blank ═════════════════════════════════════════════ */
