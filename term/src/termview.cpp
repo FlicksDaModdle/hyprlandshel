@@ -297,9 +297,23 @@ void TermView::paint(QPainter *painter) {
         const int shape = m_term->cursorShape();
 
         if (!m_focused) {
-            painter->setPen(m_cursorColor);
-            painter->setBrush(Qt::NoBrush);
-            painter->drawRect(cell.adjusted(0.5, 0.5, -0.5, -0.5));
+            // The same caret, dimmed — not a hollow block.
+            //
+            // A hollow block is the usual way to say "this window is not
+            // where typing goes", but it is a thick rectangle around a
+            // character, and drawing a thin cursor in one state and a fat
+            // one in the other is the shape changing for a reason nobody
+            // asked about. Dimmer says the same thing and stays a caret.
+            QColor dim = m_cursorColor;
+            dim.setAlphaF(0.45);
+            if (shape == 1)
+                painter->fillRect(cell, dim);
+            else if (shape == 2)
+                painter->fillRect(QRectF(cell.left(), cell.bottom() - m_caretWidth,
+                                         cell.width(), m_caretWidth), dim);
+            else
+                painter->fillRect(QRectF(cell.left(), cell.top(),
+                                         m_caretWidth, cell.height()), dim);
         } else if (shape == 1) {
             // A block, drawn by inverting what is under it, so the
             // character it covers stays readable.
@@ -448,8 +462,72 @@ void TermView::keyPressEvent(QKeyEvent *event) {
     if (!m_term) return;
     const Qt::KeyboardModifiers mods = event->modifiers();
 
+    // Set HYPRSHELL_TERM_KEYLOG=1 to see what the widget is actually
+    // given. Key bindings are the one part of this that cannot be read
+    // off the screen: a shortcut that does nothing looks identical
+    // whether it never arrived, arrived with different modifiers, or
+    // arrived and was handled by something above.
+    static const bool keylog = qEnvironmentVariableIsSet("HYPRSHELL_TERM_KEYLOG");
+    if (keylog)
+        fprintf(stderr, "[key] key=0x%x mods=0x%x text=%s sel=%d\n",
+                event->key(), static_cast<unsigned>(mods),
+                event->text().toUtf8().toPercentEncoding().constData(),
+                int(m_hasSelection));
+
+    // A modifier on its own is not a keystroke. It arrives here as a key
+    // press like any other and, left alone, ran off the end of this
+    // function — which clears the selection and sends the key to the
+    // shell. So holding Ctrl to press Ctrl-Shift-C deleted the selection
+    // before the C ever arrived, and the clipboard was set from nothing:
+    //
+    //   [key] key=Control mods=Ctrl       sel=1
+    //   [key] key=Shift   mods=Ctrl|Shift sel=0   <- already gone
+    //   [key] key=C       mods=Ctrl|Shift sel=0
+    //
+    // Every copy shortcut in the program was destroying the thing it was
+    // about to copy.
+    switch (event->key()) {
+    case Qt::Key_Control:
+    case Qt::Key_Shift:
+    case Qt::Key_Alt:
+    case Qt::Key_AltGr:
+    case Qt::Key_Meta:
+    case Qt::Key_Super_L:
+    case Qt::Key_Super_R:
+    case Qt::Key_Hyper_L:
+    case Qt::Key_Hyper_R:
+    case Qt::Key_CapsLock:
+    case Qt::Key_NumLock:
+    case Qt::Key_ScrollLock:
+        event->accept();
+        return;
+    default:
+        break;
+    }
+
     // The two bindings a terminal has to answer itself, because ^C and ^V
     // are already taken by the program on the other end.
+    // Ctrl-C with something selected copies it, and interrupts when
+    // nothing is. ^C has to keep working — it is the only way to stop a
+    // program — but a selection on screen is someone who has just
+    // finished dragging over text, and for them ^C means copy. The
+    // selection is cleared, so the next ^C interrupts.
+    if ((mods & Qt::ControlModifier) && !(mods & Qt::ShiftModifier)
+        && event->key() == Qt::Key_C && m_hasSelection) {
+        QGuiApplication::clipboard()->setText(selectedText());
+        clearSelection();
+        event->accept();
+        return;
+    }
+
+    // Shift-Insert is the X11 paste, and it is what a great many people
+    // still press.
+    if ((mods & Qt::ShiftModifier) && event->key() == Qt::Key_Insert) {
+        m_term->sendText(QGuiApplication::clipboard()->text());
+        event->accept();
+        return;
+    }
+
     if ((mods & Qt::ControlModifier) && (mods & Qt::ShiftModifier)) {
         switch (event->key()) {
         case Qt::Key_T: emit newTabRequested();      event->accept(); return;
