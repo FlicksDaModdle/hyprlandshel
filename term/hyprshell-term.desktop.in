@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+GenericName=Terminal Emulator
+Comment=A terminal that matches the shell
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/hyprshell-term
+Icon=utilities-terminal
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupNotify=true
+StartupWMClass=hyprshell-term

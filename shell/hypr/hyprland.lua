@@ -513,6 +513,15 @@ hl.window_rule({
     size  = { 1100, 700 },
 })
 
+-- The shell's terminal. The size is a sensible number of columns and rows
+-- at the default font, and applies only in a floating layout — tiled, the
+-- layout decides and this is ignored.
+hl.window_rule({
+    name  = "hyprshell-term",
+    match = { class = "^(hyprshell-term)$" },
+    size  = { 900, 560 },
+})
+
 -- The file dialogs it puts up for the rest of the desktop — a browser
 -- saving a download, anything attaching a file.
 --

@@ -1,0 +1,203 @@
+pragma Singleton
+import QtQuick
+import Hyprterm.Backend
+
+// The palette.
+//
+// It follows the shell's theme.json when there is one, so the file manager
+// matches the desktop it was designed for, and falls back to the design's
+// own colours when run anywhere else. It only ever reads that file.
+//
+// Deliberately nothing else: the window's own settings live in
+// FilesService. Keeping them here made the two singletons reference each
+// other, which QML calls a cyclic dependency and resolves by giving one of
+// them to the other half-built.
+QtObject {
+    id: root
+
+    // ── the shell's theme, if it is installed ─────────────────────────────
+    readonly property string themePath:
+        Sys.configDir() + "/quickshell/hyprshell/theme.json"
+
+    property var theme: ({})
+
+    function loadTheme() {
+        const text = Sys.readFile(root.themePath);
+        if (!text) { root.theme = ({}); return; }
+        try { root.theme = JSON.parse(text) || ({}); }
+        catch (e) { root.theme = ({}); }
+    }
+
+    property Watcher themeWatch: Watcher {
+        path: root.themePath
+        onChanged: root.loadTheme()
+    }
+
+    Component.onCompleted: loadTheme()
+
+    // ── theme ─────────────────────────────────────────────────────────────
+    readonly property string themeMode: root.theme.theme || "dark"
+    readonly property bool dark: {
+        if (root.themeMode === "light") return false;
+        if (root.themeMode === "dark") return true;
+        // "auto" is dark from 19:00 to 07:00 — the shell's own rule.
+        const h = new Date().getHours();
+        return h >= 19 || h < 7;
+    }
+
+    // A colour from the theme file, or the fallback when it is not one.
+    // Without this a malformed value becomes an invalid QColor, which QML
+    // paints black — and a black accent is indistinguishable from a bug.
+    function validColour(v, fallback) {
+        return (typeof v === "string" && /^#[0-9a-fA-F]{3,8}$/.test(v.trim()))
+               ? v.trim() : fallback;
+    }
+
+    // theme.json stores `accent` as an *index* into this list, not a colour,
+    // with -1 meaning "use customAccent". Reading it as a colour worked only
+    // for index 0, which is falsy and so fell through to the default red;
+    // every other index became color(1), color(2) — invalid, and therefore
+    // a black New button and a grey PLACES heading.
+    //
+    // The presets are the shell's own, each with a light and a dark variant,
+    // because an accent that reads well on paper is too dark on charcoal.
+    readonly property var accentPresets: [
+        { light: "#ec3013", dark: "#ff563c" },
+        { light: "#ae1800", dark: "#e8452b" },
+        { light: "#2d2b2b", dark: "#d7d3d3" },
+        { light: "#7c1405", dark: "#c94b39" }
+    ]
+
+    readonly property color accent: {
+        const idx = root.theme.accent;
+        if (idx === -1) return root.validColour(root.theme.customAccent, "#ec3013");
+        const n = (typeof idx === "number" && idx >= 0)
+                  ? Math.min(Math.floor(idx), root.accentPresets.length - 1) : 0;
+        const preset = root.accentPresets[n];
+        return root.dark ? preset.dark : preset.light;
+    }
+
+    readonly property color ground:  dark ? "#201e1d" : "#f3f2f2"
+    readonly property color surface: dark ? "#2d2b2b" : "#eae9e9"
+    readonly property color ink:     dark ? "#f8f4f4" : "#201e1d"
+    readonly property color ink2:    dark ? "#bab6b6" : "#605d5d"
+    readonly property color ink3:    dark ? "#8a8686" : "#6b6868"
+
+    readonly property color edge:  dark ? Qt.rgba(0.973, 0.957, 0.957, 0.16)
+                                        : Qt.rgba(0.125, 0.118, 0.114, 0.14)
+    readonly property color rule:  dark ? Qt.rgba(0.973, 0.957, 0.957, 0.10)
+                                        : Qt.rgba(0.125, 0.118, 0.114, 0.09)
+    readonly property color hover: dark ? Qt.rgba(0.973, 0.957, 0.957, 0.09)
+                                        : Qt.rgba(0.125, 0.118, 0.114, 0.07)
+    readonly property color sel:   dark ? Qt.rgba(0.973, 0.957, 0.957, 0.14)
+                                        : Qt.rgba(0.125, 0.118, 0.114, 0.10)
+
+    // ── translucency ──────────────────────────────────────────────────────
+    // Hyprland blurs behind a window that has transparency in it — that is
+    // what `decoration.blur` does for windows, with no rule needed. So the
+    // blur is not something to switch on here; it is something to stop
+    // preventing, by not painting a fully opaque sheet.
+    //
+    // The amount is the shell's own slider and its own formula, so this
+    // window is exactly as see-through as the shell's panels are, and
+    // setting translucency to 0 makes it solid again.
+    readonly property real translucency: {
+        const v = root.theme.translucency;
+        return (typeof v === "number") ? Math.max(0, Math.min(100, v)) : 50;
+    }
+    readonly property real translucencyFactor: translucency / 100
+    readonly property real sheetAlpha: 1.0 - translucencyFactor * (dark ? 0.24 : 0.20)
+
+    readonly property color sheet: dark ? Qt.rgba(0.137, 0.129, 0.125, sheetAlpha)
+                                        : Qt.rgba(0.980, 0.976, 0.976, sheetAlpha)
+    readonly property color panel: sheet
+    readonly property color seam:  accent
+
+
+    // Ink laid *on* the accent, so a light custom accent flips to dark text
+    // instead of going unreadable.
+    //
+    // Named inkOnAccent, not onAccent, and that is not a style choice. A
+    // property whose name is `on` followed by a capital and whose
+    // initialiser is a brace block is parsed as a signal handler: the block
+    // becomes handler code that never runs, and the property keeps its
+    // type's default — black, for a colour. It fails silently, with no
+    // warning at load and no error at run time, and it had been doing so
+    // here for as long as this property has existed: every glyph and label
+    // drawn on the accent was black rather than this. The same name with a
+    // one-line expression binding works, which is why it is easy to miss.
+    // `qmlparse.py` now refuses the shape outright.
+    readonly property color inkOnAccent: {
+        const c = root.accent;
+        const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+        return lum > 0.6 ? "#201e1d" : "#ffffff";
+    }
+
+    // "off" | "layer" | "curve". See MonoIcon. Shares the shell's key, so
+    // one switch covers both programs.
+    readonly property string iconSmoothing: {
+        const v = root.theme.iconSmoothing;
+        return (v === "off" || v === "curve") ? v : "layer";
+    }
+
+    // ── geometry and type ─────────────────────────────────────────────────
+    readonly property real roundingPct: root.theme.rounding === undefined
+                                        ? 100 : root.theme.rounding
+    readonly property real rf: roundingPct / 100
+    readonly property real rSm: Math.round(9 * rf)
+    readonly property real r: Math.round(14 * rf)
+    readonly property real rWin: r
+    readonly property real rPanel: r
+    readonly property real rPill: r
+    readonly property real rTile: r
+    readonly property real rCard: r
+    readonly property real barHeight: 0
+
+    // Not a theme.json key: the shell hardcodes these too. Named here so
+    // there is one place to change them.
+    readonly property string fontFamily: "Inter"
+    // The grid's own face. A terminal is a grid, so this is the one place
+    // the design's Inter cannot be used: the mockup sets the terminal's
+    // lines in it, but a proportional font puts every column in a
+    // different place on every line.
+    readonly property string monoFamily: root.theme.monoFamily || "JetBrainsMono Nerd Font"
+    readonly property real monoSize: root.theme.termFontSize || 14
+    readonly property real monoLineHeight: root.theme.termLineHeight || 1.35
+
+    // The window's own background. Darker than the shell's panels on
+    // purpose: a terminal is a page of text, and the chrome around it is
+    // what should read as a surface, not the text.
+    readonly property color bg: dark ? "#1a1918" : "#fbfaf9"
+
+    // The sixteen colours a program means by "red" and "bright red".
+    //
+    // Tuned to this palette rather than the VGA defaults, so output from
+    // ls or a compiler sits in the same family as the rest of the
+    // desktop. The shell's own accent replaces red, which is what makes a
+    // prompt or an error read as part of the theme.
+    readonly property var ansi: dark
+        ? [ "#2b2928", String(accent), "#8fbf7f", "#d9b06a",
+            "#7aa6d9", "#b58ad9", "#6fb9b0", "#c9c5c2",
+            "#4a4644", "#ff6a52", "#a9d69a", "#efc98a",
+            "#9dc2ef", "#cfa9ef", "#93d6cd", "#f5f2ef" ]
+        : [ "#e6e3e0", String(accent), "#4f8f43", "#9a7118",
+            "#3f6fa8", "#7d51a8", "#2f8079", "#3b3836",
+            "#c9c5c2", "#d43a22", "#3d7a33", "#7f5c10",
+            "#31598a", "#664091", "#236761", "#201e1d" ]
+
+    // ~/dots rather than /home/you/dots, which is what the concept shows
+    // and what anyone reading a title bar wants.
+    function pretty(path) {
+        const home = Sys.home();
+        if (!path) return "";
+        if (home && path === home) return "~";
+        if (home && path.startsWith(home + "/")) return "~" + path.slice(home.length);
+        return path;
+    }
+    readonly property real fontScale: root.theme.fontScale || 100
+    readonly property real fontFactor: Math.max(75, Math.min(150, fontScale)) / 100
+    function fs(px) { return Math.round(px * fontFactor); }
+
+    readonly property bool textNative: root.theme.textNative === undefined
+                                       ? true : root.theme.textNative
+}

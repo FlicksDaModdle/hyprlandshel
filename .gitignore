@@ -7,3 +7,4 @@
 # files/install.sh.
 build/
 CMakeFiles/
+term/build/
