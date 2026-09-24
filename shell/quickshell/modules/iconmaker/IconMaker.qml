@@ -186,11 +186,21 @@ Item {
             }
 
             // ── tools ─────────────────────────────────────────────────
-            Column {
+            Flow {
                 id: rail
                 anchors.left: parent.left
                 anchors.top: parent.top
-                width: root.railWidth
+                // Down the side, wrapping into a second column when
+                // there is not room for one. Ten tools at 38px is 434,
+                // which a short window does not have — and a Column
+                // simply draws the ones that do not fit off the bottom
+                // edge, where they cannot be clicked or even seen.
+                flow: Flow.TopToBottom
+                height: Math.min(implicitHeight, sheetArea.height)
+                // Above the canvas, which is a later sibling and would
+                // otherwise paint over the tooltips that hang off the
+                // side of this.
+                z: 10
                 spacing: root.compact ? 3 : 6
 
                 Repeater {
@@ -224,6 +234,36 @@ Item {
                             inkColor: toolBtn.on ? Config.Appearance.inkOnAccent
                                                  : Config.Appearance.ink2
                             monochrome: true
+                        }
+
+                        // The name, on hover.
+                        //
+                        // Every tool has carried one since the rail was
+                        // written and none of them was ever drawn, so
+                        // the rail was ten anonymous glyphs and the only
+                        // way to find the lasso was to press things. A
+                        // tool you cannot name is a tool you cannot
+                        // find.
+                        Rectangle {
+                            id: tip
+                            visible: toolHover.hovered
+                            x: parent.width + 8
+                            y: (parent.height - height) / 2
+                            z: 50
+                            width: tipText.implicitWidth + 18
+                            height: tipText.implicitHeight + 12
+                            radius: Config.Appearance.rSm
+                            color: Config.Appearance.panel
+                            border.width: 1
+                            border.color: Config.Appearance.edge
+
+                            StyledText {
+                                id: tipText
+                                anchors.centerIn: parent
+                                text: toolBtn.modelData.n
+                                font.pixelSize: Config.Appearance.fs(11)
+                                color: Config.Appearance.ink
+                            }
                         }
 
                         HoverHandler { id: toolHover; cursorShape: Qt.PointingHandCursor }
