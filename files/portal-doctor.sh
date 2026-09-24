@@ -283,6 +283,71 @@ if [ -n "$CONF" ] && [ -n "${XPID:-}" ] && [ -e "/proc/$XPID" ]; then
     fi
 fi
 
+# ── 6. "show in file manager" is a different question ────────────────────
+#
+# Nothing above decides what happens when a browser's downloads list
+# points at a file. That goes one of two ways — the FileManager1
+# interface, or the MIME default for a folder — and they are configured
+# in different places, so one can be right while the other is not.
+head1 "And \"show in file manager\"?"
+FM1=org.freedesktop.FileManager1
+
+# Who would answer it. $XDG_DATA_HOME wins over $XDG_DATA_DIRS — tested,
+# not assumed — so an entry of ours under ~/.local/share beats Dolphin's
+# under /usr/share. Provided the bus has read it.
+CLAIMS=
+for d in "${XDG_DATA_HOME:-$HOME/.local/share}" "${DLIST[@]}"; do
+    f="$d/dbus-1/services/$FM1.service"
+    [ -r "$f" ] || continue
+    who=$(sed -n 's/^Exec=//p' "$f" | cut -d' ' -f1)
+    if [ -z "$CLAIMS" ]; then
+        case "$who" in
+            *hyprshell-files) ok "first claim on $FM1 is ours ${DIM}($f)${RST}" ;;
+            *) bad "first claim on $FM1 is $who"
+               note "$f is read before ours, so that is what gets started." ;;
+        esac
+        CLAIMS=yes
+    else
+        note "also claimed by $who ${DIM}($f)${RST}"
+    fi
+done
+[ -z "$CLAIMS" ] && bad "nothing claims $FM1 — run ./install.sh"
+
+# A name already owned is never activated, so a running Dolphin keeps it
+# whatever the service files say.
+if command -v gdbus >/dev/null 2>&1; then
+    OWNER=$(timeout 5 gdbus call --session --dest org.freedesktop.DBus \
+            --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.GetNameOwner "$FM1" 2>/dev/null \
+            | tr -d "(,')")
+    if [ -n "$OWNER" ]; then
+        OPID=$(timeout 5 gdbus call --session --dest org.freedesktop.DBus \
+               --object-path /org/freedesktop/DBus \
+               --method org.freedesktop.DBus.GetConnectionUnixProcessID "$OWNER" \
+               2>/dev/null | sed -n 's/.*uint32 \([0-9][0-9]*\).*/\1/p')
+        WHO=$([ -n "$OPID" ] && cat "/proc/$OPID/comm" 2>/dev/null)
+        case "$WHO" in
+            hyprshell-file*) ok "it is held right now by $WHO ${DIM}(pid $OPID)${RST}" ;;
+            "")              warn "it is held by $OWNER" ;;
+            *)               bad "it is held right now by $WHO ${DIM}(pid $OPID)${RST}"
+                             note "A name already owned is never activated, so this keeps it"
+                             note "until it exits. Close it and try again." ;;
+        esac
+    fi
+fi
+
+# The other route: opening the folder itself.
+if command -v xdg-mime >/dev/null 2>&1; then
+    FOLDER=$(xdg-mime query default inode/directory 2>/dev/null)
+    case "$FOLDER" in
+        hyprshell-files.desktop) ok "folders open with hyprshell-files.desktop" ;;
+        "")  bad "nothing is set to open folders"
+             note "xdg-mime default hyprshell-files.desktop inode/directory" ;;
+        *)   bad "folders open with $FOLDER"
+             note "xdg-mime default hyprshell-files.desktop inode/directory" ;;
+    esac
+fi
+
 head1 "The one test that settles it"
 cat <<TESTEOF
   Ask the *frontend* portal for a dialog, exactly as a browser would.
@@ -305,6 +370,17 @@ cat <<TESTEOF
 
   It names the backend it picks for each interface, and says why it
   skipped the ones it skipped. That line is the answer.
+
+  For "show in file manager", the equivalent is to ask for it directly.
+  Whatever opens is what a browser's downloads list would get:
+
+    gdbus call --session --dest org.freedesktop.FileManager1 \\
+      --object-path /org/freedesktop/FileManager1 \\
+      --method org.freedesktop.FileManager1.ShowItems \\
+      "['file://\$HOME/Downloads']" ""
+
+  If that opens Files and the downloads list opens something else, the
+  browser is going through the folder handler instead — the line above.
 TESTEOF
 
 if [ "$BROKEN" -gt 0 ]; then

@@ -41,7 +41,14 @@ Window {
     minimumHeight: 380
     visible: true
     color: "transparent"
-    title: dlg.saving ? "Save" : (dlg.pickingFolder ? "Choose folder" : "Open")
+    // The title is how the compositor tells this window from the file
+    // manager's own: both carry the app id "hyprshell-files", because they
+    // are the same program, and Wayland has no window type to say "this
+    // one is a dialog". So the three titles are fixed, distinct, and
+    // anchored — the rule that floats them matches on exactly these.
+    // Changing them means changing hypr/hyprland.lua too.
+    title: (dlg.saving ? "Save a file"
+            : dlg.pickingFolder ? "Choose a folder" : "Open a file") + " — Files"
 
     // The host contract FilesFrame reads, same as Main.qml's.
     readonly property bool tiled: true

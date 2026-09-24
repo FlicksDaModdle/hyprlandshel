@@ -289,6 +289,34 @@ if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/d
     fi
 fi
 
+# Which program opens a folder.
+#
+# A different question from the one above, and answered somewhere else
+# entirely: FileManager1 is asked to *show a particular file*, while
+# opening a folder — from a downloads list, from xdg-open, from a
+# portal's OpenDirectory — goes to whatever the MIME database says
+# handles inode/directory. A machine with Dolphin installed usually says
+# Dolphin, and that setting is why a folder kept opening there while
+# everything else was pointed here.
+if command -v xdg-mime >/dev/null 2>&1; then
+    FOLDER_CUR=$(xdg-mime query default inode/directory 2>/dev/null)
+    if [ "$FOLDER_CUR" = hyprshell-files.desktop ]; then
+        ok "folder handler" "already hyprshell-files.desktop"
+    elif [ "$MODE" = check ]; then
+        warn "folder handler" "is ${FOLDER_CUR:-unset} — would be set to hyprshell-files.desktop"
+    elif xdg-mime default hyprshell-files.desktop inode/directory 2>/dev/null; then
+        # x-directory/normal is the same thing under an older name, and
+        # enough programs still ask for it that leaving it pointing
+        # elsewhere splits the behaviour in two.
+        xdg-mime default hyprshell-files.desktop x-directory/normal 2>/dev/null
+        ok "folder handler" "hyprshell-files.desktop${FOLDER_CUR:+ (was $FOLDER_CUR)}"
+        [ -n "$FOLDER_CUR" ] && printf '  %sto put it back: xdg-mime default %s inode/directory%s\n' \
+                                       "$DIM" "$FOLDER_CUR" "$RST"
+    else
+        warn "folder handler" "could not be set"
+    fi
+fi
+
 # Firefox has to be told to ask at all. Its own GTK dialog is the default
 # for an unsandboxed build — widget.use-xdg-desktop-portal.file-picker is
 # 2, "auto", which means the portal only when sandboxed. At 2 none of the

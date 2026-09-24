@@ -493,6 +493,27 @@ hl.window_rule({
     size  = { 1100, 700 },
 })
 
+-- The file dialogs it puts up for the rest of the desktop — a browser
+-- saving a download, anything attaching a file.
+--
+-- Tiled, a "Save as…" rearranges every window on the workspace and then
+-- puts them back when it closes, which is not what a dialog is for. It
+-- floats instead.
+--
+-- Matched by title rather than class: it is the same program as the
+-- window above, so the app id is the same, and Wayland has no window type
+-- that says "dialog". The three titles are fixed in qml/FileDialog.qml
+-- for this rule to match; both sides have to change together.
+hl.window_rule({
+    name  = "hyprshell-files-dialog",
+    match = {
+        class = "^(hyprshell-files)$",
+        title = "^(Save a file|Open a file|Choose a folder) — Files$",
+    },
+    float = true,
+    size  = { 940, 620 },
+})
+
 -------------------------------------
 ---- SHELL-MANAGED KEYBINDS (last) ---
 -------------------------------------
