@@ -91,8 +91,14 @@ function splitFilled(shape, lasso, Trace, opts) {
     var S = opts.cells || 6;
     var n = units * S;
 
+    // How far each half reaches past the cut, in cells. Two is a third
+    // of a unit at six cells to the unit, which covers the slack the
+    // tracer's smoothing introduces on both sides at once.
+    var bleed = opts.bleed === undefined ? 2 : opts.bleed;
+
     var rings = ringsOf(shape);
     var inMask = new Array(n * n), outMask = new Array(n * n);
+    var shapeMask = new Array(n * n);
     var anyIn = false, anyOut = false;
 
     for (var j = 0; j < n; j++) {
@@ -101,7 +107,11 @@ function splitFilled(shape, lasso, Trace, opts) {
             // grid line does not land ambiguously on it.
             var x = (i + 0.5) / S, y = (j + 0.5) / S;
             var at = j * n + i;
-            if (!insideRings(x, y, rings)) { inMask[at] = 0; outMask[at] = 0; continue; }
+            if (!insideRings(x, y, rings)) {
+                inMask[at] = 0; outMask[at] = 0; shapeMask[at] = 0;
+                continue;
+            }
+            shapeMask[at] = 255;
             if (pointInPoly(x, y, lasso)) { inMask[at] = 255; outMask[at] = 0; anyIn = true; }
             else { inMask[at] = 0; outMask[at] = 255; anyOut = true; }
         }
@@ -109,6 +119,36 @@ function splitFilled(shape, lasso, Trace, opts) {
 
     if (!anyIn) return { error: "That lasso did not catch any of the shape." };
     if (!anyOut) return { error: "That lasso caught the whole shape — nothing to split off." };
+
+    // The two halves are grown back into each other along the cut.
+    //
+    // Traced separately, each piece's boundary is pulled off the seam by
+    // its own simplification and corner-rounding — a fifth of a unit
+    // each way — so the two came apart and the background showed through
+    // between them. An overlap cannot show: one piece is painted over
+    // the other and the join disappears. A gap always shows.
+    //
+    // Only into cells the shape itself covers, so the silhouette's own
+    // outline is untouched and only the seam moves.
+    var grow = function (mask) {
+        var from = mask.slice();
+        for (var pass = 0; pass < bleed; pass++) {
+            var prev = from.slice();
+            for (var y = 0; y < n; y++) {
+                for (var x = 0; x < n; x++) {
+                    var at = y * n + x;
+                    if (prev[at]) continue;
+                    if (!shapeMask[at]) continue;     // never past the outline
+                    if ((x > 0 && prev[at - 1]) || (x < n - 1 && prev[at + 1])
+                        || (y > 0 && prev[at - n]) || (y < n - 1 && prev[at + n]))
+                        from[at] = 255;
+                }
+            }
+        }
+        return from;
+    };
+    inMask = grow(inMask);
+    outMask = grow(outMask);
 
     var map = function (p) { return { x: p.x / S, y: p.y / S }; };
     var traceOpts = { map: map, detail: opts.detail || 1,

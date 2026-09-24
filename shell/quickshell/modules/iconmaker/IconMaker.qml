@@ -196,7 +196,15 @@ Item {
                 // simply draws the ones that do not fit off the bottom
                 // edge, where they cannot be clicked or even seen.
                 flow: Flow.TopToBottom
-                height: Math.min(implicitHeight, sheetArea.height)
+                // The height it is allowed, not the height it wants.
+                //
+                // `Math.min(implicitHeight, …)` reads the layout to
+                // decide the constraint the layout is computed from, and
+                // QML resolves that circle by giving up: the rail came
+                // out as a single horizontal row of ten items across the
+                // top of the window, which then made the canvas's width
+                // negative and put the side column over the top of it.
+                height: sheetArea.height
                 // Above the canvas, which is a later sibling and would
                 // otherwise paint over the tooltips that hang off the
                 // side of this.
@@ -312,22 +320,39 @@ Item {
                 anchors.topMargin: 12
                 spacing: 8
 
-                StyledText {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Snap"
-                    font.pixelSize: Config.Appearance.fs(12)
-                    color: Config.Appearance.ink3
+                // Every direct child of this Flow is 32 tall and
+                // anchors nothing, because a Flow positions its own
+                // children and an anchor inside one turns the whole
+                // layout off — "Cannot specify anchors for items inside
+                // Flow. Flow will not function." The controls piled up
+                // on top of each other and the label sat under the
+                // segmented control.
+                Item {
+                    width: snapLabel.implicitWidth
+                    height: 32
+                    StyledText {
+                        id: snapLabel
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Snap"
+                        font.pixelSize: Config.Appearance.fs(12)
+                        color: Config.Appearance.ink3
+                    }
                 }
 
-                Segmented {
-                    anchors.verticalCenter: parent.verticalCenter
-                    options: [{ label: "¼", value: "0.25" }, { label: "½", value: "0.5" },
-                              { label: "1", value: "1" }, { label: "Off", value: "0" }]
-                    value: String(root.snap)
-                    onSelected: v => root.snap = parseFloat(v)
+                Item {
+                    width: snapPick.implicitWidth
+                    height: 32
+                    Segmented {
+                        id: snapPick
+                        anchors.verticalCenter: parent.verticalCenter
+                        options: [{ label: "¼", value: "0.25" }, { label: "½", value: "0.5" },
+                                  { label: "1", value: "1" }, { label: "Off", value: "0" }]
+                        value: String(root.snap)
+                        onSelected: v => root.snap = parseFloat(v)
+                    }
                 }
 
-                Item { width: root.compact ? 2 : 12; height: 1 }
+                Item { width: root.compact ? 2 : 12; height: 32 }
 
                 // A fixed list, with availability worked out in the
                 // delegate rather than carried as a field in the array.
@@ -352,7 +377,6 @@ Item {
                         id: actBtn
                         required property var modelData
                         readonly property bool ready: root.actionReady(modelData.act)
-                        anchors.verticalCenter: parent.verticalCenter
                         width: 36
                         height: 32
                         radius: Config.Appearance.rSm
