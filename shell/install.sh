@@ -406,12 +406,41 @@ if mkdir -p "$BIN_DIR" 2>/dev/null; then
     esac
 fi
 
-# theme.json lives *inside* the tree that was just moved aside, so without
-# this every preference you have set would be lost to a reinstall. It is your
-# data, not ours — carry it across.
-if [ -e "$QS_DIR.bak.$STAMP/theme.json" ]; then
-    cp -- "$QS_DIR.bak.$STAMP/theme.json" "$QS_DIR/theme.json" \
-        && printf '  kept your theme.json\n'
+# Your files live *inside* the tree that was just moved aside, so without
+# this a reinstall would take them with it.
+#
+# The rule is "anything in the old directory that the new one does not
+# have is yours". Not a list of names: this used to carry theme.json
+# across and nothing else, so every icon drawn in the icon maker
+# vanished on the next reinstall — icons.json was sitting in the backup
+# directory, untouched and unreferenced. A list is a thing you have to
+# remember to add to, and the next file the shell learns to write would
+# have gone the same way.
+#
+# Directories are walked, so a store that grows subdirectories later is
+# carried too.
+OLD="$QS_DIR.bak.$STAMP"
+if [ -d "$OLD" ]; then
+    kept=0
+    # -print rather than -exec: the names are handled one at a time so a
+    # path with a space in it stays one path.
+    find "$OLD" -type f 2>/dev/null | while IFS= read -r f; do
+        rel="${f#"$OLD"/}"
+        # Shipped by this tree, so the new copy is the right one.
+        [ -e "$SRC/quickshell/$rel" ] && continue
+        # Our own two, copied in above rather than from the source tree.
+        case "$rel" in run.sh|hyprshellctl) continue ;; esac
+        mkdir -p "$QS_DIR/$(dirname -- "$rel")" 2>/dev/null
+        if cp -- "$f" "$QS_DIR/$rel" 2>/dev/null; then
+            printf '  kept your %s\n' "$rel"
+        else
+            printf '  %scould not carry across %s — it is still in%s\n' \
+                   "$YEL" "$rel" "$RST"
+            printf '  %s  %s%s\n' "$YEL" "$OLD" "$RST"
+        fi
+    done
+    kept=$(find "$OLD" -type f 2>/dev/null | wc -l)
+    [ "$kept" -gt 0 ] || printf '  nothing of yours to carry across\n'
 fi
 
 if command -v kitty >/dev/null 2>&1; then

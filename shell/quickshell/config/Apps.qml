@@ -27,13 +27,39 @@ Singleton {
         try {
             const list = JSON.parse(raw);
             if (!Array.isArray(list) || list.length === 0) return defaultPinned;
-            return list.map(e => ({
-                key: e.key,
-                label: e.label,
-                icon: e.icon,
-                exec: e.exec || [],
-                match: new RegExp(e.match || "^$", "i")
-            }));
+            return list.map(e => {
+                // A saved tile keeps the regex it was saved with, for
+                // ever. That is right for one you re-pointed at another
+                // application and wrong for one you never touched: the
+                // moment anything writes the dock out — changing a
+                // tile's icon does — every default is frozen as it was
+                // that day, and a later release that teaches the
+                // Terminal tile about a new terminal never reaches you.
+                //
+                // That is not hypothetical. hyprshell-term became the
+                // shell's terminal, the default learned to match it, and
+                // a dock saved before then went on matching kitty — so
+                // the focused terminal lit no tile, showed no name, and
+                // appeared a second time as an unpinned app.
+                //
+                // So a saved tile matches what it was saved with *or*
+                // what its default says. Guarded on the source not
+                // already being in there, which makes it idempotent:
+                // without that, every save would wrap the last one again
+                // and the regex would grow without end.
+                const def = root.defaultPinned.find(d => d.key === e.key);
+                const stored = e.match || "^$";
+                const source = (def && stored.indexOf(def.match.source) < 0)
+                    ? "(?:" + stored + ")|(?:" + def.match.source + ")"
+                    : stored;
+                return {
+                    key: e.key,
+                    label: e.label || (def && def.label) || "",
+                    icon: e.icon,
+                    exec: e.exec || [],
+                    match: new RegExp(source, "i")
+                };
+            });
         } catch (err) {
             // A hand-edited theme.json shouldn't cost you your dock.
             console.warn("Apps: dockPinned is not valid JSON, using defaults —", err);

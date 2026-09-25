@@ -479,7 +479,7 @@ Variants {
                         readonly property bool isActive:
                             Services.Compositor.activeClass === modelData.cls
 
-                        width: dock.tileSize
+                        width: implicitWidth
                         height: dock.tileSize
                         tileSize: dock.tileSize
                         iconSize: dock.iconSize
@@ -489,6 +489,12 @@ Variants {
                         running: true
                         windowCount: modelData.windows.length
                         active: isActive
+                        // The same rule as a pinned tile. It was missing
+                        // here, so an application that was running but
+                        // not pinned never showed its name — not even
+                        // when it was the one you were looking at, which
+                        // is the only time a dock says a name at all.
+                        showLabel: isActive && Config.Appearance.dockLabels && !dock.isLeft
                         tooltipEdge: dock.isLeft ? Qt.RightEdge : Qt.TopEdge
 
                         onActivated: {
