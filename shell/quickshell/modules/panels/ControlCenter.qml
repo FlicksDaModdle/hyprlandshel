@@ -412,7 +412,12 @@ PanelSurface {
                             readonly property bool asking:
                                 entry.modelData.asks
                                 && root.askingSsid === entry.modelData.key
-                            height: asking ? 44 + 40 : 44
+                            // A network that authenticates the person wants
+                            // a username above the password, so the sheet
+                            // below the row is a field taller.
+                            readonly property bool wantsUser:
+                                entry.modelData.wantsUser === true
+                            height: asking ? 44 + (wantsUser ? 78 : 40) : 44
                             Behavior on height {
                                 NumberAnimation { duration: Config.Appearance.anim(140); easing.type: Easing.OutCubic }
                             }
@@ -506,7 +511,8 @@ PanelSurface {
 
                             // Asked for in place, so joining a new network
                             // never means opening Settings.
-                            Row {
+                            Column {
+                                id: askSheet
                                 visible: entry.asking
                                 anchors.left: parent.left
                                 anchors.leftMargin: 9
@@ -514,6 +520,51 @@ PanelSurface {
                                 anchors.rightMargin: 10
                                 anchors.top: parent.top
                                 anchors.topMargin: 46
+                                spacing: 8
+
+                                // Only for the networks that ask who you
+                                // are — a home network has one secret and
+                                // no use for a name.
+                                Rectangle {
+                                    visible: entry.wantsUser
+                                    width: parent.width
+                                    height: 30
+                                    radius: Config.Appearance.rSm
+                                    color: Config.Appearance.ground
+                                    border.width: user.activeFocus ? 2 : 1
+                                    border.color: user.activeFocus
+                                                  ? Config.Appearance.accent
+                                                  : Config.Appearance.rule
+
+                                    TextInput {
+                                        id: user
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 9
+                                        anchors.rightMargin: 9
+                                        verticalAlignment: Text.AlignVCenter
+                                        clip: true
+                                        color: Config.Appearance.ink
+                                        font.family: Config.Appearance.fontFamily
+                                        font.pixelSize: Config.Appearance.fs(12)
+                                        selectByMouse: true
+                                        // The username field takes the focus
+                                        // when there is one, since it is the
+                                        // first thing to fill in.
+                                        focus: entry.asking && entry.wantsUser
+                                        onAccepted: pass.forceActiveFocus()
+
+                                        StyledText {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: user.text === "" && !user.activeFocus
+                                            text: "Username"
+                                            font.pixelSize: Config.Appearance.fs(12)
+                                            color: Config.Appearance.ink3
+                                        }
+                                    }
+                                }
+
+                            Row {
+                                width: parent.width
                                 spacing: 8
 
                                 Rectangle {
@@ -538,9 +589,10 @@ PanelSurface {
                                         font.pixelSize: Config.Appearance.fs(12)
                                         echoMode: TextInput.Password
                                         selectByMouse: true
-                                        focus: entry.asking
+                                        focus: entry.asking && !entry.wantsUser
                                         onAccepted: {
-                                            Services.Network.connect(entry.modelData.key, text);
+                                            Services.Network.connect(entry.modelData.key,
+                                                                     text, user.text);
                                             root.askingSsid = "";
                                         }
 
@@ -574,11 +626,13 @@ PanelSurface {
                                     HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
                                     TapHandler {
                                         onTapped: {
-                                            Services.Network.connect(entry.modelData.key, pass.text);
+                                            Services.Network.connect(entry.modelData.key,
+                                                                     pass.text, user.text);
                                             root.askingSsid = "";
                                         }
                                     }
                                 }
+                            }
                             }
                         }
                     }
@@ -799,13 +853,16 @@ PanelSurface {
                 s: (ap.security && ap.security !== "" ? ap.security : "Open")
                    + (ap.inUse ? " · connected"
                       : (Services.Network.busySsid === ap.ssid ? " · joining…"
-                         : (ap.known ? " · saved" : ""))),
+                         : (ap.known ? " · saved"
+                            : (Services.Network.needsIdentity(ap)
+                               ? " · sign in" : "")))),
                 icon: "wifi",
                 meta: ap.signal + "%",
                 current: ap.inUse,
                 // A saved or open network joins on a tap. A new secured one
                 // asks here rather than sending anyone to Settings.
                 asks: Services.Network.needsPassword(ap),
+                wantsUser: Services.Network.needsIdentity(ap),
                 key: ap.ssid,
                 go: () => {
                     if (ap.inUse) { Services.Network.disconnect(); return; }

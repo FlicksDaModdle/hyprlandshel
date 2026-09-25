@@ -62,6 +62,9 @@ Singleton {
         // The terminal is its own application too. An argument is a
         // directory to start in, which is what "open a terminal here"
         // means everywhere it is offered.
+        // The on-screen keyboard. A toggle rather than an open, because
+        // the thing that summons it is the same thing that dismisses it.
+        "toggleKeyboard":      () => Config.UiState.toggleOsk(),
         "openTerminal":        arg => Config.Apps.launchTerm(
                                    arg ? ["--working-directory", arg] : []),
         "openMusic":           () => Config.Apps.launchTerm(["-e", "ncmpcpp"]),

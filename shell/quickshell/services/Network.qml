@@ -227,21 +227,29 @@ Singleton {
         action.running = true;
     }
 
-    // Joins a network. A known one needs nothing; an unknown secured one
-    // needs the password, which the shell now asks for rather than sending
-    // people to nm-connection-editor.
+    // ── joining ───────────────────────────────────────────────────────────
     //
-    // `--ask` is deliberately not used: it would block on a terminal that
-    // does not exist. Without a password nmcli tries the saved secret and
-    // fails cleanly if there is none, which is what surfaces in lastError.
-    function connect(name, password) {
-        if (!name) return;
-        lastError = "";
-        busySsid = name;
-        const cmd = ["nmcli", "device", "wifi", "connect", name];
-        if (password && password !== "") { cmd.push("password"); cmd.push(password); }
-        action.command = cmd;
-        action.running = true;
+    // Two kinds of secured network, and they are joined by different
+    // commands.
+    //
+    // A home network has one shared secret, and `nmcli device wifi
+    // connect SSID password …` is the whole of it. A university or
+    // office network is WPA-Enterprise: it authenticates *you*, with a
+    // username and a password, over 802.1X — and nmcli has no one-shot
+    // form for that. The profile has to be built first, with the EAP
+    // method and the inner authentication named, and then brought up.
+    //
+    // Secrets go in the environment rather than in the arguments.
+    // /proc/PID/cmdline is readable by anyone on the machine and
+    // /proc/PID/environ is not, so a password on the command line is a
+    // password anyone logged in can read while the join runs.
+
+    // Does this one authenticate the person rather than the network?
+    // nmcli spells it "WPA2 802.1X", or "WPA3 802.1X"; some builds say
+    // "802.1X" alone and older ones say "EAP".
+    function isEnterprise(ap) {
+        const sec = ((ap && ap.security) || "").toUpperCase();
+        return sec.indexOf("802.1X") >= 0 || sec.indexOf("EAP") >= 0;
     }
 
     // Whether joining this one will need a password from us: secured, and
@@ -251,6 +259,76 @@ Singleton {
         const sec = (ap.security || "").trim();
         return sec !== "" && sec.toLowerCase() !== "open" && !isKnown(ap.ssid);
     }
+
+    // ...and a username as well.
+    function needsIdentity(ap) {
+        return root.needsPassword(ap) && root.isEnterprise(ap);
+    }
+
+    // `--ask` is deliberately not used anywhere here: it would block on a
+    // terminal that does not exist. Without a password nmcli tries the
+    // saved secret and fails cleanly if there is none, which is what
+    // surfaces in lastError.
+    function connect(name, password, identity) {
+        if (!name) return;
+        lastError = "";
+        busySsid = name;
+
+        const user = (identity || "").trim();
+        if (user === "") {
+            action.environment = ({ "HYPRSHELL_WIFI_PSK": password || "" });
+            action.command = ["sh", "-c",
+                'if [ -n "${HYPRSHELL_WIFI_PSK:-}" ]; then\n'
+              + '  exec nmcli device wifi connect "$1" password "$HYPRSHELL_WIFI_PSK"\n'
+              + 'fi\n'
+              + 'exec nmcli device wifi connect "$1"\n',
+                "wifi-join", name];
+            action.running = true;
+            return;
+        }
+
+        action.environment = ({
+            "HYPRSHELL_WIFI_USER": user,
+            "HYPRSHELL_WIFI_PSK": password || ""
+        });
+        action.command = ["sh", "-c", root.enterpriseScript, "wifi-join", name, root.ifname];
+        action.running = true;
+    }
+
+    // PEAP with MSCHAPv2 inside it, which is what university networks ask
+    // for — eduroam, and the campus networks built the same way.
+    //
+    // No CA certificate is named. One *should* be, and a network that
+    // hands out a configuration profile is better followed than second
+    // guessed; but there is nowhere in a Wi-Fi popover to ask for a
+    // certificate file, and refusing to connect without one would mean
+    // the shell simply could not join the network at all. So this joins
+    // the way `nmcli` does when asked by hand, and anything more
+    // particular is what "Open network settings" is for.
+    readonly property string enterpriseScript:
+        'ssid="$1"; dev="$2"\n'
+        // An existing profile is brought up rather than replaced: it may
+        // have been set up elsewhere with a certificate, a domain match
+        // or an anonymous identity that this would throw away.
+      + 'if nmcli -g NAME connection show 2>/dev/null | grep -Fxq "$ssid"; then\n'
+      + '  exec nmcli connection up "$ssid"\n'
+      + 'fi\n'
+      + 'add() {\n'
+      + '  nmcli connection add type wifi con-name "$ssid" "$@" ssid "$ssid" -- \\\n'
+      + '    wifi-sec.key-mgmt wpa-eap \\\n'
+      + '    802-1x.eap peap \\\n'
+      + '    802-1x.phase2-auth mschapv2 \\\n'
+      + '    802-1x.identity "$HYPRSHELL_WIFI_USER" \\\n'
+      + '    802-1x.password "$HYPRSHELL_WIFI_PSK" >/dev/null\n'
+      + '}\n'
+      + 'if [ -n "$dev" ]; then add ifname "$dev"; else add; fi || exit $?\n'
+        // A profile that was added but will not come up is worse than no
+        // profile: the next attempt would take the branch above and try
+        // to raise the broken one for ever.
+      + 'if ! nmcli connection up "$ssid"; then\n'
+      + '  nmcli connection delete "$ssid" >/dev/null 2>&1\n'
+      + '  exit 1\n'
+      + 'fi\n' 
 
     // Deletes the saved profile, so the next join asks again.
     function forget(name) {

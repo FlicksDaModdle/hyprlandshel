@@ -8,6 +8,7 @@ import "modules/background"
 import "modules/bar"
 import "modules/dock"
 import "modules/launcher"
+import "modules/osk"
 import "modules/panels"
 import "modules/notifications"
 import "modules/overview"
@@ -87,6 +88,9 @@ ShellRoot {
     PanelLayer {}
     NotificationToasts {}
     Launcher {}
+    // Above the panels, since it is there to type into whatever is on
+    // top of them.
+    Osk {}
     Overview {}
     Osd {}
     Settings {}

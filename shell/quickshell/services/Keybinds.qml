@@ -39,6 +39,10 @@ Singleton {
         { key: "reload",      n: "Reload shell",         def: "SUPER + SHIFT + R", ipc: "reloadShell" },
         { key: "lock",        n: "Lock screen",          def: "SUPER + L",         ipc: "lock" },
         { key: "showdesktop", n: "Show desktop",         def: "SUPER + D",         ipc: "showDesktop" },
+        // Deliberately unbound. It is the one thing here that most
+        // people never want and a few people need every day, and any
+        // chord picked for it would be taken from something they do use.
+        { key: "osk",         n: "On-screen keyboard",   def: "",                  ipc: "toggleKeyboard" },
         { key: "terminal",    n: "Terminal",             def: "SUPER + Return",    exec: "terminal" },
         { key: "files",       n: "File manager",         def: "SUPER + E",         exec: "files" },
         { key: "browser",     n: "Browser",              def: "SUPER + B",         exec: "browser" },

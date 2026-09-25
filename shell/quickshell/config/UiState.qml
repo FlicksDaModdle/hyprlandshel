@@ -89,6 +89,13 @@ Singleton {
     // Control center drill-down: "", "Wi-Fi" or "Bluetooth".
     property string ccExpanded: ""
 
+    // The on-screen keyboard. Not part of the exclusive group: it is
+    // there to type *into* something, so opening a panel must not take
+    // it away and it must not take a panel away either.
+    property bool oskOpen: false
+
+    function toggleOsk() { oskOpen = !oskOpen; }
+
     // The icon maker. A window of its own rather than a panel, like
     // Settings — it is a thing you sit in front of for a while.
     property bool iconMakerOpen: false

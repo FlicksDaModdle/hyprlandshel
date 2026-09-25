@@ -40,6 +40,15 @@ Scope {
     readonly property bool tiled: Config.Appearance.settingsTiled
     readonly property string pane: Config.UiState.settingsPane
 
+    // The username for a network that authenticates the person rather
+    // than the machine — a campus or office network. Kept here rather
+    // than in the row because a row is rebuilt on every scan, and a name
+    // half-typed when the list refreshed would be gone.
+    //
+    // Not persisted: it is one of a pair with a password, and a password
+    // is NetworkManager's to keep, not this file's.
+    property string wifiIdentity: ""
+
     readonly property var paneMeta: ({
         "Display":       { icon: "monitor",   group: "System", note: "Every connected display, with its own resolution, refresh rate and scale." },
         "Keyboard":      { icon: "keyboard",  group: "System", note: "Layout, key repeat and the modifier behaviour libinput exposes." },
@@ -860,7 +869,8 @@ Scope {
                         s: (net.networks || []).length + " network"
                            + ((net.networks || []).length === 1 ? "" : "s")
                            + " found. Click a saved one to join it; a new "
-                           + "secured one asks for its password first." });
+                           + "secured one asks for its password first, and a "
+                           + "network that signs you in asks for a username too." });
 
             const seen = (net.networks || []).slice(0, 12);
             for (let i = 0; i < seen.length; i++) {
@@ -876,6 +886,29 @@ Scope {
                                 s: sec + " · " + (w.signal || 0) + "% · connected",
                                 type: "action", label: "Disconnect",
                                 set: () => net.disconnect() });
+                } else if (net.needsIdentity(w)) {
+                    // Two fields, so two rows: the generic text row holds
+                    // one value and a button, and this kind of network
+                    // wants a name as well as a secret.
+                    rows.push({ n: "Username for " + (w.ssid || "this network"),
+                                s: root.wifiIdentity !== ""
+                                   ? "Signing in as " + root.wifiIdentity
+                                   : "This network signs you in — your NetID, "
+                                     + "university or work account",
+                                type: "text",
+                                placeholder: "Username",
+                                label: "Set",
+                                set: v => root.wifiIdentity = v.trim() });
+                    rows.push({ n: w.ssid || "(hidden)",
+                                s: sec + " · " + (w.signal || 0) + "%"
+                                   + (busy ? " · joining…"
+                                      : root.wifiIdentity === ""
+                                        ? " · set the username above first"
+                                        : " · needs your password"),
+                                type: "text", secret: true,
+                                placeholder: "Password",
+                                label: busy ? "Joining" : "Join",
+                                set: v => net.connect(w.ssid, v, root.wifiIdentity) });
                 } else if (net.needsPassword(w)) {
                     rows.push({ n: w.ssid || "(hidden)",
                                 s: sec + " · " + (w.signal || 0) + "%"
