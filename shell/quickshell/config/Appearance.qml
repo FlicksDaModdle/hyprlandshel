@@ -132,8 +132,12 @@ Singleton {
             property string tapButtonMap: "lrm"
             property bool middleEmulation: false
 
-            // Per-output display state, as JSON:
-            //   { "DP-1": { "mode": "2560x1440@165", "scale": 1.25 }, ... }
+            // Per-output display state, as JSON. Every key inside an
+            // entry is spelled the way Hyprland's monitor rule spells it,
+            // so Devices.displaySpec can copy them straight across:
+            //   { "DP-1": { "mode": "2560x1440@165", "scale": 1.25,
+            //               "position": "0x0", "bitdepth": 10,
+            //               "cm": "hdr", "sdrbrightness": 1.2 }, ... }
             // Re-applied at startup, since Hyprland goes back to whatever
             // hyprland.lua says on every launch.
             property string displays: ""

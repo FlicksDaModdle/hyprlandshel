@@ -358,7 +358,39 @@ Item {
                 enabled: root.overlay !== null
                 function onPaneChanged() { menuRoot.open = false; }
             }
-            implicitWidth: 168
+            // Wide enough for the longest option it holds, and 168 at the
+            // narrowest so the short menus look as they always did.
+            //
+            // Every menu in these panes used to carry a resolution or a
+            // percentage, and 168 was plenty; the colour presets are
+            // sentences. Neither label elided, so one that didn't fit
+            // painted straight over the chevron and out of the box rather
+            // than being cut off tidily.
+            //
+            // Measured with the same text component that draws them — the
+            // font size is a setting, so a number worked out once would be
+            // wrong for anyone who moved it. A Column skips children that
+            // are not visible, but an invisible Column still lays its own
+            // out, so this costs nothing and is never painted.
+            Column {
+                id: sizer
+                visible: false
+                Repeater {
+                    model: root.spec.options
+                    StyledText {
+                        required property var modelData
+                        text: String(modelData)
+                        font.pixelSize: Config.Appearance.fs(12)
+                        font.weight: Font.DemiBold
+                    }
+                }
+            }
+
+            // 10 + 10 either side, 17 for the chevron, and enough of a gap
+            // that the longest label is not touching it. Capped, because a
+            // pathological option should cost the description beside it a
+            // line of wrapping, not the whole row.
+            implicitWidth: Math.max(168, Math.min(320, sizer.implicitWidth + 46))
             implicitHeight: 32
 
             Rectangle {
@@ -371,13 +403,19 @@ Item {
                 StyledText {
                     anchors.left: parent.left
                     anchors.leftMargin: 10
+                    // Elides rather than overflowing, for whatever is
+                    // longer than the cap above.
+                    anchors.right: chevron.left
+                    anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
+                    elide: Text.ElideRight
                     text: root.spec.value
                     font.pixelSize: Config.Appearance.fs(12)
                     font.weight: Font.DemiBold
                 }
 
                 MonoIcon {
+                    id: chevron
                     anchors.right: parent.right
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
@@ -498,12 +536,19 @@ Item {
                             StyledText {
                                 anchors.left: parent.left
                                 anchors.leftMargin: 9
+                                // The tick is always there to anchor
+                                // against, whether or not it is drawn: an
+                                // invisible item still has a geometry.
+                                anchors.right: tick.left
+                                anchors.rightMargin: 4
                                 anchors.verticalCenter: parent.verticalCenter
+                                elide: Text.ElideRight
                                 text: option.modelData
                                 font.pixelSize: Config.Appearance.fs(12)
                             }
 
                             MonoIcon {
+                                id: tick
                                 anchors.right: parent.right
                                 anchors.rightMargin: 9
                                 anchors.verticalCenter: parent.verticalCenter

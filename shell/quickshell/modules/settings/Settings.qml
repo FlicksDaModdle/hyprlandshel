@@ -50,7 +50,7 @@ Scope {
     property string wifiIdentity: ""
 
     readonly property var paneMeta: ({
-        "Display":       { icon: "monitor",   group: "System", note: "Every connected display, with its own resolution, refresh rate and scale." },
+        "Display":       { icon: "monitor",   group: "System", note: "Every connected display, with its own resolution, refresh rate, scale and colour." },
         "Keyboard":      { icon: "keyboard",  group: "System", note: "Layout, key repeat and the modifier behaviour libinput exposes." },
         "Mouse":         { icon: "mouse",     group: "System", note: "Pointer speed, acceleration profile, buttons and wheel." },
         "Touchpad":      { icon: "touchpad",  group: "System", note: "Tapping, scrolling, palm rejection and click behaviour." },
@@ -728,6 +728,190 @@ Scope {
                 type: "toggle", value: (ipc.vrr || 0) !== 0,
                 set: v => Services.Compositor.setConfig({ misc: { vrr: v ? 2 : 0 } }) });
 
+            // ── colour ────────────────────────────────────────────────
+            //
+            // Everything below is read out of what the compositor reports
+            // for this output rather than assumed. hardwareDetails is the
+            // EDID's own claims, currentFormat is the DRM format actually
+            // in use, and colorManagementPreset is the preset that
+            // actually took — which is not always the one asked for, so
+            // both are shown.
+            const hw = ipc.hardwareDetails || ({});
+            const saved = Services.Devices.displayMap()[m.name] || ({});
+
+            // Hyprland's supportsWideColor() believes the EDID unless
+            // supports_wide_color overrides it, and supportsHDR() needs
+            // wide colour *and* HDR metadata. An HDR preset on a panel
+            // that fails either silently becomes sRGB, so those options
+            // are only offered once one of the two is true.
+            const forcedWide = saved.supports_wide_color === 1;
+            const forcedHdr = saved.supports_hdr === 1;
+            const canWide = hw.bt2020 === true || forcedWide;
+            const canHdr = (canWide && hw.hdr === true) || forcedHdr;
+            const canEdid = hw.chroma === true;
+
+            const fmt = String(ipc.currentFormat || "");
+            const live10 = fmt.indexOf("2101010") >= 0;
+            const want10 = saved.bitdepth === 10;
+            const livePreset = String(ipc.colorManagementPreset || "srgb");
+            const wantPreset = saved.cm !== undefined ? saved.cm : livePreset;
+
+            const claims = [];
+            if (hw.bt2020 === true) claims.push("wide gamut");
+            if (hw.hdr === true) claims.push("HDR metadata");
+            if (hw.chroma === true) claims.push("its own colour primaries");
+            rows.push({ type: "header", n: "Colour",
+                s: claims.length > 0
+                   ? m.name + " advertises " + claims.join(", ")
+                     + " in its EDID"
+                   : m.name + " advertises neither wide gamut nor HDR in "
+                     + "its EDID. The overrides at the bottom are for a "
+                     + "panel that undersells itself." });
+
+            rows.push({ n: "Colour depth",
+                s: want10 && !live10
+                   ? "Asked for 10-bit, running 8-bit — this output offers "
+                     + "no 10-bit format, so the request was dropped. "
+                     + "Nothing is broken; it simply has nowhere to go."
+                   : (live10
+                      ? "10-bit, about a billion colours — " + fmt
+                      : "8-bit, 16.7 million colours"
+                        + (fmt !== "" ? " — " + fmt : "")
+                        + ". Switch to 10-bit to try; this line will say "
+                        + "if the panel refuses."),
+                type: "seg",
+                options: [{ label: "8-bit", value: "8" },
+                          { label: "10-bit", value: "10" }],
+                // Segmented speaks strings both ways, so the value is a
+                // string here and a number in the entry — a numeric 10
+                // assigned to its string property comes back as "10" and
+                // would never match.
+                value: want10 ? "10" : "8",
+                set: v => Services.Devices.rememberColour(m.name,
+                              { bitdepth: v === "10" ? 10 : 8 }) });
+
+            // Hyprland's own preset names. All nine are spelled out, not
+            // because all nine are offered, but because a preset can
+            // arrive from hyprland.lua and the menu draws its value as the
+            // label: an unlisted one shows up as the bare token "dcip3".
+            const cmAll = [
+                { label: "Standard (sRGB)", value: "srgb" },
+                { label: "Automatic", value: "auto" },
+                { label: "Wide gamut (BT.2020)", value: "wide" },
+                { label: "HDR", value: "hdr" },
+                { label: "The display's primaries", value: "edid" },
+                { label: "HDR, display's primaries", value: "hdredid" },
+                { label: "DCI-P3", value: "dcip3" },
+                { label: "Display P3", value: "dp3" },
+                { label: "Adobe RGB", value: "adobe" }
+            ];
+
+            // What this output can actually hold. An unsupported preset is
+            // accepted, logged and then quietly replaced with sRGB, which
+            // from the panel looks exactly like the setting not working —
+            // so the ones that would be replaced are not offered.
+            const cmOffered = v => {
+                switch (v) {
+                case "srgb": case "auto":  return true;
+                case "edid":               return canEdid;
+                case "hdr":                return canHdr;
+                case "hdredid":            return canHdr && canEdid;
+                case "wide":               return canWide;
+                // The three gamut presets Hyprland applies without
+                // checking anything. They are for matching a display whose
+                // primaries you already know, which is not what this pane
+                // is for, so they are only ever here to be shown.
+                default:                   return false;
+                }
+            };
+
+            // Whatever is running, or saved, is in the list whether or not
+            // this output advertises it. The compositor is already doing
+            // it: leaving it out would show a preset the menu cannot map
+            // back to a value, and offer no way to return to it once you
+            // had picked something else.
+            const cmOptions = cmAll.filter(o => cmOffered(o.value)
+                                             || o.value === livePreset
+                                             || o.value === wantPreset);
+            const cmLabels = cmOptions.map(o => o.label);
+            const cmLabelFor = v => {
+                const hit = cmAll.find(o => o.value === v);
+                return hit ? hit.label : v;
+            };
+
+            // Automatic is the one preset that is *meant* to come back as
+            // something else: Hyprland resolves it to wide or sRGB and
+            // reports the answer, so reading the difference as a fallback
+            // would accuse it of failing every time it worked.
+            const cmResolves = wantPreset === "auto";
+            rows.push({ n: "Colour range",
+                s: !cmResolves && wantPreset !== livePreset
+                   ? "Asked for " + cmLabelFor(wantPreset) + ", running "
+                     + cmLabelFor(livePreset) + " — this output can't hold "
+                     + "it, so Hyprland fell back."
+                   : (cmResolves
+                      ? "Wide gamut where the panel is 10-bit and says it "
+                        + "can, sRGB otherwise. Currently "
+                        + cmLabelFor(livePreset) + "."
+                      : "Currently " + cmLabelFor(livePreset)
+                        + (canHdr ? "" : canWide
+                           ? ". HDR also needs HDR metadata in the EDID."
+                           : ". Wide gamut and HDR need a panel that "
+                             + "advertises BT.2020.")),
+                type: "menu",
+                options: cmLabels,
+                value: cmLabelFor(wantPreset),
+                set: v => { const k = cmLabels.indexOf(v);
+                            if (k >= 0) Services.Devices.rememberColour(
+                                m.name, { cm: cmOptions[k].value }); } });
+
+            // Only while an HDR preset is actually running. These do
+            // nothing outside one, and a slider that does nothing is worse
+            // than no slider.
+            if (livePreset === "hdr" || livePreset === "hdredid") {
+                rows.push({ n: "SDR brightness",
+                    s: "How bright ordinary windows are inside the HDR "
+                       + "blend. At 100% their white sits at the reference "
+                       + "80 nits, which beside HDR highlights reads as "
+                       + "grey.",
+                    type: "slider", min: 50, max: 300, unit: "%",
+                    value: Math.round((ipc.sdrBrightness || 1) * 100),
+                    set: v => Services.Devices.rememberColour(m.name,
+                                  { sdrbrightness: Math.round(v) / 100 }) });
+                rows.push({ n: "SDR saturation",
+                    s: "sRGB colours stretched into the wider gamut come "
+                       + "out oversaturated. Pull this down if reds and "
+                       + "greens have gone lurid.",
+                    type: "slider", min: 50, max: 150, unit: "%",
+                    value: Math.round((ipc.sdrSaturation || 1) * 100),
+                    set: v => Services.Devices.rememberColour(m.name,
+                                  { sdrsaturation: Math.round(v) / 100 }) });
+            }
+
+            // The escape hatch, and only where it would change anything.
+            // A fair number of panels are perfectly capable and say
+            // nothing about it in their EDID, which is the one case where
+            // overriding the hardware's own answer is the right call.
+            if (hw.bt2020 !== true) {
+                rows.push({ n: "Force wide gamut",
+                    s: "Tell Hyprland this panel can do BT.2020 even "
+                       + "though its EDID doesn't say so. Harmless to try: "
+                       + "if it can't, colours will look wrong and you "
+                       + "turn it back off.",
+                    type: "toggle", value: forcedWide,
+                    set: v => Services.Devices.rememberColour(m.name,
+                                  { supports_wide_color: v ? 1 : 0 }) });
+            }
+            if (hw.hdr !== true && canWide) {
+                rows.push({ n: "Force HDR",
+                    s: "Same, for HDR. Needs wide gamut above to be on or "
+                       + "advertised, because Hyprland will not consider "
+                       + "HDR without it.",
+                    type: "toggle", value: forcedHdr,
+                    set: v => Services.Devices.rememberColour(m.name,
+                                  { supports_hdr: v ? 1 : 0 }) });
+            }
+
             // How much of this output's scale the shell gives back. The
             // compositor's scale enlarges everything on the screen, the
             // shell included; this is the only way to say that the bar on
@@ -825,8 +1009,9 @@ Scope {
                 value: Services.NightLight.temperature,
                 set: v => Services.NightLight.setTemperature(v) });
             rows.push({ n: "Forget saved layouts",
-                s: "Drops the remembered mode and scale for every output, so they "
-                   + "fall back to what hyprland.lua says",
+                s: "Drops the remembered mode, scale, arrangement and colour "
+                   + "settings for every output, so they fall back to what "
+                   + "hyprland.lua says at the next reload",
                 type: "action", label: "Forget",
                 set: () => Services.Devices.forgetDisplays() });
             return rows;
@@ -1416,16 +1601,21 @@ Scope {
         A.screenScales = keep.join("\n");
     }
 
+    // Saved first, then applied from what was saved. The two used to be
+    // separate — one table built here and sent, another written to
+    // theme.json — and they agreed only as long as the table had three
+    // fields in it. Going through the entry means a resolution change
+    // carries this output's colour settings with it by construction
+    // rather than by remembering to.
     function applyMode(name, res, hz) {
         const m = Services.Compositor.monitors.find(x => x.name === name);
         if (!m) return;
         const rate = hz > 0 ? hz : Math.round((m.lastIpcObject || {}).refreshRate || 60);
-        const mode = res + "@" + formatHzPlain(rate);
-        const scale = m.scale || 1;
-        Services.Compositor.setMonitor({ output: name, mode: mode, scale: scale });
         // Remembered, so it comes back after a logout — Hyprland reverts to
         // whatever hyprland.lua says otherwise.
-        Services.Devices.rememberDisplay(name, mode, scale);
+        Services.Devices.rememberDisplay(name, res + "@" + formatHzPlain(rate),
+                                         m.scale || 1);
+        Services.Devices.applyDisplay(name);
         // And re-read, or the dropdown keeps showing the mode you just
         // changed away from: these controls are drawn from the compositor's
         // own report of the monitor, and nothing else asks it to refresh.
@@ -1437,9 +1627,9 @@ Scope {
         if (!m) return;
         const ipc = m.lastIpcObject || ({});
         const pxW = ipc.width || m.width, pxH = ipc.height || m.height;
-        const mode = pxW + "x" + pxH + "@" + formatHzPlain(ipc.refreshRate || 60);
-        Services.Compositor.setMonitor({ output: name, mode: mode, scale: scale });
-        Services.Devices.rememberDisplay(name, mode, scale);
+        Services.Devices.rememberDisplay(
+            name, pxW + "x" + pxH + "@" + formatHzPlain(ipc.refreshRate || 60), scale);
+        Services.Devices.applyDisplay(name);
         Services.Compositor.refreshMonitors();
     }
 

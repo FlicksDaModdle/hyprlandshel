@@ -97,6 +97,13 @@ Singleton {
     onAccentNowChanged: if (applied && prefs.borderFollowsAccent) applyFrame();
 
     // ── displays ──────────────────────────────────────────────────────────
+    //
+    // One entry per output, keyed by name, and every key inside an entry is
+    // spelled the way hl.monitor spells it — `mode`, `scale`, `position`,
+    // `bitdepth`, `cm`, `sdrbrightness`, `sdrsaturation`,
+    // `supports_wide_color`, `supports_hdr`. That is not a coincidence kept
+    // up by hand: building the table to send is then a copy, and a field
+    // added to one side cannot arrive on the other under a different name.
     function displayMap() {
         if (!prefs.displays) return ({});
         try {
@@ -108,11 +115,28 @@ Singleton {
         }
     }
 
-    function rememberDisplay(name, mode, scale) {
+    // Merged into whatever the entry already holds, never replacing it.
+    //
+    // Each control in the Display pane owns one or two keys and none of
+    // them should be able to forget the rest. Writing the resolution used
+    // to rebuild the entry as { mode, scale, position }, which was the
+    // whole entry at the time and is now most of the way to dropping the
+    // colour settings sitting beside it. Passing undefined removes a key.
+    function saveDisplay(name, patch) {
         const map = displayMap();
         const had = map[name] || ({});
-        map[name] = { mode: mode, scale: scale, position: had.position };
+        const next = ({});
+        for (const k in had) next[k] = had[k];
+        for (const k in patch) {
+            if (patch[k] === undefined) delete next[k];
+            else next[k] = patch[k];
+        }
+        map[name] = next;
         prefs.displays = JSON.stringify(map);
+    }
+
+    function rememberDisplay(name, mode, scale) {
+        saveDisplay(name, { mode: mode, scale: scale });
     }
 
     // Where the output sits on the desktop plane, kept beside its mode and
@@ -124,14 +148,79 @@ Singleton {
     // whatever order they were detected, and is exactly what someone
     // opening that panel is trying to change.
     function rememberDisplayPosition(name, x, y) {
-        const map = displayMap();
-        const had = map[name] || ({});
-        map[name] = { mode: had.mode, scale: had.scale,
-                      position: Math.round(x) + "x" + Math.round(y) };
-        prefs.displays = JSON.stringify(map);
+        saveDisplay(name, { position: Math.round(x) + "x" + Math.round(y) });
     }
 
     function forgetDisplays() { prefs.displays = ""; }
+
+    // ── colour ────────────────────────────────────────────────────────────
+    //
+    // Bit depth and colour management, applied through the same monitor
+    // rule as the mode. `bitdepth` is 8 or 10; `cm` is one of the names in
+    // Hyprland's own table — auto, srgb, wide, edid, hdr, hdredid, dcip3,
+    // dp3, adobe — and anything else is rejected with "invalid cm". The two
+    // sdr* values scale SDR content inside an HDR blend, where white would
+    // otherwise sit at the reference 80 nits and look grey next to HDR
+    // highlights. supports_wide_color and supports_hdr are the overrides
+    // for a panel whose EDID undersells it: -1 no, 0 believe the EDID, 1
+    // yes.
+    //
+    // Turning something off stores the off value rather than dropping the
+    // key, because hl.monitor merges into the rule the output already has:
+    // a removed `bitdepth` leaves 10 in the compositor with nothing in the
+    // panel still claiming it.
+    function rememberColour(name, patch) {
+        saveDisplay(name, patch);
+        applyDisplay(name);
+        Services.Compositor.refreshMonitors();
+    }
+
+    // The fields an entry may carry, in the order hl.monitor reads them.
+    // mode and scale are handled separately because they are never left
+    // out — see displaySpec.
+    readonly property var monitorFields: [
+        "position", "bitdepth", "cm", "sdrbrightness", "sdrsaturation",
+        "supports_wide_color", "supports_hdr"
+    ]
+
+    // The whole monitor table for one output, or null when it isn't
+    // plugged in.
+    function displaySpec(name) {
+        const live = (Services.Compositor.monitors || []).find(m => m && m.name === name);
+        if (!live) return null;
+        const want = displayMap()[name] || ({});
+        const ipc = live.lastIpcObject || ({});
+
+        const spec = ({ output: name });
+
+        // An entry may hold only a position — an arrangement dragged into
+        // place without the mode ever being touched — or only a colour
+        // setting. The mode and the scale go in regardless, filled from
+        // what the output is doing now, because hl.monitor's own defaults
+        // for them are "preferred" and "auto" rather than "leave it": the
+        // first table ever sent for an output that hyprland.lua does not
+        // name would otherwise change its resolution as a side effect of
+        // switching on 10-bit.
+        spec.mode = want.mode
+            || ((ipc.width || live.width) + "x" + (ipc.height || live.height)
+                + "@" + (Math.round((ipc.refreshRate || 60) * 1000) / 1000));
+        spec.scale = want.scale || live.scale || 1;
+
+        // Only keys the entry actually carries. Stating every colour field
+        // every time would overwrite a `bitdepth = 10` written by hand in
+        // hyprland.lua the first time somebody dragged this monitor
+        // somewhere else.
+        for (let i = 0; i < root.monitorFields.length; i++) {
+            const k = root.monitorFields[i];
+            if (want[k] !== undefined) spec[k] = want[k];
+        }
+        return spec;
+    }
+
+    function applyDisplay(name) {
+        const spec = displaySpec(name);
+        if (spec) Services.Compositor.setMonitor(spec);
+    }
 
     // Only outputs that are actually connected are re-applied: a saved mode
     // for a monitor that isn't plugged in would be an error every launch.
@@ -140,23 +229,7 @@ Singleton {
         const live = Services.Compositor.monitors || [];
         for (let i = 0; i < live.length; i++) {
             const m = live[i];
-            const want = map[m.name];
-            if (!want) continue;
-            // An entry may hold only a position — an arrangement dragged
-            // into place without the mode ever being touched. The monitor
-            // line needs a mode regardless, so its current one is filled
-            // in rather than the entry being skipped, which is what used
-            // to happen and why positions never came back.
-            const ipc = m.lastIpcObject || ({});
-            const mode = want.mode
-                || ((ipc.width || m.width) + "x" + (ipc.height || m.height)
-                    + "@" + (Math.round((ipc.refreshRate || 60) * 1000) / 1000));
-            const spec = { output: m.name, mode: mode,
-                           scale: want.scale || m.scale || 1 };
-            // Left out when unknown, so Hyprland places it as it likes
-            // rather than being told to put it at the origin.
-            if (want.position) spec.position = want.position;
-            Services.Compositor.setMonitor(spec);
+            if (m && map[m.name]) root.applyDisplay(m.name);
         }
     }
 
