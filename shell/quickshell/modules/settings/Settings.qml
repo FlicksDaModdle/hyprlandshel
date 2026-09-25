@@ -366,6 +366,12 @@ Scope {
               value: A.workspaceScale, set: v => A.workspaceScale = v },
             { n: "Bar height", s: "Top bar thickness", type: "slider",
               min: 32, max: 56, unit: "px", value: A.barHeight, set: v => A.barHeight = v },
+            { n: "Auto-hide",
+              s: "Slide up off the top edge until the pointer reaches it. "
+                 + "A panel opened from the bar holds it out while it is "
+                 + "open, and windows get the space back.",
+              type: "toggle",
+              value: A.barAutoHide, set: v => A.barAutoHide = v },
             { type: "header", n: "Text",
               s: "Body size moves everything together; the rest are offsets from it" },
             { n: "Body text", s: "The window title, the date and the status capsule",

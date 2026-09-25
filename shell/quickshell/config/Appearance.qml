@@ -86,6 +86,10 @@ Singleton {
             // bigger, the shell included; this is how much of that the
             // shell gives back.
             property string screenScales: ""
+            // The bar gets out of the way like the dock does. Off by
+            // default: a bar is the thing you glance at, and one that has
+            // to be summoned is a choice rather than a kindness.
+            property bool barHide: false
             property bool clock24: true
             property bool showTray: true
             property bool trayOpen: false
@@ -276,6 +280,7 @@ Singleton {
     property alias dockIconPct: prefs.dockIcon
     property alias dockLabels: prefs.dockLabels
     property alias dockAutoHide: prefs.dockHide
+    property alias barAutoHide: prefs.barHide
     property alias dockPinned: prefs.dockPinned
 
     // ── input devices ─────────────────────────────────────────────────────
