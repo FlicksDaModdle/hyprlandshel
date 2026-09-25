@@ -260,7 +260,15 @@
   border-radius: var(--hs-r, 14px) !important;
 }
 
+/* The radius has to go on all three.
+ *
+ * #urlbar-background is the one that is painted, but #urlbar and the
+ * input container clip it — so a radius on the background alone is cut
+ * back to whatever the boxes around it allow, which is why the bar came
+ * out less rounded than the design however large the number was. */
+#urlbar,
 #urlbar-input-container {
+  border-radius: var(--hs-r, 14px) !important;
   padding-block: 0 !important;
   border: 0 !important;
 }
@@ -325,12 +333,43 @@ toolbarbutton.bookmark-item {
   border-radius: var(--hs-r-sm, 9px) !important;
 }
 
+/* Most of Firefox's toolbar icons are drawn with `fill: currentColor`,
+ * so what decides their colour is the button's `color` — not the
+ * --toolbarbutton-icon-fill variable, which only some of them read.
+ * Setting the variable alone left them all at --toolbar-color, which is
+ * full-strength ink, and that is why they stayed bright. */
+.toolbarbutton-1,
+#PanelUI-menu-button,
+.titlebar-button {
+  color: var(--hs-ink2, #605d5d) !important;
+}
+
+.toolbarbutton-1:not([disabled]):hover,
+.toolbarbutton-1[open],
+.titlebar-button:hover {
+  color: var(--hs-ink, #201e1d) !important;
+}
+
 .toolbarbutton-1 > .toolbarbutton-icon,
-#identity-box image,
+.toolbarbutton-1 > .toolbarbutton-badge-stack > .toolbarbutton-icon,
 #page-action-buttons image,
 .urlbar-icon {
-  fill: var(--hs-ink2, #605d5d) !important;
+  fill: currentColor !important;
   opacity: 1 !important;
+}
+
+/* The little row of arrows at the top of a context menu, which are
+ * menuitems rather than toolbar buttons and take neither of the above. */
+menupopup .menu-iconic-icon,
+#context-navigation menuitem image {
+  fill: var(--hs-ink2, #605d5d) !important;
+  -moz-context-properties: fill, fill-opacity !important;
+  opacity: 1 !important;
+}
+
+menupopup .menu-iconic-icon:hover,
+#context-navigation menuitem:hover image {
+  fill: var(--hs-ink, #201e1d) !important;
 }
 
 .toolbarbutton-1:not([disabled]):hover > .toolbarbutton-icon,
@@ -518,9 +557,13 @@ panel::part(content) {
    * paint the seam out. */
   background-color: transparent !important;
   color: var(--hs-ink, #201e1d) !important;
-  border: 1px solid var(--hs-edge, rgba(32,30,29,.14)) !important;
-  border-radius: var(--hs-r, 14px) !important;
-  padding: 4px !important;
+  /* No border and no padding.
+   *
+   * The popup already has both. Giving them to this box as well drew
+   * one ring inside another a pixel apart, which is what made the menu
+   * look like it had a thick bright outline rather than a hairline. */
+  border: 0 !important;
+  padding: 0 !important;
 }
 
 menuseparator {
@@ -528,9 +571,13 @@ menuseparator {
   -moz-appearance: none !important;
   border-top: 1px solid var(--hs-rule, rgba(32,30,29,.09)) !important;
   border-bottom: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
   margin-block: 4px !important;
-  margin-inline: 10px !important;
+  margin-inline: 14px !important;
   padding: 0 !important;
+  min-height: 0 !important;
+  height: 1px !important;
 }
 
 /* ══ findbar, sidebar, the rest ═══════════════════════════════════════ */

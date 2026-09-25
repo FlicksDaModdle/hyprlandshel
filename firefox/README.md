@@ -138,6 +138,19 @@ right colour looks exactly like the wrong colour), and
 `--lwt-accent-color-inactive` is set as well, or an unfocused window is
 the one part still looking like stock Firefox.
 
+## What this can and cannot match
+
+It can give Firefox the shell's colours, radii, spacing, weights and the
+accent seam. It **recolours** Firefox's icons; it does not replace them
+with the shell's own monoline glyphs. Doing that means overriding
+`list-style-image` on every button with an inline SVG, which is possible
+— the pack is right there in `shell/quickshell/modules/icons` — but it is
+thirty-odd icons and a half-finished set looks worse than a consistent
+borrowed one. Ask if you want it.
+
+Web content is never touched, and neither is anything a page draws for
+itself.
+
 ## If something looks wrong
 
 The stylesheets name Firefox's own internal element ids, and Firefox
