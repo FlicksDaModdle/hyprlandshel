@@ -579,3 +579,17 @@
 :root[hyprshell] #appMenu-settings-button { list-style-image: url("resource://hyprshell/icons/settings.svg") !important; }
 :root[hyprshell] #appMenu-more-button2 { list-style-image: url("resource://hyprshell/icons/more.svg") !important; }
 :root[hyprshell] #appMenu-help-button2 { list-style-image: url("resource://hyprshell/icons/help.svg") !important; }
+
+/* ══ where popups cannot be transparent ═══════════════════════════════════ */
+/* A rounded menu is a square window with its corners left see-through. When
+ * nothing is compositing — some X11 setups, a bare X server — there is
+ * nothing to see through, and the corners come out as black squares. Firefox
+ * draws its own menus square there; so do these. Under Hyprland, or any
+ * compositing desktop, this never applies. */
+@media not (-moz-gtk-csd-transparency-available) {
+  :root[hyprshell] :is(menupopup, panel) {
+    --panel-border-radius: 0px !important;
+    --panel-box-shadow-margin: 0px !important;
+    --panel-box-shadow: none !important;
+  }
+}
