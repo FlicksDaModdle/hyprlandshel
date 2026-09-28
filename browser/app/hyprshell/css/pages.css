@@ -1,0 +1,159 @@
+/* Hyprshell Browser — Settings and Add-ons.
+ *
+ * Loaded into about:preferences and about:addons by Pages.sys.mjs, after
+ * defaults.css and the shell's palette, so every --hs-* value here is the
+ * shell's own and changes when the shell's theme does.
+ *
+ * These pages are built from Firefox's components, which keep their insides
+ * in shadow trees a page stylesheet cannot reach. What does reach them is
+ * Firefox's design tokens — custom properties, which inherit into shadow
+ * trees — so the look is mostly set here by mapping those tokens onto the
+ * palette, and the components draw themselves with it. A token declared on
+ * a component itself loses to one set on the component from the page, which
+ * is how the components' own tokens are reached.
+ *
+ * What it becomes is the shell's Settings window: the sheet colour behind
+ * everything, a hairline beside the side navigation, entries 36px with a
+ * wash and an accent underline under the current one, and the accent for
+ * everything that is on, selected or focused.
+ *
+ * High contrast and forced colours keep Firefox's own values: those exist for
+ * people who need them, and a palette has no business overriding them. */
+
+@media not ((prefers-contrast) or (forced-colors)) {
+
+:root[hyprshell] {
+  /* ── ground and ink ─────────────────────────────────────────────────── */
+  --background-color-canvas: var(--hs-sheet) !important;
+  --background-color-box: var(--hs-menu) !important;
+  --background-color-box-info: var(--hs-hover) !important;
+  --background-color-list-item-hover: var(--hs-hover) !important;
+  --text-color: var(--hs-ink) !important;
+  --text-color-deemphasized: var(--hs-ink3) !important;
+  --icon-color: var(--hs-ink2) !important;
+  --table-row-background-color-alternate: var(--hs-hover) !important;
+
+  /* ── the accent ─────────────────────────────────────────────────────── */
+  --color-accent-primary: var(--hs-accent) !important;
+  --color-accent-primary-hover: color-mix(in srgb, var(--hs-accent) 86%, var(--hs-ink)) !important;
+  --color-accent-primary-active: color-mix(in srgb, var(--hs-accent) 74%, var(--hs-ink)) !important;
+  --color-accent-primary-selected: var(--hs-accent) !important;
+  --text-color-accent-primary-selected: var(--hs-on-accent) !important;
+  --link-color: var(--hs-accent) !important;
+  --link-color-hover: color-mix(in srgb, var(--hs-accent) 86%, var(--hs-ink)) !important;
+  --link-color-active: color-mix(in srgb, var(--hs-accent) 74%, var(--hs-ink)) !important;
+  --focus-outline-color: var(--hs-accent) !important;
+
+  /* ── lines ──────────────────────────────────────────────────────────── */
+  --border-color: var(--hs-rule) !important;
+  --border-color-deemphasized: var(--hs-rule) !important;
+  --border-color-interactive: var(--hs-div) !important;
+  --border-color-interactive-hover: var(--hs-edge) !important;
+  --border-color-interactive-active: var(--hs-accent) !important;
+  --border-color-selected: var(--hs-accent) !important;
+
+  /* ── shape: the shell's two radii ───────────────────────────────────── */
+  --border-radius-small: calc(var(--hs-r-sm) - 3px) !important;
+  --border-radius-medium: var(--hs-r-sm) !important;
+  --border-radius-large: var(--hs-r) !important;
+  --button-border-radius: var(--hs-r-sm) !important;
+
+  /* ── buttons: a wash and a hairline; the primary one in the accent ──── */
+  --button-background-color: var(--hs-hover) !important;
+  --button-background-color-hover: var(--hs-sel) !important;
+  --button-background-color-active: var(--hs-div) !important;
+  --button-border-color: var(--hs-rule) !important;
+  --button-border-color-hover: var(--hs-edge) !important;
+  --button-text-color: var(--hs-ink) !important;
+  --button-text-color-hover: var(--hs-ink) !important;
+  --button-background-color-ghost-hover: var(--hs-hover) !important;
+  --button-background-color-ghost-active: var(--hs-sel) !important;
+  --button-background-color-primary: var(--hs-accent) !important;
+  --button-background-color-primary-hover: color-mix(in srgb, var(--hs-accent) 86%, var(--hs-ink)) !important;
+  --button-background-color-primary-active: color-mix(in srgb, var(--hs-accent) 74%, var(--hs-ink)) !important;
+  --button-border-color-primary: transparent !important;
+  --button-text-color-primary: var(--hs-on-accent) !important;
+  --button-text-color-primary-hover: var(--hs-on-accent) !important;
+  --button-text-color-primary-active: var(--hs-on-accent) !important;
+
+  /* ── fields ─────────────────────────────────────────────────────────── */
+  --input-text-background-color: var(--hs-hover) !important;
+  --input-text-border-color: var(--hs-rule) !important;
+  --input-border-color: var(--hs-div) !important;
+  --input-text-border-radius: var(--hs-r-sm) !important;
+  --input-search-border-radius: var(--hs-r) !important;
+
+  /* ── cards: a step off the sheet, a hairline, no drop shadow ────────── */
+  --card-background-color: color-mix(in srgb, var(--hs-field) 45%, var(--hs-sheet)) !important;
+  --card-border-color: var(--hs-rule) !important;
+  --card-border-radius: var(--hs-r) !important;
+  --card-box-shadow: none !important;
+  --card-box-shadow-hover: none !important;
+
+  /* ── switches: a wash when off, the accent when on ──────────────────── */
+  --toggle-background-color: var(--hs-sel) !important;
+  --toggle-background-color-hover: var(--hs-div) !important;
+  --toggle-border-color: transparent !important;
+  --toggle-dot-background-color: var(--hs-ink2) !important;
+  --toggle-dot-background-color-hover: var(--hs-ink) !important;
+  --toggle-dot-background-color-on-pressed: var(--hs-on-accent) !important;
+
+  font-family: var(--hs-font), sans-serif;
+  background-color: var(--hs-sheet) !important;
+  color: var(--hs-ink) !important;
+  scrollbar-color: var(--hs-div) transparent;
+}
+
+:root[hyprshell] ::selection {
+  background-color: var(--hs-accent);
+  color: var(--hs-on-accent);
+}
+
+/* ── the side navigation ───────────────────────────────────────────────── */
+/* A hairline between it and the pane, as in the shell's Settings; no logo,
+ * because the logo would be Firefox's. */
+:root[hyprshell] moz-page-nav {
+  --page-nav-border-color: var(--hs-rule) !important;
+  --page-nav-hr-background-color: var(--hs-rule) !important;
+  --page-nav-heading-logo-size: 0px !important;
+  --page-nav-gap: 14px !important;
+}
+:root[hyprshell] moz-page-nav-button {
+  --page-nav-button-border-radius: var(--hs-r-sm) !important;
+  --page-nav-button-border-radius-focused: var(--hs-r-sm) !important;
+  --page-nav-button-padding: 8px 10px !important;
+  --page-nav-button-text-color: var(--hs-ink) !important;
+  --page-nav-button-text-color-hover: var(--hs-ink) !important;
+  --page-nav-button-text-color-selected: var(--hs-ink) !important;
+  --page-nav-button-background-color-hover: var(--hs-hover) !important;
+  --page-nav-button-background-color-active: var(--hs-sel) !important;
+  --page-nav-button-background-color-selected: var(--hs-sel) !important;
+  --page-nav-button-indicator-width: 0px !important;
+  --icon-color: var(--hs-ink2) !important;
+  position: relative;
+}
+/* The shell's mark for the current entry: 2px of accent along the bottom,
+ * 10px in from each side. hs-selected is copied out of the entry's shadow
+ * tree by Pages.sys.mjs. */
+:root[hyprshell] moz-page-nav-button::after {
+  content: "";
+  position: absolute;
+  inset-inline: 10px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--hs-accent);
+  opacity: 0;
+  transition: opacity 180ms;
+  pointer-events: none;
+}
+:root[hyprshell] moz-page-nav-button[hs-selected]::after { opacity: 1; }
+
+/* ── panes ─────────────────────────────────────────────────────────────── */
+:root[hyprshell] :is(h1, .header-name) {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+:root[hyprshell] :is(h2, h3, legend) { font-weight: 600; }
+
+}

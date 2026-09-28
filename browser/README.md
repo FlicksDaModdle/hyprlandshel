@@ -32,9 +32,13 @@ privileges as Firefox's own interface, and changes the interface itself:
 - **Menus and panels** — the shell's menu: 14px corners, the accent seam, 29px
   rows with a soft wash under the pointer, shortcuts at the right.
 - **Symbols** — every control in the shell's own icon language (2px strokes,
-  one accent detail), generated from the shell's `IconPaths.js` by
+  one accent detail) at 20px, generated from the shell's `IconPaths.js` by
   `tools/gen-icons.js`, so the two can never drift apart. They take the accent
   live.
+- **Settings and Add-ons** — `about:preferences` and `about:addons` in the
+  palette: the sheet colour, hairline cards, the shell's radii, a wash and an
+  accent underline on the current section, and the accent on every switch,
+  checkbox and primary button. They follow the shell's theme live too.
 - **Colour, live** — the palette the shell writes
   (`~/.config/quickshell/hyprshell/firefox-colors.css`) is reloaded the moment
   it changes, into every open window. Web pages follow the shell's light or
@@ -55,11 +59,13 @@ app/
   hyprshell/
     Loader.sys.mjs              finds each browser window as it opens
     Window.sys.mjs              the bead, the hairline, the window title
+    Pages.sys.mjs               Settings and Add-ons, as they open
     Layout.sys.mjs              the toolbar order, once per profile
     UrlView.sys.mjs             the address at rest
     Theme.sys.mjs               the palette, and reloading it live
     css/defaults.css            the concept's colours, light and dark
     css/chrome.css              the interface
+    css/pages.css               Settings and Add-ons
     icons/                      generated — see tools/gen-icons.js
 branding/                       the app icon, from the shell's globe glyph
 hyprshell-browser               the launcher

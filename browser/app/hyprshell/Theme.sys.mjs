@@ -77,11 +77,14 @@ export const Theme = {
   // Defaults first and the palette after them, so the palette wins at equal
   // specificity; the design itself only reads the variables, so where it
   // falls in the order does not matter.
-  attach(win) {
+  //
+  // A window takes chrome.css; the browser's own pages (Pages.sys.mjs) take
+  // their own sheet over the same palette.
+  attach(win, sheet = CHROME) {
     const u = win.windowUtils;
     u.loadSheetUsingURIString(DEFAULTS, u.AUTHOR_SHEET);
     if (this.current) u.loadSheetUsingURIString(this.current, u.AUTHOR_SHEET);
-    u.loadSheetUsingURIString(CHROME, u.AUTHOR_SHEET);
+    u.loadSheetUsingURIString(sheet, u.AUTHOR_SHEET);
     this.windows.add(win);
     win.addEventListener("unload", () => this.windows.delete(win), { once: true });
   },
