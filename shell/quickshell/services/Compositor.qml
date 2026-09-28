@@ -26,14 +26,58 @@ Singleton {
     // compositor is worse than one that polls.
     readonly property var workspaces: {
         const live = Hyprland.workspaces.values.filter(w => w && w.id > 0);
-        if (live.length > 0) {
-            live.sort((a, b) => a.id - b.id);
-            return live;
-        }
-        return polledWorkspaces;
+        if (live.length === 0) return polledWorkspaces;
+
+        // Quickshell builds its list from the event stream and keeps an
+        // object for every workspace it has heard of, which is not quite
+        // the same thing as the workspaces that exist: an object can
+        // outlive the workspace it stood for, and at startup it can be
+        // built from an event that arrives before the first full read.
+        // `hyprctl workspaces` is the compositor answering the question
+        // directly, with no object lifetime in between, so where the two
+        // disagree that one settles it.
+        //
+        // The focused workspace is never dropped. It can be one created
+        // half a millisecond ago, and a poll that has not come back yet
+        // is not evidence against it.
+        const live2 = root.polled
+            ? live.filter(w => root.polledIds[w.id] || w.id === root.focusedId)
+            : live;
+        const out = live2.slice();
+        out.sort((a, b) => a.id - b.id);
+        return out;
     }
 
     property var polledWorkspaces: []
+
+    // Whether `hyprctl workspaces` has ever answered. Until it has there
+    // is nothing to check the live list against, so it is taken as given.
+    property bool polled: false
+
+    readonly property var polledIds: {
+        const known = ({});
+        for (const w of polledWorkspaces) known[w.id] = true;
+        return known;
+    }
+
+    // Workspaces Quickshell is holding that hyprctl does not report.
+    //
+    // Joined into a string rather than kept as a list so that the change
+    // signal fires when the set changes and not every time the binding
+    // re-runs — a binding that returns a fresh array notifies on every
+    // evaluation, which for a warning means the log fills up.
+    readonly property string ghostWorkspaces: {
+        if (!root.polled) return "";
+        return Hyprland.workspaces.values
+            .filter(w => w && w.id > 0 && !root.polledIds[w.id]
+                         && w.id !== root.focusedId)
+            .map(w => w.id).sort((a, b) => a - b).join(", ");
+    }
+    onGhostWorkspacesChanged: {
+        if (root.ghostWorkspaces !== "")
+            console.warn("Compositor: ignoring workspace(s) that hyprctl "
+                         + "does not report: " + root.ghostWorkspaces);
+    }
 
     Process {
         id: wsProc
@@ -51,6 +95,7 @@ Singleton {
                 }));
                 out.sort((a, b) => a.id - b.id);
                 root.polledWorkspaces = out;
+                root.polled = true;
             }
         }
     }
@@ -141,24 +186,66 @@ Singleton {
     // empty ones — otherwise the pill group jitters in width as you open and
     // close the last window on a workspace.
     readonly property int minWorkspaces: 5
+
+    // What the switcher draws: the workspaces that exist, the focused one,
+    // and enough low unused numbers to reach the minimum.
+    //
+    // This used to be every number from 1 to the highest id — a range, not
+    // a list. That is indistinguishable from the right answer while the ids
+    // are 1 to 5, and catastrophic the moment one of them is not: a single
+    // workspace numbered 99 drew ninety-nine beads, ninety-six of which
+    // stood for nothing, and the group swallowed the whole bar.
+    //
+    // The fill is still here, because it is what keeps the group from
+    // changing width as the last window on a workspace closes. What has
+    // gone is the idea that the gap between two workspaces needs filling:
+    // 1, 2, 3 and 99 is four workspaces and is drawn as four, which is odd
+    // to look at exactly once and true every time.
     readonly property var workspaceSlots: {
-        const byId = {};
-        for (const w of workspaces) byId[w.id] = w;
-        const highest = workspaces.length > 0 ? workspaces[workspaces.length - 1].id : 1;
-        const upTo = Math.max(minWorkspaces, highest, focusedId);
-        const out = [];
-        for (let i = 1; i <= upTo; i++) {
-            const w = byId[i];
-            out.push({
-                id: i,
-                workspace: w || null,
-                exists: !!w,
-                focused: i === focusedId,
-                urgent: !!(w && w.urgent),
-                windows: w ? clientsOn(i).length : 0
-            });
+        const byId = ({});
+        const ids = [];
+        function add(id, w) {
+            if (!(id > 0) || byId[id] !== undefined) return;
+            byId[id] = w || null;
+            ids.push(id);
         }
-        return out;
+
+        // Show desktop's stash (see toggleShowDesktop) is not a workspace
+        // anyone made, and it is the one that put ninety-nine beads on the
+        // bar: it is numbered 99, and while it existed the old range drew
+        // everything below it. It is left out unless a window has actually
+        // landed there — something launched while the desktop was showing
+        // opens on it, and hiding that would hide the window.
+        const stash = root.stashWorkspace;
+        const stashHolds = root.clientsOn(stash).length > 0;
+        for (const w of workspaces)
+            if (w.id !== stash || stashHolds) add(w.id, w);
+
+        // Drawn even in the moment before the compositor has confirmed it
+        // exists, so clicking a pill never makes that pill vanish. With the
+        // desktop showing nothing is highlighted, which is what it is.
+        if (root.focusedId !== stash || stashHolds) add(root.focusedId, null);
+
+        // Padded with the lowest numbers not already in use. Searching only
+        // 1..minWorkspaces is always enough: every id in that span that is
+        // taken is one fewer the padding has to supply.
+        for (let i = 1; ids.length < root.minWorkspaces
+                        && i <= root.minWorkspaces; i++)
+            add(i, null);
+
+        ids.sort((a, b) => a - b);
+
+        return ids.map(id => {
+            const w = byId[id];
+            return {
+                id: id,
+                workspace: w,
+                exists: !!w,
+                focused: id === root.focusedId,
+                urgent: !!(w && w.urgent),
+                windows: w ? root.clientsOn(id).length : 0
+            };
+        });
     }
 
     // ── windows ───────────────────────────────────────────────────────────
@@ -292,6 +379,19 @@ Singleton {
             case "changefloatingmode":
             case "workspace":
             case "workspacev2":
+            // A workspace appearing or going away used to raise nothing
+            // here, so `hyprctl workspaces` was only re-read when the
+            // focus happened to move as well. That is most of the time
+            // and not all of it — a window moved to a new workspace
+            // silently creates one — and the poll is now what decides
+            // whether a workspace Quickshell is holding is really there.
+            case "createworkspace":
+            case "createworkspacev2":
+            case "destroyworkspace":
+            case "destroyworkspacev2":
+            case "renameworkspace":
+            case "moveworkspace":
+            case "moveworkspacev2":
             case "focusedmon":
             case "monitoradded":
             case "monitorremoved":
