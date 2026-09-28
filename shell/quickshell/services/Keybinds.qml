@@ -128,6 +128,10 @@ Singleton {
         id: bindsFile
         path: root.hyprDir + "/binds.lua"
         preload: true
+        // text() answers from the disk rather than "" while a read is in
+        // flight — the startup comparison above would otherwise see an
+        // empty file every time and reload Hyprland on every start.
+        blockLoading: true
         printErrors: false
         atomicWrites: true
     }
@@ -200,6 +204,9 @@ Singleton {
         }
         if (emitted === 0) lines.push("-- (nothing overridden)");
 
+        lines.push("");
+        for (const l of root.altTabLines(ipcCall)) lines.push(l);
+
         // Workspace switching isn't in the action list — twenty positional
         // binds with no names — but it still has to follow the modifier, or
         // picking ALT would move every shortcut except the ones used most.
@@ -221,6 +228,72 @@ Singleton {
         lines.push("end");
 
         return lines.join("\n") + "\n";
+    }
+
+    // ── Alt+Tab ───────────────────────────────────────────────────────────
+    //
+    // Two binds: the modifier with Tab steps forward, with Shift+Tab back.
+    // Both repeat while Tab is held, as they do on Windows. Nothing binds
+    // the release — services/Switcher.qml asks Hyprland whether the
+    // modifier is still down instead, which is why there is no third line.
+    //
+    // Whatever else is on those chords is unbound first. Hyprland runs
+    // every bind on a chord, so leaving Super+Tab on the overview and
+    // adding the switcher to it would open both at once.
+    readonly property string altTabMod: {
+        const m = String(Config.Appearance.altTabMod || "ALT").toUpperCase();
+        return (m === "SUPER" || m === "CTRL") ? m : "ALT";
+    }
+    function altTabAccel(shift) {
+        const m = root.altTabMod === "SUPER" ? root.modKey : root.altTabMod;
+        return m + (shift ? " + SHIFT" : "") + " + Tab";
+    }
+
+    // The shell's own shortcut already sitting on the chord, if any, so
+    // Settings can say what choosing it would take away.
+    function altTabClash() {
+        const want = [root.altTabAccel(false), root.altTabAccel(true)]
+            .map(a => a.replace(/\s+/g, "").toUpperCase());
+        const hit = root.actions.find(a => {
+            const b = root.boundAccel(a.key);
+            return b && want.indexOf(b.replace(/\s+/g, "").toUpperCase()) >= 0;
+        });
+        return hit ? hit.n : "";
+    }
+
+    function altTabLines(ipcCall) {
+        const out = ["-- Alt+Tab, from Settings → Alt+Tab."];
+        if (!Config.Appearance.altTabEnabled) {
+            out.push("-- (turned off: the chord goes to applications as usual)");
+            return out;
+        }
+        for (const shift of [false, true]) {
+            const accel = root.altTabAccel(shift);
+            out.push("hl.unbind(" + luaStr(accel) + ")");
+            out.push("hl.bind(" + luaStr(accel) + ", "
+                     + ipcCall("altTab", shift ? "prev" : "next")
+                     + ", { repeating = true })");
+        }
+        return out;
+    }
+
+    // binds.lua used to be written only when a shortcut changed, so a
+    // fresh install never had one. Alt+Tab lives in it, so it is brought
+    // up to date once the preferences are in, and again whenever the
+    // Alt+Tab settings that change a bind do. Compared first: rewriting it
+    // means a Hyprland reload, which is not something to do on every start.
+    property bool synced: false
+    readonly property string altTabKey:
+        Config.Appearance.altTabEnabled + ":" + root.altTabMod + ":" + root.modKey
+    onAltTabKeyChanged: if (root.synced) root.write();
+
+    Timer {
+        interval: 1500
+        running: Config.Appearance.settingsReady && !root.synced
+        onTriggered: {
+            root.synced = true;
+            if (bindsFile.text() !== root.body()) root.write();
+        }
     }
 
     function write() {

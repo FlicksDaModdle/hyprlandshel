@@ -302,8 +302,31 @@ Variants {
         HoverHandler { id: windowHover }
 
         // ── window/app state ──────────────────────────────────────────────
-        readonly property var clients: Services.Compositor.clients
-        readonly property string activeClass: Services.Compositor.activeClass
+        //
+        // Only the windows on the workspace this dock's own monitor is
+        // showing, unless Settings → Dock says every workspace — the way
+        // Windows 11's taskbar can keep each desktop to itself. Everything
+        // below reads this one list: the running pips and window counts,
+        // clicking to cycle, the preview card, and which unpinned apps get
+        // a tile at all. So an app whose windows are all on another
+        // workspace looks, and behaves, as not running here: clicking it
+        // opens a window here rather than pulling you over there.
+        //
+        // Per monitor, not per focused workspace: two monitors show two
+        // workspaces, and each dock belongs to the one it is on.
+        readonly property string screenName: modelData ? modelData.name : ""
+        readonly property bool scopeAll: Config.Appearance.dockScope === "all"
+        readonly property var clients: scopeAll
+            ? Services.Compositor.clients
+            : Services.Compositor.clientsShownOn(screenName)
+
+        // The focused window only counts as active here if it is one of
+        // this dock's windows. Otherwise the dock on the other monitor lit
+        // up an app it is not showing.
+        readonly property bool activeHere:
+            clients.some(c => c.address === Services.Compositor.activeAddress)
+        readonly property string activeClass:
+            activeHere ? Services.Compositor.activeClass : ""
 
         function windowsFor(app) {
             return clients.filter(c => app.match.test(c.cls || ""));
@@ -653,8 +676,7 @@ Variants {
                             dock.clients.filter(x => x.cls === unpinnedTile.cls)
                         readonly property string appLabel: Config.Apps.labelFor(cls)
                         readonly property string appIcon: Config.Apps.iconFor(cls)
-                        readonly property bool isActive:
-                            Services.Compositor.activeClass === cls
+                        readonly property bool isActive: dock.activeClass === cls
 
                         width: implicitWidth
                         height: dock.tileSize

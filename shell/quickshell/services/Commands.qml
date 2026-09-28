@@ -92,7 +92,12 @@ Singleton {
 
         // Notifications and windows
         "toggleDnd":           () => Services.Notifications.toggleDnd(),
-        "showDesktop":         () => Services.Compositor.toggleShowDesktop()
+        "showDesktop":         () => Services.Compositor.toggleShowDesktop(),
+
+        // Alt+Tab: "altTab next", "altTab prev", "altTab commit",
+        // "altTab cancel". Not named toggle-anything, so isDuplicate below
+        // lets a held Tab repeat.
+        "altTab":              arg => Services.Switcher.command(arg)
     })
 
     readonly property var names: Object.keys(table)

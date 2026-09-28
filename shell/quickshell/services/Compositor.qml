@@ -262,6 +262,50 @@ Singleton {
         return clients.filter(c => c.workspace === workspaceId);
     }
 
+    // ── what each output is showing ───────────────────────────────────────
+    function monitorNamed(name) {
+        return (root.monitors || []).find(m => m && m.name === name) || null;
+    }
+
+    // The workspaces whose windows are on screen on one output: the one it
+    // is showing, and a special workspace (a scratchpad) open over it.
+    //
+    // While Show desktop has it parked on the stash it answers with the
+    // workspace it came from. The desktop being uncovered for a moment is
+    // not a change of workspace, and anything scoped to "this workspace" —
+    // the dock, Alt+Tab — should not go blank because of it.
+    function shownWorkspacesOn(name) {
+        const m = root.monitorNamed(name);
+        if (!m) return root.focusedId > 0 ? [root.focusedId] : [];
+        const ipc = m.lastIpcObject || ({});
+        let active = m.activeWorkspace ? m.activeWorkspace.id
+                   : ((ipc.activeWorkspace || {}).id || 0);
+        if (active === root.stashWorkspace && root.stashReturn > 0)
+            active = root.stashReturn;
+        const out = [];
+        if (active) out.push(active);
+        const special = ipc.specialWorkspace || ({});
+        if (special.id && special.name) out.push(special.id);
+        return out;
+    }
+
+    // Windows on screen on one output, including windows pinned there,
+    // which Hyprland shows on every workspace.
+    function clientsShownOn(name) {
+        const ws = root.shownWorkspacesOn(name);
+        const m = root.monitorNamed(name);
+        const id = m ? m.id : -1;
+        return root.clients.filter(c => ws.indexOf(c.workspace) >= 0
+                                        || (c.pinned && c.monitor === id));
+    }
+
+    // Every window on one output, whatever workspace it is on.
+    function clientsOnMonitor(name) {
+        const m = root.monitorNamed(name);
+        if (!m) return root.clients;
+        return root.clients.filter(c => c.monitor === m.id);
+    }
+
     Process {
         id: clientsProc
         command: ["hyprctl", "-j", "clients"]
@@ -284,6 +328,12 @@ Singleton {
                     h: (c.size && c.size.length === 2) ? c.size[1] : 0,
                     floating: !!c.floating,
                     fullscreen: !!c.fullscreen,
+                    // Shown on every workspace of its monitor.
+                    pinned: !!c.pinned,
+                    // 0 is the window with focus, 1 the one before it, and
+                    // so on: the order Alt+Tab walks.
+                    focusHistory: typeof c.focusHistoryID === "number"
+                                  ? c.focusHistoryID : 1e6,
                     pid: c.pid || 0
                 }));
             }
@@ -393,10 +443,21 @@ Singleton {
             case "moveworkspace":
             case "moveworkspacev2":
             case "focusedmon":
+                root.refresh();
+                break;
+            // A scratchpad opening or closing changes what an output is
+            // showing, and that is read from the monitor record — which
+            // Quickshell otherwise re-reads only on a monitor event.
+            case "activespecial":
+            case "activespecialv2":
+                Hyprland.refreshMonitors();
+                root.refresh();
+                break;
             case "monitoradded":
             case "monitorremoved":
             case "windowtitle":
             case "windowtitlev2":
+            case "pin":
                 root.refresh();
                 break;
 
@@ -484,11 +545,16 @@ Singleton {
     // Hyprland has no "minimise everything" dispatcher; the equivalent is a
     // scratch workspace nothing else uses, toggled in and out of.
     property int stashWorkspace: 99
+    // The workspace Show desktop left, while it is on the stash.
+    property int stashReturn: 0
     function toggleShowDesktop() {
-        if (focusedId === stashWorkspace)
+        if (focusedId === stashWorkspace) {
             dispatch('hl.dsp.focus({ workspace = "previous" })');
-        else
+            stashReturn = 0;
+        } else {
+            stashReturn = focusedId;
             dispatch("hl.dsp.focus({ workspace = " + stashWorkspace + " })");
+        }
         refresh();
         actionSettle.restart();
     }

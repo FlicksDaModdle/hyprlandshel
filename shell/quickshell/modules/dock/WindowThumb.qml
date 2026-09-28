@@ -17,6 +17,10 @@ Item {
 
     // A Quickshell Toplevel (HyprlandToplevel.wayland), or null.
     property var toplevel: null
+    // False takes one frame when it starts and holds it. Alt+Tab keeps
+    // only the selected window moving, rather than streaming every window
+    // on the desktop at once for the second it is up.
+    property bool live: true
     // True once the first frame has arrived.
     readonly property bool ready: view.hasContent
 
@@ -24,7 +28,7 @@ Item {
         id: view
         anchors.centerIn: parent
         captureSource: root.toplevel
-        live: true
+        live: root.live
         // Sized from the window's own aspect ratio inside the box, rather
         // than stretched to fill it: a tall terminal and a wide browser
         // should both look like themselves.

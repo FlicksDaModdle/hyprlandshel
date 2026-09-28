@@ -16,6 +16,7 @@ import "modules/osd"
 import "modules/settings"
 import "modules/iconmaker"
 import "modules/lock"
+import "modules/switcher"
 
 // Entry point. Run as `qs -c hyprshell` (this directory should live at
 // ~/.config/quickshell/hyprshell/). hyprland.lua's autostart hook and
@@ -96,6 +97,7 @@ ShellRoot {
     Settings {}
     IconMaker {}
     Lock {}
+    AltTab {}
 
     // No Component.onCompleted here: QML will not attach one to ShellRoot.
     //
@@ -154,5 +156,7 @@ ShellRoot {
         // Notifications and windows
         function toggleDnd(): void { Services.Commands.run("toggleDnd"); }
         function showDesktop(): void { Services.Commands.run("showDesktop"); }
+        // next | prev | commit | cancel — what the Alt+Tab binds send.
+        function altTab(action: string): void { Services.Switcher.command(action); }
     }
 }

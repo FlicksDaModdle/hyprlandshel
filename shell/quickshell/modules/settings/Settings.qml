@@ -63,6 +63,7 @@ Scope {
         "Appearance":    { icon: "palette",   group: "Shell",  note: "Theme, accent, translucency and geometry. Every change repaints the shell live." },
         "Bar":           { icon: "layout",    group: "Shell",  note: "The top bar: height, clock, tray and the task list." },
         "Dock":          { icon: "dock",      group: "Shell",  note: "The dock: position, size, labels and auto-hide." },
+        "Alt+Tab":       { icon: "layoutDashboard", group: "Shell", note: "The window switcher: its shortcut, which windows it offers, and how it looks." },
         "Notifications": { icon: "bell",      group: "Shell",  note: "Banner behaviour, badge counts and how the center stacks items." },
         "Launcher":      { icon: "search",    group: "Shell",  note: "Size of the start menu, its grid, and its text." },
         "Fonts":         { icon: "font",      group: "Shell",  note: "Every typeface the shell uses, and one scale over all of them." },
@@ -75,7 +76,7 @@ Scope {
         { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
                                    "Network", "Bluetooth", "Sound", "Power",
                                    "Hyprland", "About"] },
-        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Launcher",
+        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Alt+Tab", "Launcher",
                                    "Notifications", "Fonts", "Keybinds"] }
     ]
 
@@ -405,6 +406,95 @@ Scope {
               value: A.showTasks, set: v => A.showTasks = v }
         ];
 
+        case "Alt+Tab": {
+            const K = Services.Keybinds;
+            const on = A.altTabEnabled;
+            const modName = { ALT: "Alt", SUPER: "Super", CTRL: "Ctrl" }[K.altTabMod] || "Alt";
+            const clash = on ? K.altTabClash() : "";
+            return [
+            { n: "Window switcher",
+              s: on ? "Hold " + modName + " and tap Tab to walk your windows, most "
+                      + "recent first; let go to switch. A quick tap flips "
+                      + "straight back to the window you were in before."
+                    : "Off — " + modName + " + Tab goes to applications as usual",
+              type: "toggle", value: on, set: v => A.altTabEnabled = v },
+            { n: "Shortcut",
+              s: clash !== ""
+                 ? K.altTabAccel(false) + " — this takes the chord from "
+                   + clash + ", which stops working until you pick another "
+                   + "modifier or rebind it in Keybinds"
+                 : (K.altTabMod === "CTRL"
+                    ? "Ctrl + Tab, with Shift to go back. Browsers and editors "
+                      + "use this chord to switch tabs, and will lose it"
+                    : K.altTabAccel(false) + ", with Shift to go back"),
+              type: "seg",
+              options: [{ label: "Alt", value: "ALT" }, { label: "Super", value: "SUPER" },
+                        { label: "Ctrl", value: "CTRL" }],
+              value: K.altTabMod, set: v => A.altTabMod = v },
+            { n: "Show windows from",
+              s: A.altTabScope === "all" ? "Every workspace on every monitor. Picking a "
+                   + "window on another workspace takes you there"
+                 : A.altTabScope === "monitor" ? "Every workspace on the monitor you are on"
+                 : "Only the workspace you are on, like Windows 11's default",
+              type: "seg",
+              options: [{ label: "This workspace", value: "workspace" },
+                        { label: "This monitor", value: "monitor" },
+                        { label: "Everywhere", value: "all" }],
+              value: A.altTabScope, set: v => A.altTabScope = v },
+            { n: "Style",
+              s: A.altTabStyle === "icons" ? "Large app icons, and the chosen window's title beneath"
+                 : A.altTabStyle === "list" ? "A column of titles — the most windows on screen at once"
+                 : "A picture of each window. Only the selected one moves; "
+                   + "the rest are caught once when the switcher opens",
+              type: "seg",
+              options: [{ label: "Thumbnails", value: "thumbnails" },
+                        { label: "Icons", value: "icons" },
+                        { label: "List", value: "list" }],
+              value: A.altTabStyle, set: v => A.altTabStyle = v },
+            { n: "Size", s: "Of the pictures, icons or rows", type: "slider",
+              min: 60, max: 160, unit: "%", value: A.altTabSize, set: v => A.altTabSize = v },
+            { n: "One entry per app",
+              s: "Collapse an app's windows into its most recent one, with a "
+                 + "count. Off lists every window on its own",
+              type: "toggle", value: A.altTabGroup, set: v => A.altTabGroup = v },
+            { n: "Scratchpad windows",
+              s: "Include windows on a special workspace that is open over "
+                 + "the one you are on",
+              type: "toggle", value: A.altTabSpecial, set: v => A.altTabSpecial = v },
+            { n: "Workspace tags",
+              s: "Mark each window with its workspace — shown only when the "
+                 + "list spans more than one",
+              type: "toggle", value: A.altTabWorkspaceTags,
+              set: v => A.altTabWorkspaceTags = v },
+            { n: "Switch when",
+              s: A.altTabHold
+                 ? "You let go of " + modName + ", as on Windows"
+                 : "You press Enter or click a window. " + modName
+                   + " can be let go of and Tab keeps stepping",
+              type: "seg",
+              options: [{ label: modName + " is released", value: "hold" },
+                        { label: "Enter or a click", value: "sticky" }],
+              value: A.altTabHold ? "hold" : "sticky",
+              set: v => A.altTabHold = (v === "hold") },
+            { n: "Appear after",
+              s: A.altTabHold
+                 ? "A quick " + modName + "+Tab shorter than this switches "
+                   + "without showing anything. Pressing Tab again shows it "
+                   + "at once"
+                 : "Not used while switching waits for Enter or a click",
+              type: A.altTabHold ? "slider" : "info",
+              min: 0, max: 400, unit: " ms",
+              value: A.altTabDelay, set: v => A.altTabDelay = v },
+            { n: "Keys",
+              s: "Tab, Shift+Tab or the arrows to move · Enter to switch · "
+                 + "Esc to cancel · Delete or middle-click to close a window",
+              type: "info", value: "" },
+            { n: "Try it",
+              s: "Opens the switcher without switching — Esc or a click puts it away",
+              type: "action", label: "Show", set: () => Services.Switcher.preview() }
+            ];
+        }
+
         case "Dock": return [
             { n: "Position", s: "Bottom slab or left column", type: "seg",
               options: ["Bottom", "Left"], value: A.dockPositionName, set: v => A.dockPositionName = v },
@@ -428,6 +518,17 @@ Scope {
                    + "windows, and click one to go to it",
               type: "toggle",
               value: A.dockPreviews, set: v => A.dockPreviews = v },
+            { n: "Show windows from",
+              s: A.dockScope === "all"
+                 ? "Every workspace. An app running anywhere shows as running "
+                   + "here, and clicking it takes you to its window"
+                 : "Only the workspace each monitor is showing, like Windows "
+                   + "11's desktops. An app whose windows are all elsewhere "
+                   + "looks closed here, and clicking it opens one here",
+              type: "seg",
+              options: [{ label: "This workspace", value: "workspace" },
+                        { label: "All workspaces", value: "all" }],
+              value: A.dockScope, set: v => A.dockScope = v },
             { n: "Auto-hide", s: "Slide off the screen edge until the pointer reaches it", type: "toggle",
               value: A.dockAutoHide, set: v => A.dockAutoHide = v },
             { n: "Pinned apps",

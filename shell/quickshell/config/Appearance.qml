@@ -103,6 +103,22 @@ Singleton {
             // Hover a running app's tile for a live picture of each of its
             // windows, and click one to go to it.
             property bool dockPreviews: true
+            // "workspace": a dock shows only the windows on the workspace
+            // its own monitor is showing, like Windows 11's taskbar with
+            // "only on the desktop I'm using". "all": every window.
+            property string dockScope: "workspace"
+
+            // Alt+Tab
+            property bool altTabEnabled: true
+            property string altTabMod: "ALT"          // ALT | SUPER | CTRL
+            property string altTabScope: "workspace"  // workspace | monitor | all
+            property string altTabStyle: "thumbnails" // thumbnails | icons | list
+            property bool altTabGroup: false          // one entry per app
+            property bool altTabSpecial: true         // scratchpad windows too
+            property bool altTabHold: true            // releasing the modifier switches
+            property int altTabDelay: 100             // ms before it appears
+            property int altTabSize: 100              // % of the default picture size
+            property bool altTabWorkspaceTags: true   // workspace number on each entry
             property bool dockHide: false
             // The pinned apps, as a JSON array of
             // { key, label, icon, exec[], match } — empty means "use the
@@ -287,6 +303,17 @@ Singleton {
     property alias dockIconPct: prefs.dockIcon
     property alias dockLabels: prefs.dockLabels
     property alias dockPreviews: prefs.dockPreviews
+    property alias dockScope: prefs.dockScope
+    property alias altTabEnabled: prefs.altTabEnabled
+    property alias altTabMod: prefs.altTabMod
+    property alias altTabScope: prefs.altTabScope
+    property alias altTabStyle: prefs.altTabStyle
+    property alias altTabGroup: prefs.altTabGroup
+    property alias altTabSpecial: prefs.altTabSpecial
+    property alias altTabHold: prefs.altTabHold
+    property alias altTabDelay: prefs.altTabDelay
+    property alias altTabSize: prefs.altTabSize
+    property alias altTabWorkspaceTags: prefs.altTabWorkspaceTags
     property alias dockAutoHide: prefs.dockHide
     property alias barAutoHide: prefs.barHide
     property alias dockPinned: prefs.dockPinned
