@@ -363,6 +363,93 @@ Variants {
         readonly property var unpinnedClasses:
             unpinnedKey === "" ? [] : unpinnedKey.split("\n")
 
+        // ── rearranging, by dragging a pinned tile ────────────────────────
+        //
+        // While a tile is carried the list itself is left alone — handing
+        // the Repeater a new order would destroy the tile being dragged,
+        // and the drag with it. Instead each tile is slid by `slideFor()`:
+        // the carried one by however far the pointer has gone, the ones it
+        // has passed by one tile's width the other way, so the gap opens
+        // where it would land. Letting go writes the new order once.
+        //
+        // Where it lands is worked out against where the tiles were when
+        // the drag began (`dragSlots`), since the slides do not move their
+        // layout positions and the answer must not chase itself.
+        property string dragKey: ""
+        property int dragFrom: -1
+        property int dragTo: -1
+        property real dragAlong: 0
+        property var dragSlots: []
+        // The instant after a drop: the tiles are rebuilt in their new
+        // order, already where they belong, and must not slide there again.
+        property bool dragSettling: false
+
+        function dragStart(index, key) {
+            dock.closePreview();
+            const slots = [];
+            for (let j = 0; j < pinnedTiles.count; j++) {
+                const t = pinnedTiles.itemAt(j);
+                if (!t) return;
+                slots.push(dock.isLeft ? { start: t.y, size: t.height }
+                                       : { start: t.x, size: t.width });
+            }
+            dock.dragSlots = slots;
+            dock.dragAlong = 0;
+            dock.dragFrom = index;
+            dock.dragTo = index;
+            dock.dragKey = key;
+        }
+
+        function dragMove(along) {
+            const s = dock.dragSlots, f = dock.dragFrom;
+            if (f < 0 || f >= s.length) return;
+            // Kept within the pinned tiles, so it cannot be dropped over
+            // Start or Settings, or carried out of the pill.
+            const first = s[0].start - s[f].start;
+            const last = s[s.length - 1].start + s[s.length - 1].size - s[f].start - s[f].size;
+            dock.dragAlong = Math.max(first, Math.min(last, along));
+            const centre = s[f].start + s[f].size / 2 + dock.dragAlong;
+            // A tile counts as passed once the carried one's centre reaches
+            // its centre — for the ones it is moving towards. Held against
+            // the end of the pinned tiles the two centres are exactly
+            // equal, and without that the last place could not be reached.
+            let to = 0;
+            for (let j = 0; j < s.length; j++) {
+                const c = s[j].start + s[j].size / 2;
+                if (j < f ? c < centre : (j > f && c <= centre)) to++;
+            }
+            dock.dragTo = to;
+        }
+
+        function dragEnd() {
+            const key = dock.dragKey, from = dock.dragFrom, to = dock.dragTo;
+            if (key === "") return;
+            // After the handler that called this has returned: the move
+            // rebuilds every pinned tile, the one reporting this included.
+            Qt.callLater(() => {
+                if (to >= 0 && to !== from) {
+                    dock.dragSettling = true;
+                    Config.Apps.move(key, to);
+                }
+                dock.dragKey = "";
+                dock.dragFrom = -1;
+                dock.dragTo = -1;
+                dock.dragAlong = 0;
+                Qt.callLater(() => dock.dragSettling = false);
+            });
+        }
+
+        function slideFor(index) {
+            const f = dock.dragFrom, t = dock.dragTo;
+            if (f < 0) return 0;
+            if (index === f) return dock.dragAlong;
+            const step = (dock.dragSlots[f] ? dock.dragSlots[f].size : dock.tileSize)
+                         + dock.tileSpacing;
+            if (f < t && index > f && index <= t) return -step;
+            if (t < f && index >= t && index < f) return step;
+            return 0;
+        }
+
         // ── window previews ───────────────────────────────────────────────
         //
         // What the card is showing: a key naming the tile, and how to find
@@ -400,7 +487,7 @@ Variants {
         // open, moving to the next running app switches straight to its
         // card, the way a taskbar does.
         function tileHover(spec, tile, on) {
-            if (!dock.previewsOn) return;
+            if (!dock.previewsOn || dock.dragKey !== "") return;
             if (on && spec.running) {
                 dock.hoverKey = spec.key;
                 previewCloseDelay.stop();
@@ -507,7 +594,7 @@ Variants {
         const originY = dock.isLeft ? Math.round((sh - dock.height) / 2)
                                     : sh - dock.height;
         Config.UiState.openAppMenu(originX + local.x, originY + local.y,
-                                   key, cls, label, icon);
+                                   key, cls, label, icon, true);
     }
 
     function launchNew(app) {
@@ -606,11 +693,13 @@ Variants {
 
                 // ── Pinned apps ───────────────────────────────────────────
                 Repeater {
+                    id: pinnedTiles
                     model: Config.Apps.pinned
 
                     DockTile {
                         id: pinnedTile
                         required property var modelData
+                        required property int index
 
                         readonly property var wins: dock.windowsFor(modelData)
                         readonly property bool isActive: dock.isActiveApp(modelData)
@@ -654,6 +743,16 @@ Variants {
                         onMiddleActivated: {
                             if (wins.length > 0) Services.Compositor.closeClient(wins[0].address);
                         }
+
+                        // Drag to rearrange: press, move along the dock,
+                        // let go where it should be.
+                        draggable: Config.Apps.pinned.length > 1
+                        vertical: dock.isLeft
+                        slide: dock.slideFor(index)
+                        slideAnimated: !dock.dragSettling && index !== dock.dragFrom
+                        onDragStarted: dock.dragStart(index, modelData.key)
+                        onDragMoved: along => dock.dragMove(along)
+                        onDragFinished: dock.dragEnd()
                     }
                 }
 

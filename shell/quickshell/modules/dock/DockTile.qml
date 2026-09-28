@@ -35,6 +35,36 @@ Item {
     signal secondaryActivated()
     signal middleActivated()
 
+    // ── dragging, to rearrange the dock ───────────────────────────────────
+    // A tile only reports the drag; the dock decides where it would land
+    // and slides the others aside through `slide`. Along the dock's own
+    // axis only, which is the only direction a tile can go.
+    property bool draggable: false
+    property bool vertical: false
+    property real slide: 0
+    property bool slideAnimated: true
+    readonly property bool dragging: dragHandler.active
+    signal dragStarted()
+    signal dragMoved(real along)
+    signal dragFinished()
+
+    z: dragging ? 10 : 0
+    // Lifted a little while carried, so it reads as picked up.
+    scale: dragging ? 1.08 : 1
+    Behavior on scale { NumberAnimation { duration: Config.Appearance.anim(120); easing.type: Easing.OutCubic } }
+    transform: Translate {
+        x: root.vertical ? 0 : root.slide
+        y: root.vertical ? root.slide : 0
+        Behavior on x {
+            enabled: root.slideAnimated
+            NumberAnimation { duration: Config.Appearance.anim(180); easing.type: Easing.OutCubic }
+        }
+        Behavior on y {
+            enabled: root.slideAnimated
+            NumberAnimation { duration: Config.Appearance.anim(180); easing.type: Easing.OutCubic }
+        }
+    }
+
     readonly property bool hovered: hoverHandler.hovered
     readonly property bool accentFilled: highlight && active
 
@@ -113,7 +143,7 @@ Item {
     Rectangle {
         id: tooltip
         z: 50
-        visible: root.showTooltip && root.hovered && !root.showLabel
+        visible: root.showTooltip && root.hovered && !root.showLabel && !root.dragging
         radius: Config.Appearance.rSm
         color: Config.Appearance.sheet
         border.width: 1
@@ -156,7 +186,19 @@ Item {
 
     HoverHandler {
         id: hoverHandler
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: root.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+    }
+    // Takes over from the left-button TapHandler below only once the
+    // pointer has moved past the platform's drag distance, so a click is
+    // still a click.
+    DragHandler {
+        id: dragHandler
+        enabled: root.draggable
+        target: null
+        acceptedButtons: Qt.LeftButton
+        onActiveChanged: active ? root.dragStarted() : root.dragFinished()
+        onActiveTranslationChanged:
+            if (active) root.dragMoved(root.vertical ? activeTranslation.y : activeTranslation.x)
     }
     TapHandler {
         acceptedButtons: Qt.LeftButton

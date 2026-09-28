@@ -39,6 +39,26 @@ PanelSurface {
             out.push({ n: "Open new window", icon: "plus",
                        run: () => Quickshell.execDetached([cls]) });
         }
+        // One place along, for when a drag is fiddly — on a touchpad, or a
+        // dock of small tiles. Named for the way the dock runs, and left
+        // out at either end. The menu stays open, so a tile can be walked
+        // several places with repeated clicks.
+        if (pinned && Config.UiState.appMenuFromDock) {
+            const at = Config.Apps.indexOf(root.key);
+            const last = Config.Apps.pinned.length - 1;
+            const side = Config.Appearance.dockLeft;
+            if (at > 0)
+                out.push({ n: side ? "Move up" : "Move left",
+                           icon: side ? "chevronUp" : "chevronLeft", rule: out.length > 0,
+                           keepOpen: true,
+                           run: () => Config.Apps.move(root.key, at - 1) });
+            if (at >= 0 && at < last)
+                out.push({ n: side ? "Move down" : "Move right",
+                           icon: side ? "chevronDown" : "chevronRight",
+                           rule: out.length > 0 && at === 0,
+                           keepOpen: true,
+                           run: () => Config.Apps.move(root.key, at + 1) });
+        }
         // Offered for the Settings tile too, unlike the two below it: a
         // different picture cannot break a tile, where a different
         // application or no tile at all can.
@@ -129,12 +149,15 @@ PanelSurface {
                     TapHandler {
                         onTapped: {
                             const run = item.modelData.run;
+                            const keepOpen = item.modelData.keepOpen === true;
                             // Entries that don't close the menu themselves —
                             // anything that opens another surface — are closed
                             // here, after running, so the surface it opens
                             // isn't immediately dismissed by closeAll().
+                            // Except the ones marked to stay: Move left /
+                            // right, which are clicked more than once.
                             if (run) run();
-                            if (Config.UiState.appMenuOpen)
+                            if (Config.UiState.appMenuOpen && !keepOpen)
                                 Config.UiState.appMenuOpen = false;
                         }
                     }

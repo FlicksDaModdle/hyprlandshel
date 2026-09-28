@@ -94,6 +94,23 @@ Singleton {
                                          icon: "settings", exec: [], match: /^$/ }]);
     }
 
+    // Moves a pinned tile to position `to` in the list, everything between
+    // closing up behind it — what dropping a dragged dock tile, or Move
+    // left / right in its menu, does. Out-of-range positions are clamped,
+    // and a move to where it already is writes nothing.
+    function move(key, to) {
+        const list = pinned.slice();
+        const from = list.findIndex(e => e.key === key);
+        if (from < 0) return;
+        const at = Math.max(0, Math.min(list.length - 1, Math.round(to)));
+        if (at === from) return;
+        const moved = list.splice(from, 1)[0];
+        list.splice(at, 0, moved);
+        save(list);
+    }
+
+    function indexOf(key) { return pinned.findIndex(e => e.key === key); }
+
     // Adds a running app the user right-clicked. `cls` is its Hyprland class,
     // which is also the only reliable thing to match it by later.
     function pinClass(cls, label, icon) {

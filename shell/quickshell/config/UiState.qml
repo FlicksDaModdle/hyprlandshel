@@ -45,6 +45,9 @@ Singleton {
     property string appMenuClass: ""
     property string appMenuLabel: ""
     property string appMenuIcon: ""
+    // Opened from the dock rather than the launcher: only there does
+    // moving the tile left or right mean anything you can see.
+    property bool appMenuFromDock: false
 
     // Set while the launcher is being used to pick an application for a
     // pinned slot rather than to launch something. Holds that slot's key.
@@ -181,8 +184,9 @@ Singleton {
         }
     }
 
-    function openAppMenu(x, y, key, cls, label, icon) {
+    function openAppMenu(x, y, key, cls, label, icon, fromDock) {
         closeAll();
+        appMenuFromDock = fromDock === true;
         appMenuX = x;
         appMenuY = y;
         appMenuKey = key || "";
