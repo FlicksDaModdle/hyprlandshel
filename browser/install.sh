@@ -199,9 +199,23 @@ default_profile() {
 
 if [ "$import" = 1 ]; then
     src=$(default_profile) || die "no Firefox profile found to import"
-    # Firefox keeps a lock symlink in a profile for as long as it has it open.
+    # Firefox keeps a lock symlink in a profile while it has it open —
+    # "127.0.0.1:+PID". A clean exit removes it, but a Firefox that was
+    # killed or crashed, or ended with the session, leaves it behind, and a
+    # stale lock is not a reason to refuse. So, as Firefox itself does: the
+    # lock only counts if the process it names is still a running Firefox.
     if [ -L "$src/lock" ]; then
-        die "Firefox has that profile open — close Firefox, then run this again"
+        lockpid=$(readlink "$src/lock" | sed -n 's/.*:+\{0,1\}\([0-9][0-9]*\)$/\1/p')
+        comm=""
+        [ -n "$lockpid" ] && comm=$(cat "/proc/$lockpid/comm" 2>/dev/null || true)
+        case "$comm" in
+            firefox*|*Firefox*|MainThread|GeckoMain)
+                die "Firefox is still running with that profile (process $lockpid) — quit it, or: kill $lockpid"
+                ;;
+            *)
+                note "the profile had a lock left over from a Firefox that is no longer running — ignoring it"
+                ;;
+        esac
     fi
     if [ -d "$SHARE/profile" ] && [ -n "$(ls -A "$SHARE/profile" 2>/dev/null)" ]; then
         mv "$SHARE/profile" "$SHARE/profile.before-import.$(date +%Y%m%d%H%M%S)"

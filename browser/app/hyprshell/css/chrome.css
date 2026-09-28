@@ -420,7 +420,12 @@
   --menuitem-padding: 0 9px !important;
   --menuitem-border-radius: var(--hs-r-sm) !important;
   --menuitem-margin: 0 !important;
-  --panel-box-shadow: 0 22px 52px -18px rgba(0, 0, 0, 0.5) !important;
+  /* The shadow has to fit inside the room Firefox leaves around a popup's
+   * window for it — its default is a few pixels, and a shadow any larger
+   * is cut off square at the window's edge. 10px down with a 24px blur,
+   * pulled in 8px, reaches 26px at most, so that is the room given. */
+  --panel-box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.5) !important;
+  --panel-box-shadow-margin: 26px !important;
   font-size: 12px !important;
 }
 /* The seam: 40px of accent, then its faint tail, 2px deep. */
@@ -591,5 +596,14 @@
     --panel-border-radius: 0px !important;
     --panel-box-shadow-margin: 0px !important;
     --panel-box-shadow: none !important;
+  }
+}
+
+/* Panels (the main menu, downloads, add-ons) cast the same shadow with the
+ * same room for it. */
+@media (-moz-gtk-csd-transparency-available) {
+  :root[hyprshell] panel {
+    --panel-box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.5) !important;
+    --panel-box-shadow-margin: 26px !important;
   }
 }
