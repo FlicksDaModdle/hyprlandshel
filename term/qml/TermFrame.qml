@@ -61,12 +61,15 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 11
 
+            // The bead: accent while this window has focus, quiet ink when
+            // it does not — as the browser's does — so the window being
+            // typed into is the one with the colour in its corner.
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 3
                 height: 16
                 radius: 2
-                color: Appearance.accent
+                color: frame.host.active ? Appearance.accent : Appearance.ink3
             }
 
             // The same 20px as the file manager's folder, and not

@@ -20,6 +20,10 @@ export const Theme = {
   // The palette as loaded — a file: URI with a version on it, because a
   // stylesheet is cached by URI and the same URI would reload the old one.
   current: null,
+  // The palette's text as last read (null until then), and whoever wants
+  // it each time it changes — NewTab.sys.mjs, which cannot load it by URI.
+  text: null,
+  listeners: [],
 
   init() {
     this.path = this.palettePath();
@@ -54,7 +58,9 @@ export const Theme = {
       : null;
     for (const win of this.windows) this.swap(win, this.current, next);
     this.current = next;
+    this.text = text;
     this.followScheme(text);
+    for (const f of this.listeners) f(text);
   },
 
   // Web pages follow the shell's light or dark too, not only the toolbar.

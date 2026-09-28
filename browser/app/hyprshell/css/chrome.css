@@ -343,6 +343,43 @@
 /* The engine switcher only while typing; at rest the pill starts with the
  * shield, as in the concept. */
 :root[hyprshell] #urlbar:not([focused]) .searchmode-switcher { display: none !important; }
+/* While typing, the engine switcher: Firefox draws it as a grey slab with
+ * corners of its own, stuck to the pill's inner edge. Here it is a chip
+ * inside the pill — clear until the pointer is on it, 3px in from the edge
+ * with its corners following the pill's — and the same hairline as the
+ * shield puts between it and the address. */
+:root[hyprshell] #urlbar .searchmode-switcher {
+  --button-background-color-muted: transparent !important;
+  --button-background-color-muted-hover: var(--hs-hover) !important;
+  --button-background-color-muted-active: var(--hs-sel) !important;
+  --button-background-color-muted-selected: var(--hs-sel) !important;
+  --button-border-color-muted: transparent !important;
+  --button-border-color-muted-hover: transparent !important;
+  --button-border-color-muted-active: transparent !important;
+  --button-border-color-muted-selected: transparent !important;
+  --button-border-radius: max(0px, calc(var(--hs-r) - 3px)) !important;
+  --button-padding: 0 6px !important;
+  height: 26px !important;
+  align-self: center;
+  display: flex;
+  align-items: center;
+}
+/* 3px from the pill's edge, where it starts the pill — not after the robot
+ * Firefox shows first under remote control. */
+:root[hyprshell]:not([remotecontrol]) #urlbar .searchmode-switcher {
+  margin-inline-start: -7px !important;
+}
+:root[hyprshell] #urlbar .searchmode-switcher::part(button) {
+  border-radius: max(0px, calc(var(--hs-r) - 3px)) !important;
+}
+:root[hyprshell] #urlbar .searchmode-switcher::after {
+  content: "";
+  flex: none;
+  width: 1px;
+  height: 14px;
+  margin-inline: 8px 9px;
+  background: var(--hs-div);
+}
 
 /* The shield: accent, then a hairline, then the address. A page that is not
  * secure keeps its own warning glyph — hiding that would be lying — but the

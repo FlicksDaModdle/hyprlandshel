@@ -1,8 +1,10 @@
 // Finds every browser window as it opens and hands it to Window.sys.mjs, and
-// starts Pages.sys.mjs, which does the same for Settings and Add-ons.
+// starts Pages.sys.mjs, which does the same for Settings and Add-ons, and
+// NewTab.sys.mjs, for the new tab page.
 import { Theme } from "resource://hyprshell/Theme.sys.mjs";
 import { Window } from "resource://hyprshell/Window.sys.mjs";
 import { Pages } from "resource://hyprshell/Pages.sys.mjs";
+import { NewTab } from "resource://hyprshell/NewTab.sys.mjs";
 
 export const Loader = {
   started: false,
@@ -11,6 +13,7 @@ export const Loader = {
     this.started = true;
     Theme.init();
     Pages.start();
+    NewTab.start();
     Services.obs.addObserver(this, "browser-delayed-startup-finished");
   },
   observe(win, topic) {

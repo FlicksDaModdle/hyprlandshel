@@ -1,0 +1,106 @@
+/* Hyprshell Browser — the new tab page and the home page.
+ *
+ * Not loaded like the other sheets: NewTab.sys.mjs joins it with
+ * defaults.css and the shell's palette, scopes the lot to about:newtab and
+ * about:home, and registers it as a user sheet. Being a user sheet, a
+ * declaration here only outranks the page's own with !important — hence
+ * every one of them has it.
+ *
+ * The page draws itself from its own --newtab-* variables and Firefox's
+ * design tokens, so this is mostly a mapping of both onto the palette: the
+ * sheet colour behind everything, cards a step off it with a hairline, the
+ * shell's radii, and the accent for anything primary or focused.
+ *
+ * High contrast and forced colours keep Firefox's values, as in pages.css. */
+
+@media not ((prefers-contrast) or (forced-colors)) {
+
+:root {
+  /* ── Firefox's design tokens ────────────────────────────────────────── */
+  --color-accent-primary: var(--hs-accent) !important;
+  --color-accent-primary-hover: color-mix(in srgb, var(--hs-accent) 86%, var(--hs-ink)) !important;
+  --color-accent-primary-active: color-mix(in srgb, var(--hs-accent) 74%, var(--hs-ink)) !important;
+  --focus-outline-color: var(--hs-accent) !important;
+  --link-color: var(--hs-accent) !important;
+  --text-color: var(--hs-ink) !important;
+  --text-color-deemphasized: var(--hs-ink3) !important;
+  --icon-color: var(--hs-ink2) !important;
+  --border-color: var(--hs-rule) !important;
+  --border-color-interactive: var(--hs-div) !important;
+  --border-radius-small: calc(var(--hs-r-sm) - 3px) !important;
+  --border-radius-medium: var(--hs-r-sm) !important;
+  --border-radius-large: var(--hs-r) !important;
+  --button-border-radius: var(--hs-r-sm) !important;
+  --button-background-color: var(--hs-hover) !important;
+  --button-background-color-hover: var(--hs-sel) !important;
+  --button-background-color-active: var(--hs-div) !important;
+  --button-text-color: var(--hs-ink) !important;
+  --button-background-color-primary: var(--hs-accent) !important;
+  --button-text-color-primary: var(--hs-on-accent) !important;
+  --background-color-box: var(--hs-menu) !important;
+  --background-color-canvas: var(--hs-sheet) !important;
+
+  /* ── the page's own ─────────────────────────────────────────────────── */
+  --newtab-background-color: var(--hs-sheet) !important;
+  --newtab-background-color-secondary: color-mix(in srgb, var(--hs-field) 55%, var(--hs-sheet)) !important;
+  --newtab-background-card: color-mix(in srgb, var(--hs-field) 45%, var(--hs-sheet)) !important;
+  --newtab-weather-background-color: color-mix(in srgb, var(--hs-field) 45%, var(--hs-sheet)) !important;
+  --newtab-layout-panel-background: var(--hs-menu) !important;
+  --newtab-text-primary-color: var(--hs-ink) !important;
+  --newtab-text-secondary-color: var(--hs-ink2) !important;
+  --newtab-text-secondary-text: var(--hs-ink3) !important;
+  --newtab-contextual-text-primary-color: var(--hs-ink) !important;
+  --newtab-contextual-text-secondary-color: var(--hs-ink2) !important;
+  --newtab-wordmark-color: var(--hs-ink) !important;
+  --newtab-element-hover-color: var(--hs-hover) !important;
+  --newtab-element-active-color: var(--hs-sel) !important;
+  --newtab-element-secondary-color: var(--hs-hover) !important;
+  --newtab-element-secondary-hover-color: var(--hs-sel) !important;
+  --newtab-element-secondary-active-color: var(--hs-div) !important;
+  --newtab-primary-action-background: var(--hs-accent) !important;
+  --newtab-primary-action-background-dimmed: color-mix(in srgb, var(--hs-accent) 25%, transparent) !important;
+  --newtab-primary-action-background-pocket: var(--hs-accent) !important;
+  --newtab-primary-element-active-color: color-mix(in srgb, var(--hs-accent) 74%, var(--hs-ink)) !important;
+  --newtab-primary-element-hover-pocket-color: color-mix(in srgb, var(--hs-accent) 86%, var(--hs-ink)) !important;
+  --newtab-primary-element-text-color: var(--hs-on-accent) !important;
+  --newtab-button-background: var(--hs-hover) !important;
+  --newtab-button-hover-background: var(--hs-sel) !important;
+  --newtab-button-active-background: var(--hs-div) !important;
+  --newtab-button-focus-border: var(--hs-accent) !important;
+  --newtab-button-static-background: var(--hs-hover) !important;
+  --newtab-button-static-hover-background: var(--hs-sel) !important;
+  --newtab-button-static-active-background: var(--hs-div) !important;
+  --newtab-card-placeholder-background-color: var(--hs-hover) !important;
+  --newtab-section-card-box-shadow-color: transparent !important;
+  --newtab-inner-box-shadow-color: var(--hs-rule) !important;
+  --newtab-overlay-color: color-mix(in srgb, var(--hs-sheet) 85%, transparent) !important;
+}
+
+:root, body {
+  background-color: var(--hs-sheet) !important;
+  color: var(--hs-ink) !important;
+  font-family: var(--hs-font), sans-serif !important;
+  scrollbar-color: var(--hs-div) transparent !important;
+}
+
+::selection {
+  background-color: var(--hs-accent) !important;
+  color: var(--hs-on-accent) !important;
+}
+
+/* Over the search box Firefox puts its logo and name. Neither is this
+ * browser's, and it carries no name of its own there either: the space goes,
+ * and the search box moves up into it. */
+.logo-and-wordmark {
+  display: none !important;
+}
+
+/* The search box: the address bar's pill — a wash, a hairline, the shell's
+ * large radius, and the accent ring when it takes focus. */
+.search-wrapper content-search-handoff-ui {
+  --content-search-handoff-ui-background-color: color-mix(in srgb, var(--hs-field) 55%, var(--hs-sheet)) !important;
+  --content-search-handoff-ui-fakefocus-border-color: var(--hs-accent) !important;
+  --content-search-handoff-ui-fakefocus-box-shadow-inner: transparent !important;
+}
+
+}

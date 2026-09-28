@@ -39,6 +39,8 @@ privileges as Firefox's own interface, and changes the interface itself:
   palette: the sheet colour, hairline cards, the shell's radii, a wash and an
   accent underline on the current section, and the accent on every switch,
   checkbox and primary button. They follow the shell's theme live too.
+- **New tab and home page** — Firefox Home in the palette, with the fox and
+  the wordmark taken off it; also live.
 - **Colour, live** — the palette the shell writes
   (`~/.config/quickshell/hyprshell/firefox-colors.css`) is reloaded the moment
   it changes, into every open window. Web pages follow the shell's light or
@@ -60,12 +62,14 @@ app/
     Loader.sys.mjs              finds each browser window as it opens
     Window.sys.mjs              the bead, the hairline, the window title
     Pages.sys.mjs               Settings and Add-ons, as they open
+    NewTab.sys.mjs              the new tab page, which lives in another process
     Layout.sys.mjs              the toolbar order, once per profile
     UrlView.sys.mjs             the address at rest
     Theme.sys.mjs               the palette, and reloading it live
     css/defaults.css            the concept's colours, light and dark
     css/chrome.css              the interface
     css/pages.css               Settings and Add-ons
+    css/newtab.css              the new tab page
     icons/                      generated — see tools/gen-icons.js
 branding/                       the app icon, from the shell's globe glyph
 hyprshell-browser               the launcher
