@@ -434,6 +434,30 @@ Singleton {
         actionSettle.restart();
     }
 
+    // The Quickshell toplevel for a window, which is what a ScreencopyView
+    // takes to show a live picture of it — or null.
+    //
+    // The two lists spell the same address differently. `hyprctl clients`
+    // writes "0x55d3e1a2b3c0"; Quickshell's HyprlandToplevel.address is
+    // QString::number(address, 16), which is "55d3e1a2b3c0" with no prefix.
+    // Compared as they come, no window would ever match and every preview
+    // would be the fallback icon.
+    function normAddress(a) {
+        return String(a || "").trim().toLowerCase()
+            .replace(/^0x/, "").replace(/^0+(?=.)/, "");
+    }
+
+    function toplevelFor(address) {
+        const want = root.normAddress(address);
+        if (want === "") return null;
+        const list = Hyprland.toplevels.values;
+        for (let i = 0; i < list.length; i++) {
+            const t = list[i];
+            if (t && root.normAddress(t.address) === want) return t;
+        }
+        return null;
+    }
+
     function focusClient(address) {
         if (!address) return;
         dispatch("hl.dsp.focus({ window = " + luaSel("address:" + address) + " })");

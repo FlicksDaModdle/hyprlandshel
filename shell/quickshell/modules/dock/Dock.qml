@@ -105,6 +105,24 @@ Variants {
         readonly property real gapsOut: Math.max(0, Config.Appearance.gapsOut)
         // Headroom reserved above the pill for tiles' hover tooltips.
         readonly property real tooltipRoom: u(Config.Appearance.dockTooltipRoom)
+
+        // Window previews rise above the tile they belong to, so the
+        // surface carries room for the tallest card it can show as well as
+        // for a tooltip. Set aside for good rather than grown when a card
+        // opens: the surface is anchored at the bottom, so growing it moves
+        // its top edge, and everything laid out from the top — the pill
+        // included — would jump for the frame it took the compositor to
+        // catch up. None of it takes input unless a card is showing (see
+        // the mask), and the space reserved from windows is set separately
+        // (exclusiveZone), so the extra height costs nothing.
+        //
+        // Along the bottom edge only. On the left there is nowhere above a
+        // tile to put a card, and those tiles keep their tooltips.
+        readonly property bool previewsOn: Config.Appearance.dockPreviews && !isLeft
+        readonly property real previewGap: u(10)
+        readonly property real headroom: previewsOn
+            ? Math.max(tooltipRoom, Math.ceil(preview.fullHeight) + previewGap + u(4))
+            : tooltipRoom
         readonly property real panelBreadth: u(Config.Appearance.dockPanelBreadth)
 
         // Is this the screen the user is actually on? The launcher is global
@@ -137,7 +155,11 @@ Variants {
         readonly property bool launcherHere:
             Config.UiState.launcherOpen && onFocusedScreen
         onLauncherHereChanged: {
-            if (launcherHere) { afterLauncher = false; afterLauncherHold.stop(); }
+            if (launcherHere) {
+                afterLauncher = false;
+                afterLauncherHold.stop();
+                closePreview();
+            }
             else if (visible && Config.UiState.holdDockAfterLauncher) {
                 afterLauncher = true;
                 afterLauncherHold.restart();
@@ -176,9 +198,9 @@ Variants {
         // (tooltip headroom + pill + edge gap). The hidden position falls
         // outside those bounds on purpose — nothing renders past the Wayland
         // surface's own edge, and that's what makes it disappear.
-        readonly property real windowBreadth: tooltipRoom + panelBreadth + edgeGap
-        readonly property real pillShownPos: tooltipRoom
-        readonly property real pillHiddenPos: tooltipRoom + panelBreadth + 20
+        readonly property real windowBreadth: headroom + panelBreadth + edgeGap
+        readonly property real pillShownPos: headroom
+        readonly property real pillHiddenPos: headroom + panelBreadth + 20
 
         property real pillPos: revealed ? pillShownPos : pillHiddenPos
         Behavior on pillPos { NumberAnimation { duration: Config.Appearance.anim(260); easing.type: Easing.OutCubic } }
@@ -261,6 +283,20 @@ Variants {
             y: dock.maskY
             width: dock.maskW
             height: dock.maskH
+
+            // The preview card, and the gap between it and the pill. The
+            // pointer crosses that gap on its way up to the card, and a gap
+            // outside the mask is a gap where the dock does not have the
+            // pointer — hover drops, auto-hide starts counting, and the
+            // card starts closing, halfway through reaching for it.
+            // Nothing at all while no card is showing, so the headroom
+            // stays click-through.
+            Region {
+                x: preview.shown ? Math.round(preview.x) : 0
+                y: preview.shown ? Math.round(preview.y) : 0
+                width: preview.shown ? Math.ceil(preview.width) : 0
+                height: preview.shown ? Math.max(0, Math.ceil(pill.y - preview.y)) : 0
+            }
         }
 
         HoverHandler { id: windowHover }
@@ -279,7 +315,17 @@ Variants {
 
         // Apps with windows open that aren't pinned, so they still show up
         // in the dock while they're running.
-        readonly property var unpinnedApps: {
+        //
+        // A string of class names, one per line, and not a list of objects.
+        // The list was rebuilt on every window event — a browser changing
+        // its title is one — and a Repeater handed a new list of objects
+        // destroys every tile and builds it again. That dropped the hover
+        // under the pointer, and it would take down a window preview
+        // anchored to the tile along with it. A string that comes out the
+        // same raises no change at all, so the tiles are only rebuilt when
+        // the set of apps actually changes; each tile finds its own
+        // windows.
+        readonly property string unpinnedKey: {
             const seen = ({});
             const out = [];
             for (const c of clients) {
@@ -287,14 +333,126 @@ Variants {
                 if (!cls || seen[cls]) continue;
                 if (Config.Apps.pinnedFor(cls)) continue;
                 seen[cls] = true;
-                out.push({
-                    cls: cls,
-                    label: Config.Apps.labelFor(cls),
-                    icon: Config.Apps.iconFor(cls),
-                    windows: clients.filter(x => x.cls === cls)
-                });
+                out.push(cls);
             }
-            return out;
+            return out.join("\n");
+        }
+        readonly property var unpinnedClasses:
+            unpinnedKey === "" ? [] : unpinnedKey.split("\n")
+
+        // ── window previews ───────────────────────────────────────────────
+        //
+        // What the card is showing: a key naming the tile, and how to find
+        // that app's windows. Kept as a way to look them up rather than as
+        // a list, so a window opening or closing while the card is up
+        // appears in it or leaves it.
+        property string previewKey: ""
+        property var previewApp: null       // a pinned app, or null
+        property string previewCls: ""      // an unpinned app's class
+        property string previewIcon: ""
+        // Cleared by QML itself if the tile is destroyed, which closes the
+        // card rather than leaving it pointing at nothing.
+        property Item previewTile: null
+
+        // A hover that has not been there long enough to open a card yet.
+        property var pendingSpec: null
+        property Item pendingTile: null
+
+        // The running app tile under the pointer, if there is one.
+        property string hoverKey: ""
+
+        readonly property var previewWindows: {
+            if (previewKey === "") return [];
+            if (previewApp) return windowsFor(previewApp);
+            return clients.filter(c => c.cls === previewCls);
+        }
+        readonly property bool previewOpen:
+            previewsOn && previewKey !== "" && previewWindows.length > 0
+
+        // Called by every app tile as the pointer comes and goes. `spec` is
+        // { key, app, cls, icon, running }.
+        //
+        // The first card waits a moment, so sweeping the pointer along the
+        // dock does not flash one up for every app it passes. Once one is
+        // open, moving to the next running app switches straight to its
+        // card, the way a taskbar does.
+        function tileHover(spec, tile, on) {
+            if (!dock.previewsOn) return;
+            if (on && spec.running) {
+                dock.hoverKey = spec.key;
+                previewCloseDelay.stop();
+                if (dock.previewKey !== "") { dock.showPreview(spec, tile); return; }
+                dock.pendingSpec = spec;
+                dock.pendingTile = tile;
+                previewOpenDelay.restart();
+                return;
+            }
+            if (dock.hoverKey === spec.key) dock.hoverKey = "";
+            if (dock.pendingSpec && dock.pendingSpec.key === spec.key)
+                previewOpenDelay.stop();
+            if (dock.previewKey !== "") previewCloseDelay.restart();
+        }
+
+        function showPreview(spec, tile) {
+            dock.previewApp = spec.app || null;
+            dock.previewCls = spec.cls || "";
+            dock.previewIcon = spec.icon || "";
+            dock.previewTile = tile;
+            dock.previewKey = spec.key;
+        }
+
+        function closePreview() {
+            previewOpenDelay.stop();
+            previewCloseDelay.stop();
+            dock.pendingSpec = null;
+            dock.pendingTile = null;
+            dock.previewKey = "";
+            dock.previewTile = null;
+            dock.previewApp = null;
+        }
+
+        Timer {
+            id: previewOpenDelay
+            interval: 380
+            onTriggered: {
+                const spec = dock.pendingSpec;
+                if (spec && dock.hoverKey === spec.key && dock.pendingTile)
+                    dock.showPreview(spec, dock.pendingTile);
+            }
+        }
+        // Long enough to cross from the tile up into the card, or across
+        // the gap between two tiles, without the card blinking out.
+        Timer {
+            id: previewCloseDelay
+            interval: 300
+            onTriggered: if (dock.hoverKey === "" && !preview.hovered) dock.closePreview();
+        }
+        Connections {
+            target: preview
+            function onHoveredChanged() {
+                if (preview.hovered) previewCloseDelay.stop();
+                else if (dock.previewKey !== "") previewCloseDelay.restart();
+            }
+        }
+
+        // Everything else that ends a card: the dock sliding away, being
+        // hidden, the launcher opening over it, the setting going off, the
+        // tile disappearing, or the app's last window closing.
+        onRevealedChanged: if (!revealed) closePreview();
+        onVisibleChanged: if (!visible) closePreview();
+        onPreviewsOnChanged: if (!previewsOn) closePreview();
+        onPreviewTileChanged: if (previewKey !== "" && !previewTile) closePreview();
+        onPreviewWindowsChanged:
+            if (previewKey !== "" && previewWindows.length === 0) closePreview();
+
+        // Where the card is centred: over its tile, which moves whenever a
+        // tile beside it grows its label. mapToItem is a plain call, so the
+        // geometry it depends on is read first to make this re-run.
+        readonly property real previewAnchorX: {
+            const t = dock.previewTile;
+            if (!t) return dock.width / 2;
+            void pill.x; void pill.width; void tiles.x; void t.x; void t.width;
+            return t.mapToItem(null, t.width / 2, 0).x;
         }
 
         function launchOrFocus(app) {
@@ -444,18 +602,32 @@ Variants {
                         windowCount: wins.length
                         active: isActive
                         showLabel: isActive && Config.Appearance.dockLabels && !dock.isLeft
+                        // The card names every window, so a running app's
+                        // tooltip would only say less, underneath it.
+                        showTooltip: !(dock.previewsOn && wins.length > 0)
                         tooltipEdge: dock.isLeft ? Qt.RightEdge : Qt.TopEdge
                         subtitle: wins.length === 0 ? "not running"
                                 : (wins.length === 1 ? "1 window" : wins.length + " windows")
 
-                        onActivated: dock.launchOrFocus(modelData)
+                        onHoveredChanged: dock.tileHover(
+                            { key: "pin:" + modelData.key, app: modelData,
+                              icon: modelData.icon, running: wins.length > 0 },
+                            pinnedTile, hovered)
+
+                        onActivated: {
+                            dock.closePreview();
+                            dock.launchOrFocus(modelData);
+                        }
                         // Right click opens the tile's menu — new window,
                         // re-point it at a different application, or unpin.
                         // Opening a fresh instance moved in there, since it
                         // is one of three things you might want and no longer
                         // the only one.
-                        onSecondaryActivated: dock.openTileMenu(
-                            pinnedTile, modelData.key, "", modelData.label, modelData.icon)
+                        onSecondaryActivated: {
+                            dock.closePreview();
+                            dock.openTileMenu(
+                                pinnedTile, modelData.key, "", modelData.label, modelData.icon);
+                        }
                         onMiddleActivated: {
                             if (wins.length > 0) Services.Compositor.closeClient(wins[0].address);
                         }
@@ -466,29 +638,35 @@ Variants {
                 DockDivider {
                     isLeft: dock.isLeft
                     tileSize: dock.tileSize
-                    visible: dock.unpinnedApps.length > 0
+                    visible: dock.unpinnedClasses.length > 0
                 }
 
                 Repeater {
-                    model: dock.unpinnedApps
+                    model: dock.unpinnedClasses
 
                     DockTile {
                         id: unpinnedTile
-                        required property var modelData
+                        required property string modelData
 
+                        readonly property string cls: modelData
+                        readonly property var wins:
+                            dock.clients.filter(x => x.cls === unpinnedTile.cls)
+                        readonly property string appLabel: Config.Apps.labelFor(cls)
+                        readonly property string appIcon: Config.Apps.iconFor(cls)
                         readonly property bool isActive:
-                            Services.Compositor.activeClass === modelData.cls
+                            Services.Compositor.activeClass === cls
 
                         width: implicitWidth
                         height: dock.tileSize
                         tileSize: dock.tileSize
                         iconSize: dock.iconSize
-                        iconName: modelData.icon
-                        label: modelData.label
+                        iconName: appIcon
+                        label: appLabel
                         subtitle: "not pinned"
-                        running: true
-                        windowCount: modelData.windows.length
+                        running: wins.length > 0
+                        windowCount: wins.length
                         active: isActive
+                        showTooltip: !(dock.previewsOn && wins.length > 0)
                         // The same rule as a pinned tile. It was missing
                         // here, so an application that was running but
                         // not pinned never showed its name — not even
@@ -497,17 +675,25 @@ Variants {
                         showLabel: isActive && Config.Appearance.dockLabels && !dock.isLeft
                         tooltipEdge: dock.isLeft ? Qt.RightEdge : Qt.TopEdge
 
+                        onHoveredChanged: dock.tileHover(
+                            { key: "cls:" + cls, cls: cls, icon: appIcon,
+                              running: wins.length > 0 },
+                            unpinnedTile, hovered)
+
                         onActivated: {
-                            const wins = modelData.windows;
+                            dock.closePreview();
+                            if (wins.length === 0) return;
                             const at = wins.findIndex(
                                 c => c.address === Services.Compositor.activeAddress);
                             const next = at >= 0 ? wins[(at + 1) % wins.length] : wins[0];
                             Services.Compositor.focusClient(next.address);
                         }
-                        onSecondaryActivated: dock.openTileMenu(
-                            unpinnedTile, "", modelData.cls, modelData.label, modelData.icon)
+                        onSecondaryActivated: {
+                            dock.closePreview();
+                            dock.openTileMenu(unpinnedTile, "", cls, appLabel, appIcon);
+                        }
                         onMiddleActivated:
-                            Services.Compositor.closeClient(modelData.windows[0].address)
+                            if (wins.length > 0) Services.Compositor.closeClient(wins[0].address)
                     }
                 }
 
@@ -540,6 +726,50 @@ Variants {
                     onActivated: Services.Compositor.toggleShowDesktop()
                 }
             }
+        }
+
+        // ── the preview card ──────────────────────────────────────────────
+        DockPreview {
+            id: preview
+
+            readonly property bool shown: dock.previewOpen
+
+            // Emptied when closed, which destroys every picture in it and
+            // stops each live capture along with it.
+            windows: shown ? dock.previewWindows : []
+            iconName: dock.previewIcon
+            us: dock.us
+            maxWidth: dock.width - dock.u(24)
+
+            // Centred over its tile, kept a margin inside the screen.
+            x: Math.round(Math.max(dock.u(12),
+                          Math.min(dock.width - width - dock.u(12),
+                                   dock.previewAnchorX - width / 2)))
+            y: Math.round(pill.y - height - dock.previewGap)
+
+            visible: opacity > 0.01
+            opacity: shown ? 1 : 0
+            // Fades in and is gone at once on the way out: its pictures are
+            // released the moment it closes, and an empty card fading away
+            // would be the last thing it showed.
+            Behavior on opacity {
+                enabled: preview.shown
+                NumberAnimation { duration: Config.Appearance.anim(130); easing.type: Easing.OutCubic }
+            }
+            transform: Translate {
+                y: preview.shown ? 0 : dock.u(6)
+                Behavior on y {
+                    enabled: preview.shown
+                    NumberAnimation { duration: Config.Appearance.anim(160); easing.type: Easing.OutCubic }
+                }
+            }
+
+            onPicked: address => {
+                dock.closePreview();
+                // Focusing a window on another workspace takes you there.
+                Services.Compositor.focusClient(address);
+            }
+            onCloseRequested: address => Services.Compositor.closeClient(address)
         }
     }
 }

@@ -100,6 +100,9 @@ Singleton {
             property int dockSize: 42                 // 34-58 px
             property int dockIcon: 50                 // 30-72 %
             property bool dockLabels: true
+            // Hover a running app's tile for a live picture of each of its
+            // windows, and click one to go to it.
+            property bool dockPreviews: true
             property bool dockHide: false
             // The pinned apps, as a JSON array of
             // { key, label, icon, exec[], match } — empty means "use the
@@ -283,6 +286,7 @@ Singleton {
     property alias dockTileSize: prefs.dockSize
     property alias dockIconPct: prefs.dockIcon
     property alias dockLabels: prefs.dockLabels
+    property alias dockPreviews: prefs.dockPreviews
     property alias dockAutoHide: prefs.dockHide
     property alias barAutoHide: prefs.barHide
     property alias dockPinned: prefs.dockPinned

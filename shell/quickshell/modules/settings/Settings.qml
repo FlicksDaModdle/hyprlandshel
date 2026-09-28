@@ -420,6 +420,14 @@ Scope {
               value: A.dockGapPx, set: v => A.dockGapPx = v },
             { n: "Label for active app", s: "Expand the focused app into a labelled pill", type: "toggle",
               value: A.dockLabels, set: v => A.dockLabels = v },
+            { n: "Window previews",
+              s: A.dockLeft
+                 ? "Only with the dock along the bottom edge — on the left "
+                   + "there is no room above a tile for the pictures"
+                 : "Hover a running app for a live picture of each of its "
+                   + "windows, and click one to go to it",
+              type: "toggle",
+              value: A.dockPreviews, set: v => A.dockPreviews = v },
             { n: "Auto-hide", s: "Slide off the screen edge until the pointer reaches it", type: "toggle",
               value: A.dockAutoHide, set: v => A.dockAutoHide = v },
             { n: "Pinned apps",
