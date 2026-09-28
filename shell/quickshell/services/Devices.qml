@@ -74,7 +74,11 @@ Singleton {
                 col: col
             },
             decoration: {
-                rounding: prefs.hyprRounding,
+                // Corner rounding scales every radius, the windows' own
+                // corners included: the px value is theirs at 100%. Without
+                // this, 0% squared everything the shell and its apps draw
+                // — the browser too — inside a window that stayed round.
+                rounding: Math.round(prefs.hyprRounding * prefs.rf),
                 // Hyprland's inactive opacity is a fraction, the setting is a
                 // percentage — nobody wants to type 0.92 into a slider.
                 inactive_opacity: Math.max(0.4, Math.min(1, prefs.hyprInactiveOpacity / 100)),
@@ -95,6 +99,10 @@ Singleton {
     // for the next login.
     readonly property color accentNow: prefs.accent
     onAccentNowChanged: if (applied && prefs.borderFollowsAccent) applyFrame();
+
+    // Likewise the window corners, as Corner rounding moves.
+    readonly property real roundingNow: prefs.rf
+    onRoundingNowChanged: if (applied) applyFrame();
 
     // ── displays ──────────────────────────────────────────────────────────
     //

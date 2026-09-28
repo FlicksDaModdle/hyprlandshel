@@ -349,7 +349,8 @@ Scope {
                  + "this is how strong the frost reads",
               type: "slider", min: 0, max: 60, unit: "%",
               value: A.menuTranslucency, set: v => A.menuTranslucency = v },
-            { n: "Corner rounding", s: "Scales every radius — 0% is fully square", type: "slider",
+            { n: "Corner rounding", s: "Scales every radius — the shell, its apps, the browser and "
+                 + "the window corners. 0% is fully square", type: "slider",
               min: 0, max: 160, unit: "%", value: A.roundingPct, set: v => A.roundingPct = v },
             { n: "Wallpaper tint", s: "Ground gradient temperature", type: "seg",
               options: ["Warm", "Neutral", "Cool"], value: A.tint, set: v => A.tint = v },
@@ -1441,7 +1442,8 @@ Scope {
                  + "takes the shell's accent colour",
               type: "toggle", value: A.borderFollowsAccent,
               set: v => { A.borderFollowsAccent = v; Services.Devices.applyFrame(); } },
-            { n: "Corner radius", s: "Window corners, not the shell's own",
+            { n: "Corner radius", s: "Window corners at 100% Corner rounding; that "
+                 + "setting under Appearance scales them along with everything else",
               type: "slider", min: 0, max: 24, unit: "px", value: A.hyprRounding,
               set: v => { A.hyprRounding = v; Services.Devices.applyFrame(); } },
 
