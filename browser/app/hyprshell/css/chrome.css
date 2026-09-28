@@ -1,0 +1,581 @@
+/* Hyprshell Browser — the interface, to the concept's Firefox window.
+ *
+ * Loaded into every browser window by Theme.sys.mjs, after defaults.css and
+ * the shell's palette. Only the --hs-* variables carry colour, so the whole
+ * window follows the shell's theme and accent live.
+ *
+ * Measurements are the concept's: a 40px title row with 28px tabs, a 44px
+ * toolbar of 30px buttons, a 32px address pill. Where Firefox exposes a
+ * design token for something, the token is set; where it does not, the rule
+ * says why it is needed.
+ *
+ * No @namespace line: it would stop these rules reaching the HTML elements
+ * inside the address bar, including the ones Hyprshell adds itself.
+ */
+
+/* ══ tokens ═══════════════════════════════════════════════════════════════ */
+
+:root[hyprshell] {
+  --toolbox-background-color: var(--hs-sheet);
+  --toolbox-background-color-inactive: var(--hs-sheet);
+  --toolbox-text-color: var(--hs-ink);
+  --toolbox-text-color-inactive: var(--hs-ink2);
+  --toolbar-background-color: var(--hs-sheet);
+  --toolbar-text-color: var(--hs-ink);
+  --toolbar-color: var(--hs-ink);
+  --lwt-accent-color: var(--hs-sheet);
+  --chrome-content-separator-color: var(--hs-rule);
+  --tabs-navbar-separator-style: none;
+  --tabpanel-background-color: var(--hs-sheet);
+
+  --tab-background-color-selected: var(--hs-sel);
+  --tab-background-color-hover: var(--hs-hover);
+  --tab-selected-textcolor: var(--hs-ink);
+  --tab-selected-outline-color: transparent;
+  --tab-hover-outline-color: transparent;
+  --tab-box-shadow-selected: none;
+  --tab-border-radius: var(--hs-r-sm);
+  --tab-min-height: 28px;
+  --tab-margin-block: 6px;
+  --tab-inline-padding: 7px 4px;
+
+  --toolbarbutton-border-radius: var(--hs-r-sm);
+  --toolbarbutton-background-color-hover: var(--hs-hover);
+  --toolbarbutton-background-color-active: var(--hs-sel);
+  --toolbarbutton-icon-fill: var(--hs-ink2);
+  --toolbarbutton-icon-fill-attention: var(--hs-accent);
+  --toolbarbutton-icon-fill-attention-text: var(--hs-on-accent);
+  --toolbarbutton-outline-color: transparent;
+  --toolbarbutton-outline-color-hover: transparent;
+  --toolbarbutton-outline-color-active: transparent;
+  --toolbarbutton-opacity-disabled: 0.5;
+  --toolbarbutton-padding-inner: 7px;
+  --toolbarbutton-padding-outer: 0px;
+
+  --toolbar-field-background-color: var(--hs-hover);
+  --toolbar-field-background-color-focus: var(--hs-hover);
+  --toolbar-field-text-color: var(--hs-ink);
+  --toolbar-field-text-color-focus: var(--hs-ink);
+  --toolbar-field-border-color: transparent;
+  --toolbar-field-border-color-focus: var(--hs-accent);
+  --focus-outline-color: var(--hs-accent);
+
+  --urlbar-height: 32px;
+  --urlbar-border-radius: var(--hs-r);
+  --urlbar-inner-border-radius: calc(var(--hs-r) - 2px);
+  --urlbar-box-background-color: transparent;
+  --urlbar-box-background-color-hover: var(--hs-sel);
+  --urlbar-box-background-color-active: var(--hs-sel);
+  --urlbar-box-background-color-focus: transparent;
+  --urlbar-box-text-color: var(--hs-ink2);
+  --urlbar-box-text-color-hover: var(--hs-ink);
+  --urlbarview-background-color-selected: var(--hs-sel);
+  --urlbarview-background-color-hover: var(--hs-hover);
+  --urlbarview-text-color-selected: var(--hs-ink);
+  --urlbarview-text-color-secondary: var(--hs-ink3);
+  --urlbarview-separator-color: var(--hs-rule);
+  --urlbarview-border-radius: var(--hs-r-sm);
+
+  --panel-background-color: var(--hs-menu);
+  --panel-text-color: var(--hs-ink);
+  --panel-border-color: var(--hs-edge);
+  --panel-border-radius: var(--hs-r);
+  --panel-separator-color: var(--hs-rule);
+  --panel-menuitem-border-radius: var(--hs-r-sm);
+  --panel-banner-item-background-color: var(--hs-hover);
+  --button-background-color-hover: var(--hs-hover);
+  --arrowpanel-border-radius: var(--hs-r);
+}
+
+/* The shell's typeface everywhere in the frame. Firefox sets fonts element
+ * by element (font: menu, message-box …), so inheriting from the root is not
+ * enough. */
+:root[hyprshell],
+:root[hyprshell] :is(toolbar, toolbarbutton, tab, label, description,
+                     menupopup, panel, menuitem, menu, menucaption,
+                     input, button, .tab-label) {
+  font-family: var(--hs-font), "Inter", sans-serif !important;
+}
+
+/* ══ title row ════════════════════════════════════════════════════════════ */
+/* 40px: the bead, tabs, new tab, and the window buttons. */
+
+:root[hyprshell] #TabsToolbar {
+  min-height: 40px !important;
+  align-items: center;
+  padding-inline-end: 8px;
+}
+:root[hyprshell] #TabsToolbar > .toolbar-items { min-height: 40px; }
+
+#hs-bead {
+  flex: none;
+  width: 3px;
+  height: 16px;
+  margin-inline: 14px 8px;
+  border-radius: 2px;
+  background: var(--hs-accent);
+}
+:root[hyprshell]:-moz-window-inactive #hs-bead { background: var(--hs-ink3); }
+
+/* The title bar's own draggable gaps before the tabs are taken over by the
+ * bead's margins. */
+:root[hyprshell] #TabsToolbar .titlebar-spacer[type="pre-tabs"] { display: none !important; }
+
+/* Tabs: 188px, down to 84, 28 tall, 2px apart. */
+:root[hyprshell] .tabbrowser-tab:not([pinned]) {
+  max-width: 188px !important;
+  min-width: 84px !important;
+  padding-inline: 1px !important;
+}
+:root[hyprshell] .tabbrowser-tab .tab-background {
+  position: relative;
+  border-radius: var(--hs-r-sm) !important;
+  box-shadow: none !important;
+  outline: none !important;
+  margin-block: 6px !important;
+}
+/* The concept's mark of the current tab: a 2px accent rail along the bottom,
+ * inset from both ends. */
+:root[hyprshell] .tabbrowser-tab[selected] .tab-background::after {
+  content: "";
+  position: absolute;
+  inset-inline: 9px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--hs-accent);
+}
+:root[hyprshell] .tabbrowser-tab .tab-content {
+  padding-inline: 7px 4px !important;
+  gap: 0;
+}
+:root[hyprshell] .tab-icon-image,
+:root[hyprshell] .tab-icon-stack { border-radius: 5px; }
+:root[hyprshell] .tab-icon-stack { margin-inline-end: 8px !important; }
+:root[hyprshell] .tab-label {
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  color: var(--hs-ink2);
+}
+:root[hyprshell] .tabbrowser-tab[selected] .tab-label { color: var(--hs-ink); }
+:root[hyprshell] .tab-label-container { height: auto !important; }
+
+/* Close: a 20px square, an 11px cross, quiet until hovered. */
+:root[hyprshell] .tab-close-button {
+  list-style-image: url("resource://hyprshell/icons/close.svg") !important;
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity !important;
+  fill: currentColor !important;
+  fill-opacity: 1 !important;
+  color: var(--hs-ink3) !important;
+  width: 20px !important;
+  height: 20px !important;
+  padding: 4.5px !important;
+  margin: 0 !important;
+  border-radius: var(--hs-r-sm) !important;
+  background: none !important;
+}
+:root[hyprshell] .tab-close-button:hover {
+  background: var(--hs-hover) !important;
+  color: var(--hs-ink) !important;
+}
+
+/* New tab and the tab list: 28px squares. */
+:root[hyprshell] :is(#tabs-newtab-button, #new-tab-button, #alltabs-button) {
+  --toolbarbutton-padding-inner: 6px;
+  margin-inline: 2px !important;
+}
+:root[hyprshell] :is(#tabs-newtab-button, #new-tab-button) {
+  list-style-image: url("resource://hyprshell/icons/newtab.svg") !important;
+}
+:root[hyprshell] #alltabs-button {
+  list-style-image: url("resource://hyprshell/icons/chevron.svg") !important;
+}
+
+/* Window buttons: the concept's three 28px squares with 13px glyphs, close
+ * going accent under the pointer. appearance: none takes the painting back
+ * from GTK, which would otherwise draw its own round buttons over these. */
+:root[hyprshell] .titlebar-buttonbox { gap: 2px; margin-inline-start: 6px; align-items: center; }
+:root[hyprshell] .titlebar-button {
+  appearance: none !important;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 7.5px !important;
+  border-radius: var(--hs-r-sm) !important;
+  background: none !important;
+  color: var(--hs-ink2) !important;
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+  fill: currentColor;
+}
+:root[hyprshell] .titlebar-button > .toolbarbutton-icon {
+  appearance: none !important;
+  width: 13px !important;
+  height: 13px !important;
+  padding: 0 !important;
+  background: none !important;
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+  fill: currentColor;
+}
+:root[hyprshell] .titlebar-button:hover { background: var(--hs-hover) !important; }
+:root[hyprshell] .titlebar-close:hover {
+  background: var(--hs-accent) !important;
+  color: var(--hs-on-accent) !important;
+}
+:root[hyprshell] .titlebar-min { list-style-image: url("resource://hyprshell/icons/minimize.svg") !important; }
+:root[hyprshell] .titlebar-max { list-style-image: url("resource://hyprshell/icons/maximize.svg") !important; }
+:root[hyprshell] .titlebar-restore { list-style-image: url("resource://hyprshell/icons/restore.svg") !important; }
+:root[hyprshell] .titlebar-close { list-style-image: url("resource://hyprshell/icons/close.svg") !important; }
+
+/* ══ toolbar ══════════════════════════════════════════════════════════════ */
+/* 44px between two rules, 8px in from each side. */
+
+:root[hyprshell] #nav-bar {
+  min-height: 44px !important;
+  padding-inline: 8px !important;
+  border-top: 1px solid var(--hs-rule) !important;
+  box-shadow: none !important;
+}
+:root[hyprshell] #navigator-toolbox {
+  border-bottom: 1px solid var(--hs-rule) !important;
+}
+:root[hyprshell] #nav-bar-customization-target { gap: 4px; }
+
+:root[hyprshell] #nav-bar .toolbarbutton-1 {
+  color: var(--hs-ink2);
+}
+:root[hyprshell] #nav-bar .toolbarbutton-1:not([disabled]):hover {
+  color: var(--hs-ink);
+}
+:root[hyprshell] :is(#nav-bar, #TabsToolbar) .toolbarbutton-1 > :is(.toolbarbutton-icon, .toolbarbutton-badge-stack) {
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+  fill: currentColor !important;
+}
+
+/* The concept's glyphs, Lucide, in place of Firefox's. */
+:root[hyprshell] #back-button { list-style-image: url("resource://hyprshell/icons/back.svg") !important; }
+:root[hyprshell] #forward-button { list-style-image: url("resource://hyprshell/icons/forward.svg") !important; }
+:root[hyprshell] #reload-button { list-style-image: url("resource://hyprshell/icons/reload.svg") !important; }
+:root[hyprshell] #stop-button { list-style-image: url("resource://hyprshell/icons/stop.svg") !important; }
+:root[hyprshell] #home-button { list-style-image: url("resource://hyprshell/icons/home.svg") !important; }
+:root[hyprshell] #unified-extensions-button { list-style-image: url("resource://hyprshell/icons/extensions.svg") !important; }
+:root[hyprshell] #PanelUI-menu-button { list-style-image: url("resource://hyprshell/icons/menu.svg") !important; }
+:root[hyprshell] #sidebar-button { list-style-image: url("resource://hyprshell/icons/sidebar.svg") !important; }
+:root[hyprshell] #fxa-toolbar-menu-button { list-style-image: url("resource://hyprshell/icons/account.svg") !important; }
+:root[hyprshell] #bookmarks-menu-button { list-style-image: url("resource://hyprshell/icons/bookmark.svg") !important; }
+:root[hyprshell] #history-panelmenu { list-style-image: url("resource://hyprshell/icons/history.svg") !important; }
+/* Downloads draws its icon on an inner element, for the progress animation. */
+:root[hyprshell] #downloads-button:not([animate], [progress]) #downloads-indicator-icon,
+:root[hyprshell] #downloads-button:not([animate]) .toolbarbutton-icon {
+  list-style-image: url("resource://hyprshell/icons/downloads.svg") !important;
+  background-image: none !important;
+}
+:root[hyprshell] #downloads-button[attention="success"] { color: var(--hs-accent); }
+
+:root[hyprshell] #hs-navdiv {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin-inline: 2px;
+  align-self: center;
+  background: var(--hs-div);
+}
+
+/* ══ address pill ═════════════════════════════════════════════════════════ */
+
+:root[hyprshell] #urlbar-container {
+  flex: 1 1 auto !important;
+  margin-inline: 6px !important;
+  min-height: 32px;
+}
+:root[hyprshell] #urlbar {
+  font-size: 12.5px !important;
+}
+:root[hyprshell] #urlbar > .urlbar-background {
+  background: var(--hs-hover) !important;
+  border: none !important;
+  border-radius: var(--hs-r) !important;
+  box-shadow: inset 0 0 0 1px var(--hs-rule) !important;
+  outline: none !important;
+}
+/* Focused: the accent ring, 2px, inside the pill. */
+:root[hyprshell] #urlbar[focused] > .urlbar-background {
+  box-shadow: inset 0 0 0 2px var(--hs-accent) !important;
+}
+/* With suggestions open the pill grows into a panel. */
+:root[hyprshell] #urlbar[open] > .urlbar-background {
+  background: var(--hs-menu) !important;
+  box-shadow: inset 0 0 0 2px var(--hs-accent), 0 22px 52px -18px rgba(0, 0, 0, 0.5) !important;
+}
+:root[hyprshell] #urlbar .urlbar-input-container {
+  padding-inline: 10px 6px !important;
+}
+:root[hyprshell] #urlbar-input { color: var(--hs-ink) !important; }
+:root[hyprshell] #urlbar-input::placeholder { color: var(--hs-ink3) !important; opacity: 1; }
+
+/* The engine switcher only while typing; at rest the pill starts with the
+ * shield, as in the concept. */
+:root[hyprshell] #urlbar:not([focused]) .searchmode-switcher { display: none !important; }
+
+/* The shield: accent, then a hairline, then the address. A page that is not
+ * secure keeps its own warning glyph — hiding that would be lying — but the
+ * words go, as the concept has none. */
+/* Spaced with a margin, not the container's gap: Firefox keeps a row of
+ * zero-width boxes here (identity, tracking protection, labels) and a gap
+ * would be added after every one of them. */
+:root[hyprshell] #trust-icon-container {
+  padding: 0 !important;
+  margin: 0 9px 0 0 !important;
+  background: none !important;
+  gap: 0 !important;
+}
+:root[hyprshell] #trust-icon-container:not(.insecure) #trust-icon {
+  list-style-image: url("resource://hyprshell/icons/shield.svg") !important;
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity !important;
+  fill: var(--hs-accent) !important;
+  stroke: var(--hs-accent) !important;
+  fill-opacity: 1 !important;
+}
+:root[hyprshell] #trust-icon-container.insecure #trust-icon {
+  list-style-image: url("resource://hyprshell/icons/lockopen.svg") !important;
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity !important;
+  fill: var(--hs-ink2) !important;
+}
+:root[hyprshell] #trust-icon { width: 14px !important; height: 14px !important; }
+:root[hyprshell] #trust-label { display: none !important; }
+:root[hyprshell] #trust-icon-container::after {
+  content: "";
+  width: 1px;
+  height: 14px;
+  margin-inline-start: 9px;
+  background: var(--hs-div);
+}
+
+/* Star: 24px, quiet until the page is bookmarked, then accent and filled. */
+:root[hyprshell] #star-button-box {
+  width: 24px !important;
+  height: 24px !important;
+  padding: 5px !important;
+  border-radius: var(--hs-r-sm) !important;
+}
+:root[hyprshell] #star-button-box:hover { background: var(--hs-sel) !important; }
+:root[hyprshell] #star-button {
+  list-style-image: url("resource://hyprshell/icons/star.svg") !important;
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity !important;
+  fill: var(--hs-ink3) !important;
+  fill-opacity: 1 !important;
+  width: 14px !important;
+  height: 14px !important;
+}
+:root[hyprshell] #star-button[starred] {
+  list-style-image: url("resource://hyprshell/icons/star-filled.svg") !important;
+  fill: var(--hs-accent) !important;
+  stroke: var(--hs-accent) !important;
+}
+:root[hyprshell] #reader-mode-button-icon {
+  list-style-image: url("resource://hyprshell/icons/reader.svg") !important;
+}
+:root[hyprshell] #urlbar .urlbar-page-action,
+:root[hyprshell] #urlbar #identity-box .identity-box-button {
+  border-radius: var(--hs-r-sm) !important;
+}
+
+/* The address at rest — UrlView.sys.mjs draws it over the field, host in
+ * full ink and the rest in ink3, and the field's own text is hidden under it.
+ * It never takes the pointer: a click goes to the field, which takes focus,
+ * and the drawing is gone. */
+:root[hyprshell] #urlbar .urlbar-input-box {
+  position: relative;
+  /* Firefox spaces the field with a margin of its own; the concept's 9px
+   * after the hairline is already the shield's. */
+  margin-inline: 0 6px !important;
+}
+#hs-urlview {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--hs-ink3);
+}
+:root[hyprshell] #urlbar[hs-urlview] #hs-urlview { display: flex; }
+:root[hyprshell] #urlbar[hs-urlview] :is(#urlbar-input, #urlbar-scheme) { opacity: 0 !important; }
+#hs-urlview .hs-host { color: var(--hs-ink); font-weight: 500; }
+#hs-urlview .hs-pre,
+#hs-urlview .hs-post { color: var(--hs-ink3); }
+
+/* ══ menus ════════════════════════════════════════════════════════════════ */
+/* The shell's menu: a 14px-rounded sheet, 6px in, the accent seam along the
+ * top, 29px rows that take a soft wash under the pointer, and the shortcut
+ * at the right in the quietest ink. */
+
+:root[hyprshell] menupopup {
+  --panel-background-color: var(--hs-menu) !important;
+  --panel-text-color: var(--hs-ink) !important;
+  --panel-border-color: var(--hs-edge) !important;
+  --panel-border-radius: var(--hs-r) !important;
+  --panel-padding: 8px 6px 6px !important;
+  --menuitem-padding: 0 9px !important;
+  --menuitem-border-radius: var(--hs-r-sm) !important;
+  --menuitem-margin: 0 !important;
+  --panel-box-shadow: 0 22px 52px -18px rgba(0, 0, 0, 0.5) !important;
+  font-size: 12px !important;
+}
+/* The seam: 40px of accent, then its faint tail, 2px deep. */
+:root[hyprshell] :is(menupopup, panel)::part(content) {
+  background:
+    linear-gradient(to right, var(--hs-accent) 0 40px, var(--hs-seam) 40px)
+      top left / 100% 2px no-repeat,
+    var(--panel-background-color) !important;
+}
+:root[hyprshell] menupopup :is(menuitem, menu) {
+  min-height: 29px;
+  font-weight: 500;
+  color: var(--hs-ink);
+}
+:root[hyprshell] menupopup :is(menuitem, menu)[_moz-menuactive]:not([disabled]) {
+  background-color: var(--hs-hover) !important;
+  color: var(--hs-ink) !important;
+}
+:root[hyprshell] menupopup :is(menuitem, menu)[disabled] { color: var(--hs-ink3) !important; }
+:root[hyprshell] menupopup :is(.menu-accel, .menu-iconic-accel) {
+  color: var(--hs-ink3) !important;
+  font-size: 10.5px !important;
+  font-weight: 400 !important;
+  margin-inline-start: 14px !important;
+}
+:root[hyprshell] menupopup menuseparator {
+  padding-block: 4px !important;
+  padding-inline: 6px !important;
+}
+:root[hyprshell] menupopup menuseparator::before {
+  border-top: 1px solid var(--hs-rule) !important;
+}
+/* The back · forward · reload · bookmark row at the top of the page menu. */
+:root[hyprshell] #context-navigation > .menuitem-iconic {
+  border-radius: var(--hs-r-sm) !important;
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+  fill: currentColor;
+  color: var(--hs-ink2);
+}
+:root[hyprshell] #context-navigation > .menuitem-iconic[_moz-menuactive]:not([disabled]) {
+  background-color: var(--hs-hover) !important;
+  color: var(--hs-ink) !important;
+}
+:root[hyprshell] #context-navigation > .menuitem-iconic[disabled] { opacity: 0.5; }
+:root[hyprshell] #context-back { --menuitem-icon: url("resource://hyprshell/icons/back.svg") !important; list-style-image: url("resource://hyprshell/icons/back.svg") !important; }
+:root[hyprshell] #context-forward { --menuitem-icon: url("resource://hyprshell/icons/forward.svg") !important; list-style-image: url("resource://hyprshell/icons/forward.svg") !important; }
+:root[hyprshell] #context-reload { --menuitem-icon: url("resource://hyprshell/icons/reload.svg") !important; list-style-image: url("resource://hyprshell/icons/reload.svg") !important; }
+:root[hyprshell] #context-stop { --menuitem-icon: url("resource://hyprshell/icons/stop.svg") !important; list-style-image: url("resource://hyprshell/icons/stop.svg") !important; }
+:root[hyprshell] #context-bookmarkpage { --menuitem-icon: url("resource://hyprshell/icons/star.svg") !important; list-style-image: url("resource://hyprshell/icons/star.svg") !important; }
+:root[hyprshell] #context-bookmarkpage[starred] { --menuitem-icon: url("resource://hyprshell/icons/star-filled.svg") !important; list-style-image: url("resource://hyprshell/icons/star-filled.svg") !important; color: var(--hs-accent) !important; }
+
+/* ══ panels ═══════════════════════════════════════════════════════════════ */
+/* The main menu, downloads, extensions, site information: the same sheet. */
+
+:root[hyprshell] panel {
+  --panel-background-color: var(--hs-menu) !important;
+  --panel-text-color: var(--hs-ink) !important;
+  --panel-border-color: var(--hs-edge) !important;
+  --panel-border-radius: var(--hs-r) !important;
+}
+:root[hyprshell] panel :is(.subviewbutton, .toolbarbutton-1, .PanelUI-subView .subviewbutton) {
+  border-radius: var(--hs-r-sm) !important;
+  font-size: 12px !important;
+  font-weight: 500;
+  min-height: 29px;
+}
+:root[hyprshell] panel .subviewbutton:not([disabled]):is(:hover, [open]) {
+  background-color: var(--hs-hover) !important;
+}
+:root[hyprshell] panel .subviewbutton:not([disabled]):hover:active {
+  background-color: var(--hs-sel) !important;
+}
+:root[hyprshell] panel :is(.subviewbutton > .toolbarbutton-text + .toolbarbutton-multiline-text,
+                           .subviewbutton-shortcut, .panel-banner-item .toolbarbutton-text) {
+  color: var(--hs-ink3);
+}
+:root[hyprshell] panel toolbarseparator {
+  border-color: var(--hs-rule) !important;
+}
+
+/* ══ selection ════════════════════════════════════════════════════════════ */
+/* Selected text in the address bar and every field in the frame: the accent,
+ * not GTK's system blue. */
+:root[hyprshell] :is(input, #urlbar-input)::selection {
+  background-color: var(--hs-accent) !important;
+  color: var(--hs-on-accent) !important;
+}
+
+/* ══ main menu: the sign-in card ══════════════════════════════════════════ */
+/* Mozilla's lilac card and the purple-to-orange rule under it, in the
+ * shell's colours: a quiet card, an accent button, an ordinary rule. */
+:root[hyprshell] #appMenu-fxa-sign-in-promo {
+  background: var(--hs-hover) !important;
+  color: var(--hs-ink) !important;
+  border-radius: var(--hs-r-sm) !important;
+  box-shadow: inset 0 0 0 1px var(--hs-rule) !important;
+}
+:root[hyprshell] #appMenu-fxa-sign-in-promo :is(.fxa-menu-sign-in-promo-heading,
+                                               .fxa-menu-sign-in-promo-message) {
+  color: var(--hs-ink) !important;
+}
+:root[hyprshell] #appMenu-fxa-sign-in-promo .fxa-menu-sign-in-promo-message {
+  color: var(--hs-ink3) !important;
+}
+:root[hyprshell] #appMenu-fxa-sign-in-promo-button {
+  --button-background-color-primary: var(--hs-accent);
+  --button-background-color-primary-hover: var(--hs-accent);
+  --button-text-color-primary: var(--hs-on-accent);
+  --button-border-radius: var(--hs-r-sm);
+}
+/* The rule is drawn by the separator's ::before, from a gradient token. */
+:root[hyprshell] {
+  --panel-separator-zap-gradient: linear-gradient(var(--hs-rule), var(--hs-rule));
+}
+:root[hyprshell] toolbarseparator.proton-zap::before {
+  border-image: none !important;
+  border-color: var(--hs-rule) !important;
+}
+
+/* ══ symbols ══════════════════════════════════════════════════════════════ */
+/* Every symbol is two colours: context-fill is the ink, context-stroke the
+ * accent detail (see browser/tools/gen-icons.js). Firefox only passes the
+ * colours an element names, so every element that draws one of these names
+ * all four, and the accent comes from the shell's palette. */
+:root[hyprshell] :is(.toolbarbutton-icon, .tab-close-button, .titlebar-button,
+                     #trust-icon, #star-button, #downloads-indicator-icon,
+                     .urlbar-icon, .menu-icon, .menu-iconic-icon,
+                     .subviewbutton > .toolbarbutton-icon) {
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity !important;
+}
+:root[hyprshell] {
+  stroke: var(--hs-accent);
+}
+/* A button that cannot act keeps its accent quiet along with its ink. */
+:root[hyprshell] :is(toolbarbutton, menuitem, menu)[disabled] { stroke: var(--hs-ink3) !important; }
+
+/* ══ main menu symbols ════════════════════════════════════════════════════ */
+:root[hyprshell] #appMenu-popup .subviewbutton > .toolbarbutton-icon {
+  width: 16px !important;
+  height: 16px !important;
+  margin-inline-end: 10px !important;
+  fill: var(--hs-ink2);
+}
+:root[hyprshell] #appMenu-popup .subviewbutton:is(:hover, [open]) > .toolbarbutton-icon { fill: var(--hs-ink); }
+:root[hyprshell] #appMenu-new-tab-button2 { list-style-image: url("resource://hyprshell/icons/newtab.svg") !important; }
+:root[hyprshell] #appMenu-new-window-button2 { list-style-image: url("resource://hyprshell/icons/newwindow.svg") !important; }
+:root[hyprshell] #appMenu-new-private-window-button2 { list-style-image: url("resource://hyprshell/icons/private.svg") !important; }
+:root[hyprshell] #appMenu-history-button { list-style-image: url("resource://hyprshell/icons/history.svg") !important; }
+:root[hyprshell] #appMenu-bookmarks-button { list-style-image: url("resource://hyprshell/icons/bookmark.svg") !important; }
+:root[hyprshell] #appMenu-downloads-button { list-style-image: url("resource://hyprshell/icons/downloads.svg") !important; }
+:root[hyprshell] #appMenu-passwords-button { list-style-image: url("resource://hyprshell/icons/passwords.svg") !important; }
+:root[hyprshell] #appMenu-extensions-themes-button { list-style-image: url("resource://hyprshell/icons/extensions.svg") !important; }
+:root[hyprshell] #appMenu-print-button2 { list-style-image: url("resource://hyprshell/icons/print.svg") !important; }
+:root[hyprshell] #appMenu-save-file-button2 { list-style-image: url("resource://hyprshell/icons/save.svg") !important; }
+:root[hyprshell] #appMenu-find-button2 { list-style-image: url("resource://hyprshell/icons/find.svg") !important; }
+:root[hyprshell] #appMenu-settings-button { list-style-image: url("resource://hyprshell/icons/settings.svg") !important; }
+:root[hyprshell] #appMenu-more-button2 { list-style-image: url("resource://hyprshell/icons/more.svg") !important; }
+:root[hyprshell] #appMenu-help-button2 { list-style-image: url("resource://hyprshell/icons/help.svg") !important; }

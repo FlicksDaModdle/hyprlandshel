@@ -1,0 +1,65 @@
+/* Hyprshell Browser — the palette it falls back on.
+ *
+ * The shell writes its live palette to
+ * ~/.config/quickshell/hyprshell/firefox-colors.css, and Theme.sys.mjs loads
+ * that over this and reloads it whenever it changes. These are the concept's
+ * own values, light and dark, so a browser started without the shell running
+ * — or before it has written anything — still looks like itself.
+ */
+:root {
+  --hs-frame: #f3f2f2;
+  --hs-chrome: #fbfafa;
+  --hs-sheet: #f9f8f8;
+  --hs-field: #eae9e9;
+  --hs-menu: #fbfafa;
+  --hs-sel-tab: #eae9e9;
+
+  --hs-ink: #201e1d;
+  --hs-ink2: #605d5d;
+  --hs-ink3: #6b6868;
+
+  --hs-accent: #ec3013;
+  --hs-on-accent: #ffffff;
+  --hs-seam: rgba(236, 48, 19, 0.18);
+
+  --hs-edge: rgba(32, 30, 29, 0.14);
+  --hs-rule: rgba(32, 30, 29, 0.09);
+  --hs-div: rgba(32, 30, 29, 0.18);
+  --hs-hover: rgba(32, 30, 29, 0.07);
+  --hs-sel: rgba(32, 30, 29, 0.1);
+
+  --hs-r: 14px;
+  --hs-r-sm: 9px;
+
+  --hs-font: "Inter";
+  --hs-mono: "JetBrains Mono";
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hs-frame: #201e1d;
+    --hs-chrome: #1e1c1b;
+    --hs-sheet: #232120;
+    --hs-field: #2d2b2b;
+    --hs-menu: #232120;
+    --hs-sel-tab: #3c3a39;
+
+    --hs-ink: #f8f4f4;
+    --hs-ink2: #bab6b6;
+    --hs-ink3: #8a8686;
+
+    --hs-accent: #ff563c;
+    --hs-on-accent: #fff2ef;
+    --hs-seam: rgba(255, 86, 60, 0.22);
+
+    --hs-edge: rgba(248, 244, 244, 0.16);
+    --hs-rule: rgba(248, 244, 244, 0.1);
+    --hs-div: rgba(248, 244, 244, 0.22);
+    --hs-hover: rgba(248, 244, 244, 0.09);
+    --hs-sel: rgba(248, 244, 244, 0.14);
+
+    color-scheme: dark;
+  }
+}

@@ -52,11 +52,17 @@ Singleton {
                 const source = (def && stored.indexOf(def.match.source) < 0)
                     ? "(?:" + stored + ")|(?:" + def.match.source + ")"
                     : stored;
+                // The same for what a tile runs: one saved while the Web
+                // tile still ran plain `firefox` would never open Hyprshell
+                // Browser. Only the untouched default is upgraded — a tile
+                // re-pointed at another browser keeps what you chose.
+                const exec = (e.key === "appWeb" && e.exec && e.exec.length === 1
+                              && e.exec[0] === "firefox" && def) ? def.exec : (e.exec || []);
                 return {
                     key: e.key,
                     label: e.label || (def && def.label) || "",
                     icon: e.icon,
-                    exec: e.exec || [],
+                    exec: exec,
                     match: new RegExp(source, "i")
                 };
             });
@@ -145,6 +151,9 @@ Singleton {
     function execFor(key) {
         if (key === "appTerm") return termFinder;
         if (key === "appFiles") return filesFinder;
+        // A script, not a word list: joined with spaces the sh -c would lose
+        // its quoting.
+        if (key === "appWeb") return webFinder;
         const e = pinned.find(x => x.key === key);
         return (e && e.exec && e.exec.length > 0) ? e.exec.join(" ") : "";
     }
@@ -226,6 +235,17 @@ Singleton {
         + 'command -v "$t" >/dev/null 2>&1 && exec "$t" "$@"; done; '
         + 'notify-send "Terminal" "no terminal is installed" 2>/dev/null; exit 127'
 
+    // Hyprshell Browser when it is installed (browser/install.sh), Firefox
+    // when it is not, whatever else is there after that. Same shape as the
+    // terminal's: the launcher may be in ~/.local/bin, which a session
+    // started from a display manager does not always have on its PATH.
+    readonly property string webFinder:
+        'command -v hyprshell-browser >/dev/null 2>&1 && exec hyprshell-browser "$@"; '
+        + '[ -x "$HOME/.local/bin/hyprshell-browser" ] && exec "$HOME/.local/bin/hyprshell-browser" "$@"; '
+        + 'for b in firefox chromium google-chrome-stable brave; do '
+        + 'command -v "$b" >/dev/null 2>&1 && exec "$b" "$@"; done; '
+        + 'notify-send "Web" "no browser is installed" 2>/dev/null; exit 127'
+
     // `Apps.termCommand()` opens a shell; `Apps.termCommand(["-e", "htop"])`
     // runs something in one.
     function termCommand(args) {
@@ -239,7 +259,7 @@ Singleton {
     readonly property var defaultPinned: [
         { key: "appTerm",     label: "Terminal", icon: "terminal",   exec: [],           match: /^(hyprshell-term|kitty|foot|alacritty|wezterm|org\.wezfurlong\.wezterm)$/i },
         { key: "appFiles",    label: "Files",    icon: "folder",     exec: [],           match: /^(hyprshell-files|org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$/i },
-        { key: "appWeb",      label: "Web",      icon: "globe",      exec: ["firefox"],  match: /^(firefox.*|chromium|google-chrome.*|brave-browser|zen.*)$/i },
+        { key: "appWeb",      label: "Web",      icon: "globe",      exec: ["sh", "-c", root.webFinder, "open-web"],  match: /^(hyprshell-browser|firefox.*|chromium|google-chrome.*|brave-browser|zen.*)$/i },
         { key: "appCode",     label: "Code",     icon: "code",       exec: ["neovide"],  match: /^(neovide|code|code-oss|codium|dev\.zed\.Zed|jetbrains-.*)$/i },
         { key: "appNotes",    label: "Notes",    icon: "stickyNote", exec: ["obsidian"], match: /^(obsidian|org\.gnome\.TextEditor|logseq)$/i },
         { key: "appMusic",    label: "Music",    icon: "music",      exec: [],           match: /^(ncmpcpp|spotify|org\.gnome\.Rhythmbox3|io\.bassi\.Amberol)$/i },

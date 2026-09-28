@@ -469,6 +469,9 @@ Singleton {
         const chrome = root.over(A.panel, A.ground);
         const menu = root.over(A.menuSurface, A.ground);
         const selTab = root.over(A.sel, chrome);
+        // The concept draws the browser window itself in the sheet colour;
+        // Hyprshell Browser reads this, userChrome.css does not.
+        const sheet = root.over(A.sheet, A.ground);
 
         return "/* Written by the shell — services/Theming.qml.\n"
             + " *\n"
@@ -482,6 +485,7 @@ Singleton {
             + ":root {\n"
             + "  --hs-frame: " + css(A.ground) + ";\n"
             + "  --hs-chrome: " + css(chrome) + ";\n"
+            + "  --hs-sheet: " + css(sheet) + ";\n"
             + "  --hs-field: " + css(A.surface) + ";\n"
             + "  --hs-menu: " + css(menu) + ";\n"
             + "  --hs-sel-tab: " + css(selTab) + ";\n"

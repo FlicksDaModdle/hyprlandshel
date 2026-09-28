@@ -1,0 +1,116 @@
+#!/bin/sh
+# Hyprshell Browser.
+#
+# Starts the browser from its own install, with its own profile and its own
+# app id, so the dock, Alt+Tab and the window rules all see it as a separate
+# application from Firefox. Anything given is passed on: URLs, --private-window,
+# -new-tab.
+#
+# Before starting it makes sure the install is whole. That is quick when
+# nothing changed, and it is what keeps it working across updates:
+#
+#   built on the system Firefox   pacman replaces /usr/lib/firefox under it,
+#                                 so the copied executable is refreshed and any
+#                                 new file is linked in
+#   built on Mozilla's download   Firefox updates itself, and an update could
+#                                 in principle replace a file this layer owns,
+#                                 so the layer is laid back over it
+set -eu
+
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+SHARE="$DATA/hyprshell-browser"
+LIB="${HYPRSHELL_BROWSER_LIB:-$HOME/.local/lib/hyprshell-browser}"
+NAME=hyprshell-browser
+
+die() { printf 'hyprshell-browser: %s\n' "$1" >&2; exit 1; }
+
+[ -d "$SHARE/app" ] || die "not installed — run browser/install.sh from the hyprshell repo"
+
+mode=$(cat "$SHARE/mode" 2>/dev/null || echo download)
+
+# ── system: an overlay of the system's own Firefox ──────────────────────────
+#
+# Every entry links back to the system install except the executable, which
+# is copied: Firefox finds the rest of itself relative to where its
+# executable really is, and a symlink would resolve straight back to
+# /usr/lib/firefox, where this browser's files are not.
+sync_system() {
+    base=$(cat "$SHARE/base")
+    [ -x "$base/firefox" ] || die "$base/firefox is gone — reinstall Firefox, or rerun install.sh --download"
+    mkdir -p "$LIB"
+    for e in "$base"/* "$base"/.[!.]*; do
+        [ -e "$e" ] || continue
+        n=${e##*/}
+        case "$n" in
+            firefox|firefox-bin)
+                # Written beside and renamed over: a running copy cannot be
+                # overwritten in place, but it can be replaced.
+                if ! cmp -s "$e" "$LIB/$n"; then
+                    cp -f "$e" "$LIB/.$n.new" && mv -f "$LIB/.$n.new" "$LIB/$n"
+                fi
+                ;;
+            defaults)
+                # A real directory, because this browser's autoconfig.js
+                # has to sit in defaults/pref beside Firefox's own.
+                [ -L "$LIB/defaults" ] && rm -f "$LIB/defaults"
+                mkdir -p "$LIB/defaults"
+                for d in "$e"/*; do
+                    [ -e "$d" ] || continue
+                    dn=${d##*/}
+                    if [ "$dn" = pref ]; then
+                        mkdir -p "$LIB/defaults/pref"
+                        for f in "$d"/*; do
+                            [ -e "$f" ] || continue
+                            ln -sfn "$f" "$LIB/defaults/pref/${f##*/}"
+                        done
+                    else
+                        ln -sfn "$d" "$LIB/defaults/$dn"
+                    fi
+                done
+                ;;
+            hyprshell|hyprshell.cfg) ;;   # never shadow our own
+            *)
+                [ "$(readlink "$LIB/$n" 2>/dev/null)" = "$e" ] || ln -sfn "$e" "$LIB/$n"
+                ;;
+        esac
+    done
+    # Links to anything an update took away.
+    for l in "$LIB"/* "$LIB"/defaults/pref/*; do
+        [ -L "$l" ] && [ ! -e "$l" ] && rm -f "$l"
+    done
+    return 0
+}
+
+# ── our layer, laid over whichever install ──────────────────────────────────
+#
+# Stamped, so an unchanged install is one comparison and not a copy.
+lay_layer() {
+    want=$(cat "$SHARE/app/.stamp" 2>/dev/null || echo none)
+    have=$(cat "$LIB/.hyprshell-stamp" 2>/dev/null || echo missing)
+    if [ "$want" = "$have" ] && [ -f "$LIB/hyprshell.cfg" ] \
+       && [ -f "$LIB/defaults/pref/autoconfig.js" ] && [ -d "$LIB/hyprshell" ]; then
+        return 0
+    fi
+    mkdir -p "$LIB/defaults/pref"
+    cp -f "$SHARE/app/defaults/pref/autoconfig.js" "$LIB/defaults/pref/autoconfig.js"
+    cp -f "$SHARE/app/hyprshell.cfg" "$LIB/hyprshell.cfg"
+    rm -rf "$LIB/.hyprshell.new"
+    cp -R "$SHARE/app/hyprshell" "$LIB/.hyprshell.new"
+    rm -rf "$LIB/hyprshell"
+    mv "$LIB/.hyprshell.new" "$LIB/hyprshell"
+    printf '%s\n' "$want" > "$LIB/.hyprshell-stamp"
+}
+
+[ "$mode" = system ] && sync_system
+[ -x "$LIB/firefox" ] || die "$LIB/firefox is missing — rerun browser/install.sh"
+lay_layer
+
+mkdir -p "$SHARE/profile"
+
+# --name is the Wayland app id and --class the X11 one; both, so Hyprland,
+# the dock and the desktop entry agree on what this window is. A second
+# launch with the same profile hands its URL to the running browser rather
+# than starting another.
+MOZ_APP_REMOTINGNAME=$NAME
+export MOZ_APP_REMOTINGNAME
+exec "$LIB/firefox" --name "$NAME" --class "$NAME" --profile "$SHARE/profile" "$@"
