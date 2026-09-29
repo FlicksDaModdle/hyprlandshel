@@ -1535,12 +1535,14 @@ Scope {
         ];
 
         case "Mouse": return [
-            { n: "Pointer speed", s: "libinput sensitivity, -1 slowest to +1 fastest",
+            { n: "Pointer speed", s: "For mice, -100 slowest to +100 fastest. The "
+                 + "touchpad has its own, under Touchpad",
               type: "slider", min: -100, max: 100, unit: "",
               value: Math.round(A.sensitivity * 100),
               set: v => { A.sensitivity = v / 100;
                           Services.Devices.applyInput(); } },
-            { n: "Acceleration", s: "Adaptive speeds up with fast movement; flat is 1:1",
+            { n: "Acceleration", s: "Adaptive speeds up with fast movement; flat is "
+                 + "1:1, the choice for games and precise work",
               type: "seg",
               options: [{ label: "Adaptive", value: "adaptive" }, { label: "Flat", value: "flat" }],
               value: A.accelProfile,
@@ -1570,6 +1572,30 @@ Scope {
         ];
 
         case "Touchpad": return [
+            // Its own speed and acceleration, apart from the mouse's. They
+            // start out following the mouse's values, so nothing changes
+            // until one of these is moved.
+            { n: "Pointer speed", s: "For the touchpad only, -100 slowest to +100 "
+                 + "fastest. The mouse has its own, under Mouse",
+              type: "slider", min: -100, max: 100, unit: "",
+              value: Math.round(A.padSensitivityNow * 100),
+              set: v => { A.padSensitivity = v / 100;
+                          Services.Devices.applyTouchpads(); } },
+            { n: "Acceleration", s: "Adaptive speeds up with fast movement; flat is 1:1",
+              type: "seg",
+              options: [{ label: "Adaptive", value: "adaptive" }, { label: "Flat", value: "flat" }],
+              value: A.padAccelNow,
+              set: v => { A.padAccelProfile = v;
+                          Services.Devices.applyTouchpads(); } },
+            { n: "Touchpads found",
+              s: Services.Devices.touchpads.length > 0
+                 ? "These take the two settings above; every other pointer takes the Mouse ones"
+                 : "None found by name, so every pointer is using the Mouse speed and "
+                   + "acceleration. " + (Services.Devices.pointers.length > 0
+                       ? "Pointers seen: " + Services.Devices.pointers.join(", ") : ""),
+              type: "info",
+              value: Services.Devices.touchpads.length > 0
+                     ? Services.Devices.touchpads.join(", ") : "none" },
             { n: "Tap to click", s: "A tap counts as a click without pressing down",
               type: "toggle", value: A.tapToClick,
               set: v => { A.tapToClick = v;

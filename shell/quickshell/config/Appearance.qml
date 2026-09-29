@@ -146,6 +146,11 @@ Singleton {
             property bool dragLock: false
             property bool padNaturalScroll: true
             property real padScrollFactor: 1
+            // The touchpad's own speed and acceleration. Unset (-2 and "")
+            // until changed, and until then they follow the mouse's, which
+            // is what one shared setting did before these existed.
+            property real padSensitivity: -2
+            property string padAccelProfile: ""
             property bool disableWhileTyping: true
             property bool clickfinger: false
             property string tapButtonMap: "lrm"
@@ -339,6 +344,10 @@ Singleton {
     property alias dragLock: prefs.dragLock
     property alias padNaturalScroll: prefs.padNaturalScroll
     property alias padScrollFactor: prefs.padScrollFactor
+    property alias padSensitivity: prefs.padSensitivity
+    property alias padAccelProfile: prefs.padAccelProfile
+    readonly property real padSensitivityNow: padSensitivity < -1 ? sensitivity : padSensitivity
+    readonly property string padAccelNow: padAccelProfile || accelProfile
     property alias disableWhileTyping: prefs.disableWhileTyping
     property alias clickfinger: prefs.clickfinger
     property alias tapButtonMap: prefs.tapButtonMap

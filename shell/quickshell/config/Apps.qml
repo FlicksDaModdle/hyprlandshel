@@ -113,6 +113,12 @@ Singleton {
 
     // Adds a running app the user right-clicked. `cls` is its Hyprland class,
     // which is also the only reliable thing to match it by later.
+    //
+    // What it runs comes from the app's desktop entry when there is one:
+    // the class is often not the name of anything that can be started
+    // (org.gnome.Nautilus, a Flatpak), and the entry's Exec line is also
+    // the full path that installers like browser/install.sh write, where a
+    // bare name would have to be found on a PATH that may not have it.
     function pinClass(cls, label, icon) {
         if (!cls) return;
         const key = "app:" + cls;
@@ -120,8 +126,11 @@ Singleton {
         const next = pinned.slice();
         // Before the trailing Settings tile, so that stays last as in the mockup.
         const at = next.findIndex(e => e.key === "appSettings");
+        const found = DesktopEntries.heuristicLookup(cls);
+        const exec = (found && found.command && found.command.length > 0)
+            ? found.command.slice() : [cls];
         const entry = { key: key, label: label || cls, icon: icon || "square",
-                        exec: [cls], match: new RegExp("^" + cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i") };
+                        exec: exec, match: new RegExp("^" + cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i") };
         if (at >= 0) next.splice(at, 0, entry); else next.push(entry);
         save(next);
     }
@@ -172,7 +181,37 @@ Singleton {
         // its quoting.
         if (key === "appWeb") return webFinder;
         const e = pinned.find(x => x.key === key);
-        return (e && e.exec && e.exec.length > 0) ? e.exec.join(" ") : "";
+        if (!e || !e.exec || e.exec.length === 0) return "";
+        return isBare(e.exec) ? finderFor(e.exec[0]) : e.exec.join(" ");
+    }
+
+    // What starting a pinned app actually runs. Its exec as saved, except a
+    // lone bare name — which is what "Pin to dock" saved before it looked
+    // for desktop entries, and still saves when there is none — goes
+    // through a finder like the terminal's and the file manager's. Run as
+    // it was, a bare name is looked up on Hyprland's PATH, which a session
+    // started from a display manager often lacks ~/.local/bin on: a
+    // pinned Hyprshell Browser focused its window while it had one and
+    // started nothing once it was closed.
+    function commandFor(app) {
+        const ex = (app && app.exec) || [];
+        return isBare(ex) ? ["sh", "-c", finderFor(ex[0]), "open-app"] : ex;
+    }
+
+    // One word, no path, no arguments: a name that has to be looked up.
+    function isBare(ex) {
+        return !!ex && ex.length === 1 && ex[0].indexOf("/") < 0 && !/\s/.test(ex[0]);
+    }
+
+    // The same search as a single shell string, for a keybind's exec_cmd.
+    function finderFor(name) {
+        const q = "'" + String(name).replace(/'/g, "'\\''") + "'";
+        return "n=" + q + "; "
+            + 'command -v "$n" >/dev/null 2>&1 && exec "$n" "$@"; '
+            + 'for d in "$HOME/.local/bin" /usr/local/bin /usr/bin '
+            + '"$HOME/.local/share/flatpak/exports/bin" /var/lib/flatpak/exports/bin; do '
+            + '[ -x "$d/$n" ] && exec "$d/$n" "$@"; done; '
+            + 'notify-send "$n" "Could not find $n to start it" 2>/dev/null; exit 127';
     }
 
     function resetPinned() { Config.Appearance.dockPinned = ""; }

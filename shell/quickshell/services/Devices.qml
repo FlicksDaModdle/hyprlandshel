@@ -1,6 +1,7 @@
 pragma Singleton
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import "../config" as Config
 import "." as Services
 
@@ -55,7 +56,66 @@ Singleton {
         };
     }
 
-    function applyInput() { Services.Compositor.setConfig(inputTree()); }
+    function applyInput() {
+        Services.Compositor.setConfig(inputTree());
+        applyTouchpads();
+        scanPointers.running = true;
+    }
+
+    // ── mouse and touchpad apart ──────────────────────────────────────────
+    //
+    // Hyprland has one pointer speed and one acceleration profile for
+    // everything, in input: — its touchpad section has neither. So those
+    // two input values are the mouse's, and each touchpad is given its own
+    // over the top with hl.device, which Hyprland lets set any pointer's
+    // separately. That needs the touchpads' names: `hyprctl devices`
+    // lists every pointer without saying which is which, and libinput
+    // names a touchpad for what it is ("…Touchpad", "…TouchPad",
+    // "Magic Trackpad"), so they are picked out by name. Settings →
+    // Touchpad shows what was found.
+    property var touchpads: []
+    property var pointers: []
+
+    function isTouchpad(name) {
+        return /touch-?pad|track-?pad|clickpad|glidepoint/i.test(name || "");
+    }
+
+    function touchpadTree(name) {
+        return { name: name,
+                 sensitivity: prefs.padSensitivityNow,
+                 accel_profile: prefs.padAccelNow };
+    }
+
+    function applyTouchpads() {
+        for (const name of root.touchpads) Services.Compositor.setDevice(touchpadTree(name));
+    }
+
+    Process {
+        id: scanPointers
+        command: ["hyprctl", "devices", "-j"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                let mice = [];
+                try { mice = (JSON.parse(text).mice || []).map(m => m.name).filter(n => !!n); }
+                catch (e) { return; }
+                root.pointers = mice;
+                const found = mice.filter(n => root.isTouchpad(n));
+                const fresh = found.some(n => root.touchpads.indexOf(n) < 0);
+                root.touchpads = found;
+                // Sent again only when one appears that was not there
+                // before; the rest already have theirs, and Hyprland keeps
+                // them by name.
+                if (fresh && root.applied) root.applyTouchpads();
+            }
+        }
+    }
+    // A touchpad that arrives later — a Bluetooth one — is picked up here.
+    Timer {
+        interval: 20000
+        running: root.applied
+        repeat: true
+        onTriggered: scanPointers.running = true
+    }
 
     // ── window frame ──────────────────────────────────────────────────────
     // Gaps, border thickness and the focused window's border colour. The

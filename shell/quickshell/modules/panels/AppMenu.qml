@@ -34,10 +34,10 @@ PanelSurface {
         const out = [];
         if (entry && entry.exec && entry.exec.length > 0) {
             out.push({ n: "Open new window", icon: "plus",
-                       run: () => Quickshell.execDetached(entry.exec) });
+                       run: () => Quickshell.execDetached(Config.Apps.commandFor(entry)) });
         } else if (cls !== "") {
             out.push({ n: "Open new window", icon: "plus",
-                       run: () => Quickshell.execDetached([cls]) });
+                       run: () => Quickshell.execDetached(Config.Apps.commandFor({ exec: [cls] })) });
         }
         // One place along, for when a drag is fiddly — on a touchpad, or a
         // dock of small tiles. Named for the way the dock runs, and left

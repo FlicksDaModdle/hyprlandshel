@@ -713,6 +713,11 @@ Singleton {
     }
     signal configReloaded()
 
+    // hl.device({ name=, ... }): settings for one input device, over the
+    // input ones. Hyprland keeps them by name, so they hold for a device
+    // that is unplugged and comes back.
+    function setDevice(spec) { evalLua("hl.device(" + luaTable(spec) + ")"); }
+
     // hl.monitor({ output=, mode=, position=, scale= }). Fields left out keep
     // whatever the monitor already has.
     function setMonitor(spec) { evalLua("hl.monitor(" + luaTable(spec) + ")"); }
