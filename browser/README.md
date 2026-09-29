@@ -105,3 +105,16 @@ node tools/gen-icons.js
 ```
 
 It reads the shell's `IconPaths.js` and writes `app/hyprshell/icons/`.
+
+## When a site works in Firefox but not here
+
+```sh
+./doctor.sh --ab            # Gemini in Firefox and here, side by side,
+                            # each on a fresh profile, this one without
+                            # its interface layer
+./doctor.sh --ab URL        # the same for another site
+./doctor.sh                 # what differs between the two: versions, the
+                            # install, prefs that affect pages, add-ons
+HYPRSHELL_BROWSER_PLAIN=1 hyprshell-browser   # your profile, no interface layer
+```
+
