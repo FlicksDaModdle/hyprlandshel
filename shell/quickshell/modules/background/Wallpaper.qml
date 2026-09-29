@@ -3,10 +3,15 @@ import QtQuick.Shapes
 import Quickshell
 import Quickshell.Wayland
 import "../../config" as Config
+import "../../services" as Services
 
 // The desktop ground. Either a real image (Settings → Appearance →
 // Wallpaper) or, by default, the mockup's tinted gradient: a diagonal base
 // wash with two radial pools over it, retuned per theme and per tint choice.
+//
+// A live wallpaper (Services.LiveWallpaper) is its own program's surface on
+// the layer above this one; this stays underneath it as what shows while it
+// loads and what comes back if it stops.
 //
 // Also the desktop's own hit surface — right-clicking bare desktop opens the
 // shell's context menu, and left-clicking dismisses whatever panel is open.
@@ -55,6 +60,10 @@ Variants {
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
         readonly property var tint: Config.Appearance.tintSpec
+        // Nothing here draws differently for it, but reading it is what
+        // starts the service — singletons are built on first use, and this
+        // is the one surface every session has.
+        readonly property bool live: Services.LiveWallpaper.enabled
         readonly property bool useImage: Config.Appearance.wallpaper !== ""
 
         // String tints promoted to color values, so the radial washes can

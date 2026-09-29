@@ -264,6 +264,13 @@ else
     add_pkg "$(pkg zenity zenity zenity zenity)"
 fi
 
+if command -v linux-wallpaperengine >/dev/null 2>&1; then
+    ok "linux-wallpaperengine" "live wallpapers"
+else
+    # AUR only, so it is named rather than added to the package list.
+    warn "linux-wallpaperengine" "no live wallpapers — AUR: linux-wallpaperengine-git (optional)"
+fi
+
 head1 "Session — checked as this shell sees it, not as root"
 # Both of these are invisible until the shell fails, and they fail loudly but
 # unhelpfully: a shell on X11 loses every layer-shell surface it has, and one

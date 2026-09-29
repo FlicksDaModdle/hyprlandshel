@@ -74,6 +74,10 @@ Singleton {
         "cycleTheme":          () => Config.Appearance.cycleTheme(),
         "setTheme":            arg => Config.Appearance.setTheme(arg),
         "setWallpaper":        arg => Config.Appearance.wallpaper = arg,
+        // A Wallpaper Engine wallpaper's folder or Workshop id; nothing
+        // turns it off.
+        "setLiveWallpaper":    arg => arg ? Services.LiveWallpaper.choose(arg)
+                                          : Services.LiveWallpaper.stop(),
         "setAccent":           arg => Config.Appearance.accentIndex = parseInt(arg, 10) || 0,
         "syncTheming":         () => Services.Theming.resync(),
 

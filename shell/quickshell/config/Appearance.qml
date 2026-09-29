@@ -73,6 +73,15 @@ Singleton {
             property int rounding: 100                // 0-160 %
             property string tint: "Warm"              // "Warm" | "Neutral" | "Cool"
             property string wallpaper: ""             // absolute path; empty = tinted gradient
+            // A Wallpaper Engine wallpaper, drawn over the ground by
+            // linux-wallpaperengine (services/LiveWallpaper.qml): its
+            // folder, or a Workshop id. Empty = none.
+            property string liveWallpaper: ""
+            property int liveFps: 30                  // 30 | 60 | 120
+            property bool liveSound: false
+            // On: the wallpaper gets the pointer, for parallax and cursor
+            // effects, and the desktop's own clicks stop reaching the shell.
+            property bool liveMouse: false
 
             // Bar
             property int barHeight: 40                // 32-56 px
@@ -299,6 +308,10 @@ Singleton {
     property alias roundingPct: prefs.rounding
     property alias tint: prefs.tint
     property alias wallpaper: prefs.wallpaper
+    property alias liveWallpaper: prefs.liveWallpaper
+    property alias liveFps: prefs.liveFps
+    property alias liveSound: prefs.liveSound
+    property alias liveMouse: prefs.liveMouse
     property alias barHeight: prefs.barHeight
     property alias workspaceScale: prefs.workspaceScale
     property alias animSpeed: prefs.animSpeed

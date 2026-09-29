@@ -144,6 +144,7 @@ so; with no `nmcli` the Wi-Fi readout goes quiet.
 | Idle → lock | `hypridle` |
 | Media keys | `playerctl` |
 | Wallpaper picker | `zenity` or `kdialog` |
+| Live wallpapers | `linux-wallpaperengine` (AUR `linux-wallpaperengine-git`), Wallpaper Engine on Steam |
 
 Text is Inter throughout; install an `inter-font` / `fonts-inter` package.
 Monospaced text — in the shell and in the terminal — is JetBrains Mono.
@@ -508,6 +509,36 @@ being part of it, and keeps its own settings in
 
 `Super + Shift + E` still opens whatever `fileManager` names in
 `hyprland.lua`, if you want a second opinion.
+
+## Live wallpapers
+
+Settings → Appearance → Live wallpaper puts a Wallpaper Engine wallpaper on
+the desktop, drawn by
+[linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine)
+(`yay -S linux-wallpaperengine-git`). The wallpapers are the ones you have
+subscribed to in Wallpaper Engine's Workshop on Steam, found in every Steam
+library you have; most scene wallpapers also need Wallpaper Engine itself
+installed, for its shared assets, though it never has to run. Videos do
+not. Pick one from the pictures and it is on every screen.
+
+It is linux-wallpaperengine's own surface, one layer above the shell's
+ground, which stays underneath — what you see while it loads, and what
+comes back if it stops. The shell starts it, restarts it if it dies after
+running a while, and leaves it stopped with what it said if it dies
+straight away (a wallpaper it cannot draw, assets it cannot find); that
+message is on the Wallpaper row.
+
+- **Follow the mouse** gives it the pointer, for parallax and cursor
+  effects. The desktop's clicks then go to the wallpaper instead of the
+  shell, so right-clicking the desktop no longer opens its menu. Off, its
+  surface takes no input and Hyprland passes clicks through to the shell.
+- **Frame rate** is 30 by default. It pauses on its own while something is
+  fullscreen.
+- **Sound** is off by default.
+
+From a script: `qs -c hyprshell ipc call shell setLiveWallpaper <folder or
+Workshop id>`, and an empty argument turns it off. Wallpaper properties
+(`--set-property`) are not exposed yet.
 
 ## Theming KDE applications
 

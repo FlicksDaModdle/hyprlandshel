@@ -13,6 +13,7 @@ import "../icons"
 //   meter   labelled bar           action  accent button
 //   header  a group caption, no control — used to break a pane into
 //           sections, one per display or per device
+//   gallery pictures to pick from, full width under the labels
 Item {
     id: root
 
@@ -25,10 +26,15 @@ Item {
     property Item overlay: null
 
     readonly property bool isHeader: root.spec.type === "header"
+    // The control goes under the labels, across the whole row.
+    readonly property bool isWide: root.spec.type === "gallery"
+    readonly property bool hasLabels: !!(root.spec.n || root.spec.s)
 
     implicitWidth: parent ? parent.width : 560
     implicitHeight: root.isHeader
         ? labels.implicitHeight + 34
+        : root.isWide
+        ? (root.hasLabels ? labels.implicitHeight + 10 : 0) + control.implicitHeight + 26
         : Math.max(labels.implicitHeight, control.implicitHeight) + 26
 
     Rectangle {
@@ -43,10 +49,13 @@ Item {
 
     Column {
         id: labels
+        visible: !root.isWide || root.hasLabels
         anchors.left: parent.left
-        anchors.right: root.isHeader ? parent.right : control.left
-        anchors.rightMargin: root.isHeader ? 0 : 24
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.right: root.isHeader || root.isWide ? parent.right : control.left
+        anchors.rightMargin: root.isHeader || root.isWide ? 0 : 24
+        anchors.top: root.isWide ? parent.top : undefined
+        anchors.topMargin: 13
+        anchors.verticalCenter: root.isWide ? undefined : parent.verticalCenter
         anchors.verticalCenterOffset: root.isHeader ? 6 : 0
         spacing: 3
 
@@ -74,10 +83,12 @@ Item {
         id: control
         visible: !root.isHeader
         anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: root.isWide ? undefined : parent.verticalCenter
+        anchors.bottom: root.isWide ? parent.bottom : undefined
+        anchors.bottomMargin: 13
         implicitWidth: root.isHeader ? 0 : loader.implicitWidth
         implicitHeight: root.isHeader ? 0 : loader.implicitHeight
-        width: implicitWidth
+        width: root.isWide ? root.width : implicitWidth
         height: implicitHeight
 
         Loader {
@@ -95,6 +106,7 @@ Item {
                 case "text":   return textComponent;
                 case "keybind": return keybindComponent;
                 case "monitors": return monitorsComponent;
+                case "gallery": return galleryComponent;
                 default:       return infoComponent;
                 }
             }
@@ -866,6 +878,16 @@ Item {
             selected: root.spec.value || ""
             onPicked: name => { if (root.spec.pick) root.spec.pick(name); }
             onMoved: (name, x, y) => { if (root.spec.set) root.spec.set(name, x, y); }
+        }
+    }
+
+    Component {
+        id: galleryComponent
+        WallpaperGallery {
+            width: control.width
+            items: root.spec.items || []
+            value: root.spec.value || ""
+            onPicked: dir => { if (root.spec.pick) root.spec.pick(dir); }
         }
     }
 

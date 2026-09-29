@@ -49,6 +49,12 @@ Scope {
     // is NetworkManager's to keep, not this file's.
     property string wifiIdentity: ""
 
+    // The live wallpaper list is whatever is in your Steam libraries now,
+    // so it is looked for again each time the pane that shows it opens —
+    // after subscribing to one in Steam, say.
+    readonly property bool showingAppearance: Config.UiState.settingsOpen && root.pane === "Appearance"
+    onShowingAppearanceChanged: if (showingAppearance) Services.LiveWallpaper.scan()
+
     readonly property var paneMeta: ({
         "Display":       { icon: "monitor",   group: "System", note: "Every connected display, with its own resolution, refresh rate, scale and colour." },
         "Keyboard":      { icon: "keyboard",  group: "System", note: "Layout, key repeat and the modifier behaviour libinput exposes." },
@@ -357,7 +363,7 @@ Scope {
             { n: "Wallpaper image", s: A.wallpaper !== "" ? A.wallpaper : "Using the tinted gradient",
               type: "action", label: A.wallpaper !== "" ? "Clear" : "Choose…",
               set: () => { if (A.wallpaper !== "") A.wallpaper = ""; else root.pickWallpaper(); } }
-        ];
+        ].concat(root.liveWallpaperRows());
 
         case "Bar": return [
             { n: "Workspace switcher size",
@@ -1810,6 +1816,69 @@ Scope {
     // No portal file chooser is available to a shell process, so the
     // wallpaper picker hands off to whatever image picker is installed and
     // watches ~/Pictures for the chosen file instead of guessing.
+    // Settings → Appearance → Live wallpaper.
+    function liveWallpaperRows() {
+        const A = Config.Appearance, L = Services.LiveWallpaper;
+        const rows = [{ type: "header", n: "Live wallpaper",
+            s: "Wallpaper Engine's wallpapers, drawn by linux-wallpaperengine "
+               + "over the image or tint above" }];
+
+        if (!L.installed) {
+            rows.push({ n: "linux-wallpaperengine",
+                s: L.scanning ? "Looking…"
+                   : "Not installed. On Arch or CachyOS it is "
+                     + "yay -S linux-wallpaperengine-git. The wallpapers "
+                     + "themselves come from Wallpaper Engine on Steam.",
+                type: "action", label: "Look again", set: () => L.scan() });
+            return rows;
+        }
+
+        rows.push({ n: "Wallpaper",
+            s: !L.enabled ? "None — the image or tint above"
+               : L.error !== "" ? L.currentTitle + " stopped: " + L.error
+               : L.currentTitle + (L.running ? "" : " · starting"),
+            type: "action",
+            label: L.enabled ? "Turn off" : "Look again",
+            set: () => { if (L.enabled) L.stop(); else L.scan(); } });
+
+        if (L.wallpapers.length === 0) {
+            rows.push({ n: "Nothing to show yet",
+                s: L.scanning ? "Looking through your Steam libraries…"
+                   : "Subscribe to wallpapers in Wallpaper Engine's Workshop "
+                     + "on Steam and they appear here. Steam downloads them "
+                     + "whether or not Wallpaper Engine is running.",
+                type: "info", value: "" });
+            return rows;
+        }
+
+        if (!L.hasAssets)
+            rows.push({ n: "Wallpaper Engine is not installed",
+                s: "Most scene wallpapers are drawn with its shared assets and "
+                   + "will not start without them. Videos do not need them. "
+                   + "Install Wallpaper Engine from Steam — it never has to run.",
+                type: "info", value: "" });
+
+        rows.push({ type: "gallery", n: "", s: "",
+            items: L.wallpapers, value: L.enabled ? (L.current ? L.current.dir : A.liveWallpaper) : "",
+            pick: dir => L.choose(dir) });
+
+        rows.push({ n: "Frame rate",
+            s: "Higher is smoother and costs more power; it pauses on its own "
+               + "while something is fullscreen",
+            type: "seg",
+            options: [{ label: "30", value: "30" }, { label: "60", value: "60" },
+                      { label: "120", value: "120" }],
+            value: String(A.liveFps), set: v => A.liveFps = parseInt(v) });
+        rows.push({ n: "Sound", s: "Play the wallpaper's own audio, if it has any",
+            type: "toggle", value: A.liveSound, set: v => A.liveSound = v });
+        rows.push({ n: "Follow the mouse",
+            s: "Parallax and cursor effects. The wallpaper then takes the "
+               + "desktop's clicks, so right-clicking the desktop no longer "
+               + "opens its menu, and clicking it no longer closes panels.",
+            type: "toggle", value: A.liveMouse, set: v => A.liveMouse = v });
+        return rows;
+    }
+
     function pickWallpaper() {
         Quickshell.execDetached(["sh", "-c",
             "f=$(zenity --file-selection --title='Choose wallpaper' 2>/dev/null"
