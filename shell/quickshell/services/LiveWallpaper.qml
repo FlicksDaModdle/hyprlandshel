@@ -248,7 +248,6 @@ Singleton {
         //
         // comm is the first 15 characters of the program name.
         //
-        //
         // The copy (see shimFor) is made here too, from $1-$3, so it is
         // always current with the original when the wallpaper starts. Hard
         // links, not symlinks: linux-wallpaperengine resolves every file to
@@ -256,10 +255,20 @@ Singleton {
         // ("Cannot find requested file in any of the mountpoints"). They
         // cost no space; across drives, where they cannot be made, it is a
         // plain copy. project.json is unlinked before it is written, so the
-        // original is never written through its link. $3 is
-        // the text to add, spliced in after the first opening brace, where
-        // any JSON object can take another key; awk rather than sed, since
-        // it is taken as it is rather than as a pattern.
+        // original is never written through its link. $3 is the text to
+        // add, spliced in after the first opening brace, where any JSON
+        // object can take another key; awk rather than sed, since it is
+        // taken as it is rather than as a pattern.
+        //
+        // libcef.so is preloaded when it can be found beside the binary.
+        // Chromium's close() wrapper in it finds libc's with
+        // dlsym(RTLD_NEXT), which only searches libraries loaded after
+        // libcef; linux-wallpaperengine loads libc first, so the lookup
+        // fails and Chromium stops the program on purpose — "close symbol
+        // missing", then a trace trap — for web wallpapers. Loading libcef
+        // first is the workaround its issue gives (Almamu/
+        // linux-wallpaperengine#628); the fix upstream is not merged yet.
+        // It changes nothing else: libcef is loaded either way.
         command: ["sh", "-c", `
             src=$1 dst=$2 add=$3; shift 3
             if [ -n "$src" ]; then
@@ -270,6 +279,13 @@ Singleton {
             fi
             pkill -x linux-wallpaper; i=0
             while pgrep -x linux-wallpaper >/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done
+            real=$(readlink -f "$(command -v ${root.binary})")
+            for cef in "\${real%/*}/libcef.so" /opt/linux-wallpaperengine/libcef.so \
+                       /usr/lib/linux-wallpaperengine/libcef.so; do
+                [ -f "$cef" ] || continue
+                export LD_PRELOAD="$cef\${LD_PRELOAD:+:$LD_PRELOAD}"
+                break
+            done
             exec ${root.binary} "$@"`, "sh"].concat(root.shim).concat(root.args)
         stderr: SplitParser {
             onRead: line => {
@@ -318,6 +334,9 @@ Singleton {
         // The ones with a plain-language reason.
         if (/orthogonal projection/.test(t))
             return "it is a 3D scene, and linux-wallpaperengine draws 2D scenes only";
+        if (/close symbol missing/.test(t))
+            return "its web engine crashed on start (linux-wallpaperengine #628), "
+                 + "and libcef.so was not found beside it to work around that";
         if (/valid assets folder/.test(t))
             return "Wallpaper Engine's assets were not found — install Wallpaper Engine from Steam";
         return t.length > 160 ? t.slice(0, 157) + "…" : t;

@@ -549,6 +549,14 @@ samples leave their type out of `project.json`, which linux-wallpaperengine
 requires, so those are started from a copy in `~/.cache/hyprshell/live`
 that has it — hard links to the original files, never the originals.
 
+Web wallpapers run in Chromium inside linux-wallpaperengine, which crashes
+on start with "close symbol missing" unless its `libcef.so` is loaded
+before libc ([#628](https://github.com/Almamu/linux-wallpaperengine/issues/628),
+not fixed upstream yet). The shell preloads the `libcef.so` it finds beside
+the program — `/opt/linux-wallpaperengine` for the AUR package. Web
+wallpapers have other open bugs there, so one that starts but stays black
+is linux-wallpaperengine's to fix, not this shell's.
+
 From a script: `qs -c hyprshell ipc call shell setLiveWallpaper <folder or
 Workshop id>`, and an empty argument turns it off. Wallpaper properties
 (`--set-property`) are not exposed yet.
