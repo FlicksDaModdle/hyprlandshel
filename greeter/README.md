@@ -1,0 +1,80 @@
+# Hyprshell greeter
+
+The login screen, in the shell's own design: the lock screen's big clock and
+card over the desktop's tint, in your theme — accent, light or dark, fonts,
+corner rounding. Run by [greetd](https://sr.ht/~kennylevinsen/greetd/), the
+same way Noctalia's greeter is.
+
+```sh
+sudo ./install.sh              # install it and point greetd at it
+sudo ./install.sh --enable     # …and make greetd the display manager
+sudo ./install.sh --theme      # after changing your theme, give it the new one
+sudo ./install.sh --uninstall  # put greetd's previous config back
+```
+
+Needs `greetd`, `quickshell` and Hyprland — all of which a Hyprshell setup
+already has, except perhaps greetd (`pacman -S greetd`). If you came from
+Noctalia's greeter, greetd is already installed and enabled, and installing
+this simply replaces it; its config is kept as
+`/etc/greetd/config.toml.before-hyprshell`, which `--uninstall` puts back.
+
+To look at it without logging out: `qs -p greeter/shell.qml`. It takes the
+screen; Escape on an empty field leaves. Nothing logs in from a preview.
+
+## Using it
+
+- **Type your password** — there is no field to click first — and Enter.
+- **Someone else:** the arrows beside the name, or Up and Down.
+- **Another session:** click the session under the card, or Tab.
+- **The eye** shows what you typed, for when Caps Lock is on.
+- **Sleep, restart, shut down:** bottom right.
+
+It remembers who logged in last and into what. A PAM step after the password
+— a one-time code, a new password when yours has expired — is asked in the
+same field.
+
+## How it is put together
+
+```
+greetd  →  Hyprland, /etc/hyprshell-greeter/hyprland.lua
+        →  quickshell -p /usr/share/hyprshell-greeter/shell.qml
+```
+
+```
+shell.qml          one window per screen; the card on the first
+GreeterState.qml   users, sessions, the choice remembered, and greetd
+Surface.qml        what a screen shows
+GreeterWindow.qml  the window, as a layer holding the keyboard (Wayland)
+GreeterWindowX11.qml  the same without a layer shell, for tests
+hyprland.lua       the compositor greetd runs it in — no keybinds
+install.sh
+shell → ../shell/quickshell   the theme and components it is drawn with
+```
+
+The greeter runs as greetd's own unprivileged user. It reads `/etc/passwd`
+for the people who can log in (uid 1000 and up, with a login shell),
+`/usr/share/wayland-sessions` for what they can log into, and
+`/var/lib/AccountsService/icons` for their pictures; `install.sh` puts your
+`~/.face` there if nothing is. Your password goes to greetd, which checks it
+with PAM and starts the session as you.
+
+It is drawn with the shell's own `config/` and `modules/common` and
+`modules/icons`, not a copy of them, which is why it looks the same.
+Quickshell only loads files inside the folder a config lives in, so the repo
+reaches them through the `shell` link and `install.sh` copies them in.
+
+`/etc/hyprshell-greeter/hyprland.lua` is written with the keyboard layout
+you are using when you install, so your password is typed on the same one.
+Edit it there to change it.
+
+## If the login screen does not come up
+
+Switch to a text console with Ctrl+Alt+F2, log in, and either run
+`sudo ./install.sh --uninstall`, or put the old config back by hand:
+
+```sh
+sudo cp /etc/greetd/config.toml.before-hyprshell /etc/greetd/config.toml
+sudo systemctl restart greetd
+```
+
+`journalctl -u greetd -b` says what went wrong.

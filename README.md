@@ -1,11 +1,14 @@
 # Hyprshell
 
 A Hyprland desktop built from a single design: a Quickshell shell, a matching
-terminal, and a file manager.
+terminal, a file manager, a browser and a login screen.
 
     shell/    the shell — bar, dock, launcher, panels, settings, lock screen,
               plus the Hyprland and kitty configuration it assumes
+    term/     the terminal
     files/    the file manager, a standalone Qt 6 application
+    browser/  Hyprshell Browser — Firefox's engine with the design's interface
+    greeter/  the login screen, run by greetd, in your theme
 
 Each has its own README and its own `install.sh`. The shell works without the
 file manager; the file manager works without the shell, and picks up the

@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Widgets
 import Quickshell.Services.Pam
 import Quickshell.Services.UPower
 import "../../config" as Config
@@ -147,7 +148,7 @@ WlSessionLock {
                     id: authCard
                     anchors.horizontalCenter: parent.horizontalCenter
                     showSeam: false
-                    radius: 18
+                    radius: Math.round(18 * Config.Appearance.rf)
                     color: Config.Appearance.panel
 
                     width: 360
@@ -192,8 +193,10 @@ WlSessionLock {
                             font.weight: Font.DemiBold
                         }
 
-                        // Password field
-                        Rectangle {
+                        // Password field. A ClippingRectangle, so the
+                        // accent button at its end is cut to the field's
+                        // rounded corners — plain clipping is square.
+                        ClippingRectangle {
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: 300
                             height: 44
@@ -201,7 +204,6 @@ WlSessionLock {
                             color: Config.Appearance.hover
                             border.width: 1
                             border.color: surface.failed ? Config.Appearance.accent : Config.Appearance.edge
-                            clip: true
                             Behavior on border.color { ColorAnimation { duration: Config.Appearance.anim(160) } }
 
                             StyledText {
