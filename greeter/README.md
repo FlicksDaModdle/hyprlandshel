@@ -1,7 +1,9 @@
 # Hyprshell greeter
 
-The login screen, in the shell's own design: the lock screen's big clock and
-card over the desktop's tint, in your theme — accent, light or dark, fonts,
+The login screen, in the shell's own design — drawn by the same file as the
+lock screen (`shell/quickshell/modules/common/LoginView.qml`), so the two are
+one design: the big clock, the card with your picture and name, the field
+with its text cursor and show-password eye, over the desktop's tint, in your theme — accent, light or dark, fonts,
 corner rounding. Run by [greetd](https://sr.ht/~kennylevinsen/greetd/), the
 same way Noctalia's greeter is.
 
@@ -43,7 +45,7 @@ greetd  →  Hyprland, /etc/hyprshell-greeter/hyprland.lua
 ```
 shell.qml          one window per screen; the card on the first
 GreeterState.qml   users, sessions, the choice remembered, and greetd
-Surface.qml        what a screen shows
+Surface.qml        a screen: the shell's LoginView, fed the greeter's state
 GreeterWindow.qml  the window, as a layer holding the keyboard (Wayland)
 GreeterWindowX11.qml  the same without a layer shell, for tests
 hyprland.lua       the compositor greetd runs it in — no keybinds
