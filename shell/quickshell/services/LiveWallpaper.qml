@@ -161,7 +161,7 @@ Singleton {
     property bool scanned: false
 
     // The copy a wallpaper is started from when its project.json needs
-    // something added: a folder of links to the original's files, and a
+    // something added: the original's files, hard-linked, and a
     // project.json that is the original with the type (and the title)
     // put in. The Steam folder itself is not touched — Steam would put it
     // back on the next update, and it is not the shell's to change.
@@ -218,7 +218,13 @@ Singleton {
         //
         //
         // The copy (see shimFor) is made here too, from $1-$3, so it is
-        // always current with the original when the wallpaper starts. $3 is
+        // always current with the original when the wallpaper starts. Hard
+        // links, not symlinks: linux-wallpaperengine resolves every file to
+        // its real path and refuses one outside the wallpaper's folder
+        // ("Cannot find requested file in any of the mountpoints"). They
+        // cost no space; across drives, where they cannot be made, it is a
+        // plain copy. project.json is unlinked before it is written, so the
+        // original is never written through its link. $3 is
         // the text to add, spliced in after the first opening brace, where
         // any JSON object can take another key; awk rather than sed, since
         // it is taken as it is rather than as a pattern.
@@ -226,9 +232,7 @@ Singleton {
             src=$1 dst=$2 add=$3; shift 3
             if [ -n "$src" ]; then
                 rm -rf "$dst" && mkdir -p "$dst" || exit 1
-                for f in "$src"/* "$src"/.[!.]*; do
-                    [ -e "$f" ] && ln -s "$f" "$dst/"
-                done
+                cp -al "$src/." "$dst/" 2>/dev/null || cp -a "$src/." "$dst/" || exit 1
                 rm -f "$dst/project.json"
                 add="$add" awk '!d && (i = index($0, "{")) { $0 = substr($0, 1, i) ENVIRON["add"] substr($0, i + 1); d = 1 } { print }' "$src/project.json" > "$dst/project.json" || exit 1
             fi
