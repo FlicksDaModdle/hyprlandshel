@@ -20,7 +20,7 @@
 #
 # If anything goes wrong at the login screen, switch to a text console with
 # Ctrl+Alt+F2, log in there, and run `sudo ./install.sh --uninstall` — or
-# copy /etc/greetd/config.toml.before-hyprshell back over config.toml.
+# copy the .before-hyprshell file in /etc/greetd back over the one it was.
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -48,14 +48,19 @@ ETC="$ROOT/etc/hyprshell-greeter"
 STATE="$ROOT/var/lib/hyprshell-greeter"
 CACHE="$ROOT/var/cache/hyprshell-greeter"
 ICONS="$ROOT/var/lib/AccountsService/icons"
-# The config greetd reads: /etc/greetd/config.toml, unless the command its
-# service starts it with names another (--config / -c) — as a greeter's own
-# setup may have made it. Writing the default one then changes nothing.
+# The config greetd reads — in greetd's own order (greetd/src/config/mod.rs):
+# the file its service names with --config / -c, if any; otherwise
+# /etc/greetd/greetd.conf when it exists, and only then config.toml.
+# Noctalia's greeter setup writes greetd.conf, which is why writing
+# config.toml alone changed nothing.
 greetd_config() {
-    [ -n "$ROOT" ] && { printf '%s\n' "$ROOT/etc/greetd/config.toml"; return; }
-    cmd=$(systemctl show -p ExecStart --value greetd.service 2>/dev/null | sed -n 's/.*argv\[\]=\([^;]*\).*/\1/p' | head -n1)
-    c=$(printf '%s\n' "$cmd" | sed -n 's/.*\(--config\|-c\)[= ]\([^ ]*\).*/\2/p' | head -n1)
-    printf '%s\n' "${c:-/etc/greetd/config.toml}"
+    if [ -z "$ROOT" ]; then
+        cmd=$(systemctl show -p ExecStart --value greetd.service 2>/dev/null | sed -n 's/.*argv\[\]=\([^;]*\).*/\1/p' | head -n1)
+        c=$(printf '%s\n' "$cmd" | sed -n 's/.*\(--config\|-c\)[= ]\([^ ]*\).*/\2/p' | head -n1)
+        [ -n "$c" ] && { printf '%s\n' "$c"; return; }
+    fi
+    if [ -f "$ROOT/etc/greetd/greetd.conf" ]; then printf '%s\n' "$ROOT/etc/greetd/greetd.conf"
+    else printf '%s\n' "$ROOT/etc/greetd/config.toml"; fi
 }
 CONF=$(greetd_config)
 GREETD=$(dirname "$CONF")
@@ -100,8 +105,10 @@ if [ "$status" = 1 ]; then
     who="${SUDO_USER:-$(id -un)}"
     home=$(getent passwd "$who" | cut -d: -f6)
     if [ -n "$home" ]; then
+        # Not an editor's swap and backup files, which only remember text.
         found=$(grep -rl -i noctalia "$home/.config/hypr" "$home/.config/autostart" \
-                    "$home/.config/systemd/user" 2>/dev/null || true)
+                    "$home/.config/systemd/user" 2>/dev/null \
+                | grep -Ev '(\.kate-swp|\.sw[a-p]|~|\.bak|\.orig)$|/\.#' || true)
         [ -n "$found" ] && note "your session still starts Noctalia from: $(printf '%s' "$found" | tr '\n' ' ')"
         on=$(systemctl --machine="$who@" --user list-unit-files --state=enabled 2>/dev/null | grep -i noctalia | awk '{print $1}' | tr '\n' ' ')
         [ -n "$on" ] && note "enabled user services: $on— systemctl --user disable --now $on"
@@ -146,10 +153,14 @@ copy_theme() {
 
 # ── uninstall ─────────────────────────────────────────────────────────────
 if [ "$uninstall" = 1 ]; then
-    if [ -f "$BACKUP" ]; then
-        mv -f "$BACKUP" "$CONF"
-        did "greetd's previous config put back"
-    elif [ -f "$CONF" ] && grep -q hyprshell-greeter "$CONF"; then
+    # Every config an install replaced — greetd.conf, and config.toml from
+    # an install made before this one knew greetd.conf came first.
+    for b in "$GREETD"/*.before-hyprshell; do
+        [ -f "$b" ] || continue
+        mv -f "$b" "${b%.before-hyprshell}"
+        did "greetd's previous $(basename "${b%.before-hyprshell}") put back"
+    done
+    if [ -f "$CONF" ] && grep -q hyprshell-greeter "$CONF"; then
         note "no backup of greetd's previous config — $CONF still points at the greeter; edit it by hand"
     fi
     rm -rf "$SHARE" "$ETC" "$STATE" "$CACHE"
@@ -248,7 +259,7 @@ fi
 vt=$( [ -f "$CONF" ] && sed -n 's/^[[:space:]]*vt[[:space:]]*=[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$CONF" | head -n1 || true)
 cat > "$CONF" <<EOF
 # Written by hyprshell's greeter/install.sh. The config from before is in
-# config.toml.before-hyprshell; \`install.sh --uninstall\` puts it back.
+# $(basename "$BACKUP"); \`install.sh --uninstall\` puts it back.
 
 [terminal]
 vt = ${vt:-1}

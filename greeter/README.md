@@ -23,8 +23,13 @@ Ctrl+Alt+F2, `sudo systemctl restart greetd`, which ends every session).
 Needs `greetd`, `quickshell` and Hyprland — all of which a Hyprshell setup
 already has, except perhaps greetd (`pacman -S greetd`). If you came from
 Noctalia's greeter, greetd is already installed and enabled, and installing
-this simply replaces it; its config is kept as
-`/etc/greetd/config.toml.before-hyprshell`, which `--uninstall` puts back.
+this simply replaces it; its config is kept beside it with
+`.before-hyprshell` added, which `--uninstall` puts back.
+
+Which file that is: greetd reads `/etc/greetd/greetd.conf` when it exists —
+Noctalia's setup writes that one — and `config.toml` only when it does not
+(or whatever its service passes with `--config`). The installer writes
+whichever greetd will actually read.
 
 To look at it without logging out: `qs -p greeter/shell.qml`. It takes the
 screen; Escape on an empty field leaves. Nothing logs in from a preview.
@@ -81,7 +86,7 @@ Switch to a text console with Ctrl+Alt+F2, log in, and either run
 `sudo ./install.sh --uninstall`, or put the old config back by hand:
 
 ```sh
-sudo cp /etc/greetd/config.toml.before-hyprshell /etc/greetd/config.toml
+sudo cp /etc/greetd/greetd.conf.before-hyprshell /etc/greetd/greetd.conf   # or config.toml
 sudo systemctl restart greetd
 ```
 
