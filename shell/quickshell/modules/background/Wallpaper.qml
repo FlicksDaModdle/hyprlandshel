@@ -5,8 +5,8 @@ import Quickshell.Wayland
 import "../../config" as Config
 import "../../services" as Services
 
-// The desktop ground. Either a real image (Settings → Appearance →
-// Wallpaper) or, by default, the mockup's tinted gradient: a diagonal base
+// The desktop ground. Either a real image (Settings → Wallpaper →
+// Image) or, by default, the mockup's tinted gradient: a diagonal base
 // wash with two radial pools over it, retuned per theme and per tint choice.
 //
 // A live wallpaper (Services.LiveWallpaper) is its own program's surface on

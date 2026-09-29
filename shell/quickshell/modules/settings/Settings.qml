@@ -52,8 +52,8 @@ Scope {
     // The live wallpaper list is whatever is in your Steam libraries now,
     // so it is looked for again each time the pane that shows it opens —
     // after subscribing to one in Steam, say.
-    readonly property bool showingAppearance: Config.UiState.settingsOpen && root.pane === "Appearance"
-    onShowingAppearanceChanged: if (showingAppearance) Services.LiveWallpaper.scan()
+    readonly property bool showingWallpaper: Config.UiState.settingsOpen && root.pane === "Wallpaper"
+    onShowingWallpaperChanged: if (showingWallpaper) Services.LiveWallpaper.scan()
 
     readonly property var paneMeta: ({
         "Display":       { icon: "monitor",   group: "System", note: "Every connected display, with its own resolution, refresh rate, scale and colour." },
@@ -66,7 +66,10 @@ Scope {
         "Power":         { icon: "battery",   group: "System", note: "Power profile, idle timing and battery care." },
         "Hyprland":      { icon: "grid",      group: "System", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
         "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
-        "Appearance":    { icon: "palette",   group: "Shell",  note: "Theme, accent, translucency and geometry. Every change repaints the shell live." },
+        "Appearance":    { icon: "palette",   group: "Shell",  note: "Theme, accent, translucency, corners and motion. Every change repaints the shell live." },
+        "Wallpaper":     { icon: "image",     group: "Shell",  note: "The desktop's ground — a tint, an image, or a live wallpaper." },
+        "Icons":         { icon: "package",   group: "Shell",  note: "Every place an app icon appears, sized in one list." },
+        "App theming":   { icon: "sunMoon",   group: "Shell",  note: "Handing this theme to applications that are not part of the shell." },
         "Bar":           { icon: "layout",    group: "Shell",  note: "The top bar: height, clock, tray and the task list." },
         "Dock":          { icon: "dock",      group: "Shell",  note: "The dock: position, size, labels and auto-hide." },
         "Alt+Tab":       { icon: "layoutDashboard", group: "Shell", note: "The window switcher: its shortcut, which windows it offers, and how it looks." },
@@ -82,8 +85,9 @@ Scope {
         { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
                                    "Network", "Bluetooth", "Sound", "Power",
                                    "Hyprland", "About"] },
-        { label: "Shell",  items: ["Appearance", "Bar", "Dock", "Alt+Tab", "Launcher",
-                                   "Notifications", "Fonts", "Keybinds"] }
+        { label: "Shell",  items: ["Appearance", "Wallpaper", "Icons", "Fonts",
+                                   "App theming", "Bar", "Dock", "Alt+Tab", "Launcher",
+                                   "Notifications", "Keybinds"] }
     ]
 
 
@@ -248,34 +252,34 @@ Scope {
         const A = Config.Appearance;
         switch (pane) {
 
+        // The shell's own look: colour, surfaces, shape and motion.
         case "Appearance": return [
-            { type: "header", n: "Other applications",
-              s: "Colours the shell can hand to things that are not part of "
-                 + "it" },
-            { n: "Theme KDE applications",
-              s: "Writes this theme's palette into kdeglobals, so Dolphin, "
-                 + "Ark and Okular use the same charcoal and the same accent "
-                 + "on selection. Colours only — it cannot change their "
-                 + "layout, icons or rounded corners. Your other kdeglobals "
-                 + "settings are kept.",
-              type: "toggle", value: A.themeQtApps,
-              set: v => { A.themeQtApps = v; if (v) Services.Theming.applyKde(); } },
-
-            { n: "Kvantum widget theme",
-              s: "Generates a Kvantum theme from this one and selects it. "
-                 + "Kvantum draws Qt widgets from an SVG, so this changes how "
-                 + "KDE applications are drawn — flat surfaces, hairline "
-                 + "borders, the shell's radii and accent — not only their "
-                 + "colours. Needs the kvantum package; applications pick it "
-                 + "up when they next start.",
-              type: "toggle", value: A.kvantumTheme,
-              set: v => { A.kvantumTheme = v;
-                          if (v) Services.Kvantum.apply();
-                          // Either way: turning it on selects Kvantum as the
-                          // widget style, turning it off deselects it again.
-                          Services.Theming.applyKde(); } },
-            { n: "Theme written to", s: "Regenerated whenever the theme changes",
-              type: "info", value: "Kvantum/Hyprshell/" },
+            { type: "header", n: "Colour",
+              s: "Light or dark, and the one colour everything picks up" },
+            { n: "Theme", s: "Light, dark, or follow the clock after sunset", type: "seg",
+              options: [{ label: "Light", value: "light" }, { label: "Dark", value: "dark" }, { label: "Auto", value: "auto" }],
+              value: A.theme, set: v => A.theme = v },
+            { n: "Accent", s: A.accentIndex === -1
+                ? "Custom · " + String(A.customAccent).toUpperCase()
+                : "Pick a preset, or cycle the custom swatch", type: "swatch" },
+            { type: "header", n: "Surfaces",
+              s: "The bar, the dock, panels and menus" },
+            { n: "Translucency", s: "How much of the desktop shows through the bar, dock and panels",
+              type: "slider", min: 0, max: 100, unit: "%",
+              value: A.translucency, set: v => A.translucency = v },
+            { n: "Frosted menus", s: "Blur what's behind a dropdown or the colour "
+                 + "picker. They sit inside a window rather than on the desktop, so "
+                 + "what gets blurred is the rows underneath them.",
+              type: "toggle", value: A.menuBlur, set: v => A.menuBlur = v },
+            { n: "Menu translucency", s: "How much shows through — with frosting on, "
+                 + "this is how strong the frost reads",
+              type: "slider", min: 0, max: 60, unit: "%",
+              value: A.menuTranslucency, set: v => A.menuTranslucency = v },
+            { type: "header", n: "Shape",
+              s: "How round everything is" },
+            { n: "Corner rounding", s: "Scales every radius — the shell, its apps, the browser and "
+                 + "the window corners. 0% is fully square", type: "slider",
+              min: 0, max: 160, unit: "%", value: A.roundingPct, set: v => A.roundingPct = v },
 
             { type: "header", n: "Motion",
               s: "One control over every animation the shell draws" },
@@ -287,6 +291,32 @@ Scope {
               type: "slider", min: 0, max: 250, unit: "%",
               value: A.animSpeed, set: v => A.animSpeed = v },
 
+            { type: "header", n: "This window",
+              s: "How Settings itself is put on screen" },
+            { n: "Window mode",
+              s: "Floating is the design's own window: it sits above the "
+                 + "desktop with the title bar you see here, and you can drag "
+                 + "it between monitors. Tiled makes it an ordinary "
+                 + "application window, so Hyprland gives it a slot in the "
+                 + "layout and your window binds work on it.",
+              type: "seg",
+              options: [{ label: "Floating", value: "floating" },
+                        { label: "Tiled",    value: "tiled" }],
+              value: A.settingsTiled ? "tiled" : "floating",
+              set: v => A.settingsTiled = (v === "tiled") }
+        ];
+
+        case "Wallpaper": return [
+            { type: "header", n: "Ground",
+              s: "What the desktop is when nothing is on it" },
+            { n: "Tint", s: "The gradient's temperature, when there is no image", type: "seg",
+              options: ["Warm", "Neutral", "Cool"], value: A.tint, set: v => A.tint = v },
+            { n: "Image", s: A.wallpaper !== "" ? A.wallpaper : "Using the tinted gradient",
+              type: "action", label: A.wallpaper !== "" ? "Clear" : "Choose…",
+              set: () => { if (A.wallpaper !== "") A.wallpaper = ""; else root.pickWallpaper(); } }
+        ].concat(root.liveWallpaperRows());
+
+        case "Icons": return [
             { type: "header", n: "Icon sizes",
               s: "Every place an app icon appears, in one list. Each of "
                  + "these is the same setting as the one in that part's own "
@@ -323,47 +353,37 @@ Scope {
                  + "its window, or Ctrl 0 to go back to normal. It is a "
                  + "separate application and keeps its own settings.",
               type: "info", value: "Ctrl +  /  Ctrl -" },
+        ];
 
-            { type: "header", n: "This window",
-              s: "How Settings itself is put on screen" },
-            { n: "Window mode",
-              s: "Floating is the design's own window: it sits above the "
-                 + "desktop with the title bar you see here, and you can drag "
-                 + "it between monitors. Tiled makes it an ordinary "
-                 + "application window, so Hyprland gives it a slot in the "
-                 + "layout and your window binds work on it.",
-              type: "seg",
-              options: [{ label: "Floating", value: "floating" },
-                        { label: "Tiled",    value: "tiled" }],
-              value: A.settingsTiled ? "tiled" : "floating",
-              set: v => A.settingsTiled = (v === "tiled") },
+        case "App theming": return [
+            { type: "header", n: "Other applications",
+              s: "Colours the shell can hand to things that are not part of "
+                 + "it" },
+            { n: "Theme KDE applications",
+              s: "Writes this theme's palette into kdeglobals, so Dolphin, "
+                 + "Ark and Okular use the same charcoal and the same accent "
+                 + "on selection. Colours only — it cannot change their "
+                 + "layout, icons or rounded corners. Your other kdeglobals "
+                 + "settings are kept.",
+              type: "toggle", value: A.themeQtApps,
+              set: v => { A.themeQtApps = v; if (v) Services.Theming.applyKde(); } },
 
-            { n: "Theme", s: "Light, dark, or follow the clock after sunset", type: "seg",
-              options: [{ label: "Light", value: "light" }, { label: "Dark", value: "dark" }, { label: "Auto", value: "auto" }],
-              value: A.theme, set: v => A.theme = v },
-            { n: "Accent", s: A.accentIndex === -1
-                ? "Custom · " + String(A.customAccent).toUpperCase()
-                : "Pick a preset, or cycle the custom swatch", type: "swatch" },
-            { n: "Translucency", s: "How much of the desktop shows through the bar, dock and panels",
-              type: "slider", min: 0, max: 100, unit: "%",
-              value: A.translucency, set: v => A.translucency = v },
-            { n: "Frosted menus", s: "Blur what's behind a dropdown or the colour "
-                 + "picker. They sit inside a window rather than on the desktop, so "
-                 + "what gets blurred is the rows underneath them.",
-              type: "toggle", value: A.menuBlur, set: v => A.menuBlur = v },
-            { n: "Menu translucency", s: "How much shows through — with frosting on, "
-                 + "this is how strong the frost reads",
-              type: "slider", min: 0, max: 60, unit: "%",
-              value: A.menuTranslucency, set: v => A.menuTranslucency = v },
-            { n: "Corner rounding", s: "Scales every radius — the shell, its apps, the browser and "
-                 + "the window corners. 0% is fully square", type: "slider",
-              min: 0, max: 160, unit: "%", value: A.roundingPct, set: v => A.roundingPct = v },
-            { n: "Wallpaper tint", s: "Ground gradient temperature", type: "seg",
-              options: ["Warm", "Neutral", "Cool"], value: A.tint, set: v => A.tint = v },
-            { n: "Wallpaper image", s: A.wallpaper !== "" ? A.wallpaper : "Using the tinted gradient",
-              type: "action", label: A.wallpaper !== "" ? "Clear" : "Choose…",
-              set: () => { if (A.wallpaper !== "") A.wallpaper = ""; else root.pickWallpaper(); } }
-        ].concat(root.liveWallpaperRows());
+            { n: "Kvantum widget theme",
+              s: "Generates a Kvantum theme from this one and selects it. "
+                 + "Kvantum draws Qt widgets from an SVG, so this changes how "
+                 + "KDE applications are drawn — flat surfaces, hairline "
+                 + "borders, the shell's radii and accent — not only their "
+                 + "colours. Needs the kvantum package; applications pick it "
+                 + "up when they next start.",
+              type: "toggle", value: A.kvantumTheme,
+              set: v => { A.kvantumTheme = v;
+                          if (v) Services.Kvantum.apply();
+                          // Either way: turning it on selects Kvantum as the
+                          // widget style, turning it off deselects it again.
+                          Services.Theming.applyKde(); } },
+            { n: "Theme written to", s: "Regenerated whenever the theme changes",
+              type: "info", value: "Kvantum/Hyprshell/" }
+        ];
 
         case "Bar": return [
             { n: "Workspace switcher size",
@@ -1816,12 +1836,12 @@ Scope {
     // No portal file chooser is available to a shell process, so the
     // wallpaper picker hands off to whatever image picker is installed and
     // watches ~/Pictures for the chosen file instead of guessing.
-    // Settings → Appearance → Live wallpaper.
+    // Settings → Wallpaper → Live wallpaper.
     function liveWallpaperRows() {
         const A = Config.Appearance, L = Services.LiveWallpaper;
         const rows = [{ type: "header", n: "Live wallpaper",
             s: "Wallpaper Engine's wallpapers, drawn by linux-wallpaperengine "
-               + "over the image or tint above" }];
+               + "over the ground above" }];
 
         if (!L.installed) {
             rows.push({ n: "linux-wallpaperengine",
@@ -1833,7 +1853,7 @@ Scope {
             return rows;
         }
 
-        rows.push({ n: "Wallpaper",
+        rows.push({ n: "Showing",
             s: !L.enabled ? "None — the image or tint above"
                : L.error !== "" ? L.currentTitle + " stopped: " + L.error
                : L.currentTitle + (L.running ? "" : " · starting"),

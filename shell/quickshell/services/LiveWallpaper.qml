@@ -9,7 +9,7 @@ import "." as Services
 //
 // It is a separate program that puts its own surface on each output, so
 // the shell's part is to find the wallpapers, start it with the one you
-// chose, and keep it running. Settings → Appearance → Live wallpaper is
+// chose, and keep it running. Settings → Wallpaper is
 // the picker.
 //
 // Where it sits. linux-wallpaperengine draws on the layer above the
@@ -115,38 +115,89 @@ Singleton {
             // Wallpaper Engine writes some of these with a byte-order mark,
             // which JSON.parse refuses.
             try { p = JSON.parse(body.replace(/^\uFEFF/, "")); } catch (e) { continue; }
-            const type = String(p.type || "").toLowerCase();
+            // Its main file; without one there is nothing to draw.
+            const file = String(p.file || "");
+            if (file === "") continue;
+            // The samples bundled with Wallpaper Engine leave "type" out —
+            // it goes by the main file — and linux-wallpaperengine refuses
+            // a project without one ("Project type missing"). The type is
+            // worked out the same way here, and the wallpaper is started
+            // from a copy that says it (see shimFor).
+            const given = String(p.type || "").toLowerCase();
+            const type = given || root.typeOf(file);
             // "application" wallpapers are Windows programs; there is
-            // nothing linux-wallpaperengine can do with them.
-            if (type === "application") continue;
+            // nothing linux-wallpaperengine can do with them, or with any
+            // type it does not know.
+            if (type !== "scene" && type !== "video" && type !== "web") continue;
             const id = dir.split("/").pop();
             found.push({
                 dir: dir,
                 id: id,
                 title: String(p.title || id),
                 preview: p.preview ? dir + "/" + p.preview : "",
-                type: type || "scene"
+                type: type,
+                // What the copy has to add: linux-wallpaperengine requires
+                // both of these.
+                noType: given === "",
+                noTitle: !p.title
             });
         }
         found.sort((a, b) => a.title.localeCompare(b.title));
         root.hasAssets = assets;
         root.wallpapers = found;
+        root.scanned = true;
     }
+
+    function typeOf(file) {
+        const ext = file.toLowerCase().split(".").pop();
+        if (ext === "json") return "scene";
+        if (["mp4", "webm", "mkv", "avi", "mov", "m4v"].includes(ext)) return "video";
+        if (ext === "html" || ext === "htm") return "web";
+        return "";
+    }
+
+    // Until the first scan is in, which wallpapers need a copy is not
+    // known, so nothing starts.
+    property bool scanned: false
+
+    // The copy a wallpaper is started from when its project.json needs
+    // something added: a folder of links to the original's files, and a
+    // project.json that is the original with the type (and the title)
+    // put in. The Steam folder itself is not touched — Steam would put it
+    // back on the next update, and it is not the shell's to change.
+    readonly property string cacheDir: (Quickshell.env("XDG_CACHE_HOME")
+                                        || Quickshell.env("HOME") + "/.cache") + "/hyprshell/live"
+    function shimFor(w) { return root.cacheDir + "/" + w.id; }
 
     // ── running it ────────────────────────────────────────────────────────
     // One --screen-root per output, so each gets the wallpaper at its own
     // size. Without one linux-wallpaperengine opens an ordinary window.
     readonly property var screenNames: Quickshell.screens.map(s => s.name).filter(n => !!n)
 
+    // The copy to make before starting, as [original, copy, what to add
+    // to its project.json], or empty strings when it is used as it is.
+    readonly property var shim: {
+        const w = root.current;
+        if (!w || (!w.noType && !w.noTitle)) return ["", "", ""];
+        const add = (w.noType ? '"type":' + JSON.stringify(w.type) + "," : "")
+                  + (w.noTitle ? '"title":' + JSON.stringify(w.title) + "," : "");
+        return [w.dir, root.shimFor(w), add];
+    }
+
     readonly property var args: {
-        if (!root.enabled || root.screenNames.length === 0) return [];
+        if (!root.enabled || !root.scanned || root.screenNames.length === 0) return [];
+        const bg = root.shim[1] || root.chosen;
         const a = ["--fps", String(Config.Appearance.liveFps)];
         if (!Config.Appearance.liveSound) a.push("--silent");
         if (!Config.Appearance.liveMouse) a.push("--disable-mouse", "--disable-parallax");
         for (const n of root.screenNames)
-            a.push("--screen-root", n, "--scaling", "fill", "--bg", root.chosen);
+            a.push("--screen-root", n, "--scaling", "fill", "--bg", bg);
         return a;
     }
+    // What the running one was started with. A rescan builds new objects
+    // for the same wallpapers, which makes a new (equal) args; that is no
+    // reason to restart it.
+    property string launched: ""
 
     // The last few lines it wrote to stderr, for when it stops.
     property var tail: []
@@ -164,10 +215,26 @@ Singleton {
         // this process stops the wallpaper, not just a shell around it.
         //
         // comm is the first 15 characters of the program name.
-        command: ["sh", "-c",
-            "pkill -x linux-wallpaper; i=0; "
-            + "while pgrep -x linux-wallpaper >/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done; "
-            + "exec " + root.binary + " \"$@\"", "sh"].concat(root.args)
+        //
+        //
+        // The copy (see shimFor) is made here too, from $1-$3, so it is
+        // always current with the original when the wallpaper starts. $3 is
+        // the text to add, spliced in after the first opening brace, where
+        // any JSON object can take another key; awk rather than sed, since
+        // it is taken as it is rather than as a pattern.
+        command: ["sh", "-c", `
+            src=$1 dst=$2 add=$3; shift 3
+            if [ -n "$src" ]; then
+                rm -rf "$dst" && mkdir -p "$dst" || exit 1
+                for f in "$src"/* "$src"/.[!.]*; do
+                    [ -e "$f" ] && ln -s "$f" "$dst/"
+                done
+                rm -f "$dst/project.json"
+                add="$add" awk '!d && (i = index($0, "{")) { $0 = substr($0, 1, i) ENVIRON["add"] substr($0, i + 1); d = 1 } { print }' "$src/project.json" > "$dst/project.json" || exit 1
+            fi
+            pkill -x linux-wallpaper; i=0
+            while pgrep -x linux-wallpaper >/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done
+            exec ${root.binary} "$@"`, "sh"].concat(root.shim).concat(root.args)
         stderr: SplitParser {
             onRead: line => {
                 const t = root.tail.slice(-4);
@@ -191,7 +258,7 @@ Singleton {
             if (Date.now() - root.startedAt > 20000) root.quickFailures = 0;
             else root.quickFailures++;
             if (root.quickFailures >= 2) {
-                root.error = last || ("it exited with code " + code);
+                root.error = root.shorten(last) || ("it exited with code " + code);
                 return;
             }
             retry.restart();
@@ -205,15 +272,29 @@ Singleton {
     Timer { id: settle; interval: 600; onTriggered: root.restart() }
     onArgsChanged: settle.restart()
 
+    // Its messages can carry the whole project.json after them
+    // ("Project type missing. Contents: {…}"); the sentence is the part
+    // worth showing.
+    function shorten(line) {
+        let t = String(line).replace(/\x1b\[[0-9;]*m/g, "").trim();
+        const cut = t.indexOf(". Contents:");
+        if (cut >= 0) t = t.slice(0, cut);
+        return t.length > 160 ? t.slice(0, 157) + "…" : t;
+    }
+
     function restart() {
         retry.stop();
         if (!Config.Appearance.settingsReady) return;
         // With none chosen, one the shell did not start is left alone — it
         // may be yours, from hyprland.lua.
         if (root.args.length === 0) {
-            if (proc.running) { root.stopping = true; proc.running = false; }
+            if (!root.enabled && proc.running) { root.stopping = true; proc.running = false; }
+            root.launched = "";
             return;
         }
+        const key = JSON.stringify(root.shim.concat(root.args));
+        if (proc.running && key === root.launched) return;
+        root.launched = key;
         root.tail = [];
         root.error = "";
         // It maps once, so the rule only has to be there before it starts.

@@ -28,7 +28,7 @@ PanelSurface {
         { n: "Overview",           k: "super ⇥", icon: "panelsTopLeft", rule: true,
           run: () => Config.UiState.toggleOverview() },
         { n: "Change wallpaper",   k: "",        icon: "image",
-          run: () => Config.UiState.openSettings("Appearance") },
+          run: () => Config.UiState.openSettings("Wallpaper") },
         { n: "Display settings",   k: "",        icon: "monitor",
           run: () => Config.UiState.openSettings("Display") },
         { n: "Toggle theme",       k: "super ⇧ T", icon: "moon", rule: true,

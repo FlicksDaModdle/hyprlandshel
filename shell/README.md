@@ -228,6 +228,11 @@ next login unless the shell remembers it. `services/Devices.qml` does that —
 your input devices and each display's mode and scale live in `theme.json` and
 are pushed back once the compositor is up.
 
+The shell's own look is four panes rather than one long one: Appearance
+(theme, accent, translucency, corners, motion, and how Settings itself is
+shown), Wallpaper (the tint, an image, and live wallpapers), Icons (every
+icon size in one list) and App theming (KDE colours and Kvantum).
+
 Shell panes write `theme.json` as you drag. System panes act on the machine
 through PipeWire, UPower, `nmcli`, `bluetoothctl` and — for anything that is
 Hyprland's own — `hyprctl eval` against the `hl.*` Lua API. Not `hyprctl
@@ -512,7 +517,7 @@ being part of it, and keeps its own settings in
 
 ## Live wallpapers
 
-Settings → Appearance → Live wallpaper puts a Wallpaper Engine wallpaper on
+Settings → Wallpaper puts a Wallpaper Engine wallpaper on
 the desktop, drawn by
 [linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine)
 (`yay -S linux-wallpaperengine-git`). The wallpapers are the ones you have
@@ -542,7 +547,7 @@ Workshop id>`, and an empty argument turns it off. Wallpaper properties
 
 ## Theming KDE applications
 
-Settings → Appearance → Theme KDE applications writes this theme's palette
+Settings → App theming → Theme KDE applications writes this theme's palette
 into `~/.config/kdeglobals`, so Dolphin, Ark, Okular and the rest take their
 colours from the same place the shell does: the same charcoal, the same
 accent on a selected row. Running apps re-read that file, so it lands
@@ -565,7 +570,7 @@ outside the shell's own config should be something you ask for.
 Colours in `kdeglobals` only repaint what KDE's own style already draws.
 Kvantum is a Qt style that draws every widget from an SVG instead, so it is
 the layer where a button's radius, a hairline border or a flat toolbar is
-decided. Settings → Appearance → **Kvantum widget theme** generates one from
+decided. Settings → App theming → **Kvantum widget theme** generates one from
 whatever theme the shell is currently wearing and selects it.
 
 It needs the `kvantum` package (`qt6-style-kvantum` on Debian and Ubuntu,
@@ -814,8 +819,8 @@ The curve renderer is off by default for exactly that reason. It is the one
 thing about these glyphs that cannot be tested here: every offscreen render
 used to check this shell runs on the software backend, which ignores the
 request and uses its own rasteriser, so it looked correct in every check
-while shipping untested on real hardware. Settings → Appearance → Sharper
-icon edges turns it on.
+while shipping untested on real hardware. Settings → Icons → Icon edge
+smoothing turns it on.
 
 `MonoIcon` renders an unknown name as nothing at all and reports nothing,
 so `iconcheck.js` asserts that every name the shell and the file manager

@@ -314,7 +314,7 @@ hl.layer_rule({
     animation = "fade",
 })
 
--- A live wallpaper (Settings → Appearance → Live wallpaper) is
+-- A live wallpaper (Settings → Wallpaper) is
 -- linux-wallpaperengine's own surface, over that ground; it fades in over it
 -- rather than sliding. The shell sends this rule itself before starting one,
 -- so it holds under a config that does not have it.
