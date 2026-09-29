@@ -541,6 +541,14 @@ message is on the Wallpaper row.
   fullscreen.
 - **Sound** is off by default.
 
+linux-wallpaperengine draws 2D scenes, videos and web wallpapers. A 3D
+scene is shown faded with "3D scene · not supported" and cannot be picked;
+the shell tells by looking for the `orthogonalprojection` a 2D scene's file
+has, loose in the folder or inside its `scene.pkg`. Wallpaper Engine's own
+samples leave their type out of `project.json`, which linux-wallpaperengine
+requires, so those are started from a copy in `~/.cache/hyprshell/live`
+that has it — hard links to the original files, never the originals.
+
 From a script: `qs -c hyprshell ipc call shell setLiveWallpaper <folder or
 Workshop id>`, and an empty argument turns it off. Wallpaper properties
 (`--set-property`) are not exposed yet.

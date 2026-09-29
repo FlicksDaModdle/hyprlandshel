@@ -4,14 +4,17 @@ import "../../config" as Config
 import "../common"
 
 // The live wallpapers you have, as their Workshop pictures. Click one to
-// put it on the desktop; the one on it is ringed in the accent.
+// put it on the desktop; the one on it is ringed in the accent. The ones
+// linux-wallpaperengine cannot draw are shown faded, with why, and do
+// nothing when clicked — hiding them would leave a wallpaper you subscribed
+// to missing with no reason given.
 //
 // Full-width rather than a control at the right of a row: these are
 // pictures, and a strip of thumbnails the width of a slider says nothing.
 Item {
     id: gallery
 
-    // [{ dir, id, title, preview, type }]
+    // [{ dir, id, title, preview, type, unsupported }]
     property var items: []
     property string value: ""
     signal picked(string dir)
@@ -39,6 +42,7 @@ Item {
                 required property var modelData
                 readonly property bool current: modelData.dir === gallery.value
                 readonly property bool gif: /\.gif$/i.test(modelData.preview)
+                readonly property bool usable: !modelData.unsupported
 
                 width: gallery.tileW
                 height: gallery.thumbH + 44
@@ -49,6 +53,7 @@ Item {
                     height: gallery.thumbH
                     radius: Config.Appearance.rSm
                     color: Config.Appearance.surface
+                    opacity: tile.usable ? 1 : 0.35
 
                     // The Workshop preview. Animated ones play while the
                     // pointer is on them and hold their first frame
@@ -100,21 +105,28 @@ Item {
                     text: tile.modelData.title
                     font.pixelSize: Config.Appearance.fs(12)
                     font.weight: tile.current ? Font.DemiBold : Font.Medium
-                    color: Config.Appearance.ink
+                    color: tile.usable ? Config.Appearance.ink : Config.Appearance.ink3
                 }
                 StyledText {
                     anchors.top: title.bottom
                     anchors.topMargin: 1
                     width: parent.width
                     elide: Text.ElideRight
-                    text: (tile.current ? "On the desktop · " : "")
-                          + (gallery.typeNames[tile.modelData.type] || tile.modelData.type)
+                    text: !tile.usable ? "3D scene · not supported"
+                          : (tile.current ? "On the desktop · " : "")
+                            + (gallery.typeNames[tile.modelData.type] || tile.modelData.type)
                     font.pixelSize: Config.Appearance.fs(11)
-                    color: tile.current ? Config.Appearance.accent : Config.Appearance.ink3
+                    color: tile.current && tile.usable ? Config.Appearance.accent : Config.Appearance.ink3
                 }
 
-                HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: gallery.picked(tile.modelData.dir) }
+                HoverHandler {
+                    id: hover
+                    cursorShape: tile.usable ? Qt.PointingHandCursor : Qt.ArrowCursor
+                }
+                TapHandler {
+                    enabled: tile.usable
+                    onTapped: gallery.picked(tile.modelData.dir)
+                }
             }
         }
     }

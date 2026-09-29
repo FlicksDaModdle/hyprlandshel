@@ -57,11 +57,33 @@ Singleton {
     // resolved so the ~/.steam/steam symlink does not list everything twice.
     // Each wallpaper folder is printed as a record-separator line with its
     // path, then its project.json, which is parsed here rather than asking
-    // for jq or python.
+    // for jq or python, then a group-separator line with what probe says.
+    //
+    // probe: whether a scene is one linux-wallpaperengine can draw. It
+    // draws 2D scenes only; a 3D one has no "orthogonalprojection" in its
+    // scene file, and fails with "General section must have orthogonal
+    // projection info". The scene file is loose in the folder or inside
+    // scene.pkg, which stores its files uncompressed, so the key's name is
+    // there to find as text either way. "2d", "3d", or "none" when there is
+    // no scene file to look in (a video, say). Remembered per folder until
+    // its files change, since a scene.pkg can be hundreds of megabytes.
     Process {
         id: scanProc
         command: ["sh", "-c", `
             command -v ${root.binary} >/dev/null 2>&1 && echo installed
+            cache="${root.cacheDir}/probe"; mkdir -p "$cache"
+            probe() {
+                set -- "$1"/scene.pkg "$1"/gifscene.pkg "$1"/*.json
+                key=$(stat -c %Y:%s "$@" 2>/dev/null | tr '[:space:]' ' ')
+                cf="$cache/$(printf '%s' "$d" | cksum | cut -d ' ' -f 1)"
+                if [ -f "$cf" ] && [ "$(sed -n 1p "$cf")" = "$key" ]; then sed -n 2p "$cf"; return; fi
+                if grep -qs '"orthogonalprojection"' "$@"; then r=2d
+                elif [ -f "$d/scene.pkg" ] || [ -f "$d/gifscene.pkg" ] \
+                     || [ "$(ls "$d"/*.json 2>/dev/null | wc -l)" -gt 1 ]; then r=3d
+                else r=none; fi
+                printf '%s\n%s\n' "$key" "$r" > "$cf"
+                echo "$r"
+            }
             for base in "$HOME/.steam/steam" "$HOME/.local/share/Steam" \\
                         "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam" \\
                         "$HOME/snap/steam/common/.local/share/Steam"; do
@@ -79,7 +101,8 @@ Singleton {
                     [ -f "$d/project.json" ] || continue
                     printf '\\036%s\\n' "\${d%/}"
                     cat "$d/project.json"
-                    printf '\\n'
+                    printf '\\n\\035'
+                    probe "\${d%/}"
                 done
             done`]
         stdout: StdioCollector {
@@ -105,10 +128,13 @@ Singleton {
             const nl = rec.indexOf("\n");
             if (nl < 0) continue;
             const dir = rec.slice(0, nl);
-            let body = rec.slice(nl + 1);
-            // "assets" for the next library is printed after this record's
-            // JSON, on its own line, so it is peeled off the end.
-            if (/\nassets\s*$/.test(body)) { assets = true; body = body.replace(/\nassets\s*$/, ""); }
+            const gs = rec.lastIndexOf("\x1d");
+            const body = rec.slice(nl + 1, gs < 0 ? undefined : gs);
+            // What probe said, and after it "assets" when the next library
+            // has them — printed after this record, on its own line.
+            const tail = gs < 0 ? "" : rec.slice(gs + 1);
+            const probed = tail.split("\n")[0].trim();
+            if (/^assets$/m.test(tail)) assets = true;
             if (seen[dir]) continue;
             seen[dir] = true;
             let p;
@@ -139,7 +165,11 @@ Singleton {
                 // What the copy has to add: linux-wallpaperengine requires
                 // both of these.
                 noType: given === "",
-                noTitle: !p.title
+                noTitle: !p.title,
+                // Why linux-wallpaperengine cannot draw it, when it is
+                // known beforehand; the gallery greys these out.
+                unsupported: type === "scene" && probed === "3d"
+                             ? "3D scene — linux-wallpaperengine draws 2D scenes only" : ""
             });
         }
         found.sort((a, b) => a.title.localeCompare(b.title));
@@ -186,6 +216,8 @@ Singleton {
 
     readonly property var args: {
         if (!root.enabled || !root.scanned || root.screenNames.length === 0) return [];
+        // Known not to work: starting it would only fail.
+        if (root.current && root.current.unsupported) return [];
         const bg = root.shim[1] || root.chosen;
         const a = ["--fps", String(Config.Appearance.liveFps)];
         if (!Config.Appearance.liveSound) a.push("--silent");
@@ -283,6 +315,11 @@ Singleton {
         let t = String(line).replace(/\x1b\[[0-9;]*m/g, "").trim();
         const cut = t.indexOf(". Contents:");
         if (cut >= 0) t = t.slice(0, cut);
+        // The ones with a plain-language reason.
+        if (/orthogonal projection/.test(t))
+            return "it is a 3D scene, and linux-wallpaperengine draws 2D scenes only";
+        if (/valid assets folder/.test(t))
+            return "Wallpaper Engine's assets were not found — install Wallpaper Engine from Steam";
         return t.length > 160 ? t.slice(0, 157) + "…" : t;
     }
 
@@ -316,6 +353,8 @@ Singleton {
 
     // Choosing one again after it failed gets a fresh start.
     function choose(dirOrId) {
+        const w = root.wallpapers.find(x => x.dir === dirOrId || x.id === dirOrId);
+        if (w && w.unsupported) return;
         root.quickFailures = 0;
         root.error = "";
         if (Config.Appearance.liveWallpaper === dirOrId) root.restart();

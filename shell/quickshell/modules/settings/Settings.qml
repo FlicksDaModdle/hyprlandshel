@@ -1855,6 +1855,8 @@ Scope {
 
         rows.push({ n: "Showing",
             s: !L.enabled ? "None — the image or tint above"
+               : L.current && L.current.unsupported
+                 ? L.currentTitle + " can't be shown: " + L.current.unsupported
                : L.error !== "" ? L.currentTitle + " stopped: " + L.error
                : L.currentTitle + (L.running ? "" : " · starting"),
             type: "action",
