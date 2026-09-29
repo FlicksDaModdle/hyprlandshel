@@ -12,7 +12,13 @@ sudo ./install.sh              # install it and point greetd at it
 sudo ./install.sh --enable     # …and make greetd the display manager
 sudo ./install.sh --theme      # after changing your theme, give it the new one
 sudo ./install.sh --uninstall  # put greetd's previous config back
+./install.sh --status          # what greetd will start, and whether it is this
 ```
+
+**Reboot after installing.** greetd reads its config when it starts and keeps
+it, so logging out still brings back the greeter it started with — Noctalia's,
+say. A reboot starts it on the new one (or, from a text console on
+Ctrl+Alt+F2, `sudo systemctl restart greetd`, which ends every session).
 
 Needs `greetd`, `quickshell` and Hyprland — all of which a Hyprshell setup
 already has, except perhaps greetd (`pacman -S greetd`). If you came from

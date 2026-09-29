@@ -6,6 +6,7 @@
 #   sudo ./install.sh --enable     …and make greetd the display manager,
 #                                  turning off sddm/gdm/lightdm/ly if one is on
 #   sudo ./install.sh --theme      only copy your current theme to it again
+#   ./install.sh --status          what greetd will start, and if it is this
 #   sudo ./install.sh --uninstall  put greetd's previous config back and
 #                                  remove the greeter
 #
@@ -28,14 +29,15 @@ REPO=$(cd "$HERE/.." && pwd)
 # Everything below is under $ROOT, which is / unless --root is given (for
 # trying the install out on a scratch directory).
 ROOT=""
-enable=0 uninstall=0 themeonly=0
+enable=0 uninstall=0 themeonly=0 status=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --enable)    enable=1 ;;
         --uninstall) uninstall=1 ;;
         --theme)     themeonly=1 ;;
+        --status)    status=1 ;;
         --root)      shift; ROOT="${1%/}" ;;
-        -h|--help)   sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)   sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) printf 'unknown option %s\n' "$1" >&2; exit 2 ;;
     esac
     shift
@@ -46,8 +48,17 @@ ETC="$ROOT/etc/hyprshell-greeter"
 STATE="$ROOT/var/lib/hyprshell-greeter"
 CACHE="$ROOT/var/cache/hyprshell-greeter"
 ICONS="$ROOT/var/lib/AccountsService/icons"
-GREETD="$ROOT/etc/greetd"
-CONF="$GREETD/config.toml"
+# The config greetd reads: /etc/greetd/config.toml, unless the command its
+# service starts it with names another (--config / -c) — as a greeter's own
+# setup may have made it. Writing the default one then changes nothing.
+greetd_config() {
+    [ -n "$ROOT" ] && { printf '%s\n' "$ROOT/etc/greetd/config.toml"; return; }
+    cmd=$(systemctl show -p ExecStart --value greetd.service 2>/dev/null | sed -n 's/.*argv\[\]=\([^;]*\).*/\1/p' | head -n1)
+    c=$(printf '%s\n' "$cmd" | sed -n 's/.*\(--config\|-c\)[= ]\([^ ]*\).*/\2/p' | head -n1)
+    printf '%s\n' "${c:-/etc/greetd/config.toml}"
+}
+CONF=$(greetd_config)
+GREETD=$(dirname "$CONF")
 BACKUP="$CONF.before-hyprshell"
 
 if [ -t 1 ]; then
@@ -58,6 +69,45 @@ fi
 did()  { printf '    %s✓%s %s\n' "$GRN" "$RST" "$1"; }
 note() { printf '    %s·%s %s\n' "$YEL" "$RST" "$1"; }
 die()  { printf '    %s✗%s %s\n' "$RED" "$RST" "$1" >&2; exit 1; }
+
+# ── status: what greetd will start, and why it might not be this ─────────
+if [ "$status" = 1 ]; then
+    say() { printf '    %s\n' "$1"; }
+    say "greetd reads:     $CONF"
+    cmd=$(awk '/^[[:space:]]*\[/ { s = ($0 ~ /^[[:space:]]*\[default_session\]/) }
+               s && /^[[:space:]]*command[[:space:]]*=/ { sub(/^[^=]*=[[:space:]]*/, ""); print }' "$CONF" 2>/dev/null | tail -n1)
+    say "it starts:        ${cmd:-(nothing found)}"
+    if printf '%s' "$cmd" | grep -q hyprshell-greeter; then did "that is this greeter"
+    else note "that is not this greeter — run: sudo ./install.sh"; fi
+    en=$(systemctl is-enabled greetd.service 2>/dev/null || true)
+    ac=$(systemctl is-active greetd.service 2>/dev/null || true)
+    say "greetd:           ${en:-unknown}, ${ac:-unknown}"
+    if [ "$ac" = active ] && [ -f "$CONF" ]; then
+        since=$(systemctl show -p ActiveEnterTimestamp --value greetd.service 2>/dev/null)
+        started=$(date -d "$since" +%s 2>/dev/null || echo 0)
+        changed=$(stat -c %Y "$CONF" 2>/dev/null || echo 0)
+        if [ "$changed" -gt "$started" ] && [ "$started" -gt 0 ]; then
+            note "the config changed after greetd started ($since) — greetd still has the old one: reboot to use the new one"
+        fi
+    fi
+    for dm in sddm gdm lightdm ly lemurs; do
+        systemctl is-enabled "$dm.service" >/dev/null 2>&1 && note "$dm is enabled too — only one display manager should be"
+    done
+    found=$(grep -rl -i noctalia "$GREETD" 2>/dev/null | grep -v before-hyprshell || true)
+    [ -n "$found" ] && note "greetd's folder still mentions Noctalia: $(printf '%s' "$found" | tr '\n' ' ')"
+    # Noctalia's shell starting in your own session, after you log in —
+    # a different thing from its greeter, and not greetd's doing.
+    who="${SUDO_USER:-$(id -un)}"
+    home=$(getent passwd "$who" | cut -d: -f6)
+    if [ -n "$home" ]; then
+        found=$(grep -rl -i noctalia "$home/.config/hypr" "$home/.config/autostart" \
+                    "$home/.config/systemd/user" 2>/dev/null || true)
+        [ -n "$found" ] && note "your session still starts Noctalia from: $(printf '%s' "$found" | tr '\n' ' ')"
+        on=$(systemctl --machine="$who@" --user list-unit-files --state=enabled 2>/dev/null | grep -i noctalia | awk '{print $1}' | tr '\n' ' ')
+        [ -n "$on" ] && note "enabled user services: $on— systemctl --user disable --now $on"
+    fi
+    exit 0
+fi
 
 [ "$(id -u)" = 0 ] || die "run it with sudo — it writes to /etc and /usr/share"
 
@@ -217,9 +267,13 @@ for dm in sddm gdm lightdm ly lemurs; do
 done
 if [ "$enable" = 1 ]; then
     for dm in $others; do systemctl disable "$dm.service" >/dev/null 2>&1 && did "turned off $dm"; done
-    systemctl enable greetd.service >/dev/null 2>&1 && did "greetd enabled — the greeter appears at the next boot"
+    systemctl enable greetd.service >/dev/null 2>&1 && did "greetd enabled — the greeter appears at the next boot (reboot to see it)"
 elif systemctl is-enabled greetd.service >/dev/null 2>&1; then
-    did "greetd is already the display manager — log out, or reboot, to see it"
+    did "greetd is already the display manager"
+    # greetd reads its config when it starts and keeps it: logging out
+    # brings back whichever greeter it started with.
+    note "greetd keeps the config it started with, so logging out still shows the old greeter —"
+    note "reboot to see this one (or from a text console, Ctrl+Alt+F2: sudo systemctl restart greetd)"
 else
     note "greetd is not enabled${others:+ (${others# } is)} — run again with --enable, or: sudo systemctl enable greetd"
 fi
