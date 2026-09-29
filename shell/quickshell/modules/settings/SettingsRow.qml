@@ -341,6 +341,24 @@ Item {
                     }
                 }
             }
+
+            // What the value looks like, for a slider whose spec has a
+            // `preview` (value → colour): drawn as an outline, since the
+            // ones that use it set a window border. Follows the drag, like
+            // the number, so the shade can be found before letting go.
+            Rectangle {
+                visible: typeof root.spec.preview === "function"
+                anchors.verticalCenter: parent.verticalCenter
+                width: 26
+                height: 26
+                radius: Config.Appearance.rSm
+                color: "transparent"
+                border.width: 3
+                border.color: visible
+                    ? root.spec.preview(slider.dragging ? slider.toSteps(slider.shownValue)
+                                                        : root.spec.value)
+                    : "transparent"
+            }
         }
     }
 

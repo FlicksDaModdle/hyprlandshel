@@ -62,9 +62,9 @@ Singleton {
     // accent drives the border by default, so the compositor's idea of
     // "focused" matches the shell's everywhere else.
     function frameTree() {
-        const col = ({ inactive_border: prefs.hyprColor(prefs.div, "aa") });
+        const col = ({ inactive_border: prefs.hyprColor(prefs.inactiveBorderColor, "aa") });
         if (prefs.borderFollowsAccent)
-            col.active_border = prefs.hyprColor(prefs.accent, "ee");
+            col.active_border = prefs.hyprColor(prefs.activeBorderColor, "ee");
         return {
             general: {
                 gaps_in: prefs.gapsIn,
@@ -95,10 +95,13 @@ Singleton {
 
     function applyFrame() { Services.Compositor.setConfig(frameTree()); }
 
-    // The border should follow a theme flip or a new accent without waiting
-    // for the next login.
-    readonly property color accentNow: prefs.accent
-    onAccentNowChanged: if (applied && prefs.borderFollowsAccent) applyFrame();
+    // The borders should follow a theme flip, a new accent or either
+    // brightness without waiting for the next login. As the strings sent,
+    // so only a change Hyprland would actually see applies anything — and
+    // the inactive colour, which a theme flip changes too, is covered as
+    // well as the accent.
+    readonly property string bordersNow: JSON.stringify(frameTree().general.col)
+    onBordersNowChanged: if (applied) applyFrame();
 
     // Likewise the window corners, as Corner rounding moves.
     readonly property real roundingNow: prefs.rf

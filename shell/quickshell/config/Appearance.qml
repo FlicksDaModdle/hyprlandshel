@@ -259,6 +259,10 @@ Singleton {
             property int gapsOut: 8
             property int borderSize: 1
             property bool borderFollowsAccent: true
+            // Brightness of each border colour, as a percentage: 100 is the
+            // colour itself, lower a darker shade of it, higher a lighter.
+            property int activeBorderPct: 100
+            property int inactiveBorderPct: 100
             property int hyprRounding: 12
             property bool hyprBlur: true
             property int hyprBlurSize: 4
@@ -419,6 +423,8 @@ Singleton {
     property alias gapsOut: prefs.gapsOut
     property alias borderSize: prefs.borderSize
     property alias borderFollowsAccent: prefs.borderFollowsAccent
+    property alias activeBorderPct: prefs.activeBorderPct
+    property alias inactiveBorderPct: prefs.inactiveBorderPct
     property alias hyprRounding: prefs.hyprRounding
     property alias hyprBlur: prefs.hyprBlur
     property alias hyprBlurSize: prefs.hyprBlurSize
@@ -580,6 +586,23 @@ Singleton {
 
     // Hyprland wants colours as rgba(rrggbbaa), which is not a form Qt hands
     // out, so it is built by hand.
+    // A colour made darker or lighter without changing its hue: below 100%
+    // each channel is scaled down towards black, so the accent becomes a
+    // deeper shade of itself rather than a greyer one; above 100% it is
+    // mixed towards white. Alpha is left alone.
+    function shade(c, pct) {
+        const k = Math.max(0, pct) / 100;
+        if (k <= 1) return Qt.rgba(c.r * k, c.g * k, c.b * k, c.a);
+        const t = Math.min(1, k - 1);
+        return Qt.rgba(c.r + (1 - c.r) * t, c.g + (1 - c.g) * t, c.b + (1 - c.b) * t, c.a);
+    }
+
+    // The window borders Hyprland is given (Services.Devices): the focused
+    // one from the accent, the others from the divider ink, each at its own
+    // brightness.
+    readonly property color activeBorderColor: shade(accent, activeBorderPct)
+    readonly property color inactiveBorderColor: shade(div, inactiveBorderPct)
+
     function hyprColor(c, alphaByte) {
         const h = x => {
             const v = Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16);

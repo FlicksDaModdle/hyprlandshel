@@ -1442,6 +1442,24 @@ Scope {
                  + "takes the shell's accent colour",
               type: "toggle", value: A.borderFollowsAccent,
               set: v => { A.borderFollowsAccent = v; Services.Devices.applyFrame(); } },
+            // Applied by Services.Devices as soon as the colour it produces
+            // changes, so these only store the value. The outline beside
+            // each is the border itself, as Hyprland will draw it.
+            { n: "Active border brightness",
+              s: "The focused window's border as a darker or lighter shade of "
+                 + "the accent — 100% is the accent itself"
+                 + (A.borderFollowsAccent ? "" : ". Only while Border follows accent is on"),
+              type: "slider", min: 20, max: 160, unit: "%", value: A.activeBorderPct,
+              preview: v => { const c = A.shade(A.accent, v);
+                              return Qt.rgba(c.r, c.g, c.b, 0xee / 255); },
+              set: v => A.activeBorderPct = v },
+            { n: "Inactive border brightness",
+              s: "Every other window's border. Lower is darker, higher is "
+                 + "lighter; 100% is the default",
+              type: "slider", min: 0, max: 200, unit: "%", value: A.inactiveBorderPct,
+              preview: v => { const c = A.shade(A.div, v);
+                              return Qt.rgba(c.r, c.g, c.b, 0xaa / 255); },
+              set: v => A.inactiveBorderPct = v },
             { n: "Corner radius", s: "Window corners at 100% Corner rounding; that "
                  + "setting under Appearance scales them along with everything else",
               type: "slider", min: 0, max: 24, unit: "px", value: A.hyprRounding,
