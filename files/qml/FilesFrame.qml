@@ -461,6 +461,48 @@ PanelSurface {
                 onClicked: crumbEdit.begin()
             }
 
+            // What fits, from the end. A deep path — /mnt/windows/Program
+            // Files (x86)/Steam/steamapps/… — used to run out of the pill
+            // and under the buttons beside it. Where you are is the end of
+            // it, so that is what is kept: the folders before whatever fits
+            // fold into "…", which goes up to the last of them. The whole
+            // path is still ctrl-L, or a click on the pill, away.
+            readonly property var crumbList: frame.app.inTrash
+                ? [{ label: "Trash", path: frame.svc.trashFiles }]
+                : frame.svc.crumbs(frame.app.cwd)
+            // The longest a single name is shown; past it, it is elided.
+            readonly property real crumbMax: 170
+
+            FontMetrics {
+                id: crumbMetrics
+                font.family: Appearance.fontFamily
+                font.pixelSize: Appearance.fs(11.5)
+                font.weight: Font.DemiBold
+            }
+
+            // Each crumb's width as laid out below: its label (capped), the
+            // label's padding, the chevron before it and the gaps.
+            function crumbWidth(i) {
+                const label = Math.min(crumbPill.crumbMax,
+                                       Math.ceil(crumbMetrics.advanceWidth(crumbPill.crumbList[i].label)));
+                return label + 10 + (i > 0 ? 15 + 2 : 0) + crumbRow.spacing;
+            }
+            readonly property real ellipsisWidth: 26 + 15 + 2 + 5
+            readonly property int crumbStart: {
+                const list = crumbPill.crumbList;
+                const room = crumbRow.width;
+                if (room <= 0) return 0;
+                let used = 0;
+                for (let i = list.length - 1; i >= 0; i--) {
+                    used += crumbPill.crumbWidth(i);
+                    // The one you are in is always shown, however long.
+                    if (i < list.length - 1 && used + (i > 0 ? crumbPill.ellipsisWidth : 0) > room)
+                        return i + 1;
+                }
+                return 0;
+            }
+            clip: true
+
             Row {
                 id: crumbRow
                 visible: !crumbEdit.active
@@ -471,10 +513,34 @@ PanelSurface {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 5
 
+                // The folders folded away.
+                Rectangle {
+                    visible: crumbPill.crumbStart > 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 26
+                    height: 22
+                    radius: Appearance.rSm
+                    color: moreArea.containsMouse ? Appearance.hover : "transparent"
+
+                    StyledText {
+                        anchors.centerIn: parent
+                        text: "…"
+                        font.pixelSize: Appearance.fs(12)
+                        font.weight: Font.DemiBold
+                        color: Appearance.ink2
+                    }
+
+                    MouseArea {
+                        id: moreArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: frame.app.go(crumbPill.crumbList[crumbPill.crumbStart - 1].path)
+                    }
+                }
+
                 Repeater {
-                    model: frame.app.inTrash
-                           ? [{ label: "Trash", path: frame.svc.trashFiles }]
-                           : frame.svc.crumbs(frame.app.cwd)
+                    model: crumbPill.crumbList.slice(crumbPill.crumbStart)
 
                     Row {
                         required property var modelData
@@ -483,7 +549,7 @@ PanelSurface {
                         anchors.verticalCenter: parent.verticalCenter
 
                         MonoIcon {
-                            visible: index > 0
+                            visible: index + crumbPill.crumbStart > 0
                             anchors.verticalCenter: parent.verticalCenter
                             name: "chevronRight"
                             size: 15
@@ -493,7 +559,7 @@ PanelSurface {
 
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: crumbLabel.implicitWidth + 10
+                            width: crumbLabel.width + 10
                             height: 22
                             radius: Appearance.rSm
                             color: crumbArea.containsMouse ? Appearance.hover : "transparent"
@@ -501,6 +567,15 @@ PanelSurface {
                             StyledText {
                                 id: crumbLabel
                                 anchors.centerIn: parent
+                                // The one you are in gets whatever room is
+                                // left when even it does not fit, and is
+                                // shortened with "…" rather than cut off.
+                                width: Math.max(24, Math.min(implicitWidth, crumbPill.crumbMax,
+                                    modelData.path === frame.app.cwd
+                                        ? crumbRow.width - 10 - 17 - crumbRow.spacing
+                                          - (crumbPill.crumbStart > 0 ? crumbPill.ellipsisWidth : 0)
+                                        : crumbPill.crumbMax))
+                                elide: Text.ElideRight
                                 text: modelData.label
                                 font.pixelSize: Appearance.fs(11.5)
                                 // Where you are, by path rather than by
