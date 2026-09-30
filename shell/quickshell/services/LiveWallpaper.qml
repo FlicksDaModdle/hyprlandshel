@@ -414,7 +414,7 @@ Singleton {
                 rm -f "$dst/project.json"
                 add="$add" awk '!d && (i = index($0, "{")) { $0 = substr($0, 1, i) ENVIRON["add"] substr($0, i + 1); d = 1 } { print }' "$src/project.json" > "$dst/project.json" || exit 1
             done
-            pkill -x linux-wallpaper; i=0
+            pkill -CONT -x linux-wallpaper; pkill -x linux-wallpaper; i=0
             while pgrep -x linux-wallpaper >/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done
             real=$(readlink -f "$(command -v ${root.binary})")
             for cef in "\${real%/*}/libcef.so" /opt/linux-wallpaperengine/libcef.so \
@@ -436,6 +436,7 @@ Singleton {
             root.error = "";
         }
         onExited: (code, status) => {
+            root.paused = false;
             if (root.stopping) { root.stopping = false; return; }
             if (!root.enabled) return;
             const last = root.tail.filter(l => l.trim() !== "").pop() || "";
@@ -483,13 +484,23 @@ Singleton {
         return t.length > 160 ? t.slice(0, 157) + "…" : t;
     }
 
+    // A stopped process does not act on SIGTERM until it is continued, so
+    // anything that ends it continues it first.
+    function resume() {
+        if (!root.paused) return;
+        root.paused = false;
+        proc.signal(18);   // SIGCONT
+        sigProc.command = ["pkill", "-CONT", "-x", "linux-wallpaper"];
+        sigProc.running = true;
+    }
+
     function restart() {
         retry.stop();
         if (!Config.Appearance.settingsReady) return;
         // With none chosen, one the shell did not start is left alone — it
         // may be yours, from hyprland.lua.
         if (root.args.length === 0) {
-            if (!root.enabled && proc.running) { root.stopping = true; proc.running = false; }
+            if (!root.enabled && proc.running) { root.resume(); root.stopping = true; proc.running = false; }
             root.launched = "";
             return;
         }
@@ -503,6 +514,7 @@ Singleton {
         Services.Compositor.evalLua('hl.layer_rule({ name = "wallpaper-live-fade", '
             + 'match = { namespace = "^linux-wallpaperengine$" }, animation = "fade" })');
         if (proc.running) {
+            root.resume();
             root.stopping = true;
             proc.running = false;
         }
@@ -522,6 +534,55 @@ Singleton {
     }
 
     function stop() { Config.Appearance.liveWallpaper = ""; }
+
+    // ── pausing behind windows ────────────────────────────────────────────
+    //
+    // A live wallpaper is a second program drawing the whole desktop, every
+    // frame, on every screen, and it competes with Hyprland for the GPU —
+    // frames Hyprland drops for it are the rate wavering while one is on.
+    // Wallpaper Engine stops drawing when applications cover it; linux-
+    // wallpaperengine does only for fullscreen ones. So the shell stops it
+    // outright — SIGSTOP, which costs nothing while it lasts — when every
+    // screen it is on is covered, and continues it the moment one is not.
+    // Hyprland keeps showing its last frame meanwhile.
+    //
+    // Covered is a tiled window (tiles fill the screen, less the gaps), a
+    // maximised one or a fullscreen one; floating windows alone leave the
+    // desktop showing. Not with the mouse on: a stopped client still gets
+    // pointer events in the gaps, and one that stops reading them for long
+    // enough is one Hyprland disconnects.
+    readonly property bool shouldPause: {
+        const mode = Config.Appearance.livePauseCovered;
+        if (mode === "never" || !root.running || Config.Appearance.liveMouse) return false;
+        const names = root.screenNames;
+        if (names.length === 0) return false;
+        for (const n of names) {
+            const cs = Services.Compositor.clientsShownOn(n);
+            const covered = mode === "windows" ? cs.length > 0
+                : cs.some(c => !c.floating || c.fullscreenMode > 0);
+            if (!covered) return false;
+        }
+        return true;
+    }
+    property bool paused: false
+    // Switching workspaces passes through states that are neither; the
+    // decision waits for them to settle.
+    onShouldPauseChanged: pauseSettle.restart()
+    Timer {
+        id: pauseSettle
+        interval: 600
+        onTriggered: root.setPaused(root.shouldPause)
+    }
+    Process { id: sigProc }
+    function setPaused(on) {
+        if (on === root.paused) return;
+        root.paused = on;
+        console.log("LiveWallpaper:", on ? "paused — covered" : "drawing again");
+        // Every one of them: a web wallpaper's Chromium helpers are the
+        // same program.
+        sigProc.command = ["pkill", on ? "-STOP" : "-CONT", "-x", "linux-wallpaper"];
+        sigProc.running = true;
+    }
 
     // ── playlist ──────────────────────────────────────────────────────────
     // Wallpaper Engine's: a list of wallpapers the desktop moves through on

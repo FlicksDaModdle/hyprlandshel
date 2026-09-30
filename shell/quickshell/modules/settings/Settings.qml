@@ -55,12 +55,60 @@ Scope {
     // pictures choose for. Empty is every screen without one of its own.
     property string liveScreenPick: ""
 
+    // Gradient, Image or Live, as picked at the top of Settings →
+    // Wallpaper. Empty follows what the desktop has; set, it holds a
+    // choice not yet made — Image with no image picked, Live with none
+    // chosen — so the controls for it stay up while you pick.
+    property string wallpaperMode: ""
+    readonly property string wallpaperShown: wallpaperMode !== "" ? wallpaperMode
+        : Services.LiveWallpaper.enabled ? "live"
+        : Config.Appearance.wallpaper !== "" ? "image" : "gradient"
+
+    // The galleries' search and filter. Objects rather than properties of
+    // this Scope, so typing into them does not rebuild the rows — which
+    // would take the field it is being typed into away.
+    QtObject {
+        id: liveUi
+        property string search: ""
+        property string filter: "all"
+        property bool showUnsupported: false
+    }
+    QtObject {
+        id: playlistUi
+        property string search: ""
+        property string filter: "all"
+        property bool showUnsupported: false
+    }
+
+    function setWallpaperMode(v) {
+        const A = Config.Appearance, L = Services.LiveWallpaper;
+        // What is being switched away from is kept, to come back to.
+        if (A.wallpaper !== "") A.wallpaperLast = A.wallpaper;
+        if (L.enabled) A.liveLast = A.liveWallpaper;
+        if (v === "gradient") {
+            A.wallpaper = "";
+            if (L.enabled) L.stop();
+            root.wallpaperMode = "";
+        } else if (v === "image") {
+            if (L.enabled) L.stop();
+            if (A.wallpaper === "" && A.wallpaperLast !== "") A.wallpaper = A.wallpaperLast;
+            root.wallpaperMode = A.wallpaper === "" ? "image" : "";
+        } else {
+            if (!L.enabled && A.liveLast !== "" && L.find(A.liveLast)) L.choose(A.liveLast);
+            root.wallpaperMode = L.enabled || (A.liveLast !== "" && L.find(A.liveLast)) ? "" : "live";
+        }
+    }
+
     // The live wallpaper list is whatever is in your Steam libraries now,
     // so it is looked for again each time the pane that shows it opens —
     // after subscribing to one in Steam, say.
     readonly property bool showingWallpaper: Config.UiState.settingsOpen
         && (root.pane === "Wallpaper" || root.pane === "Live wallpaper")
-    onShowingWallpaperChanged: if (showingWallpaper) Services.LiveWallpaper.scan()
+    onShowingWallpaperChanged: {
+        if (!showingWallpaper) return;
+        root.wallpaperMode = "";
+        Services.LiveWallpaper.scan();
+    }
 
     readonly property var paneMeta: ({
         "Display":       { icon: "monitor",   group: "System", note: "Every connected display, with its own resolution, refresh rate, scale and colour." },
@@ -314,15 +362,7 @@ Scope {
               set: v => A.settingsTiled = (v === "tiled") }
         ];
 
-        case "Wallpaper": return [
-            { type: "header", n: "Ground",
-              s: "What the desktop is when nothing is on it" },
-            { n: "Tint", s: "The gradient's temperature, when there is no image", type: "seg",
-              options: ["Warm", "Neutral", "Cool"], value: A.tint, set: v => A.tint = v },
-            { n: "Image", s: A.wallpaper !== "" ? A.wallpaper : "Using the tinted gradient",
-              type: "action", label: A.wallpaper !== "" ? "Clear" : "Choose…",
-              set: () => { if (A.wallpaper !== "") A.wallpaper = ""; else root.pickWallpaper(); } }
-        ].concat(root.liveWallpaperRows());
+        case "Wallpaper": return root.wallpaperRows();
 
         case "Live wallpaper": return root.liveOptionsRows();
 
@@ -1891,19 +1931,45 @@ Scope {
     // No portal file chooser is available to a shell process, so the
     // wallpaper picker hands off to whatever image picker is installed and
     // watches ~/Pictures for the chosen file instead of guessing.
-    // Settings → Wallpaper → Live wallpaper.
+    // Settings → Wallpaper. One choice at the top — Gradient, Image or
+    // Live — and under it only what that one needs.
+    function wallpaperRows() {
+        const A = Config.Appearance, L = Services.LiveWallpaper;
+        const mode = root.wallpaperShown;
+        const rows = [{ n: "Desktop",
+            s: mode === "gradient" ? "The shell's tinted gradient"
+               : mode === "image" ? "A picture of your own"
+               : "Wallpaper Engine's, drawn by linux-wallpaperengine",
+            type: "seg",
+            options: [{ label: "Gradient", value: "gradient" }, { label: "Image", value: "image" },
+                      { label: "Live", value: "live" }],
+            value: mode, set: v => root.setWallpaperMode(v) }];
+
+        if (mode === "gradient") {
+            rows.push({ n: "Tint", s: "Its temperature", type: "seg",
+                options: ["Warm", "Neutral", "Cool"], value: A.tint, set: v => A.tint = v });
+        } else if (mode === "image") {
+            rows.push({ n: "Image",
+                s: A.wallpaper !== "" ? A.wallpaper.split("/").pop() : "None picked yet",
+                type: "buttons",
+                buttons: [{ label: A.wallpaper !== "" ? "Change…" : "Choose…",
+                            quiet: A.wallpaper !== "", set: () => root.pickWallpaper() }] });
+        } else {
+            return rows.concat(root.liveWallpaperRows());
+        }
+        return rows;
+    }
+
+    // The Live part of it: what is on, the screens, and the pictures.
     function liveWallpaperRows() {
         const A = Config.Appearance, L = Services.LiveWallpaper;
-        const rows = [{ type: "header", n: "Live wallpaper",
-            s: "Wallpaper Engine's wallpapers, drawn by linux-wallpaperengine "
-               + "over the ground above" }];
+        const rows = [];
 
         if (!L.installed) {
             rows.push({ n: "linux-wallpaperengine",
                 s: L.scanning ? "Looking…"
-                   : "Not installed. On Arch or CachyOS it is "
-                     + "yay -S linux-wallpaperengine-git. The wallpapers "
-                     + "themselves come from Wallpaper Engine on Steam.",
+                   : "Not installed — on Arch or CachyOS, yay -S linux-wallpaperengine-git. "
+                     + "The wallpapers come from Wallpaper Engine on Steam.",
                 type: "action", label: "Look again", set: () => L.scan() });
             return rows;
         }
@@ -1912,61 +1978,51 @@ Scope {
         const pickFor = L.layout === "each" && screens.indexOf(root.liveScreenPick) >= 0
                         ? root.liveScreenPick : "";
 
-        rows.push({ n: "Showing",
-            s: !L.enabled ? "None — the image or tint above"
-               : L.current && L.current.unsupported
-                 ? L.currentTitle + " can't be shown: " + L.current.unsupported
-               : L.error !== "" ? L.currentTitle + " stopped: " + L.error
-               : L.currentTitle + (L.running ? "" : " · starting")
-                 + (L.used.length > 1 ? " and " + (L.used.length - 1) + " more" : ""),
+        rows.push({ n: L.enabled ? L.currentTitle : "None on",
+            s: !L.enabled ? (L.wallpapers.length ? "Pick one below" : "")
+               : L.current && L.current.unsupported ? "Can't be shown: " + L.current.unsupported
+               : L.error !== "" ? "Stopped: " + L.error
+               : (L.running ? "On the desktop" : "Starting")
+                 + (L.used.length > 1 ? ", with " + (L.used.length - 1) + " more" : ""),
             type: "buttons",
             buttons: L.enabled
                 ? [{ label: "Customise", quiet: true,
                      set: () => Config.UiState.openSettings("Live wallpaper") },
-                   { label: "Turn off", set: () => L.stop() }]
-                : [{ label: "Look again", set: () => L.scan() }] });
+                   { label: "Turn off", quiet: true, set: () => L.stop() }]
+                : [] });
 
         if (L.wallpapers.length === 0) {
             rows.push({ n: "Nothing to show yet",
                 s: L.scanning ? "Looking through your Steam libraries…"
-                   : "Subscribe to wallpapers in Wallpaper Engine's Workshop "
-                     + "on Steam and they appear here. Steam downloads them "
-                     + "whether or not Wallpaper Engine is running.",
-                type: "info", value: "" });
+                   : "Subscribe to wallpapers in Wallpaper Engine's Workshop on Steam "
+                     + "and they appear here.",
+                type: "action", label: "Look again", set: () => L.scan() });
             return rows;
         }
 
         if (!L.hasAssets)
             rows.push({ n: "Wallpaper Engine is not installed",
-                s: "Most scene wallpapers are drawn with its shared assets and "
-                   + "will not start without them. Videos do not need them. "
-                   + "Install Wallpaper Engine from Steam — it never has to run.",
+                s: "Most scenes need its assets. Install it from Steam — it never has to run.",
                 type: "info", value: "" });
 
         // More than one screen: the same wallpaper on each, one across all
-        // of them, or each its own — Wallpaper Engine's three.
+        // of them, or each its own — and then which screen is being picked
+        // for, as buttons rather than a menu, since there are only a few.
         if (screens.length > 1) {
-            rows.push({ n: "Screens",
-                s: A.liveLayout === "span" ? "One wallpaper stretched across every screen"
-                   : A.liveLayout === "each" ? "Each screen shows its own; pick the screen below, then the wallpaper"
-                   : "Every screen shows the same wallpaper",
-                type: "seg",
+            rows.push({ n: "Screens", type: "seg",
                 options: [{ label: "Same", value: "same" }, { label: "Across", value: "span" },
                           { label: "Each its own", value: "each" }],
                 value: A.liveLayout, set: v => A.liveLayout = v });
-            if (A.liveLayout === "each") {
-                const names = ["Every screen"].concat(screens);
-                rows.push({ n: "Choosing for",
-                    s: pickFor === "" ? "Screens without a wallpaper of their own"
-                       : L.screenMap[pickFor] ? pickFor + " shows its own — pick it again to share the main one"
-                       : pickFor + " shows the main wallpaper",
-                    type: "menu", options: names,
-                    value: pickFor === "" ? names[0] : pickFor,
-                    set: v => root.liveScreenPick = v === names[0] ? "" : v });
-            }
+            if (A.liveLayout === "each")
+                rows.push({ n: "Picking for",
+                    s: pickFor === "" ? "Every screen without its own"
+                       : L.screenMap[pickFor] ? "Click its wallpaper again to share the main one" : "",
+                    type: "seg",
+                    options: [{ label: "All", value: "" }].concat(screens.map(n => ({ label: n, value: n }))),
+                    value: pickFor, set: v => root.liveScreenPick = v });
         }
 
-        rows.push({ type: "gallery", n: "", s: "",
+        rows.push({ type: "gallery", n: "", s: "", state: liveUi,
             items: L.wallpapers,
             value: pickFor !== "" ? (L.screenMap[pickFor] || "")
                    : L.enabled ? (L.current ? L.current.dir : A.liveWallpaper) : "",
@@ -2067,7 +2123,16 @@ Scope {
         rows.push({ n: "Frame rate", s: "Higher is smoother and costs more power",
             type: "slider", min: 5, max: 144, unit: "fps",
             value: A.liveFps, set: v => A.liveFps = v });
-        rows.push({ n: "Pause", s: A.livePause === "never" ? "Keeps playing under fullscreen windows"
+        rows.push({ n: "Pause behind windows",
+            s: A.liveMouse ? "Not while Mouse interaction is on — it has to keep reading the pointer"
+               : L.paused ? "Paused now: windows cover it"
+               : "Stops drawing while windows cover every screen it is on, so it is not "
+                 + "using the GPU for a desktop nobody can see",
+            type: "seg",
+            options: [{ label: "Covered", value: "covered" }, { label: "Any window", value: "windows" },
+                      { label: "Never", value: "never" }],
+            value: A.livePauseCovered, set: v => A.livePauseCovered = v });
+        rows.push({ n: "Pause for fullscreen", s: A.livePause === "never" ? "Keeps playing under fullscreen windows"
                 : A.livePause === "focused" ? "While a fullscreen window has the focus"
                 : "While any window is fullscreen",
             type: "seg",
@@ -2131,6 +2196,7 @@ Scope {
                       { label: "Clear playlist", quiet: true, enabled: L.playlist.length > 0,
                         set: () => A.livePlaylist = "[]" }] });
         rows.push({ type: "gallery", n: "In the playlist", s: "Click to add or take away",
+            state: playlistUi,
             items: L.wallpapers, multi: true, selection: L.playlist,
             pick: dir => L.togglePlaylist(dir) });
 

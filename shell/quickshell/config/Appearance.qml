@@ -101,6 +101,10 @@ Singleton {
             // linux-wallpaperengine (services/LiveWallpaper.qml): its
             // folder, or a Workshop id. Empty = none.
             property string liveWallpaper: ""
+            // The last image and live wallpaper, so switching Settings →
+            // Wallpaper to Gradient and back does not lose them.
+            property string wallpaperLast: ""
+            property string liveLast: ""
             property int liveFps: 30                  // 30 | 60 | 120
             property bool liveSound: false
             // On: the wallpaper gets the pointer, for parallax and cursor
@@ -115,6 +119,10 @@ Singleton {
             property bool liveAudioReactive: true     // visualisers hear the system
             property string livePause: "any"          // any | focused | never, for fullscreen
             property bool liveParticles: true
+            // Stop drawing while windows cover it (LiveWallpaper.paused):
+            // "covered" — a tiled, maximised or fullscreen window on every
+            // screen it is on — "windows" for any window at all, "never".
+            property string livePauseCovered: "covered"
             property string liveScaling: "fill"       // fill | fit | stretch | default
             // "same" on every screen, "span" one across them all, or "each"
             // its own, from liveScreens: { "<output>": "<folder>" }.
@@ -353,6 +361,8 @@ Singleton {
     property alias tint: prefs.tint
     property alias wallpaper: prefs.wallpaper
     property alias liveWallpaper: prefs.liveWallpaper
+    property alias wallpaperLast: prefs.wallpaperLast
+    property alias liveLast: prefs.liveLast
     property alias liveFps: prefs.liveFps
     property alias liveSound: prefs.liveSound
     property alias liveMouse: prefs.liveMouse
@@ -363,6 +373,7 @@ Singleton {
     property alias liveAudioReactive: prefs.liveAudioReactive
     property alias livePause: prefs.livePause
     property alias liveParticles: prefs.liveParticles
+    property alias livePauseCovered: prefs.livePauseCovered
     property alias liveScaling: prefs.liveScaling
     property alias liveLayout: prefs.liveLayout
     property alias liveScreens: prefs.liveScreens

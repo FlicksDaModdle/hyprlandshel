@@ -328,6 +328,9 @@ Singleton {
                     h: (c.size && c.size.length === 2) ? c.size[1] : 0,
                     floating: !!c.floating,
                     fullscreen: !!c.fullscreen,
+                    // Hyprland's own number: 0 not, 1 maximised, 2 fullscreen.
+                    fullscreenMode: typeof c.fullscreen === "number" ? c.fullscreen
+                                  : (c.fullscreen ? 2 : 0),
                     // Shown on every workspace of its monitor.
                     pinned: !!c.pinned,
                     // 0 is the window with focus, 1 the one before it, and

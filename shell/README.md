@@ -517,14 +517,18 @@ being part of it, and keeps its own settings in
 
 ## Live wallpapers
 
-Settings → Wallpaper puts a Wallpaper Engine wallpaper on
-the desktop, drawn by
+Settings → Wallpaper starts with one choice — **Gradient**, **Image** or
+**Live** — and shows only what that one needs; switching away and back
+brings the last image or live wallpaper with it. Live puts a Wallpaper
+Engine wallpaper on the desktop, drawn by
 [linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine)
 (`yay -S linux-wallpaperengine-git`). The wallpapers are the ones you have
 subscribed to in Wallpaper Engine's Workshop on Steam, found in every Steam
 library you have; most scene wallpapers also need Wallpaper Engine itself
 installed, for its shared assets, though it never has to run. Videos do
-not. Pick one from the pictures and it is on every screen.
+not. Pick one from the pictures and it is on every screen. Search and the
+type filter above them narrow a large library, and 3D scenes, which it
+cannot draw, are folded into a line at the end.
 
 It is linux-wallpaperengine's own surface, one layer above the shell's
 ground, which stays underneath — what you see while it loads, and what
@@ -553,6 +557,13 @@ linux-wallpaperengine can carry it:
   are shared as. A preset from Windows pastes straight in; options the
   wallpaper does not have are left out and counted. A properties block or a
   whole `project.json` is read too.
+- **Pause behind windows** — a live wallpaper is a second program drawing
+  the whole desktop every frame, and it competes with Hyprland for the
+  GPU: frames dropped for it make the refresh rate waver. The shell stops
+  it (SIGSTOP, costing nothing) while every screen it is on is covered — a
+  tiled, maximised or fullscreen window, or with "Any window", any at all —
+  and continues it the moment one is not. Not while mouse interaction is
+  on, since a stopped client still gets pointer events.
 - **Playback** — frame rate, pause while something is fullscreen (any
   window, only a focused one, or never), scaling, particles; sound with its
   volume, auto-mute while other apps play, and reacting to audio; mouse

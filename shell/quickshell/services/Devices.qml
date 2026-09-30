@@ -474,6 +474,7 @@ Singleton {
         const spec = displaySpec(name);
         if (!spec) return;
         root.lastSend = Date.now();
+        console.log("Devices: setting", name, "to", spec.mode);
         Services.Compositor.setMonitor(spec);
     }
 

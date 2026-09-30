@@ -995,6 +995,7 @@ Item {
             value: root.spec.value || ""
             multi: !!root.spec.multi
             selection: root.spec.selection || []
+            state: root.spec.state || null
             onPicked: dir => { if (root.spec.pick) root.spec.pick(dir); }
         }
     }
