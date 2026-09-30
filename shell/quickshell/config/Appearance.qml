@@ -126,6 +126,10 @@ Singleton {
             // "covered" — a tiled, maximised or fullscreen window on every
             // screen it is on — "windows" for any window at all, "never".
             property string livePauseCovered: "covered"
+            property bool livePauseOnBattery: false  // Wallpaper Engine's "on battery: pause"
+            // Steam libraries to look in besides the ones Steam lists — one
+            // on a Windows drive, say — as a JSON array of their folders.
+            property string liveLibraries: ""
             property string liveScaling: "fill"       // fill | fit | stretch | default
             // "same" on every screen, "span" one across them all, or "each"
             // its own, from liveScreens: { "<output>": "<folder>" }.
@@ -378,6 +382,8 @@ Singleton {
     property alias livePause: prefs.livePause
     property alias liveParticles: prefs.liveParticles
     property alias livePauseCovered: prefs.livePauseCovered
+    property alias livePauseOnBattery: prefs.livePauseOnBattery
+    property alias liveLibraries: prefs.liveLibraries
     property alias liveScaling: prefs.liveScaling
     property alias liveLayout: prefs.liveLayout
     property alias liveScreens: prefs.liveScreens

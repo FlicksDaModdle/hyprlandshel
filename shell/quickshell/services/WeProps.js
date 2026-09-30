@@ -386,8 +386,28 @@ function readConfig(cfg) {
         fps: typeof u.fps === "number" ? u.fps : 0,
         focus: String(u.playbackfocus || ""),
         maximized: String(u.playbackmaximized || ""),
-        fullscreen: String(u.playbackfullscreen || "")
+        fullscreen: String(u.playbackfullscreen || ""),
+        battery: String(u.playbackonbattery || "")
     } : null;
+
+    // Names, for saying which wallpaper could not be brought over: the
+    // file does not keep a wallpaper's title beside it, but its list of
+    // recent choices does, for each one chosen alone.
+    res.titles = {};
+    const recent = general.wallpaperconfigrecent || user.wallpaperconfigrecent;
+    for (const r of Array.isArray(recent) ? recent : []) {
+        const sw = r && r.config && r.config.selectedwallpapers;
+        if (!sw || typeof r.title !== "string") continue;
+        const ks = Object.keys(sw).map(m => sw[m] && sw[m].file ? keyOf(sw[m].file) : "").filter(k => k);
+        const distinct = ks.filter((k, i) => ks.indexOf(k) === i);
+        if (distinct.length !== 1 || res.titles[distinct[0]]) continue;
+        // On n monitors the title is the name n times, joined by ", " —
+        // and a name can have a comma of its own, so it is not split there.
+        const n = ks.length;
+        const len = (r.title.length - 2 * (n - 1)) / n;
+        const one = Number.isInteger(len) ? r.title.slice(0, len) : "";
+        res.titles[distinct[0]] = one && Array(n).fill(one).join(", ") === r.title ? one : r.title;
+    }
     return res;
 }
 
@@ -545,7 +565,7 @@ function writeConfig(existing, opts) {
     if (opts.playback) {
         const u = general.user = general.user || {};
         if (opts.playback.fps > 0) u.fps = opts.playback.fps;
-        for (const k of ["focus", "maximized", "fullscreen"])
+        for (const k of ["focus", "maximized", "fullscreen", "onbattery"])
             if (opts.playback[k]) u["playback" + k] = opts.playback[k];
     }
     return cfg;

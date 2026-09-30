@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.UPower
 import "../config" as Config
 import "." as Services
 import "WeProps.js" as WeProps
@@ -95,14 +96,19 @@ Singleton {
                 printf '%s\n%s\n' "$key" "$r" > "$cf"
                 echo "$r"
             }
-            for base in "$HOME/.steam/steam" "$HOME/.local/share/Steam" \\
-                        "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam" \\
-                        "$HOME/snap/steam/common/.local/share/Steam"; do
-                [ -d "$base/steamapps" ] || continue
-                printf '%s\\n' "$base"
-                vdf="$base/steamapps/libraryfolders.vdf"
-                [ -f "$vdf" ] && sed -n 's/^[[:space:]]*"path"[[:space:]]*"\\(.*\\)"[[:space:]]*$/\\1/p' "$vdf"
-            done | while IFS= read -r lib; do
+            {
+                for base in "$HOME/.steam/steam" "$HOME/.local/share/Steam" \\
+                            "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam" \\
+                            "$HOME/snap/steam/common/.local/share/Steam"; do
+                    [ -d "$base/steamapps" ] || continue
+                    printf '%s\\n' "$base"
+                    vdf="$base/steamapps/libraryfolders.vdf"
+                    [ -f "$vdf" ] && sed -n 's/^[[:space:]]*"path"[[:space:]]*"\\(.*\\)"[[:space:]]*$/\\1/p' "$vdf"
+                done
+                # Libraries added in Settings, or found by importing a
+                # config.json from inside one.
+                for lib in "$@"; do [ -d "$lib/steamapps" ] && printf '%s\\n' "$lib"; done
+            } | while IFS= read -r lib; do
                 readlink -f "$lib" 2>/dev/null
             done | sort -u | while IFS= read -r lib; do
                 we="$lib/steamapps/common/wallpaper_engine"
@@ -116,7 +122,7 @@ Singleton {
                     printf '\\n\\035'
                     probe "\${d%/}"
                 done
-            done`]
+            done`, "sh"].concat(root.extraLibraries)
         stdout: StdioCollector {
             onStreamFinished: root.parseScan(text)
         }
@@ -195,6 +201,24 @@ Singleton {
         root.hasAssets = assets;
         root.wallpapers = found;
         root.scanned = true;
+        // An import waiting on a library it added.
+        const then = root.afterScan;
+        root.afterScan = null;
+        if (then) then();
+    }
+    property var afterScan: null
+
+    readonly property var extraLibraries: {
+        try {
+            const a = JSON.parse(Config.Appearance.liveLibraries || "[]");
+            return Array.isArray(a) ? a.filter(x => typeof x === "string" && x !== "") : [];
+        } catch (e) { return []; }
+    }
+    function addLibrary(dir) {
+        dir = String(dir).replace(/\/+$/, "");
+        if (dir === "" || root.extraLibraries.indexOf(dir) >= 0) return false;
+        Config.Appearance.liveLibraries = JSON.stringify(root.extraLibraries.concat([dir]));
+        return true;
     }
 
     function typeOf(file) {
@@ -482,7 +506,9 @@ Singleton {
                 export LD_PRELOAD="$cef\${LD_PRELOAD:+:$LD_PRELOAD}"
                 break
             done
-            exec ${root.binary} "$@"`, "sh"].concat(root.shim).concat(root.args)
+            # Below the compositor for the processor: a frame of wallpaper
+            # can wait, a frame of the desktop cannot.
+            exec nice -n 10 ${root.binary} "$@"`, "sh"].concat(root.shim).concat(root.args)
         stderr: SplitParser {
             onRead: line => {
                 const t = root.tail.slice(-4);
@@ -612,7 +638,10 @@ Singleton {
     // enough is one Hyprland disconnects.
     readonly property bool shouldPause: {
         const mode = Config.Appearance.livePauseCovered;
-        if (mode === "never" || !root.running || Config.Appearance.liveMouse) return false;
+        if (!root.running || Config.Appearance.liveMouse) return false;
+        // Wallpaper Engine's "on battery: pause".
+        if (Config.Appearance.livePauseOnBattery && UPower.onBattery) return true;
+        if (mode === "never") return false;
         const names = root.screenNames;
         if (names.length === 0) return false;
         for (const n of names) {
@@ -636,7 +665,7 @@ Singleton {
     function setPaused(on) {
         if (on === root.paused) return;
         root.paused = on;
-        console.log("LiveWallpaper:", on ? "paused — covered" : "drawing again");
+        console.log("LiveWallpaper:", on ? "paused" : "drawing again");
         // Every one of them: a web wallpaper's Chromium helpers are the
         // same program.
         sigProc.command = ["pkill", on ? "-STOP" : "-CONT", "-x", "linux-wallpaper"];
@@ -855,8 +884,25 @@ Singleton {
             catch (e) { root.configStatus = "That is not JSON — nothing changed"; return; }
             const r = WeProps.readConfig(cfg);
             if (!r.ok) { root.configStatus = "That is not Wallpaper Engine's config.json"; return; }
+            // A config.json from inside a Steam library this machine does
+            // not use — Windows' own, on its drive — means the wallpapers it
+            // names are in that library: look there too, then import.
+            const lib = /^(.*)\/steamapps\/common\/wallpaper_engine\/config\.json$/.exec(f);
+            if (lib && !root.wallpapers.some(w => w.dir.indexOf(lib[1] + "/steamapps/") === 0)
+                    && root.addLibrary(lib[1])) {
+                root.configStatus = "Looking through " + lib[1] + "…";
+                root.afterScan = () => root.applyImport(r, lib[1]);
+                Qt.callLater(root.scan);
+                return;
+            }
+            root.applyImport(r, "");
+        }));
+    }
+
+    function applyImport(r, addedLibrary) {
             const A = Config.Appearance;
             const said = [];
+            if (addedLibrary) said.push("its Steam library, " + addedLibrary);
             // The playlist the first screen runs, or else the first there is.
             const first = r.selected[0];
             const list = (first && first.playlist) || r.playlists[0];
@@ -915,12 +961,21 @@ Singleton {
                 A.livePauseCovered = stops(r.playback.focus) ? "windows"
                                    : stops(r.playback.maximized) ? "covered" : "never";
                 A.livePause = stops(r.playback.fullscreen) ? "any" : "never";
+                A.livePauseOnBattery = stops(r.playback.battery);
                 said.push("playback (" + A.liveFps + " fps, pausing "
                           + (A.livePauseCovered === "never" ? "never" : "behind windows") + ")");
             }
 
             // What each screen shows: the first here gets the first there,
-            // and so on.
+            // and so on. One that is not here, or cannot be drawn here, is
+            // named, rather than left out without a word.
+            const name = k => r.titles[k] || (k.indexOf("ws:") === 0 ? "Workshop item " + k.slice(3) : k.replace(/^\w+:/, ""));
+            const problems = [];
+            for (const e of r.selected) {
+                const w = root.byKey(e.key);
+                if (!w) problems.push(name(e.key) + " is not in any Steam library here");
+                else if (w.unsupported) problems.push(w.title + " is a 3D scene, which linux-wallpaperengine cannot draw");
+            }
             const shown = r.selected.map(e => root.byKey(e.key)).filter(w => w && !w.unsupported);
             if (shown.length > 0) {
                 root.choose(shown[0].dir);
@@ -933,9 +988,10 @@ Singleton {
                     A.liveLayout = "each";
                 }
             }
-            root.configStatus = said.length ? "Imported " + said.join(", ")
-                                            : "It has no playlists or wallpapers to bring over";
-        }));
+            const uniq = problems.filter((x, i) => problems.indexOf(x) === i);
+            root.configStatus = (said.length ? "Imported " + said.join(", ") + "."
+                                             : "Nothing to bring over.")
+                + (uniq.length ? " " + uniq.join("; ") + "." : "");
     }
 
     function exportConfig() {
@@ -982,7 +1038,8 @@ Singleton {
                 playback: { fps: A.liveFps,
                             focus: stops(A.livePauseCovered === "windows"),
                             maximized: stops(A.livePauseCovered !== "never"),
-                            fullscreen: stops(A.livePause !== "never") }
+                            fullscreen: stops(A.livePause !== "never"),
+                            onbattery: stops(A.livePauseOnBattery) }
             });
             root.writeFile(f, JSON.stringify(out, null, "\t") + "\n", existing !== null, ok => {
                 root.configStatus = !ok ? "Could not write " + f

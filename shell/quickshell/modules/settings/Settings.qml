@@ -2156,6 +2156,10 @@ Scope {
             options: [{ label: "Covered", value: "covered" }, { label: "Any window", value: "windows" },
                       { label: "Never", value: "never" }],
             value: A.livePauseCovered, set: v => A.livePauseCovered = v });
+        rows.push({ n: "Pause on battery",
+            s: "Wallpaper Engine's own option: stop drawing while unplugged, the biggest "
+               + "saving there is — it is a second program using the GPU all the time",
+            type: "toggle", value: A.livePauseOnBattery, set: v => A.livePauseOnBattery = v });
         rows.push({ n: "Pause for fullscreen", s: A.livePause === "never" ? "Keeps playing under fullscreen windows"
                 : A.livePause === "focused" ? "While a fullscreen window has the focus"
                 : "While any window is fullscreen",
@@ -2236,9 +2240,21 @@ Scope {
             type: "buttons",
             buttons: [{ label: "Import…", quiet: true, set: () => L.importConfig() },
                       { label: "Export…", quiet: true, set: () => L.exportConfig() }] });
+        const libs = L.extraLibraries;
+        rows.push({ n: "Other Steam libraries",
+            s: libs.length ? libs.join(" · ")
+               : "Wallpapers are looked for in the libraries Steam lists. Add one it does not — "
+                 + "Windows' Steam folder on its drive — and its Workshop wallpapers show up. "
+                 + "Importing a config.json from inside one adds it.",
+            type: "buttons",
+            buttons: [{ label: "Add…", quiet: true,
+                        set: () => root.pickPath(true, "A Steam folder (the one holding steamapps)",
+                                                 d => { if (L.addLibrary(d)) Qt.callLater(L.scan); }) },
+                      { label: "Clear", quiet: true, enabled: libs.length > 0,
+                        set: () => { A.liveLibraries = ""; Qt.callLater(L.scan); } }] });
         rows.push({ n: "What goes across",
             s: "What each screen shows, each wallpaper's options and volume, presets, "
-               + "the playlist, the frame rate and when it pauses. Options set per "
+               + "the playlist, the frame rate and when it pauses (on battery too). Options set per "
                + "monitor there arrive as the first monitor's: one program draws every "
                + "screen here.",
             type: "info", value: "" });

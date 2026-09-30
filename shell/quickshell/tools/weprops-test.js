@@ -220,6 +220,12 @@ const v5 = {
                 Monitor1: { file: "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/300/project.json" },
                 Monitor0: { file: "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/100/scene.pkg" }
             } },
+            wallpaperconfigrecent: [
+                { config: { selectedwallpapers: { Monitor0: { file: "C:/S/steamapps/workshop/content/431960/300/project.json" },
+                                                  Monitor1: { file: "C:/S/steamapps/workshop/content/431960/300/project.json" } } },
+                  title: "Iridescence, Iridescence" },
+                { config: { selectedwallpapers: { Monitor0: { file: "C:/S/steamapps/workshop/content/431960/100/scene.pkg" } } },
+                  title: "red waving" }],
             wpresets: { "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/300/project.json": {
                 presets: [{ name: "bluelines", properties: { first_color: "0 0.56 0.85", grid: true } },
                           { name: "bw", properties: { first_color: "1 1 1", grid: false } }] } }
@@ -244,8 +250,9 @@ test("config.json v5 in: screens, option values by file and monitor, presets, pl
     assert.deepStrictEqual(mp.values, { first_color: "1 1 1", flux: 3, grid: false });
     assert.strictEqual(mp.differs, true);
     assert.deepStrictEqual(r.presets["ws:300"].map(p => p.name), ["bluelines", "bw"]);
-    assert.deepStrictEqual(r.playback, { fps: 25, focus: "run", maximized: "pause", fullscreen: "run" });
+    assert.deepStrictEqual(r.playback, { fps: 25, focus: "run", maximized: "pause", fullscreen: "run", battery: "" });
     assert.strictEqual(W.keyOf("C:/x/steamapps/workshop/content/431960/3679305145/scene.pkg"), "ws:3679305145");
+    assert.deepStrictEqual(r.titles, { "ws:300": "Iridescence", "ws:100": "red waving" });
 });
 
 test("config.json v5 out: into the file's own places, keeping its paths and the rest", () => {

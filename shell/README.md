@@ -557,6 +557,8 @@ linux-wallpaperengine can carry it:
   are shared as. A preset from Windows pastes straight in; options the
   wallpaper does not have are left out and counted. A properties block or a
   whole `project.json` is read too.
+- **Pause on battery** — Wallpaper Engine's own option, and the biggest
+  saving there is; carried in and out of its config.json.
 - **Pause behind windows** — a live wallpaper is a second program drawing
   the whole desktop every frame, and it competes with Hyprland for the
   GPU: frames dropped for it make the refresh rate waver. The shell stops
@@ -593,7 +595,14 @@ options are in `<account>.wproperties`, by the wallpaper's file (its
 `<account>.general.wpresets`; what each monitor shows is in
 `<account>.general.wallpaperconfig`. Options set differently per monitor
 there arrive as the first monitor's, since one program draws every screen
-here; export writes the same to each. A round trip — import, then export
+here; export writes the same to each.
+
+Wallpapers are looked for in the Steam libraries Steam lists, and in any
+added under Settings → Live wallpaper → Other Steam libraries — Windows'
+own Steam folder on its drive, say. Importing a config.json from inside a
+Steam folder adds that library and looks through it first. Whatever the
+import could not bring over is named: a wallpaper not in any library here
+(by its title, from the file's list of recent ones), or a 3D scene. A round trip — import, then export
 into the same file — leaves it byte for byte as it was.
 
 linux-wallpaperengine draws 2D scenes, videos and web wallpapers. A 3D
