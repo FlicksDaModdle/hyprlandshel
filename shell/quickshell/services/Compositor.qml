@@ -453,8 +453,16 @@ Singleton {
                 Hyprland.refreshMonitors();
                 root.refresh();
                 break;
+            // An output (re)appearing is set up from hyprland.lua's rule,
+            // which undoes a mode set from Settings; Devices puts it back.
             case "monitoradded":
+            case "monitoraddedv2":
             case "monitorremoved":
+            case "monitorremovedv2":
+                Hyprland.refreshMonitors();
+                root.refresh();
+                root.outputsChanged();
+                break;
             case "windowtitle":
             case "windowtitlev2":
             case "pin":
@@ -712,6 +720,8 @@ Singleton {
         onTriggered: if (!root.ipcReady) root.configReloaded();
     }
     signal configReloaded()
+    // An output was added or removed.
+    signal outputsChanged()
 
     // hl.device({ name=, ... }): settings for one input device, over the
     // input ones. Hyprland keeps them by name, so they hold for a device

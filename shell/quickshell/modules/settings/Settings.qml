@@ -838,7 +838,7 @@ Scope {
                 options: resList,
                 value: curRes,
                 set: v => root.applyMode(m.name, v,
-                                             root.nearestRate(byRes[v] || [], rate)) });
+                                             root.nearestRate(byRes[v] || [], root.pluggedRate(m.name, rate))) });
 
             // Labels go out, labels come back — the menu hands back the
             // string it displayed. So the label is looked up in the list it
@@ -846,14 +846,40 @@ Scope {
             // scale really 1.333333, and re-reading "165 Hz" or "133%" would
             // send a value the panel does not have.
             const rateLabels = rateList.map(r => root.formatHz(r));
-            rows.push({ n: "Refresh rate", s: rateList.length > 1
-                    ? "Rates available at " + curRes
-                    : "Only one rate at this resolution",
+            // The rate chosen for plugged in, which is what this menu sets;
+            // on battery the output may be running another (below).
+            const saved = Services.Devices.displayMap()[m.name] || ({});
+            const mainRate = root.pluggedRate(m.name, rate);
+            const onBatteryRate = Services.Devices.onBattery && saved.batteryRate > 0;
+            rows.push({ n: "Refresh rate", s: rateList.length <= 1 ? "Only one rate at this resolution"
+                    : onBatteryRate ? "Plugged in — on battery now, at " + Math.round(rate) + " Hz"
+                    : "Rates available at " + curRes,
                 type: rateList.length > 1 ? "menu" : "info",
                 options: rateLabels,
-                value: root.formatHz(rate),
+                value: root.formatHz(mainRate),
                 set: v => { const k = rateLabels.indexOf(v);
                             if (k >= 0) root.applyMode(m.name, curRes, rateList[k]); } });
+
+            // Laptops: the rate unplugged. "Same" keeps the one above on
+            // battery too, and the shell holds it there (Devices.enforce) —
+            // a panel re-initialised on unplugging, or asusd's bat_command,
+            // used to leave it at 60.
+            if (rateList.length > 1 && UPower.displayDevice && UPower.displayDevice.isLaptopBattery) {
+                const same = "Same as plugged in";
+                const fought = Services.Devices.contested[m.name];
+                const batLabels = [same].concat(rateLabels);
+                rows.push({ n: "On battery",
+                    s: fought !== undefined
+                       ? "Something else keeps setting " + m.name + " to " + fought + " Hz, so the shell "
+                         + "has stopped putting it back. Look for a bat_command in /etc/asusd/asusd.ron, "
+                         + "or a power tool that changes refresh rates."
+                       : saved.batteryRate > 0 ? "Drops to " + Math.round(saved.batteryRate) + " Hz unplugged, to save power"
+                       : "Stays at " + Math.round(mainRate) + " Hz unplugged",
+                    type: "menu", options: batLabels,
+                    value: saved.batteryRate > 0 ? root.formatHz(saved.batteryRate) : same,
+                    set: v => { const k = rateLabels.indexOf(v);
+                                Services.Devices.setBatteryRate(m.name, k >= 0 ? rateList[k] : 0); } });
+            }
 
             // A menu, not a slider. Hyprland rejects any scale that doesn't
             // divide the mode into whole logical pixels, and says so only in
@@ -1818,8 +1844,11 @@ Scope {
         if (!m) return;
         const ipc = m.lastIpcObject || ({});
         const pxW = ipc.width || m.width, pxH = ipc.height || m.height;
+        // The saved mode when there is one: on battery the output may be
+        // running its battery rate, which is not the one to keep.
+        const saved = (Services.Devices.displayMap()[name] || {}).mode;
         Services.Devices.rememberDisplay(
-            name, pxW + "x" + pxH + "@" + formatHzPlain(ipc.refreshRate || 60), scale);
+            name, saved || (pxW + "x" + pxH + "@" + formatHzPlain(ipc.refreshRate || 60)), scale);
         Services.Devices.applyDisplay(name);
         Services.Compositor.refreshMonitors();
     }
@@ -1828,6 +1857,13 @@ Scope {
     // monitor returns — but nobody wants to read "164.80 Hz" in a menu. Shown
     // as a whole number, and sent back at the precision it arrived with, so
     // Hyprland matches the mode the value actually came from.
+    // The rate saved for plugged in, or `fallback` when none is: on battery
+    // the output may be running at its battery rate instead.
+    function pluggedRate(name, fallback) {
+        const mode = (Services.Devices.displayMap()[name] || {}).mode;
+        return mode ? parseFloat(mode.split("@")[1]) || fallback : fallback;
+    }
+
     function formatHz(hz) { return Math.round(hz) + " Hz"; }
     function formatHzPlain(hz) { return String(Math.round(hz * 1000) / 1000); }
 

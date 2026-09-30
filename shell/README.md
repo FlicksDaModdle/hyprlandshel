@@ -825,6 +825,25 @@ desktop the pointer cannot cross, so "nearly aligned" is never what was
 meant. `snaptest.js` covers the eight cases, including a scaled laptop,
 which snaps by its logical size rather than its pixels.
 
+### Refresh rate on battery
+
+A rate chosen in Settings → Display is held. Hyprland sets an output up
+again from `hyprland.lua`'s rule whenever it re-initialises it — a laptop
+panel as the power source changes, a monitor re-plugged — and that rule is
+`"preferred"`, which on many laptop panels is 60 Hz; asusd can also run a
+`bat_command` on unplugging. The shell checks the rate after the power
+source changes, after an output comes or goes, and every half minute, and
+puts the chosen one back.
+
+**On battery** (laptops) chooses the rate unplugged: the same as plugged
+in, which is the default, or a lower one to save power. It changes back
+when you plug in.
+
+If something keeps setting another rate — three times inside a minute —
+the shell stops putting it back rather than fight it, and the On battery
+row names the rate it keeps getting. On an ASUS laptop, look at
+`bat_command` in `/etc/asusd/asusd.ron`.
+
 ### The dock's surface spans the whole edge
 
 Not the pill. The pill is centred inside it and input is masked to the

@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.UPower
 import "../config" as Config
 import "." as Services
 
@@ -175,6 +176,8 @@ Singleton {
     // `supports_wide_color`, `supports_hdr`. That is not a coincidence kept
     // up by hand: building the table to send is then a copy, and a field
     // added to one side cannot arrive on the other under a different name.
+    // The one exception is `batteryRate`, the shell's own (see modeFor),
+    // which is read here and never sent.
     function displayMap() {
         if (!prefs.displays) return ({});
         try {
@@ -208,6 +211,9 @@ Singleton {
 
     function rememberDisplay(name, mode, scale) {
         saveDisplay(name, { mode: mode, scale: scale });
+        // A rate chosen by hand is a fresh start for keeping it (see enforce).
+        root.fixes = Object.assign({}, root.fixes, { [name]: [] });
+        root.contested = Object.assign({}, root.contested, { [name]: undefined });
     }
 
     // Where the output sits on the desktop plane, kept beside its mode and
@@ -254,6 +260,136 @@ Singleton {
         "supports_wide_color", "supports_hdr"
     ]
 
+    // ── on battery ────────────────────────────────────────────────────────
+    //
+    // A display can run at another rate on battery: `batteryRate` in its
+    // entry, in Hz, and none means the same as plugged in. The resolution
+    // stays whatever `mode` says; only the rate changes, to the one the
+    // output actually has nearest that number at that resolution, since a
+    // rate Hyprland is not offered exactly is one it will not set.
+    readonly property bool onBattery: UPower.onBattery
+
+    function nearestRate(ipc, res, hz) {
+        let best = hz, gap = Infinity;
+        for (const s of ipc.availableModes || []) {
+            const m = /^(\d+x\d+)@([\d.]+)/.exec(s);
+            if (!m || m[1] !== res) continue;
+            const r = parseFloat(m[2]);
+            if (Math.abs(r - hz) < gap) { gap = Math.abs(r - hz); best = r; }
+        }
+        return Math.round(best * 1000) / 1000;
+    }
+
+    // The mode to run now: the saved one, at the battery rate when there
+    // is one and the machine is on battery.
+    function modeFor(name, want, live) {
+        const ipc = live.lastIpcObject || ({});
+        const mode = want.mode
+            || ((ipc.width || live.width) + "x" + (ipc.height || live.height)
+                + "@" + (Math.round((ipc.refreshRate || 60) * 1000) / 1000));
+        if (!root.onBattery || !(want.batteryRate > 0)) return mode;
+        const res = mode.split("@")[0];
+        return res + "@" + root.nearestRate(ipc, res, want.batteryRate);
+    }
+
+    function setBatteryRate(name, hz) {
+        saveDisplay(name, { batteryRate: hz > 0 ? hz : undefined });
+        root.contested = Object.assign({}, root.contested, { [name]: undefined });
+        applyDisplay(name);
+        Services.Compositor.refreshMonitors();
+    }
+
+    // ── keeping it there ──────────────────────────────────────────────────
+    //
+    // Hyprland puts an output back on hyprland.lua's rule whenever it sets
+    // it up again — a panel re-initialised as the power source changes, a
+    // monitor re-plugged — and the rule shipped is "preferred", which on
+    // many laptop panels is 60 Hz. Something else may set it outright, too:
+    // asusd runs its bat_command on unplugging. Either way the rate chosen
+    // in Settings was gone until the next login.
+    //
+    // So a saved rate is checked after anything that could have moved it —
+    // the power source changing, an output coming or going, and every half
+    // minute besides, since a mode set from outside raises no event — and
+    // put back when it is off. Three fixes inside a minute means something
+    // is setting it on purpose; the shell stops there rather than fight it,
+    // and Settings says so. Changing the power source or the rate again
+    // starts over.
+    property var fixes: ({})      // output → [times it was put back]
+    property var contested: ({})  // output → the rate something else keeps setting
+
+    function enforce() {
+        if (!root.applied) return;
+        const map = displayMap();
+        const now = Date.now();
+        for (const live of Services.Compositor.monitors || []) {
+            if (!live || !map[live.name] || !(map[live.name].mode || map[live.name].batteryRate)) continue;
+            const ipc = live.lastIpcObject || ({});
+            if (!ipc.refreshRate) continue;
+            const want = parseFloat(root.modeFor(live.name, map[live.name], live).split("@")[1]);
+            if (!(want > 0) || Math.abs(ipc.refreshRate - want) < 0.5) continue;
+            if (root.contested[live.name] !== undefined) continue;
+            const recent = (root.fixes[live.name] || []).filter(t => now - t < 60000);
+            if (recent.length >= 3) {
+                console.warn("Devices:", live.name, "keeps going to", ipc.refreshRate,
+                             "Hz instead of", want, "— something else is setting it; leaving it");
+                root.contested = Object.assign({}, root.contested,
+                                               { [live.name]: Math.round(ipc.refreshRate) });
+                continue;
+            }
+            recent.push(now);
+            root.fixes = Object.assign({}, root.fixes, { [live.name]: recent });
+            console.log("Devices:", live.name, "was at", ipc.refreshRate, "Hz; putting back", want);
+            root.applyDisplay(live.name);
+        }
+    }
+
+    // A check a moment after each nudge, once Hyprland's report is fresh.
+    Timer {
+        id: recheck
+        interval: 1500
+        onTriggered: root.enforce()
+    }
+    function checkSoon() {
+        Services.Compositor.refreshMonitors();
+        recheck.restart();
+    }
+
+    // The power source changing is when the rate matters: apply the one for
+    // it, and look again over the next few seconds for whatever else reacts
+    // to the same unplugging.
+    onOnBatteryChanged: {
+        if (!root.applied) return;
+        root.fixes = ({});
+        root.contested = ({});
+        root.applyDisplays();
+        powerFollowUp.left = 3;
+        powerFollowUp.restart();
+        root.checkSoon();
+    }
+    Timer {
+        id: powerFollowUp
+        property int left: 0
+        interval: 3000
+        repeat: true
+        onTriggered: {
+            root.checkSoon();
+            if (--left <= 0) stop();
+        }
+    }
+
+    Timer {
+        interval: 30000
+        repeat: true
+        running: root.applied && prefs.displays !== ""
+        onTriggered: root.checkSoon()
+    }
+
+    Connections {
+        target: Services.Compositor
+        function onOutputsChanged() { root.checkSoon(); }
+    }
+
     // The whole monitor table for one output, or null when it isn't
     // plugged in.
     function displaySpec(name) {
@@ -272,9 +408,7 @@ Singleton {
         // first table ever sent for an output that hyprland.lua does not
         // name would otherwise change its resolution as a side effect of
         // switching on 10-bit.
-        spec.mode = want.mode
-            || ((ipc.width || live.width) + "x" + (ipc.height || live.height)
-                + "@" + (Math.round((ipc.refreshRate || 60) * 1000) / 1000));
+        spec.mode = root.modeFor(name, want, live);
         spec.scale = want.scale || live.scale || 1;
 
         // Only keys the entry actually carries. Stating every colour field
