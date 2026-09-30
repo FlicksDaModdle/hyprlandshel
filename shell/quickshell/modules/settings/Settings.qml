@@ -909,7 +909,7 @@ Scope {
             // actually took — which is not always the one asked for, so
             // both are shown.
             const hw = ipc.hardwareDetails || ({});
-            const saved = Services.Devices.displayMap()[m.name] || ({});
+            // `saved`, this output's entry, is read above with the refresh rate.
 
             // Hyprland's supportsWideColor() believes the EDID unless
             // supports_wide_color overrides it, and supportsHDR() needs
