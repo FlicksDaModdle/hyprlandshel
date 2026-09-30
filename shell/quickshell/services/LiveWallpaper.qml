@@ -269,6 +269,62 @@ Singleton {
         Config.Appearance.liveProps = JSON.stringify(store);
     }
 
+    // Its own volume, 0-100, kept with its options as Wallpaper Engine
+    // keeps it (a "volume" beside them); none means the one in Playback.
+    function volumeFor(w) {
+        const v = root.overridesFor(w).volume;
+        return typeof v === "number" ? v : -1;
+    }
+    function setVolume(w, v) {
+        if (!w) return;
+        const store = JSON.parse(JSON.stringify(root.propStore));
+        const mine = store[w.id] || {};
+        if (v < 0) delete mine.volume; else mine.volume = Math.round(v);
+        if (Object.keys(mine).length > 0) store[w.id] = mine; else delete store[w.id];
+        Config.Appearance.liveProps = JSON.stringify(store);
+    }
+
+    // ── presets ───────────────────────────────────────────────────────────
+    // Wallpaper Engine's: a named set of every option a wallpaper has,
+    // applied in one go. Kept per wallpaper, and carried in and out of its
+    // config.json with the rest.
+    readonly property var presetStore: {
+        try { return JSON.parse(Config.Appearance.livePresets || "{}") || {}; }
+        catch (e) { return {}; }
+    }
+    function presetsFor(w) { return (w && root.presetStore[w.id]) || []; }
+    function savePresets(w, list) {
+        const store = JSON.parse(JSON.stringify(root.presetStore));
+        if (list.length > 0) store[w.id] = list; else delete store[w.id];
+        Config.Appearance.livePresets = JSON.stringify(store);
+    }
+    function savePreset(w, name) {
+        name = String(name || "").trim();
+        if (!w || name === "") return;
+        const list = root.presetsFor(w).filter(p => p.name !== name);
+        list.push({ name: name, properties: WeProps.shareJson(w.props, root.valuesFor(w)) });
+        root.savePresets(w, list);
+        root.shareStatus = "Saved as “" + name + "”";
+    }
+    function deletePreset(w, name) {
+        root.savePresets(w, root.presetsFor(w).filter(p => p.name !== name));
+        root.shareStatus = "Deleted “" + name + "”";
+    }
+    // Applying one sets every option to it: what it does not name goes
+    // back to the default, as in Wallpaper Engine.
+    function applyPreset(w, name) {
+        const p = root.presetsFor(w).find(x => x.name === name);
+        if (!w || !p) return;
+        const r = WeProps.importValues(w.props, p.properties);
+        const keepVolume = root.volumeFor(w);
+        const store = JSON.parse(JSON.stringify(root.propStore));
+        delete store[w.id];
+        Config.Appearance.liveProps = JSON.stringify(store);
+        root.setProps(w, r.values);
+        if (keepVolume >= 0) root.setVolume(w, keepVolume);
+        root.shareStatus = "Applied “" + name + "”";
+    }
+
     // ── which wallpaper where ─────────────────────────────────────────────
     readonly property var screenMap: {
         try { return JSON.parse(Config.Appearance.liveScreens || "{}") || {}; }
@@ -322,9 +378,12 @@ Singleton {
         if (!root.enabled || !root.scanned || root.screenNames.length === 0) return [];
         const A = Config.Appearance;
         const a = ["--fps", String(Math.max(1, A.liveFps))];
-        if (!A.liveSound || A.liveVolume <= 0) a.push("--silent");
-        // It takes 0-128.
-        else a.push("--volume", String(Math.round(A.liveVolume * 1.28)));
+        // The wallpaper's own volume when it has one, as Wallpaper Engine
+        // keeps per wallpaper; it takes 0-128.
+        const own = root.volumeFor(root.current);
+        const vol = own >= 0 ? own : A.liveVolume;
+        if (!A.liveSound || vol <= 0) a.push("--silent");
+        else a.push("--volume", String(Math.round(vol * 1.28)));
         if (!A.liveAutomute) a.push("--noautomute");
         if (!A.liveAudioReactive) a.push("--no-audio-processing");
         if (A.livePause === "never") a.push("--no-fullscreen-pause");
@@ -813,16 +872,61 @@ Singleton {
                 if (list.settings.order === "random" || list.settings.order === "sequential")
                     A.liveOrder = list.settings.order;
                 A.liveRotate = !!(first && first.playlist) && dirs.length > 1;
-                said.push("playlist “" + A.liveListName + "”, " + dirs.length + " wallpapers"
-                          + (missing.length ? " (" + missing.length + " not installed here)" : ""));
+                said.push("playlist “" + A.liveListName + "” (" + dirs.length
+                          + (missing.length ? ", " + missing.length + " not installed here" : "") + ")");
             }
+
+            // Each wallpaper's changed options, as its first monitor had
+            // them — one program draws every screen here, so one set.
+            const store = JSON.parse(JSON.stringify(root.propStore));
+            let withProps = 0, split = 0;
+            for (const k in r.props) {
+                const w = root.byKey(k);
+                if (!w) continue;
+                const mp = WeProps.monitorProps(r.props[k]);
+                const got = WeProps.importValues(w.props, mp.values).values;
+                if (typeof mp.values.volume === "number") got.volume = mp.values.volume;
+                if (Object.keys(got).length === 0) continue;
+                store[w.id] = got;
+                withProps++;
+                if (mp.differs) split++;
+            }
+            A.liveProps = JSON.stringify(store);
+            if (withProps) said.push("options for " + withProps + (withProps === 1 ? " wallpaper" : " wallpapers")
+                                     + (split ? " (" + split + " set differently per monitor there — the first monitor's taken)" : ""));
+
+            // Presets, merged by name into the ones here.
+            const pstore = JSON.parse(JSON.stringify(root.presetStore));
+            let presets = 0;
+            for (const k in r.presets) {
+                const w = root.byKey(k);
+                if (!w) continue;
+                const mine = (pstore[w.id] || []).filter(p => !r.presets[k].some(q => q.name === p.name));
+                pstore[w.id] = mine.concat(r.presets[k]);
+                presets += r.presets[k].length;
+            }
+            A.livePresets = JSON.stringify(pstore);
+            if (presets) said.push(presets + (presets === 1 ? " preset" : " presets"));
+
+            // Playback: its frame rate, and when it pauses.
+            if (r.playback) {
+                const stops = v => v === "pause" || v === "stop";
+                if (r.playback.fps > 0) A.liveFps = Math.max(5, Math.min(144, r.playback.fps));
+                A.livePauseCovered = stops(r.playback.focus) ? "windows"
+                                   : stops(r.playback.maximized) ? "covered" : "never";
+                A.livePause = stops(r.playback.fullscreen) ? "any" : "never";
+                said.push("playback (" + A.liveFps + " fps, pausing "
+                          + (A.livePauseCovered === "never" ? "never" : "behind windows") + ")");
+            }
+
             // What each screen shows: the first here gets the first there,
             // and so on.
             const shown = r.selected.map(e => root.byKey(e.key)).filter(w => w && !w.unsupported);
             if (shown.length > 0) {
                 root.choose(shown[0].dir);
                 said.push(shown[0].title + " on screen");
-                if (shown.length > 1 && root.screenNames.length > 1) {
+                const distinct = shown.filter((w, i) => shown.findIndex(x => x.dir === w.dir) === i);
+                if (distinct.length > 1 && root.screenNames.length > 1) {
                     const m = {};
                     root.screenNames.forEach((n, i) => { if (shown[i]) m[n] = shown[i].dir; });
                     A.liveScreens = JSON.stringify(m);
@@ -846,6 +950,21 @@ Singleton {
                 }
             }
             const A = Config.Appearance;
+            // Every wallpaper with options changed here: those, and the
+            // names of all it has, so ones set back to default come out of
+            // the file too. A wallpaper with none changed here is left as
+            // the file has it — its options may have been set over there.
+            const props = {}, presets = {};
+            for (const w of root.wallpapers) {
+                const o = root.overridesFor(w);
+                if (Object.keys(o).length > 0)
+                    props[w.dir] = { names: w.props.filter(p => !p.caption).map(p => p.name)
+                                                .concat(o.volume !== undefined ? ["volume"] : []),
+                                     values: o };
+                const ps = root.presetsFor(w);
+                if (ps.length > 0) presets[w.dir] = ps;
+            }
+            const stops = x => x ? "pause" : "run";
             const out = WeProps.writeConfig(existing, {
                 name: A.liveListName || "Hyprshell",
                 dirs: root.playlist.filter(d => root.find(d)),
@@ -853,7 +972,17 @@ Singleton {
                 delay: Math.max(1, A.liveDelay),
                 order: A.liveOrder,
                 current: root.current ? root.current.dir : "",
-                rotate: A.liveRotate
+                screens: root.layout === "each" ? root.screenNames.map(n => root.find(root.wallpaperFor(n)))
+                                                          .map(w => w ? w.dir : "")
+                                                : root.screenNames.map(() => root.current ? root.current.dir : ""),
+                monitors: root.screenNames.length,
+                rotate: A.liveRotate,
+                props: props,
+                presets: presets,
+                playback: { fps: A.liveFps,
+                            focus: stops(A.livePauseCovered === "windows"),
+                            maximized: stops(A.livePauseCovered !== "never"),
+                            fullscreen: stops(A.livePause !== "never") }
             });
             root.writeFile(f, JSON.stringify(out, null, "\t") + "\n", existing !== null, ok => {
                 root.configStatus = !ok ? "Could not write " + f

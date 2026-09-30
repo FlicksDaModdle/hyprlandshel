@@ -11,7 +11,7 @@ const assert = require("assert");
 const src = fs.readFileSync(path.join(__dirname, "../services/WeProps.js"), "utf8")
     .replace(/^\.pragma library\s*$/m, "");
 const W = new Function(src + "\nreturn { label, parseProps, visible, toArg, shareJson, importValues,"
-    + " readConfig, writeConfig, keyOf, colorString, normalise };")();
+    + " readConfig, writeConfig, keyOf, colorString, normalise, monitorProps };")();
 
 let n = 0;
 function test(name, fn) { fn(); n++; console.log("ok  " + name); }
@@ -197,12 +197,87 @@ test("config.json out: wallpapers only the other machine has stay in its playlis
     // techno is installed here and was taken out here, so it goes.
 });
 
-test("config.json out: a new file has the shape linux-wallpaperengine's --playlist reads", () => {
+test("config.json out: a new file, in current Wallpaper Engine's layout", () => {
     const out = W.writeConfig(null, { name: "Hyprshell", dirs: ["/x/431960/5", "/x/431960/6"],
         delay: 60, order: "random", current: "/x/431960/5", rotate: false });
+    // general.playlists, which linux-wallpaperengine's --playlist reads too
     assert.strictEqual(out.steamuser.general.playlists[0].items[0],
         "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/5/project.json");
-    assert.strictEqual(out.steamuser.wallpaperconfig.selectedwallpapers.Monitor0.playlist, undefined);
+    assert.strictEqual(out.steamuser.general.wallpaperconfig.selectedwallpapers.Monitor0.playlist, undefined);
+});
+
+// Shaped like Wallpaper Engine 2.x's own file (config version 5): the
+// account's name as the section, what is on screen under general, option
+// values in wproperties by file and monitor, presets in general.wpresets.
+const v5 = {
+    "?installdirectory": "C:/Program Files (x86)/Steam/steamapps/common/wallpaper_engine",
+    someone: {
+        general: {
+            browser: { resultsperpage: 100 },
+            user: { fps: 25, playbackfocus: "run", playbackmaximized: "pause",
+                    playbackfullscreen: "run", msaa: "x2" },
+            wallpaperconfig: { profile: null, selectedwallpapers: {
+                Monitor1: { file: "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/300/project.json" },
+                Monitor0: { file: "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/100/scene.pkg" }
+            } },
+            wpresets: { "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/300/project.json": {
+                presets: [{ name: "bluelines", properties: { first_color: "0 0.56 0.85", grid: true } },
+                          { name: "bw", properties: { first_color: "1 1 1", grid: false } }] } }
+        },
+        version: 5,
+        wproperties: {
+            "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/200/Some Video 8K.mp4":
+                { Monitor0: { volume: 0 } },
+            "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/300/project.json": {
+                Monitor0: { first_color: "1 1 1", flux: 3, grid: false },
+                Monitor1: { first_color: "1 1 1" } }
+        }
+    }
+};
+
+test("config.json v5 in: screens, option values by file and monitor, presets, playback", () => {
+    const r = W.readConfig(v5);
+    assert.deepStrictEqual(r.selected.map(e => [e.monitor, e.key]), [["Monitor0", "ws:100"], ["Monitor1", "ws:300"]]);
+    assert.deepStrictEqual(Object.keys(r.props).sort(), ["ws:200", "ws:300"]);   // an .mp4 and a project.json
+    assert.deepStrictEqual(r.props["ws:200"].Monitor0, { volume: 0 });
+    const mp = W.monitorProps(r.props["ws:300"]);
+    assert.deepStrictEqual(mp.values, { first_color: "1 1 1", flux: 3, grid: false });
+    assert.strictEqual(mp.differs, true);
+    assert.deepStrictEqual(r.presets["ws:300"].map(p => p.name), ["bluelines", "bw"]);
+    assert.deepStrictEqual(r.playback, { fps: 25, focus: "run", maximized: "pause", fullscreen: "run" });
+    assert.strictEqual(W.keyOf("C:/x/steamapps/workshop/content/431960/3679305145/scene.pkg"), "ws:3679305145");
+});
+
+test("config.json v5 out: into the file's own places, keeping its paths and the rest", () => {
+    const local = "/home/u/.local/share/Steam/steamapps/workshop/content/431960/";
+    const out = W.writeConfig(v5, { name: "Hyprshell", dirs: [], delay: 30, order: "sequential",
+        screens: [local + "100", local + "400"], rotate: false, monitors: 2,
+        props: { [local + "300"]: { names: ["first_color", "flux", "grid", "scale"], values: { scale: 0.7 } },
+                 [local + "400"]: { names: ["speed"], values: { speed: 2 } } },
+        presets: { [local + "300"]: [{ name: "bw", properties: { first_color: "0.9 0.9 0.9" } },
+                                     { name: "mine", properties: { grid: true } }] },
+        playback: { fps: 60, maximized: "pause" } });
+    const g = out.someone.general;
+    assert.strictEqual(out.steamuser, undefined);                              // their account, not a new one
+    const sel = g.wallpaperconfig.selectedwallpapers;
+    assert.strictEqual(sel.Monitor0.file, "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/100/scene.pkg");
+    assert.strictEqual(sel.Monitor1.file, "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/400/project.json");
+    const wp = out.someone.wproperties;
+    const p300 = wp["C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/300/project.json"];
+    assert.deepStrictEqual(p300.Monitor0, { scale: 0.7 });                     // reset ones gone
+    assert.deepStrictEqual(p300.Monitor1, { scale: 0.7 });
+    assert.deepStrictEqual(wp["C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/200/Some Video 8K.mp4"],
+                           { Monitor0: { volume: 0 } });                        // untouched
+    assert.deepStrictEqual(wp["C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/400/project.json"].Monitor0,
+                           { speed: 2 });
+    const pr = g.wpresets["C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/300/project.json"].presets;
+    assert.deepStrictEqual(pr.map(p => p.name), ["bluelines", "bw", "mine"]);
+    assert.strictEqual(pr[1].properties.first_color, "0.9 0.9 0.9");
+    assert.strictEqual(g.user.fps, 60);
+    assert.strictEqual(g.user.msaa, "x2");                                     // theirs, kept
+    assert.strictEqual(g.browser.resultsperpage, 100);
+    const back = W.readConfig(out);
+    assert.deepStrictEqual(back.selected.map(e => e.key), ["ws:100", "ws:400"]);
 });
 
 console.log(n + " passed");

@@ -313,17 +313,34 @@ function importValues(props, data) {
 // matched by what does not change between machines: its Workshop id, or
 // which of Wallpaper Engine's project folders it is in and its name.
 
+// Any file in a wallpaper's folder names it: Wallpaper Engine writes the
+// project.json, the scene.pkg or the video, depending on how it was opened.
 function keyOf(path) {
-    const s = String(path || "").replace(/\\/g, "/").replace(/\/project\.json$/i, "").replace(/\/+$/, "");
-    let m = /\/431960\/([^/]+)$/.exec(s);
+    const s = String(path || "").replace(/\\/g, "/").replace(/\/+$/, "");
+    let m = /\/431960\/([^/]+)(\/|$)/.exec(s);
     if (m) return "ws:" + m[1];
-    m = /\/projects\/(defaultprojects|myprojects)\/([^/]+)$/i.exec(s);
+    m = /\/projects\/(defaultprojects|myprojects)\/([^/]+)(\/|$)/i.exec(s);
     if (m) return "we:" + m[1].toLowerCase() + "/" + m[2];
-    return "path:" + s;
+    return "path:" + s.replace(/\/project\.json$/i, "");
+}
+
+// Monitor0, Monitor1, … in order, and anything else after them.
+function monitorOrder(keys) {
+    const n = k => { const m = /^Monitor(\d+)$/.exec(k); return m ? parseInt(m[1]) : 1e6; };
+    return keys.slice().sort((a, b) => n(a) - n(b));
 }
 
 // → { selected: [{ monitor, key, playlist }], playlists: [{ name, keys,
-//     settings }] }
+//     settings }], props: { key: { monitor: { name: value } } },
+//     presets: { key: [{ name, properties }] }, playback: { … } }
+//
+// Where things are, as Wallpaper Engine 2.x writes them (config version 5):
+// everything under the account's name; the options changed on each
+// wallpaper in <account>.wproperties, by the wallpaper's file and then by
+// monitor, only the ones changed and its volume; named presets in
+// <account>.general.wpresets; what each monitor shows in
+// <account>.general.wallpaperconfig — older files have that at
+// <account>.wallpaperconfig, where linux-wallpaperengine reads it.
 function readConfig(cfg) {
     const user = cfg && (cfg.steamuser || firstUser(cfg));
     const res = { selected: [], playlists: [], ok: !!user };
@@ -338,13 +355,50 @@ function readConfig(cfg) {
         if (p && typeof p === "object") res.playlists.push(pl(p));
     const sel = user.wallpaperconfig && user.wallpaperconfig.selectedwallpapers
         || general.wallpaperconfig && general.wallpaperconfig.selectedwallpapers || {};
-    for (const monitor in sel) {
+    for (const monitor of monitorOrder(Object.keys(sel))) {
         const e = sel[monitor];
         if (!e || typeof e !== "object") continue;
         res.selected.push({ monitor: monitor, key: e.file ? keyOf(e.file) : "",
                             playlist: e.playlist && typeof e.playlist === "object" ? pl(e.playlist) : null });
     }
+
+    res.props = {};
+    const wp = user.wproperties && typeof user.wproperties === "object" ? user.wproperties : {};
+    for (const path in wp) {
+        const byMonitor = wp[path];
+        if (!byMonitor || typeof byMonitor !== "object") continue;
+        const k = keyOf(path);
+        res.props[k] = Object.assign(res.props[k] || {}, byMonitor);
+    }
+
+    res.presets = {};
+    const pr = general.wpresets && typeof general.wpresets === "object" ? general.wpresets : {};
+    for (const path in pr) {
+        const list = pr[path] && Array.isArray(pr[path].presets) ? pr[path].presets : [];
+        const k = keyOf(path);
+        res.presets[k] = (res.presets[k] || []).concat(list
+            .filter(x => x && typeof x.name === "string" && x.properties && typeof x.properties === "object")
+            .map(x => ({ name: x.name, properties: x.properties })));
+    }
+
+    const u = general.user && typeof general.user === "object" ? general.user : null;
+    res.playback = u ? {
+        fps: typeof u.fps === "number" ? u.fps : 0,
+        focus: String(u.playbackfocus || ""),
+        maximized: String(u.playbackmaximized || ""),
+        fullscreen: String(u.playbackfullscreen || "")
+    } : null;
     return res;
+}
+
+// The options changed on one monitor, from readConfig's props: the first
+// monitor there is, in order. `differs` says whether another had others.
+function monitorProps(byMonitor) {
+    const keys = monitorOrder(Object.keys(byMonitor || {}));
+    if (keys.length === 0) return { values: {}, differs: false };
+    const first = byMonitor[keys[0]] || {};
+    const differs = keys.slice(1).some(k => JSON.stringify(byMonitor[k]) !== JSON.stringify(first));
+    return { values: first, differs: differs };
 }
 
 // Older files keep everything under the Steam account's name rather than
@@ -424,15 +478,75 @@ function writeConfig(existing, opts) {
         if (at >= 0) lists[at] = playlist; else lists.push(playlist);
         general.playlists = lists;
     }
-    if (opts.current) {
-        const wc = user.wallpaperconfig = user.wallpaperconfig || {};
+    // What each monitor shows, where this file keeps it: general's in
+    // current files, the account's in older ones.
+    const screens = opts.screens && opts.screens.length ? opts.screens : (opts.current ? [opts.current] : []);
+    if (screens.length > 0) {
+        const wc = user.wallpaperconfig && user.wallpaperconfig.selectedwallpapers
+            ? user.wallpaperconfig
+            : (general.wallpaperconfig = general.wallpaperconfig || {});
         const sel = wc.selectedwallpapers = wc.selectedwallpapers || {};
-        const monitor = Object.keys(sel)[0] || "Monitor0";
-        const entry = Object.assign({}, sel[monitor] || {});
-        entry.file = pathFor(prefix, keyOf(opts.current), opts.current);
-        if (opts.rotate && items.length > 1) entry.playlist = playlist;
-        else delete entry.playlist;
-        sel[monitor] = entry;
+        const names = monitorOrder(Object.keys(sel));
+        screens.forEach((dir, i) => {
+            if (!dir) return;
+            const monitor = names[i] || ("Monitor" + i);
+            const entry = Object.assign({}, sel[monitor] || {});
+            // The file it already names, when that is this wallpaper — it
+            // may be the scene.pkg or the video rather than project.json.
+            if (!entry.file || keyOf(entry.file) !== keyOf(dir))
+                entry.file = pathFor(prefix, keyOf(dir), dir);
+            if (i === 0 && opts.rotate && items.length > 1) entry.playlist = playlist;
+            else delete entry.playlist;
+            sel[monitor] = entry;
+        });
+    }
+
+    // A path already in this section for the same wallpaper, or a new one.
+    function pathIn(section, dir) {
+        const k = keyOf(dir);
+        for (const p in section) if (keyOf(p) === k) return p;
+        return pathFor(prefix, k, dir);
+    }
+
+    // The options changed, per wallpaper, on each monitor. Options the
+    // wallpaper has that are not changed any more are taken out; anything
+    // else there (its volume, say) stays.
+    if (opts.props) {
+        const wp = user.wproperties = user.wproperties || {};
+        const count = Math.max(1, opts.monitors || 1);
+        for (const dir in opts.props) {
+            const e = opts.props[dir];
+            const path = pathIn(wp, dir);
+            const byMonitor = wp[path] = Object.assign({}, wp[path] || {});
+            for (let i = 0; i < count; i++) {
+                const m = "Monitor" + i;
+                const next = Object.assign({}, byMonitor[m] || {});
+                for (const name of e.names || []) delete next[name];
+                Object.assign(next, e.values || {});
+                if (Object.keys(next).length > 0) byMonitor[m] = next; else delete byMonitor[m];
+            }
+            if (Object.keys(byMonitor).length === 0) delete wp[path];
+        }
+    }
+
+    // Named presets, by name: one of the same name is replaced, the rest
+    // are kept.
+    if (opts.presets) {
+        const pr = general.wpresets = general.wpresets || {};
+        for (const dir in opts.presets) {
+            const path = pathIn(pr, dir);
+            const had = pr[path] && Array.isArray(pr[path].presets) ? pr[path].presets : [];
+            const ours = opts.presets[dir];
+            const kept = had.filter(x => !ours.some(o => o.name === (x && x.name)));
+            pr[path] = Object.assign({}, pr[path] || {}, { presets: kept.concat(ours) });
+        }
+    }
+
+    if (opts.playback) {
+        const u = general.user = general.user || {};
+        if (opts.playback.fps > 0) u.fps = opts.playback.fps;
+        for (const k of ["focus", "maximized", "fullscreen"])
+            if (opts.playback[k]) u["playback" + k] = opts.playback[k];
     }
     return cfg;
 }

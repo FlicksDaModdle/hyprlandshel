@@ -114,6 +114,9 @@ Singleton {
             // Each wallpaper's own options as changed from its defaults, as
             // JSON: { "<folder name>": { "<option>": value } }.
             property string liveProps: ""
+            // Named sets of a wallpaper's options, Wallpaper Engine's
+            // presets: { "<folder name>": [{ name, properties }] }.
+            property string livePresets: ""
             property int liveVolume: 50               // 0-100 %, with sound on
             property bool liveAutomute: true          // quiet while other apps play
             property bool liveAudioReactive: true     // visualisers hear the system
@@ -368,6 +371,7 @@ Singleton {
     property alias liveMouse: prefs.liveMouse
     property alias liveParallax: prefs.liveParallax
     property alias liveProps: prefs.liveProps
+    property alias livePresets: prefs.livePresets
     property alias liveVolume: prefs.liveVolume
     property alias liveAutomute: prefs.liveAutomute
     property alias liveAudioReactive: prefs.liveAudioReactive

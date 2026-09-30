@@ -2102,6 +2102,30 @@ Scope {
             if (!shownAny)
                 rows.push({ n: "No options", s: w.title + " has none of its own", type: "info", value: "" });
 
+            // Its own volume, as Wallpaper Engine keeps one per wallpaper.
+            if (A.liveSound) {
+                const own = L.volumeFor(w);
+                rows.push({ n: "Volume",
+                    s: own >= 0 ? "Its own — the rest play at " + A.liveVolume + "%"
+                                : "Playback's " + A.liveVolume + "%, until set here",
+                    type: "slider", min: 0, max: 100, unit: "%",
+                    value: own >= 0 ? own : A.liveVolume, set: v => L.setVolume(w, v) });
+            }
+
+            // Presets: named sets of these options, applied in one go.
+            const presets = L.presetsFor(w).map(p => p.name);
+            const pick = "Choose one";
+            if (presets.length > 0) {
+                rows.push({ n: "Presets", s: presets.length + (presets.length === 1 ? " saved" : " saved"),
+                    type: "menu", options: [pick].concat(presets), value: pick,
+                    set: v => { if (v !== pick) L.applyPreset(w, v); } });
+                rows.push({ n: "Delete a preset", type: "menu", options: [pick].concat(presets), value: pick,
+                    set: v => { if (v !== pick) L.deletePreset(w, v); } });
+            }
+            rows.push({ n: "Save as preset", s: "These options, under a name — one of the same name is replaced",
+                type: "text", placeholder: "Name", label: "Save", value: "",
+                set: v => L.savePreset(w, v) });
+
             rows.push({ n: "Share JSON",
                 s: L.shareStatus !== "" ? L.shareStatus
                    : "Wallpaper Engine's own format for these options — what its Share JSON "
@@ -2202,8 +2226,8 @@ Scope {
 
         // ── Wallpaper Engine ──────────────────────────────────────────────
         rows.push({ type: "header", n: "Wallpaper Engine",
-            s: "Its config.json — the playlists and what is on screen. Wallpaper "
-               + "Engine on Windows, or under Proton here, reads what this writes." });
+            s: "Its config.json. Wallpaper Engine on Windows, or under Proton here, "
+               + "reads what this writes." });
         rows.push({ n: "config.json",
             s: L.configStatus !== "" ? L.configStatus
                : L.weConfig !== "" ? "Found at " + L.weConfig
@@ -2212,6 +2236,12 @@ Scope {
             type: "buttons",
             buttons: [{ label: "Import…", quiet: true, set: () => L.importConfig() },
                       { label: "Export…", quiet: true, set: () => L.exportConfig() }] });
+        rows.push({ n: "What goes across",
+            s: "What each screen shows, each wallpaper's options and volume, presets, "
+               + "the playlist, the frame rate and when it pauses. Options set per "
+               + "monitor there arrive as the first monitor's: one program draws every "
+               + "screen here.",
+            type: "info", value: "" });
         return rows;
     }
 

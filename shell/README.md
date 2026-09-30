@@ -574,8 +574,11 @@ linux-wallpaperengine can carry it:
 - **Playlist** — wallpapers the desktop moves through on a timer, in order
   or shuffled, like Wallpaper Engine's. `qs -c hyprshell ipc call shell
   nextLiveWallpaper` skips to the next; bind it to a key.
-- **Wallpaper Engine's config.json** — import its playlist and what each
-  screen shows, and export them back. Wallpapers are matched by Workshop id
+- **Presets** — named sets of a wallpaper's options, as Wallpaper Engine
+  has them: apply one, save the current options as one, delete one.
+- **Wallpaper Engine's config.json** — import what each screen shows, each
+  wallpaper's changed options and its volume, presets, the playlist, the
+  frame rate and when it pauses; export them back. Wallpapers are matched by Workshop id
   (or by name for its own projects), so paths from Windows find the same
   wallpapers here. Export merges into a file that is there — everything
   else in it kept, a copy made first as `config.json.before-hyprshell`, and
@@ -583,8 +586,15 @@ linux-wallpaperengine can carry it:
   paths for that machine's Steam library. linux-wallpaperengine's own
   `--playlist` reads the same file.
 
-One thing is not carried over: where Wallpaper Engine keeps each
-wallpaper's options inside config.json. Share JSON is the way to move those.
+The file's layout, as Wallpaper Engine 2.x writes it (config version 5):
+everything sits under your Steam account's name; each wallpaper's changed
+options are in `<account>.wproperties`, by the wallpaper's file (its
+`project.json`, `scene.pkg` or video) and then by monitor; presets are in
+`<account>.general.wpresets`; what each monitor shows is in
+`<account>.general.wallpaperconfig`. Options set differently per monitor
+there arrive as the first monitor's, since one program draws every screen
+here; export writes the same to each. A round trip — import, then export
+into the same file — leaves it byte for byte as it was.
 
 linux-wallpaperengine draws 2D scenes, videos and web wallpapers. A 3D
 scene is shown faded with "3D scene · not supported" and cannot be picked;
