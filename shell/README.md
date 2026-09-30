@@ -835,14 +835,21 @@ panel as the power source changes, a monitor re-plugged — and that rule is
 source changes, after an output comes or goes, and every half minute, and
 puts the chosen one back.
 
+Putting it back takes two steps. Hyprland keeps the rule it was last
+asked for, not the mode it ended up on, and skips a rule identical to that
+one — so once an output has fallen to 60 Hz with its rule still saying 120,
+asking for 120 again changes nothing. The shell sends the rule for what the
+output is running first, then the one it wants, which Hyprland then applies.
+
 **On battery** (laptops) chooses the rate unplugged: the same as plugged
 in, which is the default, or a lower one to save power. It changes back
 when you plug in.
 
-If something keeps setting another rate — three times inside a minute —
-the shell stops putting it back rather than fight it, and the On battery
-row names the rate it keeps getting. On an ASUS laptop, look at
-`bat_command` in `/etc/asusd/asusd.ron`.
+If it goes back three times inside a minute, the shell stops rather than
+flicker, and the On battery row says so. Either something else sets it —
+on an ASUS laptop, a `bat_command` in `/etc/asusd/asusd.ron` — or the
+driver refuses the rate at that moment, which Hyprland's log records as a
+mode that failed and a fallback to the preferred one.
 
 ### The dock's surface spans the whole edge
 

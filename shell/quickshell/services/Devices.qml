@@ -332,7 +332,8 @@ Singleton {
             const recent = (root.fixes[live.name] || []).filter(t => now - t < 60000);
             if (recent.length >= 3) {
                 console.warn("Devices:", live.name, "keeps going to", ipc.refreshRate,
-                             "Hz instead of", want, "— something else is setting it; leaving it");
+                             "Hz instead of", want, "— something else sets it, or the driver",
+                             "refuses it (Hyprland's log says which); leaving it");
                 root.contested = Object.assign({}, root.contested,
                                                { [live.name]: Math.round(ipc.refreshRate) });
                 continue;
@@ -422,9 +423,42 @@ Singleton {
         return spec;
     }
 
+    // Hyprland keeps the rule it was last asked for, not the mode it ended
+    // up on, and skips a rule identical to that one. So once an output has
+    // fallen to another rate — the driver refusing the asked-for mode, which
+    // makes Hyprland drop to the panel's preferred one; a reset it did not
+    // record — asking for the saved rate again changes nothing, however
+    // often it is asked: it still has that rule. When the output is not at
+    // the rate wanted, the rule for what it is actually running goes first,
+    // and the wanted one a moment later, which Hyprland then really applies.
+    property var pendingSpecs: ({})
+    Timer {
+        id: secondStep
+        interval: 400
+        onTriggered: {
+            const p = root.pendingSpecs;
+            root.pendingSpecs = ({});
+            for (const n in p) Services.Compositor.setMonitor(p[n]);
+            Services.Compositor.refreshMonitors();
+        }
+    }
+
     function applyDisplay(name) {
         const spec = displaySpec(name);
-        if (spec) Services.Compositor.setMonitor(spec);
+        if (!spec) return;
+        const live = (Services.Compositor.monitors || []).find(m => m && m.name === name);
+        const ipc = (live && live.lastIpcObject) || ({});
+        const want = parseFloat(String(spec.mode).split("@")[1]);
+        if (ipc.refreshRate > 0 && want > 0 && Math.abs(ipc.refreshRate - want) >= 0.5) {
+            const now = Object.assign({}, spec, {
+                mode: (ipc.width || live.width) + "x" + (ipc.height || live.height)
+                      + "@" + (Math.round(ipc.refreshRate * 1000) / 1000) });
+            Services.Compositor.setMonitor(now);
+            root.pendingSpecs = Object.assign({}, root.pendingSpecs, { [name]: spec });
+            secondStep.restart();
+            return;
+        }
+        Services.Compositor.setMonitor(spec);
     }
 
     // Only outputs that are actually connected are re-applied: a saved mode

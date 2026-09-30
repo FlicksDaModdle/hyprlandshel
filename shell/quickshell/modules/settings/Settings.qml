@@ -851,12 +851,18 @@ Scope {
             const saved = Services.Devices.displayMap()[m.name] || ({});
             const mainRate = root.pluggedRate(m.name, rate);
             const onBatteryRate = Services.Devices.onBattery && saved.batteryRate > 0;
+            // Shown as running, unless it is at its battery rate on purpose:
+            // a display that fell back to 60 has to read 60 here, or picking
+            // the rate it should be at looks like no change at all.
+            const offTarget = !onBatteryRate && saved.mode && Math.abs(rate - mainRate) >= 0.5;
             rows.push({ n: "Refresh rate", s: rateList.length <= 1 ? "Only one rate at this resolution"
                     : onBatteryRate ? "Plugged in — on battery now, at " + Math.round(rate) + " Hz"
+                    : offTarget ? "Set to " + Math.round(mainRate) + " Hz, running at " + Math.round(rate)
+                                  + " Hz — the shell is putting it back"
                     : "Rates available at " + curRes,
                 type: rateList.length > 1 ? "menu" : "info",
                 options: rateLabels,
-                value: root.formatHz(mainRate),
+                value: root.formatHz(onBatteryRate ? mainRate : rate),
                 set: v => { const k = rateLabels.indexOf(v);
                             if (k >= 0) root.applyMode(m.name, curRes, rateList[k]); } });
 
@@ -870,9 +876,10 @@ Scope {
                 const batLabels = [same].concat(rateLabels);
                 rows.push({ n: "On battery",
                     s: fought !== undefined
-                       ? "Something else keeps setting " + m.name + " to " + fought + " Hz, so the shell "
-                         + "has stopped putting it back. Look for a bat_command in /etc/asusd/asusd.ron, "
-                         + "or a power tool that changes refresh rates."
+                       ? m.name + " went back to " + fought + " Hz three times after being set. Either "
+                         + "something else sets it — a bat_command in /etc/asusd/asusd.ron, a power "
+                         + "tool — or the driver refuses the rate right now, which Hyprland's log "
+                         + "says. The shell has stopped retrying; pick the rate again to retry."
                        : saved.batteryRate > 0 ? "Drops to " + Math.round(saved.batteryRate) + " Hz unplugged, to save power"
                        : "Stays at " + Math.round(mainRate) + " Hz unplugged",
                     type: "menu", options: batLabels,
