@@ -515,10 +515,37 @@ being part of it, and keeps its own settings in
 `Super + Shift + E` still opens whatever `fileManager` names in
 `hyprland.lua`, if you want a second opinion.
 
+## Topographic wallpaper
+
+Settings → Wallpaper → **Topo** draws a contour map of a made-up terrain
+as the desktop — not a video or an image, but a fragment shader in the
+shell's own background layer (`modules/background/Topography.qml`,
+`shaders/topo.frag`). Still, it is drawn once and then costs nothing; Qt
+draws it again only when a setting changes. Monitors side by side show one
+continuous map, placed by where each sits in the layout.
+
+Everything about it is a setting: the terrain (step through maps with
+Previous and Next), the size of the hills, roughness, and how much the
+ridges wander; how many contour lines, their width, heavier index lines
+every 4th, 5th or 10th, and their colour (the theme's ink, the accent, or
+any) and strength; the ground shaded flat, smoothly from low to high, or in
+bands between lines, in the theme's colours or two of your own. **Drift**
+moves the terrain slowly at fifteen frames a second, and holds it still
+while a window covers the screen or the machine is on battery.
+
+The shader is compiled with Qt's `qsb`; after changing `topo.frag`:
+
+```
+qsb --glsl "100 es,120,150,300 es" --hlsl 50 --msl 12 \
+    -o modules/background/shaders/topo.frag.qsb modules/background/shaders/topo.frag
+```
+
+(`qsb` is in `qt6-shadertools`, under `/usr/lib/qt6/bin`.)
+
 ## Live wallpapers
 
-Settings → Wallpaper starts with one choice — **Gradient**, **Image** or
-**Live** — and shows only what that one needs; switching away and back
+Settings → Wallpaper starts with one choice — **Gradient**, **Topo**,
+**Image** or **Live** — and shows only what that one needs; switching away and back
 brings the last image or live wallpaper with it. Live plays a video as the
 wallpaper, with [mpvpaper](https://github.com/GhostNaN/mpvpaper)
 (`paru -S mpvpaper`): mpv on a layer surface, decoding on the graphics

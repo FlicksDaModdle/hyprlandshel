@@ -97,6 +97,25 @@ Singleton {
             property int rounding: 100                // 0-160 %
             property string tint: "Warm"              // "Warm" | "Neutral" | "Cool"
             property string wallpaper: ""             // absolute path; empty = tinted gradient
+            // With no image: the tinted gradient, or a contour map drawn by a
+            // shader (modules/background/Topography.qml).
+            property string wallpaperStyle: "gradient" // gradient | topo
+            property int topoSeed: 1                  // which terrain
+            property int topoScale: 100               // 25-300 %, size of the hills
+            property int topoDetail: 4                // 1-6, roughness
+            property int topoFlow: 45                 // 0-100 %, how much the ridges wander
+            property int topoLevels: 18               // contour lines, lowest to highest
+            property real topoWidth: 1.2              // px
+            property int topoMajor: 5                 // every Nth line heavier; 0 = none
+            property string topoLine: "ink"           // ink | accent | custom
+            property string topoLineCustom: "#3b6ef5"
+            property int topoStrength: 30             // 5-100 %, lines' opacity
+            property string topoShade: "smooth"       // flat | smooth | bands
+            property string topoGround: "theme"       // theme | custom
+            property string topoLow: "#1d2022"        // custom ground, low and high
+            property string topoHigh: "#3a4146"
+            property bool topoDrift: false            // the terrain slowly moving
+            property int topoSpeed: 30                // 5-100 %
             // A video playing on the desktop, drawn over the ground by
             // mpvpaper (services/LiveWallpaper.qml): its path. Empty = none.
             property string liveWallpaper: ""
@@ -350,6 +369,23 @@ Singleton {
     property alias roundingPct: prefs.rounding
     property alias tint: prefs.tint
     property alias wallpaper: prefs.wallpaper
+    property alias wallpaperStyle: prefs.wallpaperStyle
+    property alias topoSeed: prefs.topoSeed
+    property alias topoScale: prefs.topoScale
+    property alias topoDetail: prefs.topoDetail
+    property alias topoFlow: prefs.topoFlow
+    property alias topoLevels: prefs.topoLevels
+    property alias topoWidth: prefs.topoWidth
+    property alias topoMajor: prefs.topoMajor
+    property alias topoLine: prefs.topoLine
+    property alias topoLineCustom: prefs.topoLineCustom
+    property alias topoStrength: prefs.topoStrength
+    property alias topoShade: prefs.topoShade
+    property alias topoGround: prefs.topoGround
+    property alias topoLow: prefs.topoLow
+    property alias topoHigh: prefs.topoHigh
+    property alias topoDrift: prefs.topoDrift
+    property alias topoSpeed: prefs.topoSpeed
     property alias liveWallpaper: prefs.liveWallpaper
     property alias wallpaperLast: prefs.wallpaperLast
     property alias liveLast: prefs.liveLast

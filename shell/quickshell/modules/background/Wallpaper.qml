@@ -5,9 +5,10 @@ import Quickshell.Wayland
 import "../../config" as Config
 import "../../services" as Services
 
-// The desktop ground. Either a real image (Settings → Wallpaper →
-// Image) or, by default, the mockup's tinted gradient: a diagonal base
-// wash with two radial pools over it, retuned per theme and per tint choice.
+// The desktop ground. A real image (Settings → Wallpaper → Image), a
+// contour map (Topographic, Topography.qml) or, by default, the mockup's
+// tinted gradient: a diagonal base wash with two radial pools over it,
+// retuned per theme and per tint choice.
 //
 // A live wallpaper (Services.LiveWallpaper) is its own program's surface on
 // the layer above this one; this stays underneath it as what shows while it
@@ -65,6 +66,8 @@ Variants {
         // is the one surface every session has.
         readonly property bool live: Services.LiveWallpaper.enabled
         readonly property bool useImage: Config.Appearance.wallpaper !== ""
+        readonly property bool useTopo: !useImage && Config.Appearance.wallpaperStyle === "topo"
+        readonly property bool useGradient: !useImage && !useTopo
 
         // String tints promoted to color values, so the radial washes can
         // fade their own hue out to alpha 0 instead of to grey.
@@ -78,7 +81,7 @@ Variants {
         // ── base wash ─────────────────────────────────────────────────────
         Shape {
             anchors.fill: parent
-            visible: !win.useImage
+            visible: win.useGradient
             preferredRendererType: Shape.CurveRenderer
             ShapePath {
                 strokeWidth: 0
@@ -102,7 +105,7 @@ Variants {
         // ── upper-right pool ──────────────────────────────────────────────
         Shape {
             anchors.fill: parent
-            visible: !win.useImage && win.tint.g1 !== ""
+            visible: win.useGradient && win.tint.g1 !== ""
             preferredRendererType: Shape.CurveRenderer
             ShapePath {
                 strokeWidth: 0
@@ -125,7 +128,7 @@ Variants {
         // ── lower-left pool ───────────────────────────────────────────────
         Shape {
             anchors.fill: parent
-            visible: !win.useImage && win.tint.g2 !== ""
+            visible: win.useGradient && win.tint.g2 !== ""
             preferredRendererType: Shape.CurveRenderer
             ShapePath {
                 strokeWidth: 0
@@ -143,6 +146,13 @@ Variants {
                 PathLine { x: 0; y: win.height }
                 PathLine { x: 0; y: 0 }
             }
+        }
+
+        // Only loaded while it is the one shown.
+        Loader {
+            anchors.fill: parent
+            active: win.useTopo
+            sourceComponent: Topography { screen: win.modelData }
         }
 
         Image {

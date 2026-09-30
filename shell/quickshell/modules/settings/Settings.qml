@@ -54,14 +54,15 @@ Scope {
     // pictures choose for. Empty is every screen without one of its own.
     property string liveScreenPick: ""
 
-    // Gradient, Image or Live, as picked at the top of Settings →
+    // Gradient, Topographic, Image or Live, as picked at the top of Settings →
     // Wallpaper. Empty follows what the desktop has; set, it holds a
     // choice not yet made — Image with no image picked, Live with none
     // chosen — so the controls for it stay up while you pick.
     property string wallpaperMode: ""
     readonly property string wallpaperShown: wallpaperMode !== "" ? wallpaperMode
         : Services.LiveWallpaper.enabled ? "live"
-        : Config.Appearance.wallpaper !== "" ? "image" : "gradient"
+        : Config.Appearance.wallpaper !== "" ? "image"
+        : Config.Appearance.wallpaperStyle === "topo" ? "topo" : "gradient"
 
     // The galleries' search and filter. Objects rather than properties of
     // this Scope, so typing into them does not rebuild the rows — which
@@ -76,8 +77,9 @@ Scope {
         // What is being switched away from is kept, to come back to.
         if (A.wallpaper !== "") A.wallpaperLast = A.wallpaper;
         if (L.enabled) A.liveLast = A.liveWallpaper;
-        if (v === "gradient") {
+        if (v === "gradient" || v === "topo") {
             A.wallpaper = "";
+            A.wallpaperStyle = v;
             if (L.enabled) L.stop();
             root.wallpaperMode = "";
         } else if (v === "image") {
@@ -1927,16 +1929,19 @@ Scope {
         const mode = root.wallpaperShown;
         const rows = [{ n: "Desktop",
             s: mode === "gradient" ? "The shell's tinted gradient"
+               : mode === "topo" ? "A contour map of a made-up terrain"
                : mode === "image" ? "A picture of your own"
                : "A video, played by mpvpaper",
             type: "seg",
-            options: [{ label: "Gradient", value: "gradient" }, { label: "Image", value: "image" },
-                      { label: "Live", value: "live" }],
+            options: [{ label: "Gradient", value: "gradient" }, { label: "Topo", value: "topo" },
+                      { label: "Image", value: "image" }, { label: "Live", value: "live" }],
             value: mode, set: v => root.setWallpaperMode(v) }];
 
         if (mode === "gradient") {
             rows.push({ n: "Tint", s: "Its temperature", type: "seg",
                 options: ["Warm", "Neutral", "Cool"], value: A.tint, set: v => A.tint = v });
+        } else if (mode === "topo") {
+            return rows.concat(root.topoRows());
         } else if (mode === "image") {
             rows.push({ n: "Image",
                 s: A.wallpaper !== "" ? A.wallpaper.split("/").pop() : "None picked yet",
@@ -1946,6 +1951,69 @@ Scope {
         } else {
             return rows.concat(root.liveWallpaperRows());
         }
+        return rows;
+    }
+
+    // The Topographic part: the terrain, its lines, and its colours. Every
+    // change is on the desktop behind the window as it is made.
+    function topoRows() {
+        const A = Config.Appearance;
+        const hex = c => String(c).toUpperCase();
+        const rows = [];
+        rows.push({ n: "Terrain", s: "Map " + A.topoSeed, type: "buttons",
+            buttons: [{ label: "Previous", quiet: true, enabled: A.topoSeed > 1,
+                        set: () => A.topoSeed = Math.max(1, A.topoSeed - 1) },
+                      { label: "Next", quiet: true, set: () => A.topoSeed = A.topoSeed + 1 }] });
+        rows.push({ n: "Size", s: "How big the hills are", type: "slider", min: 25, max: 300, unit: "%",
+            value: A.topoScale, set: v => A.topoScale = v });
+        rows.push({ n: "Roughness", s: "Smooth hills to broken ground", type: "slider", min: 1, max: 6,
+            value: A.topoDetail, set: v => A.topoDetail = v });
+        rows.push({ n: "Flow", s: "How much the ridges wander", type: "slider", min: 0, max: 100, unit: "%",
+            value: A.topoFlow, set: v => A.topoFlow = v });
+
+        rows.push({ type: "header", n: "Lines", s: "" });
+        rows.push({ n: "Contours", s: "Lines from the lowest ground to the highest", type: "slider",
+            min: 4, max: 60, value: A.topoLevels, set: v => A.topoLevels = v });
+        rows.push({ n: "Width", type: "slider", min: 0.5, max: 4, step: 0.1, unit: "px",
+            value: A.topoWidth, set: v => A.topoWidth = v });
+        rows.push({ n: "Index lines", s: "Every so many drawn heavier, as on a survey map", type: "seg",
+            options: [{ label: "Off", value: "0" }, { label: "4th", value: "4" },
+                      { label: "5th", value: "5" }, { label: "10th", value: "10" }],
+            value: String(A.topoMajor), set: v => A.topoMajor = parseInt(v, 10) || 0 });
+        rows.push({ n: "Colour", type: "seg",
+            options: [{ label: "Ink", value: "ink" }, { label: "Accent", value: "accent" },
+                      { label: "Custom", value: "custom" }],
+            value: A.topoLine, set: v => A.topoLine = v });
+        if (A.topoLine === "custom")
+            rows.push({ n: "Line colour", s: hex(A.topoLineCustom), type: "color",
+                value: A.topoLineCustom, set: c => A.topoLineCustom = c.toString() });
+        rows.push({ n: "Strength", type: "slider", min: 5, max: 100, unit: "%",
+            value: A.topoStrength, set: v => A.topoStrength = v });
+
+        rows.push({ type: "header", n: "Ground", s: "" });
+        rows.push({ n: "Shading", s: A.topoShade === "flat" ? "One wash, top to bottom"
+                : A.topoShade === "bands" ? "A step of colour between each pair of lines"
+                : "Darker low, lighter high",
+            type: "seg",
+            options: [{ label: "Flat", value: "flat" }, { label: "Smooth", value: "smooth" },
+                      { label: "Bands", value: "bands" }],
+            value: A.topoShade, set: v => A.topoShade = v });
+        rows.push({ n: "Colours", s: A.topoGround === "theme" ? "The theme's, light or dark with it" : "",
+            type: "seg",
+            options: [{ label: "Theme", value: "theme" }, { label: "Custom", value: "custom" }],
+            value: A.topoGround, set: v => A.topoGround = v });
+        if (A.topoGround === "custom") {
+            rows.push({ n: "Low ground", s: hex(A.topoLow), type: "color",
+                value: A.topoLow, set: c => A.topoLow = c.toString() });
+            rows.push({ n: "High ground", s: hex(A.topoHigh), type: "color",
+                value: A.topoHigh, set: c => A.topoHigh = c.toString() });
+        }
+
+        rows.push({ n: "Drift", s: "The terrain slowly moving — held still behind windows and on battery",
+            type: "toggle", value: A.topoDrift, set: v => A.topoDrift = v });
+        if (A.topoDrift)
+            rows.push({ n: "Speed", type: "slider", min: 5, max: 100, unit: "%",
+                value: A.topoSpeed, set: v => A.topoSpeed = v });
         return rows;
     }
 
