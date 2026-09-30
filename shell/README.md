@@ -144,7 +144,7 @@ so; with no `nmcli` the Wi-Fi readout goes quiet.
 | Idle → lock | `hypridle` |
 | Media keys | `playerctl` |
 | Wallpaper picker | `zenity` or `kdialog` |
-| Live wallpapers | `linux-wallpaperengine` (AUR `linux-wallpaperengine-git`), Wallpaper Engine on Steam |
+| Live wallpapers | `mpvpaper` (AUR), `ffmpeg` for thumbnails |
 
 Text is Inter throughout; install an `inter-font` / `fonts-inter` package.
 Monospaced text — in the shell and in the terminal — is JetBrains Mono.
@@ -519,113 +519,44 @@ being part of it, and keeps its own settings in
 
 Settings → Wallpaper starts with one choice — **Gradient**, **Image** or
 **Live** — and shows only what that one needs; switching away and back
-brings the last image or live wallpaper with it. Live puts a Wallpaper
-Engine wallpaper on the desktop, drawn by
-[linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine)
-(`yay -S linux-wallpaperengine-git`). The wallpapers are the ones you have
-subscribed to in Wallpaper Engine's Workshop on Steam, found in every Steam
-library you have; most scene wallpapers also need Wallpaper Engine itself
-installed, for its shared assets, though it never has to run. Videos do
-not. Pick one from the pictures and it is on every screen. Search and the
-type filter above them narrow a large library, and 3D scenes, which it
-cannot draw, are folded into a line at the end.
+brings the last image or live wallpaper with it. Live plays a video as the
+wallpaper, with [mpvpaper](https://github.com/GhostNaN/mpvpaper)
+(`paru -S mpvpaper`): mpv on a layer surface, decoding on the graphics
+card's own video engine, so a looping clip costs a few percent of one core
+and hardly touches the GPU — a video wallpaper is cheap in a way a scene
+drawn every frame is not.
 
-It is linux-wallpaperengine's own surface, one layer above the shell's
-ground, which stays underneath — what you see while it loads, and what
-comes back if it stops. The shell starts it, restarts it if it dies after
-running a while, and leaves it stopped with what it said if it dies
-straight away (a wallpaper it cannot draw, assets it cannot find); that
-message is on the Wallpaper row.
+The videos are the ones in `~/Videos/Wallpapers` (and a level of
+subfolders), plus any folder or single file added under **Folders**. mp4,
+webm, mkv, mov, avi, ogv and gif all play. Wallpaper Engine's video
+wallpapers are plain video files, so adding
+`…/steamapps/workshop/content/431960` lists those too — its scene and web
+wallpapers are not videos and do not appear. The gallery shows a still of
+each, taken with ffmpeg and kept in `~/.cache/hyprshell/live/thumbs`.
 
-With more than one screen, **Screens** chooses the same wallpaper on each,
-one stretched across them all, or each its own — pick the screen under
-"Choosing for", then its wallpaper.
+It is mpvpaper's own surface, one layer above the shell's ground, which
+stays underneath — what you see while a video loads, and what comes back if
+it stops. It takes no input, so right-clicking the desktop still opens the
+shell's menu. The shell restarts it if it dies after running a while, and
+leaves it stopped with what it said if it dies straight away (a file it
+cannot play); that message is on the Wallpaper row.
 
-### Settings → Live wallpaper
+With more than one screen, **Screens** chooses the same video on each — one
+mpvpaper decoding once and drawing to every screen, a monitor plugged in
+later included — or each its own: pick the screen under "Picking for", then
+its video.
 
-What Wallpaper Engine lets you set on Windows, as far as
-linux-wallpaperengine can carry it:
+Under **Playback**: scaling (fill, fit or stretch), sound and its volume
+(off by default), rotating to another video on a timer in order or
+shuffled, and pausing. **Pause behind windows** stops mpvpaper outright
+(SIGSTOP, costing nothing) while every screen is covered — by a tiled,
+maximised or fullscreen window, or with "Any window", any at all — and
+continues it the moment one is not; **Pause on battery** holds it while
+unplugged.
 
-- **The wallpaper's own options** — its colours, sliders, switches, lists,
-  text and files, in the order Wallpaper Engine shows them, with the ones
-  that depend on another (a visualiser's bar count, say) hidden while that
-  one is off. Only what you change from the author's defaults is kept, per
-  wallpaper, and passed as `--set-property`. linux-wallpaperengine reads
-  them when it starts, so a change restarts the wallpaper.
-- **Share JSON** — copy, paste, save or load the options in Wallpaper
-  Engine's own format: what its Share JSON button gives, and what presets
-  are shared as. A preset from Windows pastes straight in; options the
-  wallpaper does not have are left out and counted. A properties block or a
-  whole `project.json` is read too.
-- **Pause on battery** — Wallpaper Engine's own option, and the biggest
-  saving there is; carried in and out of its config.json.
-- **Pause behind windows** — a live wallpaper is a second program drawing
-  the whole desktop every frame, and it competes with Hyprland for the
-  GPU: frames dropped for it make the refresh rate waver. The shell stops
-  it (SIGSTOP, costing nothing) while every screen it is on is covered — a
-  tiled, maximised or fullscreen window, or with "Any window", any at all —
-  and continues it the moment one is not. Not while mouse interaction is
-  on, since a stopped client still gets pointer events.
-- **Playback** — frame rate, pause while something is fullscreen (any
-  window, only a focused one, or never), scaling, particles; sound with its
-  volume, auto-mute while other apps play, and reacting to audio; mouse
-  interaction and parallax. Mouse interaction gives the wallpaper the
-  pointer, and the desktop's clicks go to it instead of the shell, so
-  right-clicking the desktop no longer opens its menu. Off, its surface
-  takes no input and Hyprland passes clicks through to the shell.
-- **Playlist** — wallpapers the desktop moves through on a timer, in order
-  or shuffled, like Wallpaper Engine's. `qs -c hyprshell ipc call shell
-  nextLiveWallpaper` skips to the next; bind it to a key.
-- **Presets** — named sets of a wallpaper's options, as Wallpaper Engine
-  has them: apply one, save the current options as one, delete one.
-- **Wallpaper Engine's config.json** — import what each screen shows, each
-  wallpaper's changed options and its volume, presets, the playlist, the
-  frame rate and when it pauses; export them back. Wallpapers are matched by Workshop id
-  (or by name for its own projects), so paths from Windows find the same
-  wallpapers here. Export merges into a file that is there — everything
-  else in it kept, a copy made first as `config.json.before-hyprshell`, and
-  wallpapers in its playlist that are not installed here left in — with
-  paths for that machine's Steam library. linux-wallpaperengine's own
-  `--playlist` reads the same file.
-
-The file's layout, as Wallpaper Engine 2.x writes it (config version 5):
-everything sits under your Steam account's name; each wallpaper's changed
-options are in `<account>.wproperties`, by the wallpaper's file (its
-`project.json`, `scene.pkg` or video) and then by monitor; presets are in
-`<account>.general.wpresets`; what each monitor shows is in
-`<account>.general.wallpaperconfig`. Options set differently per monitor
-there arrive as the first monitor's, since one program draws every screen
-here; export writes the same to each.
-
-Wallpapers are looked for in the Steam libraries Steam lists, and in any
-added under Settings → Live wallpaper → Other Steam libraries — Windows'
-own Steam folder on its drive, say. Importing a config.json from inside a
-Steam folder adds that library and looks through it first. Whatever the
-import could not bring over is named: a wallpaper not in any library here
-(by its title, from the file's list of recent ones), or a 3D scene. A round trip — import, then export
-into the same file — leaves it byte for byte as it was.
-
-linux-wallpaperengine draws 2D scenes, videos and web wallpapers. A 3D
-scene is shown faded with "3D scene · not supported" and cannot be picked;
-the shell tells by looking for the `orthogonalprojection` a 2D scene's file
-has, loose in the folder or inside its `scene.pkg`. Wallpaper Engine's own
-samples leave their type out of `project.json`, which linux-wallpaperengine
-requires, so those are started from a copy in `~/.cache/hyprshell/live`
-that has it — hard links to the original files, never the originals.
-
-Web wallpapers run in Chromium inside linux-wallpaperengine, which crashes
-on start with "close symbol missing" unless its `libcef.so` is loaded
-before libc ([#628](https://github.com/Almamu/linux-wallpaperengine/issues/628),
-not fixed upstream yet). The shell preloads the `libcef.so` it finds beside
-the program — `/opt/linux-wallpaperengine` for the AUR package. Web
-wallpapers have other open bugs there, so one that starts but stays black
-is linux-wallpaperengine's to fix, not this shell's.
-
-From a script: `qs -c hyprshell ipc call shell setLiveWallpaper <folder or
-Workshop id>`, and an empty argument turns it off.
-
-`node quickshell/tools/weprops-test.js` checks the Wallpaper Engine formats
-(`services/WeProps.js`) against examples of each.
+From a script: `qs -c hyprshell ipc call shell setLiveWallpaper <video>`
+(an empty argument turns it off), and `nextLiveWallpaper` for the next one —
+bind it to a key.
 
 ## Theming KDE applications
 

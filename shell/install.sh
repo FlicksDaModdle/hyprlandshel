@@ -264,11 +264,17 @@ else
     add_pkg "$(pkg zenity zenity zenity zenity)"
 fi
 
-if command -v linux-wallpaperengine >/dev/null 2>&1; then
-    ok "linux-wallpaperengine" "live wallpapers"
+if command -v mpvpaper >/dev/null 2>&1; then
+    ok "mpvpaper" "live (video) wallpapers"
 else
     # AUR only, so it is named rather than added to the package list.
-    warn "linux-wallpaperengine" "no live wallpapers — AUR: linux-wallpaperengine-git (optional)"
+    warn "mpvpaper" "no live wallpapers — AUR: mpvpaper (optional)"
+fi
+
+if command -v ffmpeg >/dev/null 2>&1; then
+    ok "ffmpeg" "live wallpaper thumbnails"
+else
+    warn "ffmpeg" "live wallpapers show without a still (optional)"
 fi
 
 head1 "Session — checked as this shell sees it, not as root"

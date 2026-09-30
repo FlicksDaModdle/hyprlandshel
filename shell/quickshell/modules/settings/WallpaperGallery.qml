@@ -3,48 +3,32 @@ import Quickshell.Widgets
 import "../../config" as Config
 import "../common"
 
-// The live wallpapers you have, as their Workshop pictures, small enough
-// that a library of them fits without a long scroll. Click one to put it on
-// the desktop; the one on it is ringed in the accent and ticked.
+// The live wallpapers you have, as a still from each, small enough that a
+// library of them fits without a long scroll. Click one to put it on the
+// desktop; the one on it is ringed in the accent and ticked.
 //
 // With a `state` (an object the pane owns, so what was typed survives the
-// rows being rebuilt) there is a search field and a type filter above it,
-// and the ones linux-wallpaperengine cannot draw are folded into a line at
-// the end rather than taking a tile each — shown faded, with why, when that
-// line is clicked.
+// rows being rebuilt) there is a search field above it.
 //
 // Full-width rather than a control at the right of a row: these are
 // pictures, and a strip of thumbnails the width of a slider says nothing.
 Item {
     id: gallery
 
-    // [{ dir, id, title, preview, type, unsupported }]
+    // [{ dir, title, preview, badge? }]
     property var items: []
     property string value: ""
-    // Picking several — a playlist's — rather than the one on screen:
-    // `selection` is ticked, and a click adds or takes away.
+    // Picking several rather than the one on screen: `selection` is
+    // ticked, and a click adds or takes away.
     property bool multi: false
     property var selection: []
-    // { search, filter, showUnsupported }, or null for no bar.
+    // { search }, or null for no bar.
     property QtObject state: null
     signal picked(string dir)
 
     readonly property string query: state ? state.search.trim().toLowerCase() : ""
-    readonly property string kind: state ? state.filter : "all"
-    readonly property bool foldUnsupported: !!state && !state.showUnsupported
-
-    readonly property var kinds: {
-        const seen = {};
-        for (const w of gallery.items) seen[w.type] = true;
-        return ["scene", "video", "web"].filter(k => seen[k]);
-    }
-    readonly property var matching: gallery.items.filter(w =>
-        (gallery.kind === "all" || w.type === gallery.kind)
-        && (gallery.query === "" || w.title.toLowerCase().indexOf(gallery.query) >= 0))
-    readonly property int folded: gallery.foldUnsupported
-        ? gallery.matching.filter(w => !!w.unsupported).length : 0
-    readonly property var shown: gallery.foldUnsupported
-        ? gallery.matching.filter(w => !w.unsupported) : gallery.matching
+    readonly property var shown: gallery.items.filter(w =>
+        gallery.query === "" || w.title.toLowerCase().indexOf(gallery.query) >= 0)
 
     readonly property int gap: 10
     // As many columns of at least 118px as fit.
@@ -54,22 +38,19 @@ Item {
 
     implicitHeight: column.implicitHeight
 
-    readonly property var typeNames: ({ scene: "Scene", video: "Video", web: "Web" })
-
     Column {
         id: column
         width: parent.width
         spacing: 12
 
-        // ── search and filter ─────────────────────────────────────────────
+        // ── search, once there are enough to need one ─────────────────────
         Row {
-            visible: !!gallery.state
+            visible: !!gallery.state && gallery.items.length > 8
             width: parent.width
-            spacing: 10
 
             Rectangle {
                 id: searchBox
-                width: parent.width - (filter.visible ? filter.width + parent.spacing : 0)
+                width: parent.width
                 height: 32
                 radius: Config.Appearance.rSm
                 color: Config.Appearance.ground
@@ -117,16 +98,6 @@ Item {
                 }
             }
 
-            // Only the types there are, and only when there is a choice.
-            Segmented {
-                id: filter
-                visible: gallery.kinds.length > 1
-                anchors.verticalCenter: searchBox.verticalCenter
-                options: [{ label: "All", value: "all" }].concat(
-                    gallery.kinds.map(k => ({ label: gallery.typeNames[k], value: k })))
-                value: gallery.kind
-                onSelected: v => { if (gallery.state) gallery.state.filter = v; }
-            }
         }
 
         // ── the pictures ──────────────────────────────────────────────────
@@ -145,7 +116,6 @@ Item {
                         ? gallery.selection.indexOf(modelData.dir) >= 0
                         : modelData.dir === gallery.value
                     readonly property bool gif: /\.gif$/i.test(modelData.preview)
-                    readonly property bool usable: !modelData.unsupported
 
                     width: gallery.tileW
                     height: gallery.thumbH + 24
@@ -156,9 +126,18 @@ Item {
                         height: gallery.thumbH
                         radius: Config.Appearance.rSm
                         color: Config.Appearance.surface
-                        opacity: tile.usable ? 1 : 0.35
 
-                        // The Workshop preview. Animated ones play while the
+                        // Nothing to show yet — its still is being made, or
+                        // there is no ffmpeg to make one.
+                        StyledText {
+                            anchors.centerIn: parent
+                            visible: tile.modelData.preview === ""
+                            text: "▶"
+                            font.pixelSize: Config.Appearance.fs(18)
+                            color: Config.Appearance.ink3
+                        }
+
+                        // Its picture. Animated ones play while the
                         // pointer is on them and hold their first frame
                         // otherwise — a grid of them all moving at once is
                         // not something to read.
@@ -199,11 +178,9 @@ Item {
                                      : Config.Appearance.rule
                     }
 
-                    // What kind, on the picture: videos and web pages, which
-                    // behave differently from scenes; "3D" for the ones that
-                    // cannot be drawn.
+                    // A word on the picture, when the item has one.
                     Rectangle {
-                        visible: !tile.usable || tile.modelData.type !== "scene"
+                        visible: !!tile.modelData.badge
                         anchors.left: thumb.left
                         anchors.bottom: thumb.bottom
                         anchors.margins: 5
@@ -214,8 +191,7 @@ Item {
                         StyledText {
                             id: badge
                             anchors.centerIn: parent
-                            text: !tile.usable ? "3D · can't draw"
-                                               : gallery.typeNames[tile.modelData.type] || tile.modelData.type
+                            text: tile.modelData.badge || ""
                             font.pixelSize: Config.Appearance.fs(10)
                             font.weight: Font.DemiBold
                             color: "white"
@@ -249,16 +225,14 @@ Item {
                         text: tile.modelData.title
                         font.pixelSize: Config.Appearance.fs(11)
                         font.weight: tile.current ? Font.DemiBold : Font.Medium
-                        color: tile.current && tile.usable ? Config.Appearance.accent
-                             : tile.usable ? Config.Appearance.ink : Config.Appearance.ink3
+                        color: tile.current ? Config.Appearance.accent : Config.Appearance.ink
                     }
 
                     HoverHandler {
                         id: hover
-                        cursorShape: tile.usable ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        cursorShape: Qt.PointingHandCursor
                     }
                     TapHandler {
-                        enabled: tile.usable
                         onTapped: gallery.picked(tile.modelData.dir)
                     }
                 }
@@ -269,26 +243,9 @@ Item {
         StyledText {
             visible: gallery.shown.length === 0 && gallery.items.length > 0
             width: parent.width
-            text: gallery.query !== "" ? "Nothing called “" + gallery.state.search.trim() + "”"
-                                       : "None of this kind"
+            text: "Nothing called “" + gallery.query + "”"
             font.pixelSize: Config.Appearance.fs(12)
             color: Config.Appearance.ink3
-        }
-
-        // The ones it cannot draw, folded away.
-        StyledText {
-            visible: gallery.folded > 0
-            width: parent.width
-            wrapMode: Text.WordWrap
-            text: gallery.folded + (gallery.folded === 1 ? " 3D scene" : " 3D scenes")
-                  + " hidden — linux-wallpaperengine draws 2D scenes only.  "
-                  + "<a href=\"show\">Show them</a>"
-            textFormat: Text.StyledText
-            linkColor: Config.Appearance.accent
-            font.pixelSize: Config.Appearance.fs(11)
-            color: Config.Appearance.ink3
-            onLinkActivated: if (gallery.state) gallery.state.showUnsupported = true
-            HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
     }
 }

@@ -314,13 +314,13 @@ hl.layer_rule({
     animation = "fade",
 })
 
--- A live wallpaper (Settings → Wallpaper) is
--- linux-wallpaperengine's own surface, over that ground; it fades in over it
+-- A live wallpaper (Settings → Wallpaper) is a video on mpvpaper's own
+-- surface, over that ground; it fades in over it
 -- rather than sliding. The shell sends this rule itself before starting one,
 -- so it holds under a config that does not have it.
 hl.layer_rule({
     name      = "wallpaper-live-fade",
-    match     = { namespace = "^linux-wallpaperengine$" },
+    match     = { namespace = "^mpvpaper$" },
     animation = "fade",
 })
 

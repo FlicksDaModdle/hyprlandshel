@@ -6,7 +6,6 @@ import Quickshell.Services.UPower
 import Quickshell.Services.Pipewire
 import "../../config" as Config
 import "../../services" as Services
-import "../../services/WeProps.js" as WeProps
 import "../common"
 import "../icons"
 
@@ -70,14 +69,6 @@ Scope {
     QtObject {
         id: liveUi
         property string search: ""
-        property string filter: "all"
-        property bool showUnsupported: false
-    }
-    QtObject {
-        id: playlistUi
-        property string search: ""
-        property string filter: "all"
-        property bool showUnsupported: false
     }
 
     function setWallpaperMode(v) {
@@ -99,11 +90,11 @@ Scope {
         }
     }
 
-    // The live wallpaper list is whatever is in your Steam libraries now,
-    // so it is looked for again each time the pane that shows it opens —
-    // after subscribing to one in Steam, say.
+    // The live wallpaper list is whatever is in its folders now, so it is
+    // looked for again each time the pane opens — after saving a video
+    // there, say.
     readonly property bool showingWallpaper: Config.UiState.settingsOpen
-        && (root.pane === "Wallpaper" || root.pane === "Live wallpaper")
+        && root.pane === "Wallpaper"
     onShowingWallpaperChanged: {
         if (!showingWallpaper) return;
         root.wallpaperMode = "";
@@ -123,7 +114,6 @@ Scope {
         "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
         "Appearance":    { icon: "palette",   group: "Shell",  note: "Theme, accent, translucency, corners and motion. Every change repaints the shell live." },
         "Wallpaper":     { icon: "image",     group: "Shell",  note: "The desktop's ground — a tint, an image, or a live wallpaper." },
-        "Live wallpaper": { icon: "film",     group: "Shell",  note: "The live wallpaper on screen: its own options, playback, a playlist, and Wallpaper Engine's formats." },
         "Icons":         { icon: "package",   group: "Shell",  note: "Every place an app icon appears, sized in one list." },
         "App theming":   { icon: "sunMoon",   group: "Shell",  note: "Handing this theme to applications that are not part of the shell." },
         "Bar":           { icon: "layout",    group: "Shell",  note: "The top bar: height, clock, tray and the task list." },
@@ -141,7 +131,7 @@ Scope {
         { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
                                    "Network", "Bluetooth", "Sound", "Power",
                                    "Hyprland", "About"] },
-        { label: "Shell",  items: ["Appearance", "Wallpaper", "Live wallpaper", "Icons", "Fonts",
+        { label: "Shell",  items: ["Appearance", "Wallpaper", "Icons", "Fonts",
                                    "App theming", "Bar", "Dock", "Alt+Tab", "Launcher",
                                    "Notifications", "Keybinds"] }
     ]
@@ -364,7 +354,6 @@ Scope {
 
         case "Wallpaper": return root.wallpaperRows();
 
-        case "Live wallpaper": return root.liveOptionsRows();
 
         case "Icons": return [
             { type: "header", n: "Icon sizes",
@@ -1939,7 +1928,7 @@ Scope {
         const rows = [{ n: "Desktop",
             s: mode === "gradient" ? "The shell's tinted gradient"
                : mode === "image" ? "A picture of your own"
-               : "Wallpaper Engine's, drawn by linux-wallpaperengine",
+               : "A video, played by mpvpaper",
             type: "seg",
             options: [{ label: "Gradient", value: "gradient" }, { label: "Image", value: "image" },
                       { label: "Live", value: "live" }],
@@ -1960,16 +1949,16 @@ Scope {
         return rows;
     }
 
-    // The Live part of it: what is on, the screens, and the pictures.
+    // The Live part of it: what is on, the videos, and how they play.
     function liveWallpaperRows() {
         const A = Config.Appearance, L = Services.LiveWallpaper;
         const rows = [];
 
         if (!L.installed) {
-            rows.push({ n: "linux-wallpaperengine",
+            rows.push({ n: "mpvpaper",
                 s: L.scanning ? "Looking…"
-                   : "Not installed — on Arch or CachyOS, yay -S linux-wallpaperengine-git. "
-                     + "The wallpapers come from Wallpaper Engine on Steam.",
+                   : "Not installed — on Arch or CachyOS, paru -S mpvpaper. It plays a video "
+                     + "as the wallpaper, with the graphics card's own decoder.",
                 type: "action", label: "Look again", set: () => L.scan() });
             return rows;
         }
@@ -1977,291 +1966,107 @@ Scope {
         const screens = L.screenNames;
         const pickFor = L.layout === "each" && screens.indexOf(root.liveScreenPick) >= 0
                         ? root.liveScreenPick : "";
+        const others = L.layout === "each"
+            ? screens.filter(n => L.wallpaperFor(n) !== L.chosen).length : 0;
 
         rows.push({ n: L.enabled ? L.currentTitle : "None on",
             s: !L.enabled ? (L.wallpapers.length ? "Pick one below" : "")
-               : L.current && L.current.unsupported ? "Can't be shown: " + L.current.unsupported
                : L.error !== "" ? "Stopped: " + L.error
-               : (L.running ? "On the desktop" : "Starting")
-                 + (L.used.length > 1 ? ", with " + (L.used.length - 1) + " more" : ""),
+               : (L.paused ? "Paused — windows cover it" : L.running ? "Playing" : "Starting")
+                 + (others > 0 ? ", with " + others + " more" : ""),
             type: "buttons",
             buttons: L.enabled
-                ? [{ label: "Customise", quiet: true,
-                     set: () => Config.UiState.openSettings("Live wallpaper") },
+                ? [{ label: "Next", quiet: true, enabled: L.wallpapers.length > 1, set: () => L.next() },
                    { label: "Turn off", quiet: true, set: () => L.stop() }]
                 : [] });
 
-        if (L.wallpapers.length === 0) {
-            rows.push({ n: "Nothing to show yet",
-                s: L.scanning ? "Looking through your Steam libraries…"
-                   : "Subscribe to wallpapers in Wallpaper Engine's Workshop on Steam "
-                     + "and they appear here.",
-                type: "action", label: "Look again", set: () => L.scan() });
-            return rows;
-        }
-
-        if (!L.hasAssets)
-            rows.push({ n: "Wallpaper Engine is not installed",
-                s: "Most scenes need its assets. Install it from Steam — it never has to run.",
-                type: "info", value: "" });
-
-        // More than one screen: the same wallpaper on each, one across all
-        // of them, or each its own — and then which screen is being picked
-        // for, as buttons rather than a menu, since there are only a few.
+        // More than one screen: the same video on each, or each its own —
+        // and then which screen is being picked for, as buttons rather than
+        // a menu, since there are only a few.
         if (screens.length > 1) {
             rows.push({ n: "Screens", type: "seg",
-                options: [{ label: "Same", value: "same" }, { label: "Across", value: "span" },
-                          { label: "Each its own", value: "each" }],
-                value: A.liveLayout, set: v => A.liveLayout = v });
-            if (A.liveLayout === "each")
+                options: [{ label: "Same", value: "same" }, { label: "Each its own", value: "each" }],
+                value: L.layout, set: v => A.liveLayout = v });
+            if (L.layout === "each")
                 rows.push({ n: "Picking for",
                     s: pickFor === "" ? "Every screen without its own"
-                       : L.screenMap[pickFor] ? "Click its wallpaper again to share the main one" : "",
+                       : L.screenMap[pickFor] ? "Click its video again to share the main one" : "",
                     type: "seg",
                     options: [{ label: "All", value: "" }].concat(screens.map(n => ({ label: n, value: n }))),
                     value: pickFor, set: v => root.liveScreenPick = v });
         }
 
-        rows.push({ type: "gallery", n: "", s: "", state: liveUi,
-            items: L.wallpapers,
-            value: pickFor !== "" ? (L.screenMap[pickFor] || "")
-                   : L.enabled ? (L.current ? L.current.dir : A.liveWallpaper) : "",
-            pick: dir => {
-                if (pickFor === "") L.choose(dir);
-                else L.chooseFor(pickFor, L.screenMap[pickFor] === dir ? "" : dir);
-            } });
-        return rows;
-    }
-
-    // Settings → Live wallpaper: everything Wallpaper Engine lets you set
-    // on Windows that linux-wallpaperengine can carry out.
-    function liveOptionsRows() {
-        const A = Config.Appearance, L = Services.LiveWallpaper;
-        const w = L.current;
-        const rows = [];
-
-        if (!w) {
-            rows.push({ n: "No live wallpaper",
-                s: L.installed ? "Pick one under Wallpaper, and its options are here"
-                               : "linux-wallpaperengine is not installed — see Wallpaper",
-                type: "action", label: "Wallpaper",
-                set: () => Config.UiState.openSettings("Wallpaper") });
+        if (L.wallpapers.length === 0) {
+            rows.push({ n: "No videos yet",
+                s: L.scanning ? "Looking…"
+                   : "Put some in " + L.folders.map(f => f.replace(L.home, "~")).join(", ")
+                     + ", or add a folder below. mp4, webm, mkv, mov and gif all play.",
+                type: "action", label: "Look again", set: () => L.scan() });
         } else {
-            // ── its own options ───────────────────────────────────────────
-            const values = L.valuesFor(w);
-            const changed = L.changedCount(w);
-            rows.push({ type: "header", n: w.title,
-                s: "Its own options, as Wallpaper Engine shows them. linux-wallpaperengine "
-                   + "takes them when it starts, so each change restarts it." });
-            let shownAny = false;
-            for (const p of w.props) {
-                if (!WeProps.visible(p, values)) continue;
-                const v = values[p.name];
-                const set = x => L.setProp(w, p.name, x);
-                shownAny = true;
-                switch (p.type) {
-                case "text":
-                case "group":
-                    rows.push({ type: "header", n: p.label, s: "" });
-                    break;
-                case "bool":
-                    rows.push({ n: p.label, type: "toggle", value: !!v, set: set });
-                    break;
-                case "slider":
-                    rows.push({ n: p.label, type: "slider", min: p.min, max: p.max, step: p.step,
-                                unit: "", value: v, set: set });
-                    break;
-                case "color": {
-                    const c = v.split(" ").map(Number);
-                    const hex = "#" + c.map(x => ("0" + Math.round(x * 255).toString(16)).slice(-2)).join("");
-                    rows.push({ n: p.label, s: hex.toUpperCase(), type: "color", value: Qt.rgba(c[0], c[1], c[2], 1),
-                                set: col => set(col.r.toFixed(5) + " " + col.g.toFixed(5) + " " + col.b.toFixed(5)) });
-                    break;
-                }
-                case "combo": {
-                    const labels = p.options.map(o => o.label);
-                    const at = p.options.findIndex(o => o.value === String(v));
-                    rows.push({ n: p.label, type: "menu", options: labels,
-                                value: at >= 0 ? labels[at] : String(v),
-                                set: l => { const o = p.options[labels.indexOf(l)]; if (o) set(o.value); } });
-                    break;
-                }
-                case "textinput":
-                    rows.push({ n: p.label, type: "text", value: String(v), placeholder: p.label,
-                                label: "Set", set: set });
-                    break;
-                case "file":
-                case "directory":
-                    rows.push({ n: p.label, s: v !== "" ? v : "None", type: "buttons",
-                                buttons: [{ label: "Choose…", quiet: true,
-                                            set: () => root.pickPath(p.type === "directory", p.label, set) },
-                                          { label: "Clear", quiet: true, enabled: v !== "", set: () => set("") }] });
-                    break;
-                }
-            }
-            if (!shownAny)
-                rows.push({ n: "No options", s: w.title + " has none of its own", type: "info", value: "" });
-
-            // Its own volume, as Wallpaper Engine keeps one per wallpaper.
-            if (A.liveSound) {
-                const own = L.volumeFor(w);
-                rows.push({ n: "Volume",
-                    s: own >= 0 ? "Its own — the rest play at " + A.liveVolume + "%"
-                                : "Playback's " + A.liveVolume + "%, until set here",
-                    type: "slider", min: 0, max: 100, unit: "%",
-                    value: own >= 0 ? own : A.liveVolume, set: v => L.setVolume(w, v) });
-            }
-
-            // Presets: named sets of these options, applied in one go.
-            const presets = L.presetsFor(w).map(p => p.name);
-            const pick = "Choose one";
-            if (presets.length > 0) {
-                rows.push({ n: "Presets", s: presets.length + (presets.length === 1 ? " saved" : " saved"),
-                    type: "menu", options: [pick].concat(presets), value: pick,
-                    set: v => { if (v !== pick) L.applyPreset(w, v); } });
-                rows.push({ n: "Delete a preset", type: "menu", options: [pick].concat(presets), value: pick,
-                    set: v => { if (v !== pick) L.deletePreset(w, v); } });
-            }
-            rows.push({ n: "Save as preset", s: "These options, under a name — one of the same name is replaced",
-                type: "text", placeholder: "Name", label: "Save", value: "",
-                set: v => L.savePreset(w, v) });
-
-            rows.push({ n: "Share JSON",
-                s: L.shareStatus !== "" ? L.shareStatus
-                   : "Wallpaper Engine's own format for these options — what its Share JSON "
-                     + "button copies, and what presets are shared as. Works both ways.",
-                type: "buttons",
-                buttons: [{ label: "Copy", quiet: true, set: () => L.copyShare() },
-                          { label: "Paste", quiet: true, set: () => L.pasteShare() },
-                          { label: "Save…", quiet: true, set: () => L.saveShare() },
-                          { label: "Load…", quiet: true, set: () => L.loadShare() }] });
-            rows.push({ n: "Defaults",
-                s: changed === 0 ? "Every option is as its author set it"
-                   : changed + (changed === 1 ? " option changed" : " options changed"),
-                type: "buttons",
-                buttons: [{ label: "Reset", quiet: true, enabled: changed > 0, set: () => L.resetProps(w) }] });
+            rows.push({ type: "gallery", n: "", s: "", state: liveUi,
+                items: L.wallpapers,
+                value: pickFor !== "" ? (L.screenMap[pickFor] || "") : L.enabled ? L.chosen : "",
+                pick: dir => {
+                    if (pickFor === "") L.choose(dir);
+                    else L.chooseFor(pickFor, L.screenMap[pickFor] === dir ? "" : dir);
+                } });
+            if (!L.hasFfmpeg)
+                rows.push({ n: "No thumbnails", s: "Install ffmpeg for a still of each video here",
+                    type: "info", value: "" });
         }
 
-        // ── playback ──────────────────────────────────────────────────────
-        rows.push({ type: "header", n: "Playback", s: "For every live wallpaper" });
-        rows.push({ n: "Frame rate", s: "Higher is smoother and costs more power",
-            type: "slider", min: 5, max: 144, unit: "fps",
-            value: A.liveFps, set: v => A.liveFps = v });
+        rows.push({ n: "Folders",
+            s: L.folders.map(f => f.replace(L.home, "~")).join(", ")
+               + (L.files.length ? " and " + L.files.length + (L.files.length === 1 ? " file" : " files") : ""),
+            type: "buttons",
+            buttons: [{ label: "Add folder…", quiet: true,
+                        set: () => root.pickPath(true, "Folder of videos", f => L.addFolder(f)) },
+                      { label: "Add video…", quiet: true,
+                        set: () => root.pickPath(false, "Video", f => L.addFile(f)) },
+                      { label: "Reset", quiet: true,
+                        enabled: A.liveFolders !== "" || A.liveFiles !== "",
+                        set: () => L.resetSources() }] });
+
+        // ── how it plays ──────────────────────────────────────────────────
+        rows.push({ type: "header", n: "Playback", s: "" });
+        rows.push({ n: "Scaling", s: "How a video meets a screen of another shape",
+            type: "seg",
+            options: [{ label: "Fill", value: "fill" }, { label: "Fit", value: "fit" },
+                      { label: "Stretch", value: "stretch" }],
+            value: A.liveScaling, set: v => A.liveScaling = v });
+        rows.push({ n: "Sound", s: "The video's own audio, if it has any",
+            type: "toggle", value: A.liveSound, set: v => A.liveSound = v });
+        if (A.liveSound)
+            rows.push({ n: "Volume", type: "slider", min: 0, max: 100, unit: "%",
+                value: A.liveVolume, set: v => A.liveVolume = v });
         rows.push({ n: "Pause behind windows",
-            s: A.liveMouse ? "Not while Mouse interaction is on — it has to keep reading the pointer"
-               : L.paused ? "Paused now: windows cover it"
-               : "Stops drawing while windows cover every screen it is on, so it is not "
-                 + "using the GPU for a desktop nobody can see",
+            s: "Stops playing while windows cover every screen",
             type: "seg",
             options: [{ label: "Covered", value: "covered" }, { label: "Any window", value: "windows" },
                       { label: "Never", value: "never" }],
             value: A.livePauseCovered, set: v => A.livePauseCovered = v });
-        rows.push({ n: "Pause on battery",
-            s: "Wallpaper Engine's own option: stop drawing while unplugged, the biggest "
-               + "saving there is — it is a second program using the GPU all the time",
+        rows.push({ n: "Pause on battery", s: "Holds the frame on screen while unplugged",
             type: "toggle", value: A.livePauseOnBattery, set: v => A.livePauseOnBattery = v });
-        rows.push({ n: "Pause for fullscreen", s: A.livePause === "never" ? "Keeps playing under fullscreen windows"
-                : A.livePause === "focused" ? "While a fullscreen window has the focus"
-                : "While any window is fullscreen",
-            type: "seg",
-            options: [{ label: "Fullscreen", value: "any" }, { label: "Focused only", value: "focused" },
-                      { label: "Never", value: "never" }],
-            value: A.livePause, set: v => A.livePause = v });
-        rows.push({ n: "Scaling", s: "How a wallpaper meets a screen of another shape",
-            type: "seg",
-            options: [{ label: "Fill", value: "fill" }, { label: "Fit", value: "fit" },
-                      { label: "Stretch", value: "stretch" }, { label: "As made", value: "default" }],
-            value: A.liveScaling, set: v => A.liveScaling = v });
-        rows.push({ n: "Particles", s: "Snow, sparks, dust — the costliest part of many scenes",
-            type: "toggle", value: A.liveParticles, set: v => A.liveParticles = v });
 
-        rows.push({ type: "header", n: "Sound", s: "" });
-        rows.push({ n: "Sound", s: "The wallpaper's own audio, if it has any",
-            type: "toggle", value: A.liveSound, set: v => A.liveSound = v });
-        if (A.liveSound) {
-            rows.push({ n: "Volume", type: "slider", min: 0, max: 100, unit: "%",
-                value: A.liveVolume, set: v => A.liveVolume = v });
-            rows.push({ n: "Quiet while other apps play", s: "Wallpaper Engine's auto-mute",
-                type: "toggle", value: A.liveAutomute, set: v => A.liveAutomute = v });
-        }
-        rows.push({ n: "React to audio",
-            s: "Visualisers and beat effects hear what the system plays",
-            type: "toggle", value: A.liveAudioReactive, set: v => A.liveAudioReactive = v });
-
-        rows.push({ type: "header", n: "Mouse", s: "" });
-        rows.push({ n: "Mouse interaction",
-            s: "Cursor effects. The wallpaper then takes the desktop's clicks, so "
-               + "right-clicking the desktop no longer opens its menu, and clicking it "
-               + "no longer closes panels.",
-            type: "toggle", value: A.liveMouse, set: v => A.liveMouse = v });
-        if (A.liveMouse)
-            rows.push({ n: "Parallax", s: "Layers that shift as the pointer moves",
-                type: "toggle", value: A.liveParallax, set: v => A.liveParallax = v });
-
-        // ── playlist ──────────────────────────────────────────────────────
         const delays = [5, 10, 15, 30, 60, 120, 360, 720, 1440];
         const delayLabel = m => m < 60 ? m + " minutes" : m === 60 ? "1 hour"
                               : m < 1440 ? (m / 60) + " hours" : m === 1440 ? "1 day" : (m / 1440) + " days";
         const delayOpts = delays.indexOf(A.liveDelay) >= 0 ? delays : delays.concat([A.liveDelay]).sort((a, b) => a - b);
-        rows.push({ type: "header", n: "Playlist",
-            s: "“" + A.liveListName + "” — " + L.playlist.length
-               + (L.playlist.length === 1 ? " wallpaper" : " wallpapers")
-               + (L.playable.length < L.playlist.length
-                  ? ", " + (L.playlist.length - L.playable.length) + " not available here" : "") });
-        rows.push({ n: "Rotate", s: L.playable.length < 2 ? "Add two or more wallpapers below first"
-                : "Move through the playlist on a timer",
+        rows.push({ n: "Rotate", s: L.wallpapers.length < 2 ? "Needs two or more videos"
+                : "Move on to another video every so often",
             type: "toggle", value: A.liveRotate, set: v => A.liveRotate = v });
-        rows.push({ n: "Every", type: "menu", options: delayOpts.map(delayLabel),
-            value: delayLabel(A.liveDelay),
-            set: l => { const i = delayOpts.map(delayLabel).indexOf(l); if (i >= 0) A.liveDelay = delayOpts[i]; } });
-        rows.push({ n: "Order", type: "seg",
-            options: [{ label: "In order", value: "sequential" }, { label: "Shuffled", value: "random" }],
-            value: A.liveOrder, set: v => A.liveOrder = v });
-        rows.push({ n: "Now", s: "Go to the next one in the playlist",
-            type: "buttons",
-            buttons: [{ label: "Next wallpaper", quiet: true, enabled: L.playable.length > 0,
-                        set: () => L.next() },
-                      { label: "Clear playlist", quiet: true, enabled: L.playlist.length > 0,
-                        set: () => A.livePlaylist = "[]" }] });
-        rows.push({ type: "gallery", n: "In the playlist", s: "Click to add or take away",
-            state: playlistUi,
-            items: L.wallpapers, multi: true, selection: L.playlist,
-            pick: dir => L.togglePlaylist(dir) });
-
-        // ── Wallpaper Engine ──────────────────────────────────────────────
-        rows.push({ type: "header", n: "Wallpaper Engine",
-            s: "Its config.json. Wallpaper Engine on Windows, or under Proton here, "
-               + "reads what this writes." });
-        rows.push({ n: "config.json",
-            s: L.configStatus !== "" ? L.configStatus
-               : L.weConfig !== "" ? "Found at " + L.weConfig
-               : "Copy it from Wallpaper Engine's folder on Windows, and import it here. "
-                 + "Export merges into a file that is there, and keeps a copy of it.",
-            type: "buttons",
-            buttons: [{ label: "Import…", quiet: true, set: () => L.importConfig() },
-                      { label: "Export…", quiet: true, set: () => L.exportConfig() }] });
-        const libs = L.extraLibraries;
-        rows.push({ n: "Other Steam libraries",
-            s: libs.length ? libs.join(" · ")
-               : "Wallpapers are looked for in the libraries Steam lists. Add one it does not — "
-                 + "Windows' Steam folder on its drive — and its Workshop wallpapers show up. "
-                 + "Importing a config.json from inside one adds it.",
-            type: "buttons",
-            buttons: [{ label: "Add…", quiet: true,
-                        set: () => root.pickPath(true, "A Steam folder (the one holding steamapps)",
-                                                 d => { if (L.addLibrary(d)) Qt.callLater(L.scan); }) },
-                      { label: "Clear", quiet: true, enabled: libs.length > 0,
-                        set: () => { A.liveLibraries = ""; Qt.callLater(L.scan); } }] });
-        rows.push({ n: "What goes across",
-            s: "What each screen shows, each wallpaper's options and volume, presets, "
-               + "the playlist, the frame rate and when it pauses (on battery too). Options set per "
-               + "monitor there arrive as the first monitor's: one program draws every "
-               + "screen here.",
-            type: "info", value: "" });
+        if (A.liveRotate) {
+            rows.push({ n: "Every", type: "menu", options: delayOpts.map(delayLabel),
+                value: delayLabel(A.liveDelay),
+                set: l => { const i = delayOpts.map(delayLabel).indexOf(l); if (i >= 0) A.liveDelay = delayOpts[i]; } });
+            rows.push({ n: "Order", type: "seg",
+                options: [{ label: "In order", value: "sequential" }, { label: "Shuffled", value: "random" }],
+                value: A.liveOrder, set: v => A.liveOrder = v });
+        }
         return rows;
     }
 
-    // A file or folder for a wallpaper option, from zenity or kdialog.
+    // A file or folder, from zenity or kdialog.
     function pickPath(folder, title, then) {
         pathPick.then = then;
         pathPick.command = ["sh", "-c",

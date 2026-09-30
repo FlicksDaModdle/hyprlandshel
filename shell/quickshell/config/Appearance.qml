@@ -97,50 +97,33 @@ Singleton {
             property int rounding: 100                // 0-160 %
             property string tint: "Warm"              // "Warm" | "Neutral" | "Cool"
             property string wallpaper: ""             // absolute path; empty = tinted gradient
-            // A Wallpaper Engine wallpaper, drawn over the ground by
-            // linux-wallpaperengine (services/LiveWallpaper.qml): its
-            // folder, or a Workshop id. Empty = none.
+            // A video playing on the desktop, drawn over the ground by
+            // mpvpaper (services/LiveWallpaper.qml): its path. Empty = none.
             property string liveWallpaper: ""
             // The last image and live wallpaper, so switching Settings →
             // Wallpaper to Gradient and back does not lose them.
             property string wallpaperLast: ""
             property string liveLast: ""
-            property int liveFps: 30                  // 30 | 60 | 120
+            // Where the videos are: JSON arrays of folders (empty = the
+            // default, ~/Videos/Wallpapers) and of single files.
+            property string liveFolders: ""
+            property string liveFiles: ""
             property bool liveSound: false
-            // On: the wallpaper gets the pointer, for parallax and cursor
-            // effects, and the desktop's own clicks stop reaching the shell.
-            property bool liveMouse: false
-            property bool liveParallax: true          // with the mouse on
-            // Each wallpaper's own options as changed from its defaults, as
-            // JSON: { "<folder name>": { "<option>": value } }.
-            property string liveProps: ""
-            // Named sets of a wallpaper's options, Wallpaper Engine's
-            // presets: { "<folder name>": [{ name, properties }] }.
-            property string livePresets: ""
             property int liveVolume: 50               // 0-100 %, with sound on
-            property bool liveAutomute: true          // quiet while other apps play
-            property bool liveAudioReactive: true     // visualisers hear the system
-            property string livePause: "any"          // any | focused | never, for fullscreen
-            property bool liveParticles: true
-            // Stop drawing while windows cover it (LiveWallpaper.paused):
+            // Stop playing while windows cover it (LiveWallpaper.paused):
             // "covered" — a tiled, maximised or fullscreen window on every
             // screen it is on — "windows" for any window at all, "never".
             property string livePauseCovered: "covered"
-            property bool livePauseOnBattery: false  // Wallpaper Engine's "on battery: pause"
-            // Steam libraries to look in besides the ones Steam lists — one
-            // on a Windows drive, say — as a JSON array of their folders.
-            property string liveLibraries: ""
-            property string liveScaling: "fill"       // fill | fit | stretch | default
-            // "same" on every screen, "span" one across them all, or "each"
-            // its own, from liveScreens: { "<output>": "<folder>" }.
+            property bool livePauseOnBattery: false
+            property string liveScaling: "fill"       // fill | fit | stretch
+            // "same" on every screen, or "each" its own, from
+            // liveScreens: { "<output>": "<video>" }.
             property string liveLayout: "same"
             property string liveScreens: ""
-            // The playlist, as a JSON array of folders, and how it turns.
-            property string livePlaylist: ""
+            // Moving on to another video every so often.
             property bool liveRotate: false
             property int liveDelay: 30                // minutes
             property string liveOrder: "sequential"   // sequential | random
-            property string liveListName: "Hyprshell"
 
             // Bar
             property int barHeight: 40                // 32-56 px
@@ -370,28 +353,18 @@ Singleton {
     property alias liveWallpaper: prefs.liveWallpaper
     property alias wallpaperLast: prefs.wallpaperLast
     property alias liveLast: prefs.liveLast
-    property alias liveFps: prefs.liveFps
+    property alias liveFolders: prefs.liveFolders
+    property alias liveFiles: prefs.liveFiles
     property alias liveSound: prefs.liveSound
-    property alias liveMouse: prefs.liveMouse
-    property alias liveParallax: prefs.liveParallax
-    property alias liveProps: prefs.liveProps
-    property alias livePresets: prefs.livePresets
     property alias liveVolume: prefs.liveVolume
-    property alias liveAutomute: prefs.liveAutomute
-    property alias liveAudioReactive: prefs.liveAudioReactive
-    property alias livePause: prefs.livePause
-    property alias liveParticles: prefs.liveParticles
     property alias livePauseCovered: prefs.livePauseCovered
     property alias livePauseOnBattery: prefs.livePauseOnBattery
-    property alias liveLibraries: prefs.liveLibraries
     property alias liveScaling: prefs.liveScaling
     property alias liveLayout: prefs.liveLayout
     property alias liveScreens: prefs.liveScreens
-    property alias livePlaylist: prefs.livePlaylist
     property alias liveRotate: prefs.liveRotate
     property alias liveDelay: prefs.liveDelay
     property alias liveOrder: prefs.liveOrder
-    property alias liveListName: prefs.liveListName
     property alias barHeight: prefs.barHeight
     property alias workspaceScale: prefs.workspaceScale
     property alias animSpeed: prefs.animSpeed

@@ -74,12 +74,10 @@ Singleton {
         "cycleTheme":          () => Config.Appearance.cycleTheme(),
         "setTheme":            arg => Config.Appearance.setTheme(arg),
         "setWallpaper":        arg => Config.Appearance.wallpaper = arg,
-        // A Wallpaper Engine wallpaper's folder or Workshop id; nothing
-        // turns it off.
+        // A video's path; nothing turns it off.
         "setLiveWallpaper":    arg => arg ? Services.LiveWallpaper.choose(arg)
                                           : Services.LiveWallpaper.stop(),
-        // The next one in the live wallpaper playlist — bindable, as
-        // Wallpaper Engine's "next wallpaper" hotkey is.
+        // The next live wallpaper video — bindable.
         "nextLiveWallpaper":   () => Services.LiveWallpaper.next(),
         "setAccent":           arg => Config.Appearance.accentIndex = parseInt(arg, 10) || 0,
         "syncTheming":         () => Services.Theming.resync(),
