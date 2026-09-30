@@ -139,6 +139,7 @@ ShellRoot {
         function setTheme(name: string): void { Services.Commands.run("setTheme " + name); }
         function setWallpaper(path: string): void { Services.Commands.run("setWallpaper " + path); }
         function setLiveWallpaper(dirOrId: string): void { Services.Commands.run("setLiveWallpaper " + dirOrId); }
+        function nextLiveWallpaper(): void { Services.Commands.run("nextLiveWallpaper"); }
         function setAccent(index: int): void { Services.Commands.run("setAccent " + index); }
         function syncTheming(): void { Services.Commands.run("syncTheming"); }
 

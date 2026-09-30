@@ -17,6 +17,10 @@ Item {
     // [{ dir, id, title, preview, type, unsupported }]
     property var items: []
     property string value: ""
+    // Picking several — a playlist's — rather than the one on screen:
+    // `selection` is ringed, and a click adds or takes away.
+    property bool multi: false
+    property var selection: []
     signal picked(string dir)
 
     readonly property int gap: 12
@@ -40,7 +44,9 @@ Item {
             Item {
                 id: tile
                 required property var modelData
-                readonly property bool current: modelData.dir === gallery.value
+                readonly property bool current: gallery.multi
+                    ? gallery.selection.indexOf(modelData.dir) >= 0
+                    : modelData.dir === gallery.value
                 readonly property bool gif: /\.gif$/i.test(modelData.preview)
                 readonly property bool usable: !modelData.unsupported
 
@@ -113,7 +119,7 @@ Item {
                     width: parent.width
                     elide: Text.ElideRight
                     text: !tile.usable ? "3D scene · not supported"
-                          : (tile.current ? "On the desktop · " : "")
+                          : (tile.current ? (gallery.multi ? "In the playlist · " : "On the desktop · ") : "")
                             + (gallery.typeNames[tile.modelData.type] || tile.modelData.type)
                     font.pixelSize: Config.Appearance.fs(11)
                     color: tile.current && tile.usable ? Config.Appearance.accent : Config.Appearance.ink3

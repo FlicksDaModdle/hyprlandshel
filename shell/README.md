@@ -533,13 +533,47 @@ running a while, and leaves it stopped with what it said if it dies
 straight away (a wallpaper it cannot draw, assets it cannot find); that
 message is on the Wallpaper row.
 
-- **Follow the mouse** gives it the pointer, for parallax and cursor
-  effects. The desktop's clicks then go to the wallpaper instead of the
-  shell, so right-clicking the desktop no longer opens its menu. Off, its
-  surface takes no input and Hyprland passes clicks through to the shell.
-- **Frame rate** is 30 by default. It pauses on its own while something is
-  fullscreen.
-- **Sound** is off by default.
+With more than one screen, **Screens** chooses the same wallpaper on each,
+one stretched across them all, or each its own — pick the screen under
+"Choosing for", then its wallpaper.
+
+### Settings → Live wallpaper
+
+What Wallpaper Engine lets you set on Windows, as far as
+linux-wallpaperengine can carry it:
+
+- **The wallpaper's own options** — its colours, sliders, switches, lists,
+  text and files, in the order Wallpaper Engine shows them, with the ones
+  that depend on another (a visualiser's bar count, say) hidden while that
+  one is off. Only what you change from the author's defaults is kept, per
+  wallpaper, and passed as `--set-property`. linux-wallpaperengine reads
+  them when it starts, so a change restarts the wallpaper.
+- **Share JSON** — copy, paste, save or load the options in Wallpaper
+  Engine's own format: what its Share JSON button gives, and what presets
+  are shared as. A preset from Windows pastes straight in; options the
+  wallpaper does not have are left out and counted. A properties block or a
+  whole `project.json` is read too.
+- **Playback** — frame rate, pause while something is fullscreen (any
+  window, only a focused one, or never), scaling, particles; sound with its
+  volume, auto-mute while other apps play, and reacting to audio; mouse
+  interaction and parallax. Mouse interaction gives the wallpaper the
+  pointer, and the desktop's clicks go to it instead of the shell, so
+  right-clicking the desktop no longer opens its menu. Off, its surface
+  takes no input and Hyprland passes clicks through to the shell.
+- **Playlist** — wallpapers the desktop moves through on a timer, in order
+  or shuffled, like Wallpaper Engine's. `qs -c hyprshell ipc call shell
+  nextLiveWallpaper` skips to the next; bind it to a key.
+- **Wallpaper Engine's config.json** — import its playlist and what each
+  screen shows, and export them back. Wallpapers are matched by Workshop id
+  (or by name for its own projects), so paths from Windows find the same
+  wallpapers here. Export merges into a file that is there — everything
+  else in it kept, a copy made first as `config.json.before-hyprshell`, and
+  wallpapers in its playlist that are not installed here left in — with
+  paths for that machine's Steam library. linux-wallpaperengine's own
+  `--playlist` reads the same file.
+
+One thing is not carried over: where Wallpaper Engine keeps each
+wallpaper's options inside config.json. Share JSON is the way to move those.
 
 linux-wallpaperengine draws 2D scenes, videos and web wallpapers. A 3D
 scene is shown faded with "3D scene · not supported" and cannot be picked;
@@ -558,8 +592,10 @@ wallpapers have other open bugs there, so one that starts but stays black
 is linux-wallpaperengine's to fix, not this shell's.
 
 From a script: `qs -c hyprshell ipc call shell setLiveWallpaper <folder or
-Workshop id>`, and an empty argument turns it off. Wallpaper properties
-(`--set-property`) are not exposed yet.
+Workshop id>`, and an empty argument turns it off.
+
+`node quickshell/tools/weprops-test.js` checks the Wallpaper Engine formats
+(`services/WeProps.js`) against examples of each.
 
 ## Theming KDE applications
 

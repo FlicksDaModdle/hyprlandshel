@@ -45,13 +45,37 @@ Singleton {
         onTriggered: root.settingsReady = true
     }
 
+    // Saving, and hearing back about it.
+    //
+    // Every change used to write the file at once, and the watcher below
+    // reported each of those writes as a change from outside and reloaded
+    // the file — sometimes a copy from a write or two back. Several values
+    // set together (an import, a reset) then lost some of them to an older
+    // copy of themselves. Now changes made together go out as one write, a
+    // moment later, and the watcher ignores the file changing just after
+    // the shell wrote it. An edit by hand still reloads.
+    property real lastWrite: 0
+    Timer {
+        id: saveSoon
+        interval: 150
+        onTriggered: {
+            root.lastWrite = Date.now();
+            store.writeAdapter();
+        }
+    }
+    // A change made just before a reload or quit still reaches the file.
+    Component.onDestruction: if (saveSoon.running) store.writeAdapter()
+
     FileView {
         id: store
         path: root.configDir + "/theme.json"
         watchChanges: true
         printErrors: false
-        onFileChanged: reload()
-        onAdapterUpdated: writeAdapter()
+        onFileChanged: {
+            if (saveSoon.running || Date.now() - root.lastWrite < 2000) return;
+            reload();
+        }
+        onAdapterUpdated: saveSoon.restart()
         onLoaded: root.settingsReady = true
         // A missing file is normal on first run: write defaults out so the
         // file exists and is editable by hand.
@@ -82,6 +106,26 @@ Singleton {
             // On: the wallpaper gets the pointer, for parallax and cursor
             // effects, and the desktop's own clicks stop reaching the shell.
             property bool liveMouse: false
+            property bool liveParallax: true          // with the mouse on
+            // Each wallpaper's own options as changed from its defaults, as
+            // JSON: { "<folder name>": { "<option>": value } }.
+            property string liveProps: ""
+            property int liveVolume: 50               // 0-100 %, with sound on
+            property bool liveAutomute: true          // quiet while other apps play
+            property bool liveAudioReactive: true     // visualisers hear the system
+            property string livePause: "any"          // any | focused | never, for fullscreen
+            property bool liveParticles: true
+            property string liveScaling: "fill"       // fill | fit | stretch | default
+            // "same" on every screen, "span" one across them all, or "each"
+            // its own, from liveScreens: { "<output>": "<folder>" }.
+            property string liveLayout: "same"
+            property string liveScreens: ""
+            // The playlist, as a JSON array of folders, and how it turns.
+            property string livePlaylist: ""
+            property bool liveRotate: false
+            property int liveDelay: 30                // minutes
+            property string liveOrder: "sequential"   // sequential | random
+            property string liveListName: "Hyprshell"
 
             // Bar
             property int barHeight: 40                // 32-56 px
@@ -312,6 +356,21 @@ Singleton {
     property alias liveFps: prefs.liveFps
     property alias liveSound: prefs.liveSound
     property alias liveMouse: prefs.liveMouse
+    property alias liveParallax: prefs.liveParallax
+    property alias liveProps: prefs.liveProps
+    property alias liveVolume: prefs.liveVolume
+    property alias liveAutomute: prefs.liveAutomute
+    property alias liveAudioReactive: prefs.liveAudioReactive
+    property alias livePause: prefs.livePause
+    property alias liveParticles: prefs.liveParticles
+    property alias liveScaling: prefs.liveScaling
+    property alias liveLayout: prefs.liveLayout
+    property alias liveScreens: prefs.liveScreens
+    property alias livePlaylist: prefs.livePlaylist
+    property alias liveRotate: prefs.liveRotate
+    property alias liveDelay: prefs.liveDelay
+    property alias liveOrder: prefs.liveOrder
+    property alias liveListName: prefs.liveListName
     property alias barHeight: prefs.barHeight
     property alias workspaceScale: prefs.workspaceScale
     property alias animSpeed: prefs.animSpeed

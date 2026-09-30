@@ -78,6 +78,9 @@ Singleton {
         // turns it off.
         "setLiveWallpaper":    arg => arg ? Services.LiveWallpaper.choose(arg)
                                           : Services.LiveWallpaper.stop(),
+        // The next one in the live wallpaper playlist — bindable, as
+        // Wallpaper Engine's "next wallpaper" hotkey is.
+        "nextLiveWallpaper":   () => Services.LiveWallpaper.next(),
         "setAccent":           arg => Config.Appearance.accentIndex = parseInt(arg, 10) || 0,
         "syncTheming":         () => Services.Theming.resync(),
 

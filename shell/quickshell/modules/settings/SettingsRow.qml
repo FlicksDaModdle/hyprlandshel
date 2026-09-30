@@ -14,6 +14,8 @@ import "../icons"
 //   header  a group caption, no control — used to break a pane into
 //           sections, one per display or per device
 //   gallery pictures to pick from, full width under the labels
+//   color   a swatch that opens the colour picker
+//   buttons several accent buttons, from spec.buttons [{ label, set }]
 Item {
     id: root
 
@@ -107,6 +109,8 @@ Item {
                 case "keybind": return keybindComponent;
                 case "monitors": return monitorsComponent;
                 case "gallery": return galleryComponent;
+                case "color":  return colorComponent;
+                case "buttons": return buttonsComponent;
                 default:       return infoComponent;
                 }
             }
@@ -277,10 +281,18 @@ Item {
                 width: 216
                 trough: 20
                 showRule: true
-                value: (root.spec.value - root.spec.min) / Math.max(1, root.spec.max - root.spec.min)
+                value: (root.spec.value - root.spec.min) / Math.max(1e-9, root.spec.max - root.spec.min)
 
+                // Whole numbers unless the spec gives a finer `step`, as a
+                // live wallpaper's options do (0 to 1 by 0.01, say).
+                readonly property real step: root.spec.step > 0 ? root.spec.step : 1
+                readonly property int places: step >= 1 ? 0 : Math.min(4, Math.ceil(-Math.log(step) / Math.LN10 - 1e-9))
+                function snap(x) {
+                    const n = Math.round((x - root.spec.min) / step) * step + root.spec.min;
+                    return Number(Math.max(root.spec.min, Math.min(root.spec.max, n)).toFixed(places));
+                }
                 function toSteps(v) {
-                    return Math.round(root.spec.min + v * (root.spec.max - root.spec.min));
+                    return snap(root.spec.min + v * (root.spec.max - root.spec.min));
                 }
 
                 // Committed on release only, and this is not about cost.
@@ -321,8 +333,8 @@ Item {
                         // Follows the drag rather than the committed value,
                         // which is throttled — otherwise the number visibly
                         // stutters behind the fill.
-                        text: slider.dragging
-                              ? slider.toSteps(slider.shownValue) : root.spec.value
+                        text: (slider.dragging ? slider.toSteps(slider.shownValue)
+                                               : Number(root.spec.value)).toFixed(slider.places)
                         color: Config.Appearance.ink
                         font.family: Config.Appearance.fontFamily
                         font.pixelSize: Config.Appearance.fs(12)
@@ -330,18 +342,17 @@ Item {
                         selectByMouse: true
                         selectionColor: Config.Appearance.accent
                         selectedTextColor: Config.Appearance.inkOnAccent
-                        inputMethodHints: Qt.ImhDigitsOnly
-                        validator: IntValidator { bottom: root.spec.min; top: root.spec.max }
+                        inputMethodHints: slider.places > 0 ? Qt.ImhFormattedNumbersOnly : Qt.ImhDigitsOnly
 
                         function commit() {
-                            const v = parseInt(text);
-                            if (isNaN(v)) { text = root.spec.value; return; }
-                            root.spec.set(Math.max(root.spec.min, Math.min(root.spec.max, v)));
+                            const v = parseFloat(text);
+                            if (isNaN(v)) { text = Number(root.spec.value).toFixed(slider.places); return; }
+                            root.spec.set(slider.snap(v));
                         }
 
                         onEditingFinished: commit()
                         Keys.onReturnPressed: { commit(); focus = false; }
-                        Keys.onEscapePressed: { text = root.spec.value; focus = false; }
+                        Keys.onEscapePressed: { text = Number(root.spec.value).toFixed(slider.places); focus = false; }
                     }
 
                     StyledText {
@@ -808,6 +819,8 @@ Item {
                     font.pixelSize: Config.Appearance.fs(12)
                     echoMode: root.spec.secret ? TextInput.Password : TextInput.Normal
                     selectByMouse: true
+                    // What it is set to now, where that is not a secret.
+                    text: root.spec.secret ? "" : (root.spec.value || "")
                     onAccepted: root.spec.set(text)
 
                     StyledText {
@@ -881,12 +894,107 @@ Item {
         }
     }
 
+    // A colour to set: the swatch, and the shell's own picker under it.
+    Component {
+        id: colorComponent
+        Rectangle {
+            id: colorSwatch
+            implicitWidth: 44
+            implicitHeight: 28
+            radius: Config.Appearance.rSm
+            color: root.spec.value || "black"
+            border.width: 1
+            border.color: Config.Appearance.div
+
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: colorPicker.open = !colorPicker.open }
+
+            // Placed as the accent's picker is (see swatchComponent).
+            ColorPicker {
+                id: colorPicker
+                parent: root.overlay || colorSwatch
+                z: 200
+                readonly property point anchorPoint: {
+                    if (!root.overlay)
+                        return Qt.point(colorSwatch.width / 2, colorSwatch.height);
+                    void root.overlay.scrollY;
+                    void root.overlay.pane;
+                    void root.overlay.width;
+                    void root.overlay.height;
+                    void root.y;
+                    void root.width;
+                    return colorSwatch.mapToItem(root.overlay, colorSwatch.width / 2, colorSwatch.height);
+                }
+                x: root.overlay
+                   ? Math.max(8, Math.min(anchorPoint.x - width / 2, root.overlay.width - width - 8))
+                   : -width / 2
+                readonly property bool flipUp: {
+                    if (!root.overlay) return false;
+                    const avail = root.overlay.height;
+                    if (avail <= 0 || height <= 0) return false;
+                    const below = avail - (anchorPoint.y + 8);
+                    if (below >= height) return false;
+                    return (anchorPoint.y - colorSwatch.height - 8) > below;
+                }
+                y: flipUp ? anchorPoint.y - colorSwatch.height - height - 8 : anchorPoint.y + 8
+                backdrop: root.overlay ? root.overlay.backdrop : null
+                value: root.spec.value || "black"
+                onPicked: c => root.spec.set(c)
+            }
+        }
+    }
+
+    // A few actions on one thing, side by side.
+    Component {
+        id: buttonsComponent
+        Row {
+            spacing: 8
+            Repeater {
+                model: root.spec.buttons || []
+                Rectangle {
+                    id: btn
+                    required property var modelData
+                    readonly property bool quiet: !!modelData.quiet
+                    anchors.verticalCenter: parent.verticalCenter
+                    implicitWidth: btnLabel.implicitWidth + 24
+                    implicitHeight: 32
+                    radius: Config.Appearance.rSm
+                    color: quiet ? (btnHover.hovered ? Config.Appearance.sel : Config.Appearance.hover)
+                                 : Config.Appearance.accent
+                    border.width: quiet ? 1 : 0
+                    border.color: Config.Appearance.rule
+                    opacity: modelData.enabled === false ? 0.45 : (btnHover.hovered && !quiet ? 0.9 : 1)
+
+                    StyledText {
+                        id: btnLabel
+                        anchors.centerIn: parent
+                        text: btn.modelData.label
+                        font.pixelSize: Config.Appearance.fs(12)
+                        font.weight: Font.DemiBold
+                        color: btn.quiet ? Config.Appearance.ink : Config.Appearance.inkOnAccent
+                    }
+
+                    HoverHandler {
+                        id: btnHover
+                        cursorShape: btn.modelData.enabled === false ? Qt.ArrowCursor : Qt.PointingHandCursor
+                    }
+                    TapHandler {
+                        enabled: btn.modelData.enabled !== false
+                        onTapped: btn.modelData.set()
+                    }
+                }
+            }
+        }
+    }
+
     Component {
         id: galleryComponent
         WallpaperGallery {
             width: control.width
             items: root.spec.items || []
             value: root.spec.value || ""
+            multi: !!root.spec.multi
+            selection: root.spec.selection || []
             onPicked: dir => { if (root.spec.pick) root.spec.pick(dir); }
         }
     }
