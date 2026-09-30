@@ -1843,7 +1843,9 @@ Scope {
         // And re-read, or the dropdown keeps showing the mode you just
         // changed away from: these controls are drawn from the compositor's
         // own report of the monitor, and nothing else asks it to refresh.
-        Services.Compositor.refreshMonitors();
+        // Checked, too: a display already on that rule but not at its rate
+        // is one Hyprland skips, and Devices then puts it there.
+        Services.Devices.checkSoon();
     }
 
     function applyScale(name, scale) {

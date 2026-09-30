@@ -320,6 +320,10 @@ Singleton {
 
     function enforce() {
         if (!root.applied) return;
+        // Still changing, or the report may predate the change: look again
+        // once it has settled.
+        if (Date.now() - root.lastSend < 2500 || secondStep.running) { root.checkSoon(); return; }
+        if (Date.now() - root.reportedAt > 1200) { root.checkSoon(); return; }
         const map = displayMap();
         const now = Date.now();
         for (const live of Services.Compositor.monitors || []) {
@@ -341,7 +345,7 @@ Singleton {
             recent.push(now);
             root.fixes = Object.assign({}, root.fixes, { [live.name]: recent });
             console.log("Devices:", live.name, "was at", ipc.refreshRate, "Hz; putting back", want);
-            root.applyDisplay(live.name);
+            root.fixDisplay(live.name, ipc.refreshRate);
         }
     }
 
@@ -351,22 +355,40 @@ Singleton {
         interval: 1500
         onTriggered: root.enforce()
     }
+    // When Hyprland's report was last asked for; enforce() only trusts one
+    // asked for just before it runs.
+    property real reportedAt: 0
     function checkSoon() {
         Services.Compositor.refreshMonitors();
+        root.reportedAt = Date.now() + recheck.interval - 1000;
         recheck.restart();
     }
 
     // The power source changing is when the rate matters: apply the one for
     // it, and look again over the next few seconds for whatever else reacts
     // to the same unplugging.
+    //
+    // It has to hold for a couple of seconds first: a charger at its charge
+    // limit, or a loose plug, can report AC and battery by turns, and each
+    // turn would otherwise change the rate.
     onOnBatteryChanged: {
-        if (!root.applied) return;
-        root.fixes = ({});
-        root.contested = ({});
-        root.applyDisplays();
-        powerFollowUp.left = 3;
-        powerFollowUp.restart();
-        root.checkSoon();
+        console.log("Devices: power source is now", root.onBattery ? "battery" : "AC");
+        powerSettle.restart();
+    }
+    property bool actedOnBattery: false
+    Timer {
+        id: powerSettle
+        interval: 2500
+        onTriggered: {
+            if (!root.applied || root.onBattery === root.actedOnBattery) return;
+            root.actedOnBattery = root.onBattery;
+            root.fixes = ({});
+            root.contested = ({});
+            root.applyDisplays();
+            powerFollowUp.left = 3;
+            powerFollowUp.restart();
+            root.checkSoon();
+        }
     }
     Timer {
         id: powerFollowUp
@@ -438,27 +460,40 @@ Singleton {
         onTriggered: {
             const p = root.pendingSpecs;
             root.pendingSpecs = ({});
+            root.lastSend = Date.now();
             for (const n in p) Services.Compositor.setMonitor(p[n]);
             Services.Compositor.refreshMonitors();
         }
     }
 
+    // When the last rule went out: Hyprland's report of an output is not to
+    // be believed for a moment after, while it is still changing it.
+    property real lastSend: 0
+
     function applyDisplay(name) {
         const spec = displaySpec(name);
         if (!spec) return;
-        const live = (Services.Compositor.monitors || []).find(m => m && m.name === name);
-        const ipc = (live && live.lastIpcObject) || ({});
-        const want = parseFloat(String(spec.mode).split("@")[1]);
-        if (ipc.refreshRate > 0 && want > 0 && Math.abs(ipc.refreshRate - want) >= 0.5) {
-            const now = Object.assign({}, spec, {
-                mode: (ipc.width || live.width) + "x" + (ipc.height || live.height)
-                      + "@" + (Math.round(ipc.refreshRate * 1000) / 1000) });
-            Services.Compositor.setMonitor(now);
-            root.pendingSpecs = Object.assign({}, root.pendingSpecs, { [name]: spec });
-            secondStep.restart();
-            return;
-        }
+        root.lastSend = Date.now();
         Services.Compositor.setMonitor(spec);
+    }
+
+    // The two-step, for an output known — from a fresh report — to be off
+    // the rate it should be at. Only enforce() calls it: the first step
+    // sets the output to what it was last reported running, so from a
+    // stale report it would change a display that was already right. That
+    // is what a reload did, straight after which the report still said
+    // what the output ran before it.
+    function fixDisplay(name, runningHz) {
+        const spec = displaySpec(name);
+        const live = (Services.Compositor.monitors || []).find(m => m && m.name === name);
+        if (!spec || !live) return;
+        const ipc = live.lastIpcObject || ({});
+        root.lastSend = Date.now();
+        Services.Compositor.setMonitor(Object.assign({}, spec, {
+            mode: (ipc.width || live.width) + "x" + (ipc.height || live.height)
+                  + "@" + (Math.round(runningHz * 1000) / 1000) }));
+        root.pendingSpecs = Object.assign({}, root.pendingSpecs, { [name]: spec });
+        secondStep.restart();
     }
 
     // Only outputs that are actually connected are re-applied: a saved mode
@@ -487,6 +522,7 @@ Singleton {
             root.applyInput();
             root.applyFrame();
             root.applyDisplays();
+            root.checkSoon();
         }
     }
 
@@ -499,9 +535,11 @@ Singleton {
             if (!Services.Compositor.ipcReady
                 && (Services.Compositor.monitors || []).length === 0) return;
             root.applied = true;
+            root.actedOnBattery = root.onBattery;
             root.applyInput();
             root.applyFrame();
             root.applyDisplays();
+            root.checkSoon();
             running = false;
         }
     }
