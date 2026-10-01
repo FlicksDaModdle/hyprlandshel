@@ -20,7 +20,12 @@ PanelSurface {
 
     showSeam: false
     color: Appearance.sheet
-    radius: Appearance.rWin
+    // In a window of its own Hyprland rounds the corners and draws the
+    // border; drawing ours as well put two outlines with two different
+    // curves on top of each other. Square and edgeless, and the
+    // compositor's corner is the only one.
+    radius: frame.host.tiled ? 0 : Appearance.rWin
+    showEdge: !frame.host.tiled
     // The window manager owns the geometry in an application, so the
     // frame is simply the whole window: Main.qml anchors it, there is
     // nothing to place and nothing to animate.

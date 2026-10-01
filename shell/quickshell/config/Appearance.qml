@@ -338,7 +338,7 @@ Singleton {
             // colour itself, lower a darker shade of it, higher a lighter.
             property int activeBorderPct: 100
             property int inactiveBorderPct: 100
-            property int hyprRounding: 12
+            property int hyprRounding: 14
             property bool hyprBlur: true
             property int hyprBlurSize: 4
             property int hyprBlurPasses: 2

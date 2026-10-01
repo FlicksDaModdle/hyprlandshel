@@ -20,6 +20,10 @@ ClippingRectangle {
     // Length of the solid accent run before it fades into the seam tint.
     property real seamLead: 40
     property bool showSeam: true
+    // Off inside a real window: the compositor draws that window's border,
+    // and a hairline of our own inside it is a second, differently curved
+    // outline.
+    property bool showEdge: true
 
     radius: Config.Appearance.rPanel
     color: Config.Appearance.panel
@@ -33,7 +37,7 @@ ClippingRectangle {
         // with square corners around a rounded panel.
         radius: root.radius
         color: "transparent"
-        border.width: 1
+        border.width: root.showEdge ? 1 : 0
         border.color: Config.Appearance.edge
         // Purely decorative — must not eat clicks meant for the content.
         enabled: false

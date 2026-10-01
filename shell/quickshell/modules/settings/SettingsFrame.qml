@@ -26,7 +26,10 @@ PanelSurface {
 
     showSeam: false
     color: Config.Appearance.sheet
-    radius: Config.Appearance.rWin
+    // Tiled, it is a real window: Hyprland rounds it and draws its border,
+    // so ours would be a second outline on a different curve.
+    radius: frame.host.tiled ? 0 : Config.Appearance.rWin
+    showEdge: !frame.host.tiled
 
     // Tiled, the compositor decides the geometry and this fills whatever it
     // is given. Floating, the window is ours to place.
