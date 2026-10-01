@@ -21,11 +21,10 @@ Rectangle {
     readonly property var sessions: frame.host.sessions
     readonly property bool showTabs: sessions.length > 0
 
-    radius: frame.host.maximised ? 0 : Appearance.rPanel
+    // Square and edgeless: it is always a real window, and Hyprland rounds
+    // its corners and draws its border. A rounded edge of its own inside
+    // that put two outlines on two different curves at every corner.
     color: Appearance.bg
-    border.width: 1
-    border.color: Appearance.edge
-    antialiasing: true
     clip: true
 
     // ── title bar ─────────────────────────────────────────────────────────
