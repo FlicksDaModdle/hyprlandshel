@@ -61,6 +61,8 @@ PanelSurface {
             if (frame.app.confirmingEmpty || frame.app.confirmingDelete) {
                 frame.app.confirmingEmpty = false;
                 frame.app.confirmingDelete = false;
+            } else if (frame.app.archiveSheet) {
+                frame.app.archiveSheet = null;
             } else if (frame.app.propertiesFor) {
                 frame.app.propertiesFor = null;
             } else if (frame.app.filtering || frame.app.filter !== "") {
@@ -1162,6 +1164,22 @@ PanelSurface {
         app: frame.app
         x: Math.round((frame.width - width) / 2)
         y: Math.round((frame.height - height) / 2)
+    }
+
+    // ── archives ──────────────────────────────────────────────────────────
+    ArchiveSheet {
+        app: frame.app
+        maxHeight: frame.height - 60
+        x: Math.round((frame.width - width) / 2)
+        y: Math.round((frame.height - height) / 2)
+    }
+    ArchiveJobs {
+        app: frame.app
+        z: 940
+        anchors.right: parent.right
+        anchors.rightMargin: 14
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 44
     }
 
     // ── the right-click menu ──────────────────────────────────────────────

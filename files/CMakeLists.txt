@@ -47,7 +47,7 @@ qt_add_executable(hyprshell-files
 # QML singletons have to be declared as such to the module system, or they
 # are registered as ordinary types and `Appearance.ink` is a syntax error at
 # every use site.
-set_source_files_properties(qml/Appearance.qml qml/FilesService.qml
+set_source_files_properties(qml/Appearance.qml qml/FilesService.qml qml/Archives.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 # RESOURCE_PREFIX is pinned because the default moved: Qt 6.4 puts the
@@ -63,6 +63,9 @@ qt_add_qml_module(hyprshell-files
         qml/FilesService.qml
         qml/Files.qml
         qml/FilesFrame.qml
+        qml/Archives.qml
+        qml/ArchiveSheet.qml
+        qml/ArchiveJobs.qml
         qml/FileMenu.qml
         qml/FileTile.qml
         qml/FileRow.qml

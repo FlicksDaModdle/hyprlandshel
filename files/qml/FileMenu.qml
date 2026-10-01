@@ -79,6 +79,19 @@ PanelSurface {
                            run: () => menu.svc.toggleBookmark(path) });
             }
 
+            // Archives: what 7-Zip's menu has, in the order it matters.
+            if (!t.dir && Archives.isArchive(t.name) && menu.count === 1) {
+                out.push({ n: "Extract here", icon: "download", rule: true,
+                           run: () => menu.app.extractHere(t) });
+                out.push({ n: "Extract to…", icon: "folderOpen",
+                           run: () => menu.app.extractTo(t) });
+                out.push({ n: "Look inside", icon: "search",
+                           run: () => menu.app.browseArchive(t) });
+            }
+            out.push({ n: menu.count > 1 ? "Compress " + menu.count + " items…" : "Compress…",
+                       icon: "package", rule: !(!t.dir && Archives.isArchive(t.name) && menu.count === 1),
+                       run: () => menu.app.compressSelected() });
+
             out.push({ n: "Cut", icon: "x", rule: true,
                        run: () => menu.svc.cut(menu.app.selectedPaths()) });
             out.push({ n: "Copy", icon: "file",

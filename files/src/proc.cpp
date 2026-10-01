@@ -127,9 +127,18 @@ void Proc::onReadyRead() {
         return;
     }
     m_pending += chunk;
-    int cut;
-    while ((cut = m_pending.indexOf('\n')) >= 0) {
-        emit line(QString::fromUtf8(m_pending.left(cut)));
+    // A line ends at a newline — and, for progress meters, at the carriage
+    // return or run of backspaces they redraw themselves with (7-Zip's
+    // "  42% 3 + file" is rewritten in place and never ends a line).
+    for (;;) {
+        int cut = -1;
+        for (int i = 0; i < m_pending.size(); ++i) {
+            const char c = m_pending.at(i);
+            if (c == '\n' || c == '\r' || c == '\b') { cut = i; break; }
+        }
+        if (cut < 0) break;
+        const QByteArray piece = m_pending.left(cut).trimmed();
         m_pending.remove(0, cut + 1);
+        if (!piece.isEmpty()) emit line(QString::fromUtf8(piece));
     }
 }

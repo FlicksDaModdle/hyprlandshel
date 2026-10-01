@@ -127,6 +127,11 @@ if command -v gio >/dev/null 2>&1; then ok "gio" "trash, change watching, openin
 else bad "gio" "required: it is the trash and the change feed"; MISSING=$((MISSING + 1)); fi
 command -v xdg-open >/dev/null 2>&1 && ok "xdg-open" "opening files" \
     || warn "xdg-open" "gio open is tried first, so this is the fallback"
+if command -v 7zz >/dev/null 2>&1 || command -v 7z >/dev/null 2>&1; then
+    ok "7-Zip" "ZIP and 7z archives, and opening RAR, ISO and the rest"
+else
+    warn "7-Zip" "archives: tar formats only until the 7zip package is installed"
+fi
 command -v wl-copy  >/dev/null 2>&1 && ok "wl-copy" "copy path" \
     || warn "wl-copy" "\"Copy path\" needs wl-clipboard (or xclip)"
 if command -v fc-list >/dev/null 2>&1 && fc-list 2>/dev/null | grep -qi inter; then

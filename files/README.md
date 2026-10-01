@@ -283,6 +283,34 @@ Hovering a name that was too long for its column shows the whole thing
 after a moment. Only when it is actually elided: a tooltip repeating a
 name you can already read is noise on every row you pass over.
 
+## Archives
+
+Right-click → **Compress…** makes an archive of the selection: ZIP (opens
+anywhere), 7z (smallest), or tar.zst / tar.xz / tar.gz (keep Linux
+permissions), at a compression level from Store to Ultra, optionally with a
+password (AES-256; a 7z can hide its file names too) and split into parts of
+100 MB, 1 GB or 4 GB.
+
+An archive opens here, as a folder would: double-click it (or **Look
+inside**) to see what is in it, go into its folders, and extract all of it or
+only what you tick. **Test** checks every file against its checksum. **Extract
+here** does the expected thing: an archive holding one folder unpacks as that
+folder, one holding many things gets a folder of its own named after it, and
+neither lands on top of something already here. **Extract to…** asks for the
+folder and what to do with files that are already there (keep both, skip,
+replace). A password-protected archive asks for its password, and a job that
+fails for want of one offers to try again with one.
+
+Work runs as cards in the corner of the window with its progress and
+Cancel; a cancelled or failed archive is not left behind half-written.
+
+[7-Zip](https://www.7-zip.org) does the work — `7zz` (the `7zip` package) or
+`7z` (p7zip) — and so everything it reads opens: RAR, ISO, CAB, WIM, DEB, JAR
+and more. tar formats go through GNU tar. Without 7-Zip, tar archives still
+work and ZIP and 7z say what to install. Passwords are handed to 7-Zip on its
+stdin, never on its command line, where any user on the machine could read
+them.
+
 ## Properties
 
 `Ctrl+I`, or the menu. Type, size, location, modified, permissions, owner,
