@@ -850,35 +850,44 @@ PanelSurface {
         if (wifiPane) {
             return Services.Network.networks.map(ap => ({
                 n: ap.ssid,
-                s: (ap.security && ap.security !== "" ? ap.security : "Open")
+                s: Services.Network.securityLabel(ap)
                    + (ap.inUse ? " · connected"
                       : (Services.Network.busySsid === ap.ssid ? " · joining…"
-                         : (ap.known ? " · saved"
-                            : (Services.Network.needsIdentity(ap)
-                               ? " · sign in" : "")))),
+                         : (Services.Network.errors[ap.ssid] ? " · didn't connect"
+                            : (ap.known ? " · saved"
+                               : (ap.enterprise ? " · sign in" : ""))))),
                 icon: "wifi",
                 meta: ap.signal + "%",
                 current: ap.inUse,
-                // A saved or open network joins on a tap. A new secured one
-                // asks here rather than sending anyone to Settings.
-                asks: Services.Network.needsPassword(ap),
-                wantsUser: Services.Network.needsIdentity(ap),
+                // A saved or open network joins on a tap, and a new home
+                // network asks for its password here. A university network
+                // has a form's worth of options, so it opens Settings on it.
+                asks: Services.Network.needsPassword(ap) && !ap.enterprise,
+                wantsUser: false,
                 key: ap.ssid,
                 go: () => {
                     if (ap.inUse) { Services.Network.disconnect(); return; }
+                    if (Services.Network.needsIdentity(ap)) {
+                        Services.Network.focusSsid = ap.ssid;
+                        Config.UiState.openSettings("Network");
+                        return;
+                    }
                     if (Services.Network.needsPassword(ap)) {
                         root.askingSsid = root.askingSsid === ap.ssid ? "" : ap.ssid;
                         return;
                     }
                     root.askingSsid = "";
-                    Services.Network.connect(ap.ssid, "");
+                    Services.Network.join(ap.ssid, "");
                 }
             }));
         }
-        return Services.Bluetooth.devices.map(dev => ({
+        // Paired devices, then what a scan found that has a name.
+        const bt = Services.Bluetooth;
+        return bt.pairedDevices.concat(bt.nearbyDevices).map(dev => ({
             n: dev.name,
-            s: Services.Bluetooth.busyMac === dev.mac ? "Working…"
-               : (dev.connected ? "Connected"
+            s: bt.busy[dev.mac] ? "Working…"
+               : bt.errors[dev.mac] ? "Didn't work · open Settings for why"
+               : (dev.connected ? "Connected" + (dev.battery >= 0 ? " · " + dev.battery + "%" : "")
                   : (dev.paired ? "Paired · tap to connect"
                      : "Not paired · tap to pair")),
             icon: "bluetooth",
@@ -886,7 +895,7 @@ PanelSurface {
             current: dev.connected,
             asks: false,
             key: dev.mac,
-            go: () => Services.Bluetooth.toggleDevice(dev)
+            go: () => bt.toggleDevice(dev)
         }));
     }
 

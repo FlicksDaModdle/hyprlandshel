@@ -219,6 +219,10 @@ fi
 head1 "Optional — each one only affects the feature named"
 need nmcli         optional "Wi-Fi tile, Network pane"   networkmanager network-manager NetworkManager NetworkManager
 need bluetoothctl  optional "Bluetooth tile and pane"    bluez-utils bluez bluez bluez
+# hyprshell-agent (agent/) is built here: the Bluetooth pairing prompts and
+# the Wi-Fi password prompts. Qt itself is already here for Quickshell.
+need cmake         optional "builds hyprshell-agent (pairing and Wi-Fi prompts)" cmake cmake cmake cmake
+need c++           optional "builds hyprshell-agent"     gcc g++ gcc-c++ gcc-c++
 need brightnessctl optional "brightness slider and keys" brightnessctl brightnessctl brightnessctl brightnessctl
 need grim          optional "screenshots"                grim grim grim grim
 need slurp         optional "screenshot region picker"   slurp slurp slurp slurp
@@ -441,8 +445,8 @@ if [ -d "$OLD" ]; then
         rel="${f#"$OLD"/}"
         # Shipped by this tree, so the new copy is the right one.
         [ -e "$SRC/quickshell/$rel" ] && continue
-        # Our own two, copied in above rather than from the source tree.
-        case "$rel" in run.sh|hyprshellctl) continue ;; esac
+        # Our own, copied in or built here rather than from the source tree.
+        case "$rel" in run.sh|hyprshellctl|bin/hyprshell-agent) continue ;; esac
         mkdir -p "$QS_DIR/$(dirname -- "$rel")" 2>/dev/null
         if cp -- "$f" "$QS_DIR/$rel" 2>/dev/null; then
             printf '  kept your %s\n' "$rel"
@@ -454,6 +458,27 @@ if [ -d "$OLD" ]; then
     done
     kept=$(find "$OLD" -type f 2>/dev/null | wc -l)
     [ "$kept" -gt 0 ] || printf '  nothing of yours to carry across\n'
+fi
+
+# The agent: Bluetooth pairing (the prompts a phone or keyboard needs
+# answered, without which pairing them fails) and NetworkManager's
+# password requests. Built rather than shipped, against the Qt that is
+# here. Without it the shell falls back to bluetoothctl, which can pair
+# headphones and mice but nothing that asks a question.
+AGENT_BUILD="${XDG_CACHE_HOME:-$HOME/.cache}/hyprshell/agent-build"
+if command -v cmake >/dev/null 2>&1 && command -v c++ >/dev/null 2>&1; then
+    mkdir -p "$AGENT_BUILD" "$QS_DIR/bin" 2>/dev/null
+    if cmake -S "$SRC/agent" -B "$AGENT_BUILD" -DCMAKE_BUILD_TYPE=Release >"$AGENT_BUILD/build.log" 2>&1 \
+       && cmake --build "$AGENT_BUILD" >>"$AGENT_BUILD/build.log" 2>&1 \
+       && cp -- "$AGENT_BUILD/hyprshell-agent" "$QS_DIR/bin/hyprshell-agent"; then
+        printf '  built     %s/bin/hyprshell-agent\n' "$QS_DIR"
+    else
+        printf '  %scould not build hyprshell-agent — see %s/build.log%s\n' "$YEL" "$AGENT_BUILD" "$RST"
+        [ -x "$OLD/bin/hyprshell-agent" ] && cp -- "$OLD/bin/hyprshell-agent" "$QS_DIR/bin/" \
+            && printf '  kept the previous hyprshell-agent\n'
+    fi
+else
+    printf '  %snot building hyprshell-agent: needs cmake and a C++ compiler%s\n' "$YEL" "$RST"
 fi
 
 if command -v kitty >/dev/null 2>&1; then

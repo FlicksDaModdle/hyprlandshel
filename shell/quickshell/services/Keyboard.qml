@@ -73,11 +73,12 @@ Singleton {
     }
 
     function run(mode, payload) {
-        // The text goes through the environment rather than the argument
-        // list. It is whatever someone is typing — a password as often
-        // as not — and /proc/PID/cmdline is readable by anyone on the
-        // machine while /proc/PID/environ is not.
-        proc.environment = ({ "HYPRSHELL_OSK_TEXT": payload });
+        // The text goes in on stdin rather than in the argument list. It
+        // is whatever someone is typing — a password as often as not — and
+        // /proc/PID/cmdline is readable by anyone on the machine. (Not the
+        // environment either: Process.environment will not take an object
+        // assigned at run time on every Qt.)
+        proc.pending = String(payload).replace(/\n/g, " ");
         proc.command = ["sh", "-c", root.script, "osk", mode,
                         root.sendMods().join(" ")];
         proc.running = true;
@@ -87,7 +88,8 @@ Singleton {
     // Prints the name of whichever tool did the work, so `backend` can
     // say which one is in use without a separate probe.
     readonly property string script:
-        'mode="$1"; mods="$2"; text="$HYPRSHELL_OSK_TEXT"\n'
+        'IFS= read -r text || text=""\n'
+      + 'mode="$1"; mods="$2"\n'
       + 'if command -v wtype >/dev/null 2>&1; then\n'
       + '  set --\n'
       + '  for m in $mods; do set -- "$@" -M "$m"; done\n'
@@ -116,6 +118,9 @@ Singleton {
 
     Process {
         id: proc
+        property string pending: ""
+        stdinEnabled: true
+        onStarted: proc.write(proc.pending + "\n")
         stdout: StdioCollector {
             onStreamFinished: {
                 const t = text.trim();

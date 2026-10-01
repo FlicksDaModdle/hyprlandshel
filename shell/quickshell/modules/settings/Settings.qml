@@ -41,15 +41,6 @@ Scope {
     readonly property bool tiled: Config.Appearance.settingsTiled
     readonly property string pane: Config.UiState.settingsPane
 
-    // The username for a network that authenticates the person rather
-    // than the machine — a campus or office network. Kept here rather
-    // than in the row because a row is rebuilt on every scan, and a name
-    // half-typed when the list refreshed would be gone.
-    //
-    // Not persisted: it is one of a pair with a password, and a password
-    // is NetworkManager's to keep, not this file's.
-    property string wifiIdentity: ""
-
     // Settings → Wallpaper, with a wallpaper per screen: which screen the
     // pictures choose for. Empty is every screen without one of its own.
     property string liveScreenPick: ""
@@ -108,8 +99,8 @@ Scope {
         "Keyboard":      { icon: "keyboard",  group: "System", note: "Layout, key repeat and the modifier behaviour libinput exposes." },
         "Mouse":         { icon: "mouse",     group: "System", note: "Pointer speed, acceleration profile, buttons and wheel." },
         "Touchpad":      { icon: "touchpad",  group: "System", note: "Tapping, scrolling, palm rejection and click behaviour." },
-        "Network":       { icon: "wifi",      group: "System", note: "Wireless and connection policy." },
-        "Bluetooth":     { icon: "bluetooth", group: "System", note: "Radio state, paired devices and discovery." },
+        "Network":       { icon: "wifi",      group: "System", note: "Wi-Fi networks — joining, university sign-in, saved networks and connection details." },
+        "Bluetooth":     { icon: "bluetooth", group: "System", note: "Your devices, and adding new ones." },
         "Sound":         { icon: "volume",    group: "System", note: "Output and input levels and the active device." },
         "Power":         { icon: "battery",   group: "System", note: "Power profile, idle timing and battery care." },
         "Hyprland":      { icon: "grid",      group: "System", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
@@ -1227,180 +1218,14 @@ Scope {
             return rows;
         }
 
-        // ── Network ───────────────────────────────────────────────────────
-        case "Network": {
-            const net = Services.Network;
-            if (!net.available) return [
-                { type: "header", n: "Network",
-                  s: "NetworkManager is not running, so there is nothing "
-                     + "here to set. The shell reads and drives the network "
-                     + "through nmcli." },
-                { n: "NetworkManager", s: "Expected on the session bus",
-                  type: "info", value: "not running" }
-            ];
-
-            const rows = [
-                { type: "header", n: "Wi-Fi", s: "" },
-                { n: "Wireless", s: net.wifiEnabled
-                     ? "The radio is on" : "The radio is off — nothing will scan",
-                  type: "toggle", value: net.wifiEnabled,
-                  set: v => net.setWifiEnabled(v) },
-                { n: "Connection", s: net.connected
-                     ? (net.security || "open") + " · " + net.signalStrength + "% signal"
-                     : "Not connected to anything",
-                  type: "info", value: net.connected ? net.ssid : "—" },
-                { n: "Address", s: "IPv4 on " + (net.ifname || "this interface"),
-                  type: "info", value: net.ipv4 || "—" },
-                { n: "Scan", s: net.scanning
-                     ? "Looking for networks…"
-                     : "Look again for networks in range",
-                  type: "action", label: net.scanning ? "Scanning" : "Scan",
-                  set: () => net.refresh() }
-            ];
-
-            if (net.vpnActive)
-                rows.push({ n: "VPN", s: "An active VPN connection",
-                            type: "info", value: net.vpnName || "connected" });
-
-            if (net.lastError !== "")
-                rows.push({ n: "Last attempt", s: net.lastError,
-                            type: "info", value: "failed" });
-
-            rows.push({ type: "header", n: "In range",
-                        s: (net.networks || []).length + " network"
-                           + ((net.networks || []).length === 1 ? "" : "s")
-                           + " found. Click a saved one to join it; a new "
-                           + "secured one asks for its password first, and a "
-                           + "network that signs you in asks for a username too." });
-
-            const seen = (net.networks || []).slice(0, 12);
-            for (let i = 0; i < seen.length; i++) {
-                const w = seen[i];
-                const joined = net.connected && w.ssid === net.ssid;
-                const sec = (w.security || "").trim() || "open";
-                const busy = net.busySsid === w.ssid;
-
-                // The row itself says who and how strong; what it *does*
-                // depends on whether this network is already known.
-                if (joined) {
-                    rows.push({ n: w.ssid || "(hidden)",
-                                s: sec + " · " + (w.signal || 0) + "% · connected",
-                                type: "action", label: "Disconnect",
-                                set: () => net.disconnect() });
-                } else if (net.needsIdentity(w)) {
-                    // Two fields, so two rows: the generic text row holds
-                    // one value and a button, and this kind of network
-                    // wants a name as well as a secret.
-                    rows.push({ n: "Username for " + (w.ssid || "this network"),
-                                s: root.wifiIdentity !== ""
-                                   ? "Signing in as " + root.wifiIdentity
-                                   : "This network signs you in — your NetID, "
-                                     + "university or work account",
-                                type: "text",
-                                placeholder: "Username",
-                                label: "Set",
-                                set: v => root.wifiIdentity = v.trim() });
-                    rows.push({ n: w.ssid || "(hidden)",
-                                s: sec + " · " + (w.signal || 0) + "%"
-                                   + (busy ? " · joining…"
-                                      : root.wifiIdentity === ""
-                                        ? " · set the username above first"
-                                        : " · needs your password"),
-                                type: "text", secret: true,
-                                placeholder: "Password",
-                                label: busy ? "Joining" : "Join",
-                                set: v => net.connect(w.ssid, v, root.wifiIdentity) });
-                } else if (net.needsPassword(w)) {
-                    rows.push({ n: w.ssid || "(hidden)",
-                                s: sec + " · " + (w.signal || 0) + "%"
-                                   + (busy ? " · joining…" : " · needs a password"),
-                                type: "text", secret: true,
-                                placeholder: "Password",
-                                label: busy ? "Joining" : "Join",
-                                set: v => net.connect(w.ssid, v) });
-                } else {
-                    rows.push({ n: w.ssid || "(hidden)",
-                                s: sec + " · " + (w.signal || 0) + "%"
-                                   + (w.known ? " · saved" : "")
-                                   + (busy ? " · joining…" : ""),
-                                type: "action",
-                                label: busy ? "Joining" : "Join",
-                                set: () => net.connect(w.ssid, "") });
-                }
-
-                if (w.known && !joined)
-                    rows.push({ n: "Forget " + (w.ssid || "this network"),
-                                s: "Delete the saved profile, so joining asks "
-                                   + "for the password again",
-                                type: "action", label: "Forget",
-                                set: () => net.forget(w.ssid) });
-            }
-            if (seen.length === 0)
-                rows.push({ n: "Nothing found", s: "Scan again, or the radio is off",
-                            type: "info", value: "—" });
-            return rows;
-        }
-
-        // ── Bluetooth ─────────────────────────────────────────────────────
-        case "Bluetooth": {
-            const bt = Services.Bluetooth;
-            if (!bt.available) return [
-                { type: "header", n: "Bluetooth",
-                  s: "No adapter is present, or bluetoothd is not running." },
-                { n: "Adapter", s: "Expected via bluetoothctl", type: "info",
-                  value: "none" }
-            ];
-
-            const rows = [
-                { type: "header", n: "Adapter",
-                  s: bt.controller || "The default controller" },
-                { n: "Bluetooth", s: bt.powered
-                     ? "The radio is on" : "The radio is off",
-                  type: "toggle", value: bt.powered,
-                  set: v => bt.setPowered(v) },
-                { n: "Discoverable", s: "Let other devices see this machine "
-                     + "while the setting is on",
-                  type: "toggle", value: bt.discoverable,
-                  set: v => bt.setDiscoverable(v) },
-                { n: "Scan", s: bt.discovering
-                     ? "Looking for devices…" : "Look for devices to pair",
-                  type: "action", label: bt.discovering ? "Scanning" : "Scan",
-                  set: () => bt.scan() },
-
-                { type: "header", n: "Devices",
-                  s: bt.pairedCount + " known, " + bt.connectedDevices.length
-                     + " connected. Pairing also trusts and connects, so a "
-                     + "device works from then on without asking again." }
-            ];
-
-            if (bt.lastError !== "")
-                rows.push({ n: "Last attempt", s: bt.lastError,
-                            type: "info", value: "failed" });
-
-            const devs = bt.devices || [];
-            for (let i = 0; i < devs.length; i++) {
-                const d = devs[i];
-                const busy = bt.busyMac === d.mac;
-                const state = d.connected ? "Connected"
-                            : (d.paired ? "Paired" : "Found by the last scan");
-                rows.push({ n: d.name || d.mac,
-                            s: state + " · " + d.mac
-                               + (d.kind ? " · " + d.kind : ""),
-                            type: "action",
-                            label: busy ? "Working" : bt.actionFor(d),
-                            set: () => bt.toggleDevice(d) });
-                if (d.paired)
-                    rows.push({ n: "Forget " + (d.name || d.mac),
-                                s: "Drop the pairing; it has to be paired "
-                                   + "again after this",
-                                type: "action", label: "Forget",
-                                set: () => bt.removeDevice(d.mac) });
-            }
-            if (devs.length === 0)
-                rows.push({ n: "Nothing found", s: "Scan to find devices nearby",
-                            type: "info", value: "—" });
-            return rows;
-        }
+        // ── Network and Bluetooth ─────────────────────────────────────────
+        // Each a pane of its own (WifiPanel.qml, BluetoothPanel.qml), and
+        // deliberately reading nothing live here: the spec stays the same
+        // object, so the pane is never rebuilt under someone typing into it.
+        case "Network":
+            return [{ type: "panel", panel: "wifi" }];
+        case "Bluetooth":
+            return [{ type: "panel", panel: "bluetooth" }];
 
         // ── Sound ─────────────────────────────────────────────────────────
         case "Sound": {

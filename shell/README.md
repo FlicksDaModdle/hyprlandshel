@@ -29,12 +29,13 @@ shell/
       Commands.qml         Shell commands the launcher can run
       UiState.qml          Which panel is open, OSD state, lock state
     services/
+      Agent.qml            Runs hyprshell-agent (agent/): BlueZ + NM agents
       Audio.qml            PipeWire sink/source volume, mute, device list
-      Bluetooth.qml        bluetoothctl: radio, paired devices, scanning
+      Bluetooth.qml        Devices, pairing and its prompts (bluetoothctl fallback)
       Brightness.qml       brightnessctl backlight, debounced
       Compositor.qml       Hyprland workspaces, windows and their geometry
       Kvantum.qml          Generates a Kvantum widget theme from the palette
-      Network.qml          nmcli: Wi-Fi, access points, VPN, IP
+      Network.qml          nmcli: Wi-Fi, university sign-in, saved networks
       NightLight.qml       hyprsunset / wlsunset colour temperature
       Notifications.qml    The org.freedesktop.Notifications server
       Session.qml          Lock / suspend / reboot / log out / reload
@@ -136,6 +137,7 @@ so; with no `nmcli` the Wi-Fi readout goes quiet.
 | The themed terminal | `kitty` |
 | Wi-Fi tile, network pane | `nmcli` (NetworkManager) |
 | Bluetooth tile and pane | `bluetoothctl` (BlueZ) |
+| Pairing prompts, Wi-Fi password requests | `cmake` and a C++ compiler, to build `hyprshell-agent` |
 | Brightness slider and keys | `brightnessctl` |
 | Night light | `hyprsunset` or `wlsunset` |
 | Screenshots | `grim`, `slurp`, `wl-clipboard` |
@@ -514,6 +516,51 @@ being part of it, and keeps its own settings in
 
 `Super + Shift + E` still opens whatever `fileManager` names in
 `hyprland.lua`, if you want a second opinion.
+
+## Wi-Fi and Bluetooth
+
+Settings → Network and Settings → Bluetooth are laid out like KDE's and
+Windows': the switch and what is connected at the top, then one list, each
+entry opening in place to what it needs.
+
+Both lean on `hyprshell-agent` (`agent/`, built by install.sh into
+`bin/` beside the Quickshell tree). It does what KDE's background services
+do and a bare Hyprland session lacks:
+
+- **A Bluetooth pairing agent.** Phones, most keyboards and many newer
+  headphones ask a question while pairing — "does this code match?",
+  "type this code on the keyboard". With nobody to answer, pairing fails
+  with `org.bluez.Error.AuthenticationFailed`. The agent puts the question
+  at the top of Settings → Bluetooth (opening it if need be) and answers
+  with what you choose. It also drives BlueZ directly, so the device list
+  is live rather than polled.
+- **A NetworkManager secret agent.** When NetworkManager needs a password
+  it has not got — a saved one that stopped working, or a network set up
+  in KDE, which keeps passwords per user in KWallet — it asks the agents in
+  the session. Without one, connecting fails with "Secrets were required,
+  but not provided". The question comes up in Settings → Network, and the
+  answer can be saved into the profile so it is not asked again.
+
+University and office networks (WPA-Enterprise / 802.1X, eduroam) take the
+options KDE's dialog has, under **More options**: the sign-in method (PEAP,
+TTLS, PWD), the inner authentication (MSCHAPv2, PAP, GTC, …), which
+certificate to trust, a domain to check the server against, and an
+anonymous identity. A username and password that are right will still be
+refused if one of these differs from what the network expects; the
+university's IT pages list them. A saved network shows what it signs in
+with, and **Change sign-in** edits it in place.
+
+To build the agent without reinstalling:
+
+```
+cmake -S agent -B /tmp/hyprshell-agent && cmake --build /tmp/hyprshell-agent
+mkdir -p ~/.config/quickshell/hyprshell/bin
+cp /tmp/hyprshell-agent/hyprshell-agent ~/.config/quickshell/hyprshell/bin/
+qs -c hyprshell ipc call shell reloadShell   # or log out and in
+```
+
+Without it, Bluetooth falls back to `bluetoothctl`, which pairs what asks no
+questions, and NetworkManager's password requests go unanswered.
 
 ## Topographic wallpaper
 

@@ -16,6 +16,8 @@ import "../icons"
 //   gallery pictures to pick from, full width under the labels
 //   color   a swatch that opens the colour picker
 //   buttons several accent buttons, from spec.buttons [{ label, set }]
+//   panel   a whole pane of its own, full width: spec.panel is "wifi" or
+//           "bluetooth" (WifiPanel.qml, BluetoothPanel.qml)
 Item {
     id: root
 
@@ -29,7 +31,7 @@ Item {
 
     readonly property bool isHeader: root.spec.type === "header"
     // The control goes under the labels, across the whole row.
-    readonly property bool isWide: root.spec.type === "gallery"
+    readonly property bool isWide: root.spec.type === "gallery" || root.spec.type === "panel"
     readonly property bool hasLabels: !!(root.spec.n || root.spec.s)
 
     implicitWidth: parent ? parent.width : 560
@@ -109,6 +111,7 @@ Item {
                 case "keybind": return keybindComponent;
                 case "monitors": return monitorsComponent;
                 case "gallery": return galleryComponent;
+                case "panel":  return root.spec.panel === "bluetooth" ? bluetoothComponent : wifiComponent;
                 case "color":  return colorComponent;
                 case "buttons": return buttonsComponent;
                 default:       return infoComponent;
@@ -985,6 +988,15 @@ Item {
                 }
             }
         }
+    }
+
+    Component {
+        id: wifiComponent
+        WifiPanel { width: control.width }
+    }
+    Component {
+        id: bluetoothComponent
+        BluetoothPanel { width: control.width }
     }
 
     Component {
