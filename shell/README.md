@@ -34,6 +34,7 @@ shell/
       Bluetooth.qml        Devices, pairing and its prompts (bluetoothctl fallback)
       Brightness.qml       brightnessctl backlight, debounced
       Compositor.qml       Hyprland workspaces, windows and their geometry
+      Cursor.qml           The accent-coloured pointer (CursorShapes.js draws it)
       Kvantum.qml          Generates a Kvantum widget theme from the palette
       Network.qml          nmcli: Wi-Fi, university sign-in, saved networks
       NightLight.qml       hyprsunset / wlsunset colour temperature
@@ -561,6 +562,30 @@ qs -c hyprshell ipc call shell reloadShell   # or log out and in
 
 Without it, Bluetooth falls back to `bluetoothctl`, which pairs what asks no
 questions, and NetworkManager's password requests go unanswered.
+
+## The pointer
+
+Settings → Appearance → Pointer: the shell draws its own cursor set (arrow,
+hand, text beam, spinners, resize arrows, … — `services/CursorShapes.js`)
+filled with the accent colour and outlined so it stays visible on anything,
+and rebuilds it whenever the accent or the theme changes. Fill (accent,
+white, black), outline and size are settings; **System** goes back to a
+cursor theme of your choosing (Adwaita by default).
+
+`hyprshell-cursors` (`agent/cursors.cpp`, built by install.sh beside the
+agent; needs `qt6-svg`) turns the drawing into `~/.local/share/icons/Hyprshell`,
+which holds two themes at once:
+
+- **hyprcursor** — the SVGs themselves, which Hyprland draws at whatever size
+  is asked, so the pointer is sharp at any scale. Used for Hyprland's own
+  pointer and by every app that asks Hyprland for a cursor by name
+  (cursor-shape-v1: most native Wayland apps).
+- **XCursor** — rendered at 24–96 px, for anything that loads a cursor theme
+  itself: XWayland apps (Steam, games), GTK 3.
+
+It is put in use with `hyprctl setcursor`, GTK's `cursor-theme` setting, and
+`~/.icons/default/index.theme` — the fallback for apps that name no theme —
+which is only written when it is not there already or is the shell's own.
 
 ## Topographic wallpaper
 

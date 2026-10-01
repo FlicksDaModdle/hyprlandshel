@@ -50,6 +50,10 @@ ShellRoot {
     // nothing else in the shell has any reason to look at it.
     readonly property bool qtThemed: Services.Kvantum.enabled
 
+    // And the pointer: Cursor draws and installs the accent cursor theme,
+    // and nothing else would build it before Settings was opened.
+    readonly property bool cursorThemed: Services.Cursor.enabled
+
     // Shell shortcuts, registered with the compositor over
     // hyprland-global-shortcuts-v1, so anything on the session can dispatch
     // `global, hyprshell:<name>` to the shell.

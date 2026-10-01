@@ -210,6 +210,14 @@ Singleton {
             property bool mouseNaturalScroll: false
             property real mouseScrollFactor: 1
             property bool hideCursorOnKey: true
+            // The pointer (services/Cursor.qml): "accent", the shell's own
+            // set drawn in the accent colour, or "system", the theme named
+            // in cursorSystemTheme.
+            property string cursorTheme: "accent"
+            property string cursorSystemTheme: "Adwaita"
+            property string cursorFill: "accent"      // accent | white | black
+            property string cursorOutline: "auto"     // auto | light | dark
+            property int cursorSize: 24
             property int cursorTimeout: 0
             property bool tapToClick: true
             property bool tapAndDrag: true
@@ -444,6 +452,11 @@ Singleton {
     property alias mouseNaturalScroll: prefs.mouseNaturalScroll
     property alias mouseScrollFactor: prefs.mouseScrollFactor
     property alias hideCursorOnKey: prefs.hideCursorOnKey
+    property alias cursorTheme: prefs.cursorTheme
+    property alias cursorSystemTheme: prefs.cursorSystemTheme
+    property alias cursorFill: prefs.cursorFill
+    property alias cursorOutline: prefs.cursorOutline
+    property alias cursorSize: prefs.cursorSize
     property alias cursorTimeout: prefs.cursorTimeout
     property alias tapToClick: prefs.tapToClick
     property alias tapAndDrag: prefs.tapAndDrag

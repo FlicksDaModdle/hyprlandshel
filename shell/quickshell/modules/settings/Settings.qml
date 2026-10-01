@@ -301,6 +301,7 @@ Scope {
             { n: "Accent", s: A.accentIndex === -1
                 ? "Custom · " + String(A.customAccent).toUpperCase()
                 : "Pick a preset, or cycle the custom swatch", type: "swatch" },
+        ].concat(root.cursorRows()).concat([
             { type: "header", n: "Surfaces",
               s: "The bar, the dock, panels and menus" },
             { n: "Translucency", s: "How much of the desktop shows through the bar, dock and panels",
@@ -343,7 +344,7 @@ Scope {
                         { label: "Tiled",    value: "tiled" }],
               value: A.settingsTiled ? "tiled" : "floating",
               set: v => A.settingsTiled = (v === "tiled") }
-        ];
+        ]);
 
         case "Wallpaper": return root.wallpaperRows();
 
@@ -1785,6 +1786,40 @@ Scope {
                             quiet: A.wallpaper !== "", set: () => root.pickWallpaper() }] });
         } else {
             return rows.concat(root.liveWallpaperRows());
+        }
+        return rows;
+    }
+
+    // Settings → Appearance → Pointer: the accent cursor (services/Cursor.qml).
+    function cursorRows() {
+        const A = Config.Appearance, C = Services.Cursor;
+        const rows = [
+            { type: "header", n: "Pointer", s: "" },
+            { n: "Cursor",
+              s: A.cursorTheme === "accent"
+                 ? (C.toolMissing ? "Needs hyprshell-cursors — run install.sh again (it needs qt6-svg)"
+                    : C.error !== "" ? "Couldn't build it: " + C.error
+                    : C.building ? "Drawing it…" : "The shell's own, in the accent colour, following it as it changes")
+                 : "The system theme: " + A.cursorSystemTheme,
+              type: "seg",
+              options: [{ label: "Accent", value: "accent" }, { label: "System", value: "system" }],
+              value: A.cursorTheme, set: v => A.cursorTheme = v },
+            { n: "Size", type: "slider", min: 16, max: 64, unit: "px",
+              value: A.cursorSize, set: v => A.cursorSize = v }
+        ];
+        if (A.cursorTheme === "accent") {
+            rows.push({ n: "Fill", s: "What the pointer is filled with", type: "seg",
+                options: [{ label: "Accent", value: "accent" }, { label: "White", value: "white" },
+                          { label: "Black", value: "black" }],
+                value: A.cursorFill, set: v => A.cursorFill = v });
+            rows.push({ n: "Outline", s: "Auto picks whichever stands out against the fill", type: "seg",
+                options: [{ label: "Auto", value: "auto" }, { label: "Light", value: "light" },
+                          { label: "Dark", value: "dark" }],
+                value: A.cursorOutline, set: v => A.cursorOutline = v });
+        } else {
+            rows.push({ n: "System theme", s: "Any cursor theme installed in ~/.local/share/icons or /usr/share/icons",
+                type: "text", value: A.cursorSystemTheme, placeholder: "Adwaita", label: "Use",
+                set: v => { A.cursorSystemTheme = v.trim() || "Adwaita"; Services.Cursor.restoreSystem(); } });
         }
         return rows;
     }

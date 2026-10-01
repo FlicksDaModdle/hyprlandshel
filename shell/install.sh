@@ -446,7 +446,7 @@ if [ -d "$OLD" ]; then
         # Shipped by this tree, so the new copy is the right one.
         [ -e "$SRC/quickshell/$rel" ] && continue
         # Our own, copied in or built here rather than from the source tree.
-        case "$rel" in run.sh|hyprshellctl|bin/hyprshell-agent) continue ;; esac
+        case "$rel" in run.sh|hyprshellctl|bin/hyprshell-agent|bin/hyprshell-cursors) continue ;; esac
         mkdir -p "$QS_DIR/$(dirname -- "$rel")" 2>/dev/null
         if cp -- "$f" "$QS_DIR/$rel" 2>/dev/null; then
             printf '  kept your %s\n' "$rel"
@@ -472,10 +472,18 @@ if command -v cmake >/dev/null 2>&1 && command -v c++ >/dev/null 2>&1; then
        && cmake --build "$AGENT_BUILD" >>"$AGENT_BUILD/build.log" 2>&1 \
        && cp -- "$AGENT_BUILD/hyprshell-agent" "$QS_DIR/bin/hyprshell-agent"; then
         printf '  built     %s/bin/hyprshell-agent\n' "$QS_DIR"
+        # The accent cursor's builder: only there when Qt's SVG module is.
+        if [ -x "$AGENT_BUILD/hyprshell-cursors" ]; then
+            cp -- "$AGENT_BUILD/hyprshell-cursors" "$QS_DIR/bin/hyprshell-cursors" \
+                && printf '  built     %s/bin/hyprshell-cursors\n' "$QS_DIR"
+        else
+            printf '  %sno hyprshell-cursors: needs qt6-svg — the accent cursor is off until then%s\n' "$YEL" "$RST"
+        fi
     else
         printf '  %scould not build hyprshell-agent — see %s/build.log%s\n' "$YEL" "$AGENT_BUILD" "$RST"
         [ -x "$OLD/bin/hyprshell-agent" ] && cp -- "$OLD/bin/hyprshell-agent" "$QS_DIR/bin/" \
             && printf '  kept the previous hyprshell-agent\n'
+        [ -x "$OLD/bin/hyprshell-cursors" ] && cp -- "$OLD/bin/hyprshell-cursors" "$QS_DIR/bin/"
     fi
 else
     printf '  %snot building hyprshell-agent: needs cmake and a C++ compiler%s\n' "$YEL" "$RST"
