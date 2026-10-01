@@ -1110,6 +1110,24 @@ PanelSurface {
             }
         }
 
+        ScrollBar {
+            target: flick
+            z: 60
+            anchors.top: flick.top
+            anchors.bottom: flick.bottom
+            anchors.right: parent.right
+        }
+
+        // Another folder starts at its top, not wherever the last one was
+        // scrolled to.
+        Connections {
+            target: frame.app
+            function onCwdChanged() {
+                flick.cancelFlick();
+                flick.contentY = flick.originY;
+            }
+        }
+
         // An empty directory should say so rather than look broken.
         StyledText {
             anchors.centerIn: parent
