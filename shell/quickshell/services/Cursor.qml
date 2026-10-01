@@ -40,6 +40,10 @@ Singleton {
     property bool built: false
     property bool building: false
     property string error: ""
+    // What the last step did, for Settings to show: so "the cursor did
+    // not change" can be told apart as not built, built but refused by
+    // Hyprland, or in use.
+    property string status: ""
 
     function hex(c) {
         const h = v => ("0" + Math.round(v * 255).toString(16)).slice(-2);
@@ -68,6 +72,8 @@ Singleton {
     Component.onCompleted: if (root.enabled) settle.restart()
 
     function build() {
+        // Settings may have loaded "system" since the rebuild was queued.
+        if (!root.enabled) return;
         if (writer.running || builder.running) { settle.restart(); return; }
         root.error = "";
         root.building = true;
@@ -102,17 +108,31 @@ Singleton {
         onExited: code => {
             root.building = false;
             root.toolMissing = code === 127;
-            if (code === 0) { root.built = true; root.apply(); }
+            console.log("Cursor: hyprshell-cursors exited", code, "→", root.themeDir);
+            if (code === 0) { root.built = true; root.status = "built"; if (root.enabled) root.apply(); }
+            else if (code === 127) root.status = "not built";
             else if (code !== 127) root.error = buildErr.text.split("\n").filter(l => l && !/locale|UTF-8|for more information/.test(l)).pop() || ("exited " + code);
         }
     }
 
     // Puts a theme in use, by name.
-    Process { id: applier }
+    Process {
+        id: applier
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const reply = (/hyprctl:(.*)/.exec(text) || [, ""])[1].trim();
+                root.status = reply === "ok" || reply === "" ? "in use"
+                            : reply === "-" ? "built (hyprctl not found — log out and in to see it)"
+                            : "Hyprland refused it: " + reply;
+                console.log("Cursor: setcursor said", JSON.stringify(reply));
+            }
+        }
+    }
     function use(name, size) {
         applier.command = ["sh", "-c",
             'name=$1 size=$2 ours=$3\n'
-          + 'command -v hyprctl >/dev/null 2>&1 && hyprctl setcursor "$name" "$size" >/dev/null\n'
+          + 'if command -v hyprctl >/dev/null 2>&1; then echo "hyprctl:$(hyprctl setcursor "$name" "$size" 2>&1 | head -n1)"\n'
+          + 'else echo "hyprctl:-"; fi\n'
           + 'if command -v gsettings >/dev/null 2>&1; then\n'
           + '  gsettings set org.gnome.desktop.interface cursor-theme "$name" 2>/dev/null\n'
           + '  gsettings set org.gnome.desktop.interface cursor-size "$size" 2>/dev/null\n'

@@ -1797,9 +1797,11 @@ Scope {
             { type: "header", n: "Pointer", s: "" },
             { n: "Cursor",
               s: A.cursorTheme === "accent"
-                 ? (C.toolMissing ? "Needs hyprshell-cursors — run install.sh again (it needs qt6-svg)"
+                 ? (C.toolMissing ? "Not built: hyprshell-cursors is missing — run shell/install.sh again (it needs qt6-svg)"
                     : C.error !== "" ? "Couldn't build it: " + C.error
-                    : C.building ? "Drawing it…" : "The shell's own, in the accent colour, following it as it changes")
+                    : C.building ? "Drawing it…"
+                    : C.status.indexOf("refused") >= 0 ? C.status
+                    : "The shell's own, in the accent colour" + (C.status === "in use" ? " — in use" : ""))
                  : "The system theme: " + A.cursorSystemTheme,
               type: "seg",
               options: [{ label: "Accent", value: "accent" }, { label: "System", value: "system" }],
@@ -1807,6 +1809,9 @@ Scope {
             { n: "Size", type: "slider", min: 16, max: 64, unit: "px",
               value: A.cursorSize, set: v => A.cursorSize = v }
         ];
+        if (A.cursorTheme === "accent")
+            rows.push({ n: "Rebuild", s: "Draw it again and put it in use — if the pointer didn't change",
+                        type: "action", label: "Rebuild", set: () => C.build() });
         if (A.cursorTheme === "accent") {
             rows.push({ n: "Fill", s: "What the pointer is filled with", type: "seg",
                 options: [{ label: "Accent", value: "accent" }, { label: "White", value: "white" },
