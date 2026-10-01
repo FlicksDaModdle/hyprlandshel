@@ -2,6 +2,9 @@
 
 #include <QDebug>
 
+#include <signal.h>
+#include <sys/types.h>
+
 Proc::Proc(QObject *parent) : QObject(parent) {}
 
 Proc::~Proc() {
@@ -60,6 +63,12 @@ void Proc::setRunning(bool r) {
         m_proc->kill();
     }
     emit runningChanged();
+}
+
+void Proc::sendSignal(int sig) {
+    if (!m_proc || m_proc->state() == QProcess::NotRunning) return;
+    const qint64 pid = m_proc->processId();
+    if (pid > 0) ::kill(pid_t(pid), sig);
 }
 
 void Proc::writeStdin(const QString &text) {

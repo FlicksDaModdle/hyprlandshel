@@ -111,6 +111,9 @@ QtObject {
     readonly property color sheet: dark ? Qt.rgba(0.137, 0.129, 0.125, sheetAlpha)
                                         : Qt.rgba(0.980, 0.976, 0.976, sheetAlpha)
     readonly property color panel: sheet
+    // A dialog over the window — the archive ones, 7-Zip's — is solid:
+    // translucent, the list it sits on reads through its own text.
+    readonly property color dialog: dark ? "#252322" : "#faf9f9"
     readonly property color seam:  accent
 
 

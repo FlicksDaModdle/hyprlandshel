@@ -1,5 +1,6 @@
 #include "sys.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -48,4 +49,14 @@ bool Sys::ensureDir(const QString &path) const {
     if (path.isEmpty()) return false;
     QDir d;
     return d.mkpath(path);
+}
+
+bool Sys::exists(const QString &path) const {
+    if (path.isEmpty()) return false;
+    const QFileInfo fi(path);
+    return fi.exists() || fi.isSymLink();
+}
+
+QString Sys::appPath() const {
+    return QCoreApplication::applicationFilePath();
 }

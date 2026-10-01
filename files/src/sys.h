@@ -32,4 +32,11 @@ public:
     // when it could not be made, so a write can say so rather than failing
     // silently later.
     Q_INVOKABLE bool ensureDir(const QString &path) const;
+
+    // Whether anything is at a path — a file, a folder, a dangling link.
+    Q_INVOKABLE bool exists(const QString &path) const;
+
+    // This program's own executable, to run it again as `--pick` for a
+    // folder dialog of its own.
+    Q_INVOKABLE QString appPath() const;
 };

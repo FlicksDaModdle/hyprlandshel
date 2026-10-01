@@ -285,24 +285,42 @@ name you can already read is noise on every row you pass over.
 
 ## Archives
 
-Right-click → **Compress…** makes an archive of the selection: ZIP (opens
-anywhere), 7z (smallest), or tar.zst / tar.xz / tar.gz (keep Linux
-permissions), at a compression level from Store to Ultra, optionally with a
-password (AES-256; a 7z can hide its file names too) and split into parts of
-100 MB, 1 GB or 4 GB.
+Laid out the way 7-Zip lays it out, in the shell's colours.
 
-An archive opens here, as a folder would: double-click it (or **Look
-inside**) to see what is in it, go into its folders, and extract all of it or
-only what you tick. **Test** checks every file against its checksum. **Extract
-here** does the expected thing: an archive holding one folder unpacks as that
-folder, one holding many things gets a folder of its own named after it, and
-neither lands on top of something already here. **Extract to…** asks for the
-folder and what to do with files that are already there (keep both, skip,
-replace). A password-protected archive asks for its password, and a job that
-fails for want of one offers to try again with one.
+Right-click → **7-Zip ▸** is 7-Zip's Explorer menu: **Open archive**,
+**Extract files…**, **Extract Here**, **Extract to "name/"**, **Test
+archive**, **Add to archive…**, **Add to "name.7z"**, **Add to "name.zip"**
+and **CRC SHA ▸** (CRC-32, CRC-64, SHA-1, SHA-256, BLAKE2sp, or all of them,
+in 7-Zip's "Checksum information" window, with Copy).
 
-Work runs as cards in the corner of the window with its progress and
-Cancel; a cancelled or failed archive is not left behind half-written.
+**Add to Archive** is 7-Zip's dialog: archive name and "…", format (7z, zip,
+tar, wim, tar.gz/xz/zst/bz2), compression level (Store to Ultra), method,
+dictionary, word and solid block sizes (filled in with 7-Zip's own defaults
+for the level), CPU threads, its memory estimates, split to volumes,
+parameters; update mode, path mode, delete files after compression; and the
+Encryption box — password twice, show password, method (ZipCrypto or AES-256
+for zip) and encrypt file names (7z).
+
+**Extract** is 7-Zip's too: extract to (with "…" and the folder-name box),
+path mode, eliminate duplication of root folder, overwrite mode (ask, overwrite,
+skip, auto rename, auto rename existing) and password. "Ask before overwrite"
+puts up 7-Zip's **Confirm File Replace** — Yes, Yes to All, No, No to All, Auto
+Rename, Cancel — with both files' sizes and dates.
+
+Double-clicking an archive opens it as 7-Zip's file manager does: Extract,
+Test, Delete and Info on the toolbar, the path inside the archive with ↑, and
+its columns — Name, Size, Packed Size, Modified, Attributes, Encrypted, CRC,
+Method — sortable, with ctrl- and shift-click selection and the status bar
+counts. A file inside opens by double-click (unpacked to a temporary folder,
+as 7-Zip does). An encrypted archive asks for its password first.
+
+Work shows in 7-Zip's progress window: elapsed and remaining time, files,
+total size, speed, processed, compression ratio and compressed size, the file
+it is on, and **Background**, **Pause** and **Cancel**. It closes itself when
+the job succeeds; a test stays to say "There are no errors", a failure stays
+with 7-Zip's errors. Sent to the background, a job becomes a card in the
+corner with Show, Pause and Cancel. A cancelled or failed new archive is not
+left behind half-written, and adding to an existing one never deletes it.
 
 [7-Zip](https://www.7-zip.org) does the work — `7zz` (the `7zip` package) or
 `7z` (p7zip) — and so everything it reads opens: RAR, ISO, CAB, WIM, DEB, JAR

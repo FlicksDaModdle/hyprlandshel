@@ -1,8 +1,9 @@
 import QtQuick
 import Hyprshell
 
-// Archive work in progress, as cards in the corner of the window: what it
-// is, how far along, and Cancel. A finished one offers to show what it
+// Archive work sent to the background — 7-Zip's Background button — as
+// cards in the corner of the window: what it is, how far along, and the
+// way back to its progress window. A finished one offers to show what it
 // made and then goes by itself; a failed one stays, with why — and when
 // the why is a password, a field to give one and try again.
 Column {
@@ -18,7 +19,7 @@ Column {
     Connections {
         target: Archives
         function onFinished(job) {
-            if (!job || job.state !== "done") return;
+            if (!job || job.state !== "done" || !job.background) return;
             reaper.createObject(jobs, { jobId: job.id });
         }
     }
@@ -46,7 +47,7 @@ Column {
     }
 
     Repeater {
-        model: jobs.arc.jobs
+        model: jobs.arc.jobs.filter(j => j.background)
 
         PanelSurface {
             id: card
@@ -74,7 +75,7 @@ Column {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     text: card.j.state === "running"
-                          ? [card.j.detail || "", card.j.percent > 0 ? card.j.percent + "%" : ""].filter(s => s).join(" · ")
+                          ? [card.j.paused ? "Paused" : card.j.phase, card.j.percent > 0 ? card.j.percent + "%" : ""].filter(s => s).join(" · ")
                         : card.j.state === "done" ? (card.j.kind === "test" ? "Everything checks out." : "Done.")
                         : card.j.error
                     visible: text !== ""
@@ -95,7 +96,7 @@ Column {
                         height: parent.height
                         radius: 3
                         width: parent.width * Math.max(0.02, card.j.percent / 100)
-                        color: Appearance.accent
+                        color: card.j.paused ? Appearance.ink3 : Appearance.accent
                         Behavior on width { NumberAnimation { duration: 180 } }
                     }
                     Rectangle {
@@ -173,7 +174,9 @@ Column {
                 Row {
                     spacing: 14
                     Repeater {
-                        model: card.j.state === "running" ? [{ t: "Cancel", a: "cancel" }]
+                        model: card.j.state === "running" ? [{ t: "Show", a: "front" },
+                                                             { t: card.j.paused ? "Continue" : "Pause", a: "pause" },
+                                                             { t: "Cancel", a: "cancel" }]
                              : card.j.state === "done" && card.j.output !== "" && card.j.kind !== "test"
                                ? [{ t: "Show", a: "show" }, { t: "Dismiss", a: "dismiss" }]
                              : [{ t: "Dismiss", a: "dismiss" }]
@@ -189,6 +192,8 @@ Column {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     if (modelData.a === "cancel") Archives.cancel(card.j.id);
+                                    else if (modelData.a === "front") Archives.background(card.j.id, false);
+                                    else if (modelData.a === "pause") Archives.pause(card.j.id, !card.j.paused);
                                     else if (modelData.a === "show") jobs.reveal(card.j);
                                     else Archives.dismiss(card.j.id);
                                 }

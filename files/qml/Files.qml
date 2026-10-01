@@ -208,9 +208,20 @@ QtObject {
     }
 
     // ── archives ──────────────────────────────────────────────────────────
+    // 7-Zip's menu, its "Add to Archive" and "Extract" dialogs and its file
+    // manager: ArchiveSheet.qml, from what this is set to.
     function compressSelected() {
         if (root.selection.length === 0) return;
-        root.archiveSheet = { mode: "compress", names: root.selection.slice() };
+        root.archiveSheet = { mode: "compress", names: root.selection.slice(), dir: root.cwd };
+    }
+    function quickAdd(name, format) {
+        if (root.selection.length === 0) return;
+        Archives.quickAdd(root.cwd, root.selection.slice(), root.svc.join(root.cwd, name), format);
+        root.pendingSelect = name;
+    }
+    function checksumSelected(method) {
+        if (root.selection.length === 0) return;
+        root.archiveSheet = { mode: "checksum", dir: root.cwd, names: root.selection.slice(), method: method };
     }
     function browseArchive(entry) {
         root.archiveSheet = { mode: "browse", archive: root.svc.join(root.cwd, entry.name), name: entry.name };
@@ -218,35 +229,17 @@ QtObject {
     function extractTo(entry) {
         root.archiveSheet = { mode: "extract", archive: root.svc.join(root.cwd, entry.name), name: entry.name };
     }
-    // Here, the way it should be: an archive holding one folder (or one
-    // file) unpacks as that; one holding many things gets a folder of its
-    // own named after it, so they do not spill across this one.
+    // Extract Here and Extract to "name/", as 7-Zip's menu does them:
+    // straight away, asking only before overwriting something.
     function extractHere(entry) {
-        const archive = root.svc.join(root.cwd, entry.name);
-        const dir = root.cwd;
-        Archives.list(archive, "", r => {
-            if (r.needsPassword) {
-                root.archiveSheet = { mode: "extract", archive: archive, name: entry.name };
-                return;
-            }
-            const tops = {};
-            for (const e of r.entries) tops[e.path.split("/")[0]] = true;
-            const names = Object.keys(tops);
-            const taken = {};
-            for (const e of root.entries) taken[e.name] = true;
-            // One thing inside, and nothing here by that name: it lands
-            // as itself. Otherwise a folder of its own, rather than
-            // merging into something already here.
-            const single = names.length <= 1 && !(names.length === 1 && taken[names[0]]);
-            let dest = dir;
-            if (!single) {
-                const base = Archives.stem(entry.name);
-                let name = base;
-                for (let i = 2; taken[name] && i < 1000; i++) name = base + " (" + i + ")";
-                dest = root.svc.join(dir, name);
-            }
-            Archives.extract({ archive: archive, dest: dest, paths: [], password: "", overwrite: "rename" });
-        });
+        root.archiveSheet = { mode: "extractNow", opts: {
+            archive: root.svc.join(root.cwd, entry.name), dest: root.cwd, paths: [], password: "",
+            pathMode: "full", eliminateRoot: false, overwrite: "ask" } };
+    }
+    function extractToFolder(entry) {
+        root.archiveSheet = { mode: "extractNow", opts: {
+            archive: root.svc.join(root.cwd, entry.name), dest: root.svc.join(root.cwd, Archives.stem(entry.name)),
+            paths: [], password: "", pathMode: "full", eliminateRoot: true, overwrite: "ask" } };
     }
 
     // ── selection ─────────────────────────────────────────────────────────

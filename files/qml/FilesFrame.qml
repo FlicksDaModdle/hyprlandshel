@@ -62,7 +62,9 @@ PanelSurface {
                 frame.app.confirmingEmpty = false;
                 frame.app.confirmingDelete = false;
             } else if (frame.app.archiveSheet) {
-                frame.app.archiveSheet = null;
+                // Extract, opened from the archive's own window, goes
+                // back to it.
+                frame.app.archiveSheet = frame.app.archiveSheet.from || null;
             } else if (frame.app.propertiesFor) {
                 frame.app.propertiesFor = null;
             } else if (frame.app.filtering || frame.app.filter !== "") {
@@ -1167,9 +1169,25 @@ PanelSurface {
     }
 
     // ── archives ──────────────────────────────────────────────────────────
+    // The window waits behind 7-Zip's dialogs, as it would behind real ones.
+    Rectangle {
+        anchors.fill: parent
+        z: 945
+        visible: archiveSheet.visible || archiveProgress.visible
+        color: Qt.rgba(0, 0, 0, Appearance.dark ? 0.35 : 0.18)
+        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: w => w.accepted = true }
+    }
     ArchiveSheet {
+        id: archiveSheet
         app: frame.app
+        maxWidth: frame.width - 40
         maxHeight: frame.height - 60
+        x: Math.round((frame.width - width) / 2)
+        y: Math.round((frame.height - height) / 2)
+    }
+    ArchiveProgress {
+        id: archiveProgress
+        app: frame.app
         x: Math.round((frame.width - width) / 2)
         y: Math.round((frame.height - height) / 2)
     }

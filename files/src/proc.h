@@ -39,6 +39,10 @@ public:
     // where the text must not go through argv.
     Q_INVOKABLE void writeStdin(const QString &text);
 
+    // Send a signal to the running process: SIGSTOP and SIGCONT are how a
+    // long job is paused and resumed.
+    Q_INVOKABLE void sendSignal(int sig);
+
 signals:
     void commandChanged();
     void runningChanged();

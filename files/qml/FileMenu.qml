@@ -25,24 +25,81 @@ PanelSurface {
     implicitHeight: column.implicitHeight + 12
 
     function openAt(x, y, entry) {
+        menu.subs = [];
         menu.target = entry || null;
         // Right-clicking something outside the selection makes it the
         // selection first, the way every file manager does; right-clicking
         // inside one leaves the whole selection alone.
         if (entry && !menu.app.isSelected(entry.name)) menu.app.select(entry.name, false);
         if (!entry) menu.app.clearSelection();
+        menu.atX = x;
+        menu.atY = y;
         menu.open = true;
-        // Flip rather than overflow when it would leave the window.
-        const parentW = menu.parent ? menu.parent.width : 0;
-        const parentH = menu.parent ? menu.parent.height : 0;
-        menu.x = Math.max(6, Math.min(x, parentW - menu.implicitWidth - 6));
-        menu.y = Math.max(6, Math.min(y, parentH - menu.implicitHeight - 6));
     }
+    // Where it was asked for, kept inside the window. A binding, not set
+    // once in openAt: the entries — and so the height — follow the
+    // selection, which openAt has only just changed.
+    property real atX: 0
+    property real atY: 0
+    x: Math.max(6, Math.min(menu.atX, (menu.parent ? menu.parent.width : 0) - menu.implicitWidth - 6))
+    y: Math.max(6, Math.min(menu.atY, (menu.parent ? menu.parent.height : 0) - menu.implicitHeight - 6))
 
-    function close() { menu.open = false; menu.target = null; }
+    function close() { menu.open = false; menu.target = null; menu.subs = []; }
+
+    // Cascading submenus, 7-Zip's and its CRC SHA: the open ones, outermost
+    // first, as { from, entries, x, y }. Drawn beside this one, on the
+    // same layer.
+    property var subs: []
+    readonly property real subWidth: 270
+
+    function rowHeight(e) { return e.rule === true ? 41 : 36; }
+    function isOpenSub(e) {
+        const k = e.lvl || 0;
+        return !!e.sub && menu.subs.length > k && menu.subs[k].from === e.n;
+    }
+    // Hovering a row opens its submenu, or closes any deeper one.
+    function hoverAt(e, item) {
+        const k = e.lvl || 0;
+        if (!e.sub) { if (menu.subs.length > k) menu.subs = menu.subs.slice(0, k); return; }
+        if (menu.isOpenSub(e)) return;
+        const host = menu.parent;
+        if (!host) return;
+        const p = item.mapToItem(host, 0, 0);
+        const entries = e.sub.map(x => Object.assign({}, x, { lvl: k + 1 }));
+        const h = entries.reduce((a, x) => a + menu.rowHeight(x), 0) + 12;
+        let x = p.x + item.width + 4;
+        if (x + menu.subWidth > host.width - 6) x = p.x - menu.subWidth - 4;
+        const y = Math.max(6, Math.min(p.y - 6, host.height - h - 6));
+        menu.subs = menu.subs.slice(0, k).concat([{ from: e.n, entries: entries, x: x, y: y }]);
+    }
 
     readonly property int count: menu.app.selection.length
     readonly property string plural: count === 1 ? "" : "s"
+
+    // What 7-Zip puts in Explorer's menu for this selection.
+    function sevenZip(t) {
+        const app = menu.app;
+        const one = menu.count === 1;
+        const base = one ? (t.dir ? t.name : (t.name.replace(/\.[^./]+$/, "") || t.name))
+                         : (menu.svc.basename(app.cwd) || "Archive");
+        const isArc = one && !t.dir && Archives.isArchive(t.name);
+        const out = [];
+        if (one && !t.dir)
+            out.push({ n: "Open archive", icon: "archive", run: () => app.browseArchive(t) });
+        if (isArc) {
+            const stem = Archives.stem(t.name);
+            out.push({ n: "Extract files...", icon: "folderOpen", run: () => app.extractTo(t) });
+            out.push({ n: "Extract Here", icon: "download", run: () => app.extractHere(t) });
+            out.push({ n: "Extract to \"" + stem + "/\"", icon: "folder", run: () => app.extractToFolder(t) });
+            out.push({ n: "Test archive", icon: "check", run: () => Archives.test(menu.svc.join(app.cwd, t.name), "") });
+        }
+        out.push({ n: "Add to archive...", icon: "package", rule: out.length > 0, run: () => app.compressSelected() });
+        out.push({ n: "Add to \"" + base + ".7z\"", icon: "archive", run: () => app.quickAdd(base + ".7z", "7z") });
+        out.push({ n: "Add to \"" + base + ".zip\"", icon: "archive", run: () => app.quickAdd(base + ".zip", "zip") });
+        out.push({ n: "CRC SHA", icon: "hash", rule: true,
+                   sub: Archives.hashMethods.map(m => ({ n: m, icon: "hash", run: () => app.checksumSelected(m) })) });
+        return out;
+    }
 
     readonly property var entries: {
         const out = [];
@@ -79,18 +136,8 @@ PanelSurface {
                            run: () => menu.svc.toggleBookmark(path) });
             }
 
-            // Archives: what 7-Zip's menu has, in the order it matters.
-            if (!t.dir && Archives.isArchive(t.name) && menu.count === 1) {
-                out.push({ n: "Extract here", icon: "download", rule: true,
-                           run: () => menu.app.extractHere(t) });
-                out.push({ n: "Extract to…", icon: "folderOpen",
-                           run: () => menu.app.extractTo(t) });
-                out.push({ n: "Look inside", icon: "search",
-                           run: () => menu.app.browseArchive(t) });
-            }
-            out.push({ n: menu.count > 1 ? "Compress " + menu.count + " items…" : "Compress…",
-                       icon: "package", rule: !(!t.dir && Archives.isArchive(t.name) && menu.count === 1),
-                       run: () => menu.app.compressSelected() });
+            // 7-Zip's own menu, cascaded as it is in Explorer.
+            out.push({ n: "7-Zip", icon: "archive", rule: true, sub: menu.sevenZip(t) });
 
             out.push({ n: "Cut", icon: "x", rule: true,
                        run: () => menu.svc.cut(menu.app.selectedPaths()) });
@@ -149,6 +196,87 @@ PanelSurface {
         return out;
     }
 
+    // One row, for this menu and its submenus alike.
+    Component {
+        id: rowComp
+
+        Item {
+            id: item
+            required property var modelData
+            readonly property bool lit: rowHover.hovered || menu.isOpenSub(item.modelData)
+            width: parent ? parent.width : 0
+            height: menu.rowHeight(item.modelData)
+
+            Rectangle {
+                visible: item.modelData.rule === true
+                anchors.top: parent.top
+                anchors.topMargin: 2
+                width: parent.width
+                height: 1
+                color: Appearance.rule
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 36
+                radius: Appearance.rPill
+                color: item.lit ? Appearance.accent : "transparent"
+
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 11
+                    anchors.right: parent.right
+                    anchors.rightMargin: 30
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 10
+
+                    MonoIcon {
+                        id: rowIcon
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: item.modelData.icon
+                        size: 18
+                        inkColor: item.lit ? Appearance.inkOnAccent : Appearance.ink
+                        accentColor: item.lit ? Appearance.inkOnAccent : Appearance.accent
+                    }
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - rowIcon.width - 10
+                        elide: Text.ElideMiddle
+                        text: item.modelData.n
+                        font.pixelSize: Appearance.fs(12)
+                        color: item.lit ? Appearance.inkOnAccent : Appearance.ink
+                    }
+                }
+                MonoIcon {
+                    visible: !!item.modelData.sub
+                    anchors.right: parent.right
+                    anchors.rightMargin: 9
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "chevronRight"
+                    size: 14
+                    inkColor: item.lit ? Appearance.inkOnAccent : Appearance.ink2
+                    accentColor: inkColor
+                }
+
+                HoverHandler {
+                    id: rowHover
+                    cursorShape: Qt.PointingHandCursor
+                    onHoveredChanged: if (hovered) menu.hoverAt(item.modelData, item)
+                }
+                TapHandler {
+                    onTapped: {
+                        if (item.modelData.sub) { menu.hoverAt(item.modelData, item); return; }
+                        const run = item.modelData.run;
+                        menu.close();
+                        if (run) run();
+                    }
+                }
+            }
+        }
+    }
+
     Column {
         id: column
         anchors.left: parent.left
@@ -159,61 +287,35 @@ PanelSurface {
 
         Repeater {
             model: menu.entries
+            delegate: rowComp
+        }
+    }
 
-            Item {
-                id: item
+    // The submenus, beside this one on the window's menu layer.
+    Item {
+        parent: menu.parent
+        anchors.fill: parent
+        z: 901
+        Repeater {
+            model: menu.open ? menu.subs : []
+            PanelSurface {
+                id: subPanel
                 required property var modelData
-                width: column.width
-                height: modelData.rule === true ? 41 : 36
+                showSeam: false
+                x: subPanel.modelData.x
+                y: subPanel.modelData.y
+                width: menu.subWidth
+                height: subCol.implicitHeight + 12
 
-                Rectangle {
-                    visible: item.modelData.rule === true
-                    anchors.top: parent.top
-                    anchors.topMargin: 2
-                    width: parent.width
-                    height: 1
-                    color: Appearance.rule
-                }
-
-                Rectangle {
+                Column {
+                    id: subCol
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    height: 36
-                    radius: Appearance.rPill
-                    color: rowHover.hovered ? Appearance.accent : "transparent"
-
-                    Row {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 11
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 10
-
-                        MonoIcon {
-                            anchors.verticalCenter: parent.verticalCenter
-                            name: item.modelData.icon
-                            size: 18
-                            inkColor: rowHover.hovered ? Appearance.inkOnAccent
-                                                       : Appearance.ink
-                            accentColor: rowHover.hovered ? Appearance.inkOnAccent
-                                                          : Appearance.accent
-                        }
-                        StyledText {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: item.modelData.n
-                            font.pixelSize: Appearance.fs(12)
-                            color: rowHover.hovered ? Appearance.inkOnAccent
-                                                    : Appearance.ink
-                        }
-                    }
-
-                    HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler {
-                        onTapped: {
-                            const run = item.modelData.run;
-                            menu.close();
-                            if (run) run();
-                        }
+                    anchors.top: parent.top
+                    anchors.margins: 6
+                    Repeater {
+                        model: subPanel.modelData.entries
+                        delegate: rowComp
                     }
                 }
             }
