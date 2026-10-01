@@ -205,6 +205,14 @@ hl.on("hyprland.start", function()
     -- The shell draws its own lock screen; hypridle just decides when to ask
     -- for it. Safe to drop if hypridle isn't installed.
     hl.exec_cmd("pgrep -x hypridle >/dev/null 2>&1 || exec hypridle")
+    -- The programs set to start at login (~/.config/autostart and
+    -- /etc/xdg/autostart — the list the task manager's Startup apps view
+    -- edits). Desktops like GNOME and KDE run these themselves; Hyprland
+    -- does not, so without this every one of them is silently ignored.
+    -- systemd's generator turns each entry into a unit and honours
+    -- Hidden=, OnlyShowIn= and NotShowIn= against XDG_CURRENT_DESKTOP,
+    -- which is why it has to come after shareEnv.
+    hl.exec_cmd("sleep 1; systemctl --user start xdg-desktop-autostart.target")
 end)
 
 -----------------------
@@ -380,6 +388,14 @@ local filesApp = 'command -v hyprshell-files >/dev/null 2>&1 && exec hyprshell-f
 hl.bind(mainMod .. " + E",      hl.dsp.exec_cmd(filesApp))
 hl.bind(mainMod .. " + SHIFT + E", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(browser))
+
+-- The task manager, on the key every other desktop puts it on. Found the
+-- same way as Files, for the same PATH reason.
+local tasksApp = 'command -v hyprshell-tasks >/dev/null 2>&1 && exec hyprshell-tasks; '
+    .. 'for d in "$HOME/.local/bin" /usr/local/bin /usr/bin; do '
+    .. '[ -x "$d/hyprshell-tasks" ] && exec "$d/hyprshell-tasks"; done; '
+    .. 'notify-send "Task Manager" "hyprshell-tasks is not installed (tasks/install.sh)" 2>/dev/null'
+hl.bind("CTRL + SHIFT + Escape", hl.dsp.exec_cmd(tasksApp))
 
 -- Window management
 hl.bind(mainMod .. " + Q",           hl.dsp.window.close())

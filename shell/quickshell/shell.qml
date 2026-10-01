@@ -85,6 +85,16 @@ ShellRoot {
         loading: true
     }
 
+    // The polkit agent: the password prompt for anything acting as
+    // administrator. Loaded the same way and for the same reason as the
+    // shortcuts above — Quickshell.Services.Polkit is a build option, and a
+    // build without it should lose the prompt, not the shell.
+    LazyLoader {
+        id: polkit
+        source: "modules/polkit/PolkitPrompt.qml"
+        loading: true
+    }
+
     // ── surfaces ──────────────────────────────────────────────────────────
     // Ordered background to foreground, though each one sets its own
     // layer-shell layer and the compositor does the actual stacking.

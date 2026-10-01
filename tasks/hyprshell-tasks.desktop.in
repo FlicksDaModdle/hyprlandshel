@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Task Manager
+GenericName=System Monitor
+Comment=See what is running and what is slowing the computer down
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/hyprshell-tasks
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;
+Keywords=task;process;kill;cpu;memory;performance;monitor;
+StartupWMClass=hyprshell-tasks
