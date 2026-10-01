@@ -151,6 +151,15 @@ Singleton {
             // them off outright rather than making them very fast, since
             // "instant" is what people who turn animations down want.
             property int animSpeed: 100               // 0-250 %
+            // Black rounded corners over the screen's own, for a panel
+            // whose corners are square against a rounded-looking desktop.
+            property bool screenCorners: false
+            property int screenCornerRadius: 14       // 2-64 px
+            property bool screenCornerTL: true
+            property bool screenCornerTR: true
+            property bool screenCornerBL: true
+            property bool screenCornerBR: true
+            property string screenCornerScreens: "builtin" // builtin | all
             // Per-output shell scale, as {"eDP-1": 85, "DP-1": 100}. The
             // compositor's own scale makes everything on that output
             // bigger, the shell included; this is how much of that the
@@ -416,6 +425,13 @@ Singleton {
     property alias barHeight: prefs.barHeight
     property alias workspaceScale: prefs.workspaceScale
     property alias animSpeed: prefs.animSpeed
+    property alias screenCorners: prefs.screenCorners
+    property alias screenCornerRadius: prefs.screenCornerRadius
+    property alias screenCornerTL: prefs.screenCornerTL
+    property alias screenCornerTR: prefs.screenCornerTR
+    property alias screenCornerBL: prefs.screenCornerBL
+    property alias screenCornerBR: prefs.screenCornerBR
+    property alias screenCornerScreens: prefs.screenCornerScreens
     property alias screenScales: prefs.screenScales
     property alias clock24: prefs.clock24
     property alias showTray: prefs.showTray

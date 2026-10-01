@@ -69,6 +69,7 @@ qt_add_qml_module(hyprshell-files
         qml/ArchiveProgress.qml
         qml/SevenCombo.qml
         qml/ScrollBar.qml
+        qml/SmoothScroll.qml
         qml/FileMenu.qml
         qml/FileTile.qml
         qml/FileRow.qml

@@ -8,6 +8,7 @@ import "../../config" as Config
 import "../../services" as Services
 import "../common"
 import "../icons"
+import "../corners"
 
 // Session lock. The mockup's lock screen, made real: this is a Wayland
 // session-lock surface, so the compositor guarantees nothing behind it is
@@ -180,6 +181,31 @@ WlSessionLock {
                         }
                     }
                 }
+            }
+        }
+
+        // The lock is drawn over every layer, the screen corners
+        // included, so it rounds its own (Settings → Appearance).
+        Repeater {
+            model: {
+                const A = Config.Appearance;
+                const name = String(surface.screen ? surface.screen.name : "");
+                if (!A.screenCorners || A.screenCornerRadius <= 0) return [];
+                if (A.screenCornerScreens !== "all" && !/^(eDP|LVDS|DSI)/.test(name)) return [];
+                const out = [];
+                if (A.screenCornerTL) out.push({ turn: 0,   right: false, bottom: false });
+                if (A.screenCornerTR) out.push({ turn: 90,  right: true,  bottom: false });
+                if (A.screenCornerBR) out.push({ turn: 180, right: true,  bottom: true });
+                if (A.screenCornerBL) out.push({ turn: 270, right: false, bottom: true });
+                return out;
+            }
+            CornerPiece {
+                required property var modelData
+                z: 1000
+                radius: Config.Appearance.screenCornerRadius
+                turn: modelData.turn
+                x: modelData.right ? surface.width - width : 0
+                y: modelData.bottom ? surface.height - height : 0
             }
         }
     }

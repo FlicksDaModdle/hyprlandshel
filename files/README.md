@@ -82,6 +82,18 @@ already on, and the compositor blurs behind any window that has
 transparency, so there is no window rule to add. Setting translucency to 0
 makes it solid again and the blur has nothing to work on.
 
+## Scrolling
+
+Scrolling works the way a browser's does. A mouse wheel's notch glides to
+where it is going and eases to a stop, and quick notches add up into one
+glide. On a touchpad the list follows your fingers exactly, and when they
+lift it carries on at their speed and slows under friction; putting a finger
+back down catches it. Linux has nothing that does that coasting for an
+application (not the compositor, not Qt), so `SmoothScroll.qml` does it.
+
+A scroll bar sits on the right edge when there is more than fits: drag it,
+or click the track to jump. Every folder opens at its top.
+
 ## Selecting
 
 Click, `Ctrl`-click to add one, `Shift`-click for a range from the last

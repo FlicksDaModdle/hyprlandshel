@@ -290,7 +290,14 @@ PanelSurface {
 
         Behavior on width { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
 
+        SmoothScroll {
+            target: sideFlick
+            anchors.fill: sideFlick
+            z: 5
+        }
+
         Flickable {
+            id: sideFlick
             anchors.fill: parent
             anchors.topMargin: 4
             contentHeight: places.implicitHeight + 16
@@ -1110,6 +1117,11 @@ PanelSurface {
             }
         }
 
+        SmoothScroll {
+            target: flick
+            anchors.fill: flick
+            z: 55
+        }
         ScrollBar {
             target: flick
             z: 60

@@ -17,6 +17,7 @@ import "modules/settings"
 import "modules/iconmaker"
 import "modules/lock"
 import "modules/switcher"
+import "modules/corners"
 
 // Entry point. Run as `qs -c hyprshell` (this directory should live at
 // ~/.config/quickshell/hyprshell/). hyprland.lua's autostart hook and
@@ -102,6 +103,8 @@ ShellRoot {
     IconMaker {}
     Lock {}
     AltTab {}
+    // Last: over everything, the screen's own corners rounded off.
+    ScreenCorners {}
 
     // No Component.onCompleted here: QML will not attach one to ShellRoot.
     //

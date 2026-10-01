@@ -1391,6 +1391,12 @@ PanelSurface {
                     }
                 }
 
+                SmoothScroll {
+                    target: rows
+                    anchors.fill: rows
+                    z: 5
+                }
+
                 StyledText {
                     anchors.centerIn: rows
                     width: rows.width - 40

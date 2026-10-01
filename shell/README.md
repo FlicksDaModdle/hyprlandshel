@@ -587,6 +587,17 @@ It is put in use with `hyprctl setcursor`, GTK's `cursor-theme` setting, and
 `~/.icons/default/index.theme` — the fallback for apps that name no theme —
 which is only written when it is not there already or is the shell's own.
 
+## Screen corners
+
+Settings → Appearance → **Screen corners** lays pure black, rounded corners
+over the display's own, for a laptop panel whose corners are square inside a
+bezel that is not. The radius (2–64 px), which of the four corners, and
+whether only the built-in panel (`eDP`/`LVDS`/`DSI`) or every display gets
+them are all settings. They are four tiny click-through surfaces on the
+overlay layer, one per corner, so they sit over fullscreen games and video,
+ignore the bar's reserved space, and never take a click. The lock screen
+draws the same corners itself, since it is above every layer.
+
 ## Topographic wallpaper
 
 Settings → Wallpaper → **Topo** draws a contour map of a made-up terrain

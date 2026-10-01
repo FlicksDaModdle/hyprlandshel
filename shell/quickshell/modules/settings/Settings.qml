@@ -320,6 +320,7 @@ Scope {
             { n: "Corner rounding", s: "Scales every radius — the shell, its apps, the browser and "
                  + "the window corners. 0% is fully square", type: "slider",
               min: 0, max: 160, unit: "%", value: A.roundingPct, set: v => A.roundingPct = v },
+        ]).concat(root.cornerRows()).concat([
 
             { type: "header", n: "Motion",
               s: "One control over every animation the shell draws" },
@@ -1791,6 +1792,36 @@ Scope {
     }
 
     // Settings → Appearance → Pointer: the accent cursor (services/Cursor.qml).
+    // Black rounded corners over the screen's own, for a panel whose
+    // corners are square. Pure black so they read as bezel, not as shell.
+    function cornerRows() {
+        const A = Config.Appearance;
+        const rows = [
+            { type: "header", n: "Screen corners",
+              s: "Round off a display whose corners are square, with black corners "
+                 + "that read as part of the bezel" },
+            { n: "Round the screen's corners",
+              s: "Drawn over everything, fullscreen games and video included, and "
+                 + "never in the way of a click",
+              type: "toggle", value: A.screenCorners, set: v => A.screenCorners = v }
+        ];
+        if (!A.screenCorners) return rows;
+        return rows.concat([
+            { n: "Corner radius", s: "How far the black curve reaches into the screen",
+              type: "slider", min: 2, max: 64, unit: "px",
+              value: A.screenCornerRadius, set: v => A.screenCornerRadius = v },
+            { n: "Displays",
+              s: "Built-in is the laptop's own panel; All covers external monitors too",
+              type: "seg",
+              options: [{ label: "Built-in", value: "builtin" }, { label: "All", value: "all" }],
+              value: A.screenCornerScreens, set: v => A.screenCornerScreens = v },
+            { n: "Top left", type: "toggle", value: A.screenCornerTL, set: v => A.screenCornerTL = v },
+            { n: "Top right", type: "toggle", value: A.screenCornerTR, set: v => A.screenCornerTR = v },
+            { n: "Bottom left", type: "toggle", value: A.screenCornerBL, set: v => A.screenCornerBL = v },
+            { n: "Bottom right", type: "toggle", value: A.screenCornerBR, set: v => A.screenCornerBR = v }
+        ]);
+    }
+
     function cursorRows() {
         const A = Config.Appearance, C = Services.Cursor;
         const rows = [
