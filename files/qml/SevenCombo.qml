@@ -33,6 +33,12 @@ Item {
     }
     property bool open: false
     onVisibleChanged: if (!visible) combo.open = false
+    onOpenChanged: if (open) {
+        drop.at = combo.mapToItem(combo.host, 0, combo.height + 2);
+        // Keys to the list while it is out, so Escape puts away the list
+        // and not the dialog under it.
+        drop.forceActiveFocus();
+    }
     readonly property Item host: combo.overlay || combo.Window.contentItem || combo
 
     Rectangle {
@@ -108,10 +114,11 @@ Item {
 
         Rectangle {
             id: drop
-            readonly property point at: {
-                void combo.open;
-                return combo.mapToItem(combo.host, 0, combo.height + 2);
-            }
+            // Measured each time it opens, not bound: a binding that only
+            // touches `open` to re-run is one newer Qt's compiler drops the
+            // touch from, and the list stayed where it was first worked out —
+            // the window's top-left corner, before the dialog was laid out.
+            property point at: Qt.point(0, 0)
             x: at.x
             // Above the box, as a menu would, when there is no room below.
             y: at.y + height + 4 <= combo.host.height ? at.y : Math.max(4, at.y - combo.height - height - 4)
@@ -122,6 +129,7 @@ Item {
             border.width: 1
             border.color: Appearance.rule
             clip: true
+            Keys.onEscapePressed: e => { e.accepted = true; combo.open = false; }
 
             ListView {
                 id: list
