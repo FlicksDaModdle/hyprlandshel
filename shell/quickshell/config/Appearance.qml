@@ -172,6 +172,13 @@ Singleton {
             // ms the pointer has to rest on the top edge before a hidden
             // bar comes out; 0 is straight away.
             property int barRevealDelay: 350
+            // Sound: how far one press of a volume key moves the level, in
+            // percent; whether it may go past 100% (PipeWire's software
+            // boost — louder, at the cost of clipping); and a tick from the
+            // speakers on each press, so a level can be judged by ear.
+            property int volumeStep: 5
+            property bool volumeBoost: false
+            property bool volumeFeedback: false
             property bool clock24: true
             property bool showTray: true
             property bool trayOpen: false
@@ -459,6 +466,9 @@ Singleton {
     property alias dockAutoHide: prefs.dockHide
     property alias barAutoHide: prefs.barHide
     property alias barRevealDelay: prefs.barRevealDelay
+    property alias volumeStep: prefs.volumeStep
+    property alias volumeBoost: prefs.volumeBoost
+    property alias volumeFeedback: prefs.volumeFeedback
     property alias dockPinned: prefs.dockPinned
 
     // ── input devices ─────────────────────────────────────────────────────

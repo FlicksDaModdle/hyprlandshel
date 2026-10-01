@@ -563,6 +563,40 @@ qs -c hyprshell ipc call shell reloadShell   # or log out and in
 Without it, Bluetooth falls back to `bluetoothctl`, which pairs what asks no
 questions, and NetworkManager's password requests go unanswered.
 
+## Sound
+
+Settings → Sound shows the output and the input in use with everything
+about them — level, mute, balance, a test sound for each speaker, the
+connector (speakers or headphones) and the card's mode (a Bluetooth
+headset's music and call modes, HDMI speaker layouts) — and every other
+device one click from taking over. Below that, each app that is playing
+has its own level and the output it plays through, and each app with a
+microphone open is listed with its own. Levels, devices and modes follow
+along as things are plugged in, paired or changed elsewhere.
+
+Volume key step, going above 100% and a tick on each key press are under
+Options. "Restart sound" restarts PipeWire, WirePlumber and pipewire-pulse
+for when sound has stopped altogether.
+
+Connectors, modes and moving an app use `pactl` (pipewire-pulse); the live
+microphone meter needs Quickshell 0.3. Without either, the rest works.
+
+## Passwords for administrator actions
+
+The shell is the session's polkit agent: when something asks to act as
+administrator — `pkexec`, a system service started from the task manager,
+a mount — the password prompt comes up on the focused screen. If another
+agent (hyprpolkitagent, polkit-gnome) is already running it keeps the job,
+and on a Quickshell built without polkit support the prompt simply never
+loads.
+
+## Apps that start at login
+
+Hyprland doesn't run `~/.config/autostart` or `/etc/xdg/autostart` the way
+GNOME and KDE do, so `hyprland.lua` starts systemd's
+`xdg-desktop-autostart.target`, which does. The task manager's
+*Startup apps* view turns each one on or off.
+
 ## The pointer
 
 Settings → Appearance → Pointer: the shell draws its own cursor set (arrow,

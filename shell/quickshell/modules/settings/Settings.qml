@@ -101,7 +101,7 @@ Scope {
         "Touchpad":      { icon: "touchpad",  group: "System", note: "Tapping, scrolling, palm rejection and click behaviour." },
         "Network":       { icon: "wifi",      group: "System", note: "Wi-Fi networks — joining, university sign-in, saved networks and connection details." },
         "Bluetooth":     { icon: "bluetooth", group: "System", note: "Your devices, and adding new ones." },
-        "Sound":         { icon: "volume",    group: "System", note: "Output and input levels and the active device." },
+        "Sound":         { icon: "volume",    group: "System", note: "Devices, levels, balance, connectors and modes, each app\u2019s volume and output." },
         "Power":         { icon: "battery",   group: "System", note: "Power profile, idle timing and battery care." },
         "Hyprland":      { icon: "grid",      group: "System", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
         "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
@@ -1238,46 +1238,10 @@ Scope {
             return [{ type: "panel", panel: "bluetooth" }];
 
         // ── Sound ─────────────────────────────────────────────────────────
-        case "Sound": {
-            const au = Services.Audio;
-            const rows = [
-                { type: "header", n: "Output",
-                  s: au.sinkName || "No output device" },
-                { n: "Volume", s: au.muted ? "Muted" : "Output level",
-                  type: "slider", min: 0, max: 100, unit: "%",
-                  value: au.volumePercent,
-                  set: v => au.setVolume(v / 100) },
-                { n: "Mute output", s: "Silence everything without moving the "
-                     + "level", type: "toggle", value: au.muted,
-                  set: v => au.setMuted(v) },
-
-                { type: "header", n: "Input",
-                  s: au.sourceName || "No input device" },
-                { n: "Microphone", s: au.inputMuted ? "Muted" : "Input level",
-                  type: "slider", min: 0, max: 100, unit: "%",
-                  value: au.inputPercent,
-                  set: v => au.setInputVolume(v / 100) },
-                { n: "Mute microphone", s: "Applies to everything using the "
-                     + "default source", type: "toggle", value: au.inputMuted,
-                  set: v => { if (v !== au.inputMuted) au.toggleInputMute(); } }
-            ];
-
-            const sinks = au.sinks || [];
-            if (sinks.length > 1) {
-                rows.push({ type: "header", n: "Devices",
-                            s: "Switch what the default output is" });
-                for (let i = 0; i < sinks.length; i++) {
-                    const n = sinks[i];
-                    const isDefault = au.sink === n;
-                    rows.push({ n: n.nickname || n.description || n.name,
-                                s: isDefault ? "Current output" : "Available",
-                                type: "action",
-                                label: isDefault ? "In use" : "Use",
-                                set: () => au.setDefaultSink(n) });
-                }
-            }
-            return rows;
-        }
+        // A pane of its own (SoundPanel.qml): devices come and go while it
+        // is open, and rows rebuilt under a drag would drop it.
+        case "Sound":
+            return [{ type: "panel", panel: "sound" }];
 
         // ── Power ─────────────────────────────────────────────────────────
         case "Power": {
