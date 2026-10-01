@@ -35,7 +35,7 @@
   --tab-hover-outline-color: transparent;
   --tab-box-shadow-selected: none;
   --tab-border-radius: var(--hs-r-sm);
-  --tab-min-height: 28px;
+  --tab-min-height: 34px;
   --tab-margin-block: 6px;
   --tab-inline-padding: 7px 4px;
 
@@ -98,14 +98,14 @@
 }
 
 /* ══ title row ════════════════════════════════════════════════════════════ */
-/* 40px: the bead, tabs, new tab, and the window buttons. */
+/* 46px: the bead, tabs, new tab, and the window buttons. */
 
 :root[hyprshell] #TabsToolbar {
-  min-height: 40px !important;
+  min-height: 46px !important;
   align-items: center;
   padding-inline-end: 8px;
 }
-:root[hyprshell] #TabsToolbar > .toolbar-items { min-height: 40px; }
+:root[hyprshell] #TabsToolbar > .toolbar-items { min-height: 46px; }
 
 #hs-bead {
   flex: none;
@@ -121,19 +121,19 @@
  * bead's margins. */
 :root[hyprshell] #TabsToolbar .titlebar-spacer[type="pre-tabs"] { display: none !important; }
 
-/* Tabs: 188px, down to 84, 28 tall, 2px apart.
+/* Tabs: 250px, down to 120, 34 tall, 2px apart.
  *
  * Through Firefox's own width variables, never a width of our own: a tab
  * opens and closes by animating its width from and to nothing, and a
  * closing tab is only taken out when that animation ends. A fixed width
  * stopped it ever ending, so every closed tab stayed behind as an
- * invisible 188px gap, pushing new tabs to the far end and squeezing the
- * rest. (browser.tabs.tabMinWidth, set to 84 in hyprshell.cfg, is what
+ * invisible full-width gap, pushing new tabs to the far end and squeezing the
+ * rest. (browser.tabs.tabMinWidth, set to 120 in hyprshell.cfg, is what
  * Firefox actually reads for the minimum; --tab-min-width is its fallback.)
  * Set on the tab strip, where Firefox sets them. */
 :root[hyprshell] #tabbrowser-tabs {
-  --tab-max-width: 188px !important;
-  --tab-min-width: 84px !important;
+  --tab-max-width: 250px !important;
+  --tab-min-width: 120px !important;
 }
 :root[hyprshell] .tabbrowser-tab:not([pinned]) {
   padding-inline: 1px !important;
@@ -164,7 +164,7 @@
 :root[hyprshell] .tab-icon-stack { border-radius: calc(var(--hs-r-sm) * 5 / 9); }
 :root[hyprshell] .tab-icon-stack { margin-inline-end: 8px !important; }
 :root[hyprshell] .tab-label {
-  font-size: 11.5px !important;
+  font-size: 12.5px !important;
   font-weight: 500 !important;
   color: var(--hs-ink2);
 }

@@ -21,7 +21,7 @@ is why the old `firefox/userChrome.css` could never get the address bar, the
 menus or the icons right. This runs code inside the browser, with the same
 privileges as Firefox's own interface, and changes the interface itself:
 
-- **Title row, 40px** — the accent bead, tabs as 28px pills with an accent rail
+- **Title row, 46px** — the accent bead, tabs as 34px pills with an accent rail
   under the current one, new tab, and the concept's window buttons.
 - **Toolbar, 44px** — back, forward, reload, home, the address, downloads,
   add-ons, a hairline, the menu; in that order, set once and yours to change
