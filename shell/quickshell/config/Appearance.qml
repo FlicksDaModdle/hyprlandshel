@@ -215,8 +215,8 @@ Singleton {
             // in cursorSystemTheme.
             property string cursorTheme: "accent"
             property string cursorSystemTheme: "Adwaita"
-            property string cursorFill: "accent"      // accent | white | black
-            property string cursorOutline: "auto"     // auto | light | dark
+            property string cursorFill: "auto"        // auto | dark | light: the body
+            property string cursorOutline: "auto"     // (no longer used)
             property int cursorSize: 24
             property int cursorTimeout: 0
             property bool tapToClick: true

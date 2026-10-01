@@ -1813,14 +1813,13 @@ Scope {
             rows.push({ n: "Rebuild", s: "Draw it again and put it in use — if the pointer didn't change",
                         type: "action", label: "Rebuild", set: () => C.build() });
         if (A.cursorTheme === "accent") {
-            rows.push({ n: "Fill", s: "What the pointer is filled with", type: "seg",
-                options: [{ label: "Accent", value: "accent" }, { label: "White", value: "white" },
-                          { label: "Black", value: "black" }],
-                value: A.cursorFill, set: v => A.cursorFill = v });
-            rows.push({ n: "Outline", s: "Auto picks whichever stands out against the fill", type: "seg",
-                options: [{ label: "Auto", value: "auto" }, { label: "Light", value: "light" },
-                          { label: "Dark", value: "dark" }],
-                value: A.cursorOutline, set: v => A.cursorOutline = v });
+            rows.push({ n: "Style", s: "Light lines on a dark body, or the reverse — drawn like the app icons, "
+                     + "with one part in the accent",
+                type: "seg",
+                options: [{ label: "Auto", value: "auto" }, { label: "Dark", value: "dark" },
+                          { label: "Light", value: "light" }],
+                value: ["dark", "light"].indexOf(A.cursorFill) >= 0 ? A.cursorFill : "auto",
+                set: v => A.cursorFill = v });
         } else {
             rows.push({ n: "System theme", s: "Any cursor theme installed in ~/.local/share/icons or /usr/share/icons",
                 type: "text", value: A.cursorSystemTheme, placeholder: "Adwaita", label: "Use",

@@ -49,22 +49,20 @@ Singleton {
         const h = v => ("0" + Math.round(v * 255).toString(16)).slice(-2);
         return "#" + h(c.r) + h(c.g) + h(c.b);
     }
-    // What it is filled with, and the outline that keeps it visible on
-    // anything: light on dark fills, dark on light ones, unless chosen.
-    readonly property string fill: prefs.cursorFill === "white" ? "#ffffff"
-                                 : prefs.cursorFill === "black" ? "#1b1a19"
-                                 : root.hex(prefs.accent)
-    readonly property string line: {
-        if (prefs.cursorOutline === "light") return "#ffffff";
-        if (prefs.cursorOutline === "dark") return "#1b1a19";
-        const c = Qt.color(root.fill);
-        const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-        return lum > 0.6 ? "#1b1a19" : "#ffffff";
-    }
+    // Drawn as the app icons are (CursorShapes.js): ink lines on a body
+    // in the surface colour, one element in the accent. Dark is a dark body
+    // with light lines, light the reverse; auto follows the theme. Either
+    // shows on anything — the body frames the lines.
+    readonly property bool darkBody: prefs.cursorFill === "dark" ? true
+                                   : prefs.cursorFill === "light" ? false
+                                   : prefs.dark
+    readonly property string base: root.darkBody ? "#1f1d1c" : "#fbfafa"
+    readonly property string ink: root.darkBody ? "#f8f4f4" : "#201e1d"
+    readonly property string acc: root.hex(prefs.accent)
     readonly property int size: Math.max(16, Math.min(96, prefs.cursorSize))
 
     // What a rebuild depends on; a change in it, settled, rebuilds.
-    readonly property string key: root.enabled ? root.fill + root.line : ""
+    readonly property string key: root.enabled ? root.base + root.ink + root.acc : ""
     onKeyChanged: if (root.enabled) settle.restart()
     onEnabledChanged: root.enabled ? settle.restart() : root.restoreSystem()
     onSizeChanged: if (root.enabled && root.built) root.apply()
@@ -80,7 +78,7 @@ Singleton {
         writer.payload = JSON.stringify({
             name: root.themeName,
             sizes: [24, 32, 48, 64, 96],
-            shapes: Shapes.shapes(root.fill, root.line)
+            shapes: Shapes.shapes(root.base, root.ink, root.acc)
         });
         writer.running = true;
     }
