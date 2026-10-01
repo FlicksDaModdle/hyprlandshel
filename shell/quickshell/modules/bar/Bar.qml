@@ -79,8 +79,24 @@ Variants {
         readonly property bool hoveredNow: barHover.hovered
 
         onHoveredNowChanged: {
-            if (hoveredNow) { hideDelay.stop(); hoverLatch = true; }
-            else hideDelay.restart();
+            if (hoveredNow) {
+                hideDelay.stop();
+                // Already out: stays out. Hidden: only once the pointer
+                // has rested on the edge a moment — passing over the top
+                // of the screen on the way to a tab or a menu is not a
+                // request for the bar.
+                if (hoverLatch || Config.Appearance.barRevealDelay <= 0) hoverLatch = true;
+                else revealDelay.restart();
+            } else {
+                revealDelay.stop();
+                hideDelay.restart();
+            }
+        }
+
+        Timer {
+            id: revealDelay
+            interval: Math.max(1, Config.Appearance.barRevealDelay)
+            onTriggered: if (bar.hoveredNow) bar.hoverLatch = true;
         }
 
         Timer {
@@ -102,9 +118,17 @@ Variants {
         readonly property bool panelHere:
             Config.UiState.anyPanelOpen && onFocusedScreen
 
+        // With the dock hidden as well there is nothing on screen at all
+        // while the launcher is up, so the bar comes out with it — on the
+        // launcher's screen — and goes when it closes.
+        readonly property bool launcherHere: Config.UiState.launcherOpen
+                                             && Config.Appearance.dockAutoHide
+                                             && onFocusedScreen
+
         readonly property bool revealed: !Config.Appearance.barAutoHide
                                          || hoverLatch
                                          || panelHere
+                                         || launcherHere
 
         // Where the bar sits inside its surface. Hidden is one bar-height
         // up, which is out.

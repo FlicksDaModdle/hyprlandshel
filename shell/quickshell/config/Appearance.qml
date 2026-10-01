@@ -169,6 +169,9 @@ Singleton {
             // default: a bar is the thing you glance at, and one that has
             // to be summoned is a choice rather than a kindness.
             property bool barHide: false
+            // ms the pointer has to rest on the top edge before a hidden
+            // bar comes out; 0 is straight away.
+            property int barRevealDelay: 350
             property bool clock24: true
             property bool showTray: true
             property bool trayOpen: false
@@ -455,6 +458,7 @@ Singleton {
     property alias altTabWorkspaceTags: prefs.altTabWorkspaceTags
     property alias dockAutoHide: prefs.dockHide
     property alias barAutoHide: prefs.barHide
+    property alias barRevealDelay: prefs.barRevealDelay
     property alias dockPinned: prefs.dockPinned
 
     // ── input devices ─────────────────────────────────────────────────────

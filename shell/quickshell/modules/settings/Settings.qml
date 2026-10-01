@@ -434,6 +434,14 @@ Scope {
                  + "open, and windows get the space back.",
               type: "toggle",
               value: A.barAutoHide, set: v => A.barAutoHide = v },
+            { n: "Reveal delay",
+              s: "With auto-hide on, how long the pointer rests on the top "
+                 + "edge before the bar comes out, so passing over it on the "
+                 + "way to a tab or a menu does not bring it down. 0 is at once. "
+                 + "With the dock hidden too, opening the launcher brings the "
+                 + "bar out for as long as the launcher is open.",
+              type: "slider", min: 0, max: 1000, step: 50, unit: "ms",
+              value: A.barRevealDelay, set: v => A.barRevealDelay = v },
             { type: "header", n: "Text",
               s: "Body size moves everything together; the rest are offsets from it" },
             { n: "Body text", s: "The window title, the date and the status capsule",
