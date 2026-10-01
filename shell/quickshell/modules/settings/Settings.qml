@@ -1401,6 +1401,16 @@ Scope {
             { n: "Blur passes", s: "More passes look smoother and cost more",
               type: "slider", min: 1, max: 5, unit: "", value: A.hyprBlurPasses,
               set: v => { A.hyprBlurPasses = v; Services.Devices.applyFrame(); } },
+            { n: "Blur behind the shell",
+              s: A.shellBlur === "live"
+                 ? "Bar, dock and menus blur whatever is behind them, re-blurred on every frame — "
+                   + "costly, and what makes menus drop frames on a high refresh rate"
+                 : "Bar, dock and menus blur the wallpaper, blurred once and kept — smooth, like "
+                   + "Windows 11's Mica",
+              type: "seg",
+              options: [{ label: "Wallpaper", value: "wallpaper" }, { label: "Live", value: "live" }],
+              value: A.shellBlur,
+              set: v => { A.shellBlur = v; Services.Devices.applyShellBlur(); } },
             { n: "Window shadows", s: "A drop shadow under floating windows",
               type: "toggle", value: A.hyprShadow,
               set: v => { A.hyprShadow = v; Services.Devices.applyFrame(); } },

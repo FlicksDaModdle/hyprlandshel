@@ -340,6 +340,10 @@ Singleton {
             property int inactiveBorderPct: 100
             property int hyprRounding: 14
             property bool hyprBlur: true
+            // What the shell's own surfaces blur: "wallpaper", blurred once
+            // and kept (cheap), or "live", whatever is behind them, every
+            // frame (costly on full-screen menus).
+            property string shellBlur: "wallpaper"
             property int hyprBlurSize: 4
             property int hyprBlurPasses: 2
             property bool hyprShadow: true
@@ -540,6 +544,7 @@ Singleton {
     property alias hyprBlur: prefs.hyprBlur
     property alias hyprBlurSize: prefs.hyprBlurSize
     property alias hyprBlurPasses: prefs.hyprBlurPasses
+    property alias shellBlur: prefs.shellBlur
     property alias hyprShadow: prefs.hyprShadow
     property alias hyprAnimSpeed: prefs.hyprAnimSpeed
     property alias hyprAnimEnabled: prefs.hyprAnimEnabled

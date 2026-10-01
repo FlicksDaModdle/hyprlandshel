@@ -294,6 +294,14 @@ hl.animation({ leaf = "layers",     enabled = true, speed = 3.5, bezier = "easeO
 -- matched by the namespaces each module sets via WlrLayershell.namespace.
 -- Without these rules the panel/sheet tints still read correctly — just
 -- flatter, since there's nothing blurred behind them.
+--
+-- xray: they blur the wallpaper, which Hyprland blurs once and keeps,
+-- rather than whatever is behind them, blurred again on every frame. The
+-- menus, the launcher and floating Settings are full-screen surfaces that
+-- Qt redraws whole on every frame of an animation, so live blur meant
+-- re-blurring the entire screen each frame — the dropped frames in the
+-- shell's menus. Settings → Hyprland → "Blur behind the shell" switches it
+-- back to live (the shell sends these rules again itself).
 local shell_layers = {
     "bar", "dock", "panel", "overview",
 }
@@ -303,6 +311,7 @@ for _, name in ipairs(shell_layers) do
         match        = { namespace = "^quickshell:" .. name .. "$" },
         blur         = true,
         ignore_alpha = 0.15,
+        xray         = true,
     })
 end
 

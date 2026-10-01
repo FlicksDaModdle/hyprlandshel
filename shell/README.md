@@ -970,6 +970,14 @@ Compositor blur — what the bar, dock and panels get — is a property of a
 *layer surface*, and blurs what sits behind that surface on the desktop.
 `hyprland.lua` has a `layer_rule` per namespace to switch it on.
 
+By default those rules set `xray`: the shell's surfaces blur the wallpaper,
+which Hyprland blurs once and keeps, rather than whatever is behind them.
+The menus, the launcher and floating Settings are full-screen surfaces that
+Qt redraws whole on every frame of an animation, so live blur meant blurring
+the entire screen again on every frame — visible as menus dropping frames,
+worst at 240 Hz. Settings → Hyprland → **Blur behind the shell** → Live
+brings the old look back at that cost.
+
 A dropdown or the colour picker is drawn inside the Settings window, not as
 its own surface, so Hyprland has nothing to blur there: what is behind it is
 the window's own rows. `modules/common/BlurBackdrop.qml` blurs those instead,

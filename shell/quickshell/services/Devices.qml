@@ -154,7 +154,20 @@ Singleton {
         };
     }
 
-    function applyFrame() { Services.Compositor.setConfig(frameTree()); }
+    function applyFrame() {
+        Services.Compositor.setConfig(frameTree());
+        applyShellBlur();
+    }
+
+    // The blur rules for the shell's own surfaces (hyprland.lua has them
+    // too): xray — the wallpaper, blurred once — unless set to live.
+    function applyShellBlur() {
+        const xray = prefs.shellBlur === "live" ? "false" : "true";
+        Services.Compositor.evalLua(
+            'for _, n in ipairs({ "bar", "dock", "panel", "overview" }) do '
+          + 'hl.layer_rule({ name = "blur-quickshell-" .. n, match = { namespace = "^quickshell:" .. n .. "$" }, '
+          + 'blur = true, ignore_alpha = 0.15, xray = ' + xray + ' }) end');
+    }
 
     // The borders should follow a theme flip, a new accent or either
     // brightness without waiting for the next login. As the strings sent,
