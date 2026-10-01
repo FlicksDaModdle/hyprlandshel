@@ -10,7 +10,9 @@ import "../../config" as Config
 // the whole output: they cover only what they draw. On the overlay layer
 // so they stay over fullscreen windows, ignoring every exclusive zone so a
 // bar or dock cannot push them in from the edge, and taking no input, so
-// whatever is under a corner can still be clicked.
+// whatever is under a corner can still be clicked — but not the pointer
+// itself: it is kept out of the black, as it is out of the real bezel (see
+// CornerPiece).
 Variants {
     model: Quickshell.screens
 
@@ -61,11 +63,36 @@ Variants {
                 WlrLayershell.namespace: "quickshell:corners"
                 WlrLayershell.layer: WlrLayer.Overlay
                 WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-                mask: Region {}
+                readonly property int r: Config.Appearance.screenCornerRadius
+
+                // Input only where it is black: the square less the circle,
+                // so hovering and clicking just inside the curve still
+                // reaches whatever is there.
+                mask: Region {
+                    width: corner.r
+                    height: corner.r
+                    Region {
+                        shape: RegionShape.Ellipse
+                        intersection: Intersection.Subtract
+                        x: Math.round(piece.centre.x) - corner.r
+                        y: Math.round(piece.centre.y) - corner.r
+                        width: corner.r * 2
+                        height: corner.r * 2
+                    }
+                }
 
                 CornerPiece {
-                    radius: Config.Appearance.screenCornerRadius
+                    id: piece
+                    radius: corner.r
                     turn: corner.modelData.turn
+                    // The pointer is kept out of the black.
+                    guard: true
+                    origin: {
+                        const sc = screenScope.modelData;
+                        if (!sc) return Qt.point(0, 0);
+                        return Qt.point(sc.x + (corner.modelData.left ? 0 : sc.width - corner.r),
+                                        sc.y + (corner.modelData.top ? 0 : sc.height - corner.r));
+                    }
                 }
             }
         }

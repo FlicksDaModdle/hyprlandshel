@@ -206,6 +206,8 @@ WlSessionLock {
                 turn: modelData.turn
                 x: modelData.right ? surface.width - width : 0
                 y: modelData.bottom ? surface.height - height : 0
+                guard: true
+                origin: surface.screen ? Qt.point(surface.screen.x + x, surface.screen.y + y) : Qt.point(0, 0)
             }
         }
     }
