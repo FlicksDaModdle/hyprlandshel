@@ -55,6 +55,10 @@ ShellRoot {
     // and nothing else would build it before Settings was opened.
     readonly property bool cursorThemed: Services.Cursor.enabled
 
+    // And sound effects: an equalizer or noise suppression left on comes
+    // back at login only if something starts AudioFx.
+    readonly property bool audioFxStarted: Services.AudioFx.probed || true
+
     // Shell shortcuts, registered with the compositor over
     // hyprland-global-shortcuts-v1, so anything on the session can dispatch
     // `global, hyprshell:<name>` to the shell.

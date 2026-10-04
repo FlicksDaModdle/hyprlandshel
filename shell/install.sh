@@ -489,6 +489,21 @@ else
     printf '  %snot building hyprshell-agent: needs cmake and a C++ compiler%s\n' "$YEL" "$RST"
 fi
 
+# The task manager (../tasks), built and installed alongside, so Ctrl+Shift+Esc
+# and the launcher's "Task Manager" have something to open. Its own
+# installer does the work; its output goes to a log so this one stays
+# readable.
+TASKS_SRC="$SRC/../tasks"
+if [ -x "$TASKS_SRC/install.sh" ]; then
+    TASKS_LOG="${XDG_CACHE_HOME:-$HOME/.cache}/hyprshell/tasks-install.log"
+    mkdir -p "$(dirname "$TASKS_LOG")"
+    if "$TASKS_SRC/install.sh" >"$TASKS_LOG" 2>&1; then
+        printf '  built     %s/.local/bin/hyprshell-tasks (the task manager)\n' "$HOME"
+    else
+        printf '  %scould not build the task manager — see %s%s\n' "$YEL" "$TASKS_LOG" "$RST"
+    fi
+fi
+
 if command -v kitty >/dev/null 2>&1; then
     mkdir -p "$KITTY_DIR" || die "could not create $KITTY_DIR"
     backup "$KITTY_DIR/kitty.conf"

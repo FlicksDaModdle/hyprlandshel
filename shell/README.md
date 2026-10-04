@@ -565,21 +565,36 @@ questions, and NetworkManager's password requests go unanswered.
 
 ## Sound
 
-Settings → Sound shows the output and the input in use with everything
-about them — level, mute, balance, a test sound for each speaker, the
-connector (speakers or headphones) and the card's mode (a Bluetooth
-headset's music and call modes, HDMI speaker layouts) — and every other
-device one click from taking over. Below that, each app that is playing
-has its own level and the output it plays through, and each app with a
-microphone open is listed with its own. Levels, devices and modes follow
-along as things are plugged in, paired or changed elsewhere.
+Settings → Sound opens on the output and microphone in use, each with its
+level, mute and a live meter, and four tabs below:
 
-Volume key step, going above 100% and a tick on each key press are under
-Options. "Restart sound" restarts PipeWire, WirePlumber and pipewire-pulse
-for when sound has stopped altogether.
+- **Output** — every output with its own level and mute in its row, and
+  "Use" to switch. Click any one to open it in full: volume, balance, fade
+  (surround), each channel on its own, a live meter, test sounds for each
+  speaker, the connector (speakers or headphones), the card's mode
+  (Bluetooth music/headset and codec, HDMI layouts, off), a **delay** to put
+  sound back in step with the picture (Bluetooth), its format, sample rate,
+  latency and codec, and a name and place in the list of your choosing.
+  Then the **equalizer**: ten bands and a preamp, presets (bass boost,
+  vocal, laptop speakers, …), heard as you drag.
+- **Input** — the same for microphones, plus **noise suppression** (RNNoise;
+  needs `noise-suppression-for-voice`) with its strictness, and **listen to
+  this microphone** to hear yourself through headphones.
+- **Apps** — every app playing, with its level, mute, balance and the
+  output it plays through; every app recording, with its level and the
+  microphone it listens to.
+- **Options** — volume key step, a maximum volume (a hearing limit below
+  100%, software boost up to 150%), a tick on key presses, switching to
+  Bluetooth/USB devices as they connect, and "Restart sound" for when it
+  has stopped altogether.
 
-Connectors, modes and moving an app use `pactl` (pipewire-pulse); the live
-microphone meter needs Quickshell 0.3. Without either, the rest works.
+The equalizer and noise suppression are PipeWire filter-chains the shell
+runs itself (`services/AudioFx.qml`, `pipewire -c` on a file in
+`~/.cache/hyprshell`): a virtual output or microphone that becomes the
+default and passes the sound on to the real device. Nothing is written into
+PipeWire's own configuration, and quitting the shell takes them away.
+Connectors, modes, delays and moving apps use `pactl` (pipewire-pulse); the
+live meters need Quickshell 0.3.
 
 ## Passwords for administrator actions
 

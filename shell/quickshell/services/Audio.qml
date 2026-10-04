@@ -18,8 +18,33 @@ import "../config" as Config
 Singleton {
     id: root
 
-    readonly property var sink: Pipewire.defaultAudioSink
-    readonly property var source: Pipewire.defaultAudioSource
+    // The shell's own virtual devices (AudioFx.qml): the equalizer is an
+    // output everything plays into, which passes the sound on to a real
+    // one; noise suppression is an input, fed from a real microphone.
+    // While one is the default, "the output" or "the microphone" everywhere
+    // in the shell means the real device behind it — that is the one whose
+    // volume the keys should move and whose name people expect to see.
+    readonly property string eqSinkName: "hyprshell_eq"
+    readonly property string eqOutName: "hyprshell_eq_out"
+    readonly property string nsSourceName: "hyprshell_ns"
+    readonly property string nsInName: "hyprshell_ns_in"
+    function isOurs(n) {
+        if (!n) return false;
+        const p = n.properties || {};
+        return (n.name || "").indexOf("hyprshell_") === 0
+            || (p["application.name"] || "").indexOf("hyprshell-") === 0;
+    }
+
+    readonly property var rawSink: Pipewire.defaultAudioSink
+    readonly property var rawSource: Pipewire.defaultAudioSource
+    readonly property bool eqActive: !!rawSink && rawSink.name === eqSinkName
+    readonly property bool nsActive: !!rawSource && rawSource.name === nsSourceName
+    readonly property var eqSink: nodes.find(n => n.name === eqSinkName) || null
+    readonly property var nsSource: nodes.find(n => n.name === nsSourceName) || null
+    readonly property var sink: eqActive
+        ? (sinks.find(n => n.name === Config.Appearance.eqTarget) || sinks[0] || rawSink) : rawSink
+    readonly property var source: nsActive
+        ? (sources.find(n => n.name === Config.Appearance.nsTarget) || sources[0] || rawSource) : rawSource
     // false only when the binding says so outright: older Quickshell builds
     // have no `ready`, and undefined is not a reason to say audio is down.
     readonly property bool pipewireUp: Pipewire.ready !== false
@@ -28,13 +53,15 @@ Singleton {
     // Either default can be null before PipeWire is up, so the list is
     // filtered rather than handed nulls.
     PwObjectTracker {
-        objects: [root.sink, root.source].filter(n => n !== null && n !== undefined)
+        objects: [root.sink, root.source, root.rawSink, root.rawSource].filter(n => n !== null && n !== undefined)
     }
 
-    // The ceiling a drag or a volume key can reach. PipeWire happily takes
-    // more than 1.0 (software boost); unless that is asked for in Settings
-    // the shell stops at 100% so a stray drag can't blow your ears out.
-    readonly property real maxVolume: Config.Appearance.volumeBoost ? 1.5 : 1.0
+    // The ceiling a drag or a volume key can reach, set in Settings →
+    // Sound → Options: under 100% as a hearing limit, over it (to 150%) as
+    // PipeWire's software boost. The older on/off boost setting still
+    // counts as 150%.
+    readonly property real maxVolume: Math.max(Config.Appearance.volumeMax,
+                                               Config.Appearance.volumeBoost ? 150 : 0) / 100
 
     readonly property bool ready: !!sink && !!sink.audio
     readonly property real volume: ready ? sink.audio.volume : 0
@@ -59,11 +86,30 @@ Singleton {
     }
     readonly property var nodes: Pipewire.nodes.values.filter(n => !!n && !!n.audio)
     // Real devices, outputs and inputs.
-    readonly property var sinks: nodes.filter(n => n.isSink && !n.isStream)
-    readonly property var sources: nodes.filter(n => !n.isSink && !n.isStream)
+    readonly property var sinks: nodes.filter(n => n.isSink && !n.isStream && !isOurs(n))
+    readonly property var sources: nodes.filter(n => !n.isSink && !n.isStream && !isOurs(n))
     // Applications playing, and applications recording.
-    readonly property var streams: nodes.filter(n => n.isSink && n.isStream && !isMonitor(n))
-    readonly property var recorders: nodes.filter(n => !n.isSink && n.isStream && !isMonitor(n))
+    readonly property var streams: nodes.filter(n => n.isSink && n.isStream && !isMonitor(n) && !isOurs(n))
+    readonly property var recorders: nodes.filter(n => !n.isSink && n.isStream && !isMonitor(n) && !isOurs(n))
+
+    // Devices left out of the lists in Settings (they still work).
+    readonly property var hiddenNames: { try { return JSON.parse(Config.Appearance.soundHidden || "[]"); } catch (e) { return []; } }
+    function isHidden(node) { return !!node && hiddenNames.indexOf(node.name) >= 0; }
+    function setHidden(node, on) {
+        if (!node) return;
+        const list = hiddenNames.filter(n => n !== node.name);
+        if (on) list.push(node.name);
+        Config.Appearance.soundHidden = JSON.stringify(list);
+    }
+    // Names given to devices here, in place of the driver's.
+    readonly property var nicknames: { try { return JSON.parse(Config.Appearance.soundNames || "{}"); } catch (e) { return {}; } }
+    function setNickname(node, name) {
+        if (!node) return;
+        const map = Object.assign({}, nicknames);
+        if ((name || "").trim() === "") delete map[node.name];
+        else map[node.name] = name.trim();
+        Config.Appearance.soundNames = JSON.stringify(map);
+    }
 
     // Glyph that matches the current level, like the mockup's volume-2 /
     // volume-1 / volume-x set.
@@ -167,16 +213,38 @@ Singleton {
         Config.UiState.showOsd("mic", 0, true);
     }
 
+    // With the equalizer or noise suppression in the way, "use this
+    // device" re-points the effect at it and leaves the effect the default.
     function setDefaultSink(node) {
-        if (node) Pipewire.preferredDefaultAudioSink = node;
+        if (!node) return;
+        if (eqActive) {
+            Config.Appearance.eqTarget = node.name;
+            const out = nodes.find(n => n.name === eqOutName);
+            if (out) moveStream(out, node);
+            return;
+        }
+        Pipewire.preferredDefaultAudioSink = node;
     }
     function setDefaultSource(node) {
-        if (node) Pipewire.preferredDefaultAudioSource = node;
+        if (!node) return;
+        if (nsActive) {
+            Config.Appearance.nsTarget = node.name;
+            const inp = nodes.find(n => n.name === nsInName);
+            if (inp) moveRecorder(inp, node);
+            return;
+        }
+        Pipewire.preferredDefaultAudioSource = node;
     }
+    // Straight to PipeWire, for AudioFx switching an effect in and out.
+    function setRawDefaultSink(node) { if (node) Pipewire.preferredDefaultAudioSink = node; }
+    function setRawDefaultSource(node) { if (node) Pipewire.preferredDefaultAudioSource = node; }
 
     function displayName(node) {
         if (!node) return "";
-        return node.nickname || node.description || node.name || "";
+        return nicknames[node.name] || node.nickname || node.description || node.name || "";
+    }
+    function driverName(node) {
+        return node ? (node.nickname || node.description || node.name || "") : "";
     }
 
     // ── any node ─────────────────────────────────────────────────────────
@@ -220,6 +288,68 @@ Singleton {
                        || ch[i] === PwAudioChannel.SideRight;
             vols[i] = left ? level * (b > 0 ? 1 - b : 1)
                     : right ? level * (b < 0 ? 1 + b : 1)
+                    : level;
+        }
+        node.audio.volumes = vols;
+    }
+
+    // Each channel on its own, for the Channels list.
+    function setChannelVolume(node, i, v) {
+        if (!node || !node.audio) return;
+        const vols = Array.from(node.audio.volumes);
+        if (i < 0 || i >= vols.length) return;
+        vols[i] = Math.max(0, Math.min(node.isSink ? maxVolume : 1.5, v));
+        node.audio.volumes = vols;
+    }
+    function channelName(c) {
+        const n = {};
+        n[PwAudioChannel.Mono] = "Mono";
+        n[PwAudioChannel.FrontLeft] = "Front left"; n[PwAudioChannel.FrontRight] = "Front right";
+        n[PwAudioChannel.FrontCenter] = "Centre"; n[PwAudioChannel.LowFrequencyEffects] = "Subwoofer";
+        n[PwAudioChannel.RearLeft] = "Rear left"; n[PwAudioChannel.RearRight] = "Rear right";
+        n[PwAudioChannel.RearCenter] = "Rear centre";
+        n[PwAudioChannel.SideLeft] = "Side left"; n[PwAudioChannel.SideRight] = "Side right";
+        return n[c] || ("Channel " + c);
+    }
+
+    // Fade, -1 (all front) to 1 (all rear), for surround: the same idea
+    // as balance, front against back.
+    function isRear(c) {
+        return c === PwAudioChannel.RearLeft || c === PwAudioChannel.RearRight
+            || c === PwAudioChannel.RearCenter || c === PwAudioChannel.SideLeft
+            || c === PwAudioChannel.SideRight;
+    }
+    function isFront(c) {
+        return c === PwAudioChannel.FrontLeft || c === PwAudioChannel.FrontRight
+            || c === PwAudioChannel.FrontCenter;
+    }
+    function hasFade(node) {
+        if (!node || !node.audio) return false;
+        const ch = node.audio.channels || [];
+        return ch.some(c => isRear(c)) && ch.some(c => isFront(c));
+    }
+    function fade(node) {
+        if (!hasFade(node)) return 0;
+        const ch = node.audio.channels, v = node.audio.volumes;
+        let f = 0, r = 0;
+        for (let i = 0; i < ch.length; i++) {
+            if (isFront(ch[i])) f = Math.max(f, v[i]);
+            else if (isRear(ch[i])) r = Math.max(r, v[i]);
+        }
+        const top = Math.max(f, r);
+        if (top <= 0.0001) return 0;
+        return r >= f ? 1 - f / top : -(1 - r / top);
+    }
+    function setFade(node, b) {
+        if (!hasFade(node)) return;
+        b = Math.max(-1, Math.min(1, b));
+        if (Math.abs(b) < 0.03) b = 0;
+        const ch = node.audio.channels;
+        const vols = Array.from(node.audio.volumes);
+        const level = Math.max.apply(null, vols);
+        for (let i = 0; i < ch.length; i++) {
+            vols[i] = isFront(ch[i]) ? level * (b > 0 ? 1 - b : 1)
+                    : isRear(ch[i]) ? level * (b < 0 ? 1 + b : 1)
                     : level;
         }
         node.audio.volumes = vols;
@@ -289,6 +419,8 @@ Singleton {
     property var pulse: ({ sinks: {}, sources: {} })
     property var inputs: ({})
     property var sinkIndex: ({})        // pulse index → sink name
+    property var sourceIndex: ({})      // pulse index → source name
+    property var outputs: ({})          // recording stream node id → { index, source }
     property bool pactlMissing: false
     property string lastError: ""
 
@@ -308,7 +440,11 @@ Singleton {
         const card = cards.find(c => (d.card >= 0 && c.index === d.card)
                                   || (d.deviceId !== "" && c.objectId === d.deviceId)) || null;
         const port = (d.ports || []).find(pt => pt.name === d.activePort) || null;
-        return { ports: d.ports || [], activePort: d.activePort, port: port, card: card };
+        const cardPort = card && port ? (card.ports || []).find(cp => cp.name === port.name) || null : null;
+        return { ports: d.ports || [], activePort: d.activePort, port: port, card: card,
+                 spec: d.spec, channelMap: d.channelMap, latencyUs: d.latencyUs, state: d.state,
+                 props: d.props, latencyOffsetMs: cardPort ? Math.round(cardPort.latencyOffset / 1000) : 0,
+                 canOffset: !!cardPort };
     }
 
     function refreshDetails() { detailsDebounce.restart(); }
@@ -360,7 +496,7 @@ Singleton {
         id: detailsProc
         command: ["sh", "-c",
             "command -v pactl >/dev/null 2>&1 || { echo NOPACTL; exit 0; }; "
-            + "for w in cards sinks sources sink-inputs; do pactl -f json list $w 2>/dev/null || echo '[]'; echo; echo '@@'; done"]
+            + "for w in cards sinks sources sink-inputs source-outputs; do pactl -f json list $w 2>/dev/null || echo '[]'; echo; echo '@@'; done"]
         stdout: StdioCollector {
             onStreamFinished: root.parseDetails(text)
         }
@@ -385,7 +521,8 @@ Singleton {
         const parts = text.split("@@");
         const parse = s => { try { const v = JSON.parse(s.trim() || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
         const rawCards = parse(parts[0] || ""), rawSinks = parse(parts[1] || ""),
-              rawSources = parse(parts[2] || ""), rawInputs = parse(parts[3] || "");
+              rawSources = parse(parts[2] || ""), rawInputs = parse(parts[3] || ""),
+              rawOutputs = parse(parts[4] || "");
 
         cards = rawCards.map(c => {
             const p = c.properties || {};
@@ -395,6 +532,7 @@ Singleton {
                 description: p["device.description"] || p["device.product.name"] || c.name,
                 objectId: String(p["object.id"] || ""),
                 activeProfile: c.active_profile || "",
+                ports: asList(c.ports).map(pt => ({ name: pt.name, latencyOffset: Number(pt.latency_offset || 0) })),
                 profiles: asList(c.profiles)
                     .sort((a, b) => (b.priority || 0) - (a.priority || 0))
                     .map(pr => ({ name: pr.name, description: pr.description || pr.name,
@@ -411,6 +549,18 @@ Singleton {
                     card: typeof s.card === "number" ? s.card : -1,
                     deviceId: String(p["device.id"] || ""),
                     activePort: s.active_port || "",
+                    state: s.state || "",
+                    spec: s.sample_specification || "",
+                    channelMap: s.channel_map || "",
+                    latencyUs: s.latency ? Number(s.latency.actual || 0) : 0,
+                    props: {
+                        codec: p["api.bluez5.codec"] || "",
+                        bus: p["device.bus"] || "",
+                        api: p["device.api"] || "",
+                        card: p["alsa.card_name"] || p["alsa.long_card_name"] || "",
+                        path: p["api.alsa.path"] || p["api.bluez5.address"] || "",
+                        formFactor: p["device.form_factor"] || ""
+                    },
                     ports: asList(s.ports).map(pt => ({
                         name: pt.name, description: pt.description || pt.name,
                         type: pt.type || "", available: isAvailable(pt.availability ?? pt.available)
@@ -431,6 +581,23 @@ Singleton {
             if (id !== undefined) ins[String(id)] = { index: i.index, sink: i.sink };
         }
         inputs = ins;
+
+        const sidx = {};
+        for (const s of rawSources) sidx[s.index] = s.name;
+        sourceIndex = sidx;
+        const outs = {};
+        for (const o of rawOutputs) {
+            const id = (o.properties || {})["object.id"];
+            if (id !== undefined) outs[String(id)] = { index: o.index, source: o.source };
+        }
+        outputs = outs;
+        if (pendingMoves.length > 0) runPendingMoves();
+    }
+
+    // Which microphone an app is recording from, by name; "" when unknown.
+    function recorderSourceName(node) {
+        const o = node ? outputs[String(node.id)] : null;
+        return o ? (sourceIndex[o.source] || "") : "";
     }
 
     // Which output a stream is playing to, by name; "" when unknown.
@@ -440,29 +607,102 @@ Singleton {
     }
 
     // ── changing what pactl knows ────────────────────────────────────────
+    // One at a time, in order: two clicks in quick succession are two
+    // commands, and starting the second must not kill the first.
+    property var actQueue: []
     Process {
         id: actProc
         stderr: StdioCollector {
             onStreamFinished: if (text.trim() !== "") root.lastError = text.trim().split("\n").pop()
         }
-        onExited: root.refreshDetails()
+        onExited: {
+            if (root.actQueue.length > 0) root.nextAction();
+            else root.refreshDetails();
+        }
+    }
+    function nextAction() {
+        const q = actQueue.slice();
+        const cmd = q.shift();
+        actQueue = q;
+        actProc.command = cmd;
+        actProc.running = true;
     }
     function pactl(args) {
         if (pactlMissing) { lastError = "pactl isn't installed (it comes with pipewire-pulse)."; return; }
         lastError = "";
-        actProc.running = false;
-        actProc.command = ["pactl"].concat(args);
-        actProc.running = true;
+        actQueue = actQueue.concat([["pactl"].concat(args)]);
+        if (!actProc.running) nextAction();
     }
     function setProfile(card, profile) { if (card) pactl(["set-card-profile", card.name, profile]); }
     function setPort(node, port) {
         if (node) pactl([node.isSink ? "set-sink-port" : "set-source-port", node.name, port]);
     }
+    // Sound and picture out of step — usually Bluetooth: delays (or
+    // advances) this device's sound. Kept per connector by PipeWire.
+    function setLatencyOffset(node, ms) {
+        const d = details(node);
+        if (!d.card || !d.port) { lastError = "This device has no connector to set a delay on."; return; }
+        pactl(["set-port-latency-offset", d.card.name, d.port.name, String(Math.round(ms * 1000))]);
+    }
+    function moveRecorder(stream, sourceNode) {
+        if (!stream || !sourceNode) return;
+        const o = outputs[String(stream.id)];
+        if (!o) { deferMove("output", stream.id, sourceNode.name); return; }
+        pactl(["move-source-output", String(o.index), sourceNode.name]);
+    }
+
+    // A move asked for before pactl's tables know the stream — a stream
+    // that only just started, or nothing has read them yet. Read them,
+    // then do it.
+    property var pendingMoves: []
+    function deferMove(kind, id, target) {
+        pendingMoves = pendingMoves.concat([{ kind: kind, id: String(id), target: target, tries: 0 }]);
+        refreshDetails();
+    }
+    function runPendingMoves() {
+        const later = [];
+        for (const m of pendingMoves) {
+            const i = m.kind === "input" ? inputs[m.id] : outputs[m.id];
+            if (i) pactl([m.kind === "input" ? "move-sink-input" : "move-source-output", String(i.index), m.target]);
+            else if (m.tries < 3) later.push(Object.assign({}, m, { tries: m.tries + 1 }));
+        }
+        pendingMoves = later;
+        if (later.length > 0) refreshDetails();
+    }
     function moveStream(stream, sinkNode) {
-        const i = stream ? inputs[String(stream.id)] : null;
-        if (!i || !sinkNode) { lastError = "Couldn't find that stream to move it."; return; }
+        if (!stream || !sinkNode) return;
+        const i = inputs[String(stream.id)];
+        if (!i) { deferMove("input", stream.id, sinkNode.name); return; }
         pactl(["move-sink-input", String(i.index), sinkNode.name]);
     }
+
+    // ── new devices ──────────────────────────────────────────────────────
+    // Headphones paired or a USB headset plugged in become the device in
+    // use, when Settings asks for that. Only Bluetooth and USB: a monitor
+    // waking up announces an HDMI output every time, and nobody wants the
+    // sound jumping to it.
+    // What was there last time, per direction — so a device unplugged and
+    // plugged back in counts as new again.
+    property var knownSinks: []
+    property var knownSources: []
+    property bool devicesSettled: false
+    Timer { interval: 5000; running: root.pipewireUp; onTriggered: root.devicesSettled = true }
+    function considerNew(list, isSink) {
+        const before = isSink ? knownSinks : knownSources;
+        if (devicesSettled && Config.Appearance.soundAutoSwitch) {
+            for (const n of list) {
+                if (before.indexOf(n.name) >= 0) continue;
+                const p = n.properties || {};
+                const hint = ((p["device.bus"] || "") + " " + n.name).toLowerCase();
+                if (!/bluez|bluetooth|usb/.test(hint)) continue;
+                if (isSink) setDefaultSink(n); else setDefaultSource(n);
+            }
+        }
+        if (isSink) knownSinks = list.map(n => n.name);
+        else knownSources = list.map(n => n.name);
+    }
+    onSinksChanged: considerNew(sinks, true)
+    onSourcesChanged: considerNew(sources, false)
 
     // ── sounds ───────────────────────────────────────────────────────────
     // From the freedesktop sound theme (sound-theme-freedesktop), played

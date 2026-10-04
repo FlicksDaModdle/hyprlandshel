@@ -8,7 +8,8 @@ shell's theme when the shell is installed. The feature list started from
     ./install.sh            build and install to ~/.local
     ./install.sh --check    say what is missing
 
-With the shell's Hyprland config, **Ctrl+Shift+Esc** opens it.
+Open it with **Ctrl+Shift+Esc** (the shell's Hyprland config), or type
+"task" in the launcher. `shell/install.sh` builds and installs it too.
 
 ## Views
 

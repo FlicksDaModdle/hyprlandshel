@@ -16,6 +16,10 @@ Singleton {
         { key: "theme",      label: "Theme",        icon: "palette",       cat: "Command · switch light / dark" },
         { key: "capture",    label: "Screenshot",   icon: "camera",        cat: "Command · grab a region" },
         { key: "displays",   label: "Displays",     icon: "monitor",       cat: "System · monitors and scaling" },
+        // Here as well as as a desktop entry: the entry only exists once
+        // tasks/install.sh has run and the shell has seen it, and this
+        // works either way — it says how to install it when it isn't.
+        { key: "tasks",      label: "Task Manager", icon: "cpu",           cat: "System · processes, performance, services, startup apps" },
         { key: "sound",      label: "Sound",        icon: "volume",        cat: "System · output and input" },
         { key: "network",    label: "Network",      icon: "wifi",          cat: "System · wireless" },
         { key: "bluetooth",  label: "Bluetooth",    icon: "bluetooth",     cat: "System · paired devices" },

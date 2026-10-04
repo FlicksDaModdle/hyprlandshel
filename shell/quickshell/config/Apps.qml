@@ -288,6 +288,20 @@ Singleton {
 
     function launchFiles(arg) { launch(filesCommand(arg)); }
 
+    // The task manager (tasks/), found the same way as the file manager.
+    readonly property string tasksFinder:
+        'command -v hyprshell-tasks >/dev/null 2>&1 && exec hyprshell-tasks "$@"; '
+        + 'for d in "$HOME/.local/bin" /usr/local/bin /usr/bin; do '
+        + '[ -x "$d/hyprshell-tasks" ] && exec "$d/hyprshell-tasks" "$@"; done; '
+        + 'notify-send "Task Manager" "Not installed yet — run tasks/install.sh from the hyprshell folder" 2>/dev/null; exit 127'
+
+    function tasksCommand(view) {
+        const cmd = ["sh", "-c", tasksFinder, "open-tasks"];
+        if (view) { cmd.push("--view"); cmd.push(view); }
+        return cmd;
+    }
+    function launchTasks(view) { launch(tasksCommand(view)); }
+
     // The Files app, run as one file dialog: it prints what was chosen on
     // stdout, one path per line, and exits 1 if it was cancelled.
     //

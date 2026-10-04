@@ -8,16 +8,21 @@ import "../icons"
 
 // Settings → Sound.
 //
-// Output and input, each its device in use with everything about it and
-// the others a click away (SoundDevice.qml); then every app playing, with
-// its own level and the output it plays to, and every app listening to a
-// microphone; then the options, and a way out when sound has stopped
-// working altogether.
+// At the top, the output and the microphone in use with their levels —
+// what most visits are for. Below, four tabs:
 //
-// Everything shown here is bound to PipeWire for as long as the pane is
-// open, so levels move as other programs move them, and devices appear and
-// disappear as they are plugged in, paired or switched off — nothing here
-// holds on to a device that has gone.
+//   Output    every output with its level in the row; any one opened in
+//             full (SoundInspector.qml); the equalizer (SoundEq.qml)
+//   Input     every microphone the same way; noise suppression; hearing
+//             yourself through the output
+//   Apps      every app playing or recording, each with its own level and
+//             device (SoundApps.qml)
+//   Options   volume keys, the volume limit, switching to new devices,
+//             and getting sound back when it has stopped
+//
+// Everything shown is bound to PipeWire while the pane is open, so it moves
+// as other programs move it, and devices come and go as they are plugged
+// in, paired or switched off.
 Column {
     id: panel
 
@@ -25,18 +30,28 @@ Column {
     spacing: 16
 
     readonly property var au: Services.Audio
+    readonly property var fx: Services.AudioFx
+    readonly property var prefs: Config.Appearance
     readonly property color danger: "#d93a2b"
-    // The window this is in is on screen: the microphone meter stops when
-    // it isn't, so closing Settings never leaves the mic open.
+    // The window this is in is on screen: the meters stop when it isn't,
+    // so closing Settings never leaves a microphone open.
     readonly property bool shown: Config.UiState.settingsOpen && visible
                                   && !!Window.window && Window.window.visible
-    property var openStream: null       // the stream whose output list is open
+    readonly property string tab: ["output", "input", "apps", "options"].indexOf(prefs.soundTab) >= 0 ? prefs.soundTab : "output"
+
+    // The device open in each tab's inspector: the one picked, while it is
+    // still there, else the one in use.
+    property string pickedOut: ""
+    property string pickedIn: ""
+    readonly property var inspectOut: au.sinks.find(n => n.name === pickedOut) || au.sink
+    readonly property var inspectIn: au.sources.find(n => n.name === pickedIn) || au.source
 
     Component.onCompleted: au.watch(true)
     Component.onDestruction: au.watch(false)
 
     PwObjectTracker {
-        objects: panel.au.sinks.concat(panel.au.sources, panel.au.streams, panel.au.recorders)
+        objects: panel.au.sinks.concat(panel.au.sources, panel.au.streams, panel.au.recorders,
+                                       [panel.au.rawSink, panel.au.rawSource].filter(n => !!n))
     }
 
     component Caption: StyledText {
@@ -46,27 +61,33 @@ Column {
         font.letterSpacing: 0.6
         color: Config.Appearance.ink3
     }
+    component Card: Rectangle {
+        radius: Config.Appearance.r
+        color: Config.Appearance.hover
+        border.width: 1
+        border.color: Config.Appearance.rule
+    }
+    component Line: StyledText {
+        wrapMode: Text.WordWrap
+        font.pixelSize: Config.Appearance.fs(12)
+        color: Config.Appearance.ink3
+    }
 
     // ══ no PipeWire ══════════════════════════════════════════════════════
-    Rectangle {
+    Card {
         visible: !panel.au.pipewireUp
         width: panel.width
         height: down.implicitHeight + 32
-        radius: Config.Appearance.r
-        color: Config.Appearance.hover
         border.width: 2
         border.color: Config.Appearance.accent
         Column {
             id: down
             x: 16; y: 16; width: parent.width - 32; spacing: 10
             StyledText { text: "PipeWire isn't running"; font.pixelSize: Config.Appearance.fs(15); font.weight: Font.DemiBold }
-            StyledText {
+            Line {
                 width: parent.width
-                wrapMode: Text.WordWrap
                 text: "Nothing can play or record until it is. Starting it again usually does it; if it keeps stopping, "
                       + "journalctl --user -u pipewire -u wireplumber says why."
-                font.pixelSize: Config.Appearance.fs(12)
-                color: Config.Appearance.ink3
             }
             NetButton {
                 label: panel.au.restarting ? "Starting…" : "Start sound again"
@@ -77,375 +98,539 @@ Column {
         }
     }
 
-    // ══ output ═══════════════════════════════════════════════════════════
-    Caption { text: "Output" }
-    SoundDevice { width: panel.width; output: true; shown: panel.shown }
-
-    // ══ input ════════════════════════════════════════════════════════════
-    Caption { text: "Input" }
-    SoundDevice { width: panel.width; output: false; shown: panel.shown }
-
-    // ══ apps ═════════════════════════════════════════════════════════════
-    Caption { text: "Apps" }
-    StyledText {
-        visible: panel.au.streams.length === 0
+    // ══ at a glance ══════════════════════════════════════════════════════
+    Card {
         width: panel.width
-        wrapMode: Text.WordWrap
-        text: "Nothing is playing. Apps show up here while they make sound, each with its own level — "
-              + "remembered for next time — and the output it plays through."
-        font.pixelSize: Config.Appearance.fs(12)
-        color: Config.Appearance.ink3
+        height: 118
+        Row {
+            x: 16; y: 14
+            width: parent.width - 32
+            height: parent.height - 28
+            spacing: 16
+            Repeater {
+                model: [true, false]
+                Item {
+                    id: glance
+                    required property var modelData
+                    readonly property bool out: modelData
+                    readonly property var n: out ? panel.au.sink : panel.au.source
+                    readonly property bool muted: panel.au.nodeMuted(n)
+                    readonly property real ceiling: out ? panel.au.maxVolume : 1.5
+                    width: (parent.width - 16) / 2
+                    height: parent.height
+
+                    Rectangle {
+                        id: gBadge
+                        width: 38; height: 38; radius: 19
+                        color: glance.muted || !glance.n ? Config.Appearance.div : Config.Appearance.accent
+                        MonoIcon {
+                            anchors.centerIn: parent
+                            name: glance.muted ? (glance.out ? "volumeX" : "micOff")
+                                : glance.out ? panel.au.deviceGlyph(glance.n) : "mic"
+                            size: 18; monochrome: true
+                            inkColor: glance.muted || !glance.n ? Config.Appearance.ink2 : Config.Appearance.inkOnAccent
+                        }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: panel.au.setNodeMuted(glance.n, !glance.muted) }
+                    }
+                    Column {
+                        anchors.left: gBadge.right
+                        anchors.leftMargin: 10
+                        anchors.right: parent.right
+                        anchors.verticalCenter: gBadge.verticalCenter
+                        spacing: 1
+                        StyledText {
+                            text: glance.out ? "Output" : "Microphone"
+                            font.pixelSize: Config.Appearance.fs(11)
+                            font.capitalization: Font.AllUppercase
+                            font.letterSpacing: 0.5
+                            color: Config.Appearance.ink3
+                        }
+                        StyledText {
+                            width: parent.width
+                            elide: Text.ElideRight
+                            text: glance.n ? panel.au.displayName(glance.n) : (glance.out ? "No output" : "No microphone")
+                            font.pixelSize: Config.Appearance.fs(13)
+                            font.weight: Font.DemiBold
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: panel.prefs.soundTab = glance.out ? "output" : "input" }
+                        }
+                    }
+                    FillSlider {
+                        id: gSlider
+                        anchors.left: parent.left
+                        anchors.right: gPct.left
+                        anchors.rightMargin: 8
+                        y: 52
+                        trough: 14
+                        showRule: true
+                        enabled: !!glance.n
+                        fillColor: glance.muted ? Config.Appearance.ink3 : Config.Appearance.accent
+                        value: panel.au.nodeVolume(glance.n) / glance.ceiling
+                        onMoved: v => panel.au.setNodeVolume(glance.n, v * glance.ceiling)
+                        onReleased: v => panel.au.setNodeVolume(glance.n, v * glance.ceiling)
+                    }
+                    StyledText {
+                        id: gPct
+                        width: 42
+                        anchors.right: parent.right
+                        anchors.verticalCenter: gSlider.verticalCenter
+                        horizontalAlignment: Text.AlignRight
+                        text: glance.muted ? "Muted" : Math.round(panel.au.nodeVolume(glance.n) * 100) + "%"
+                        font.pixelSize: Config.Appearance.fs(12)
+                        font.weight: Font.DemiBold
+                    }
+                    // What the microphone hears; what the output plays.
+                    Loader {
+                        id: gMeter
+                        anchors.left: parent.left
+                        anchors.right: gPct.left
+                        anchors.rightMargin: 8
+                        y: 76
+                        height: 6
+                        active: panel.shown && !!glance.n
+                        source: "SoundLevel.qml"
+                        onLoaded: {
+                            item.node = Qt.binding(() => glance.n);
+                            item.live = Qt.binding(() => panel.shown);
+                        }
+                    }
+                    StyledText {
+                        anchors.left: parent.left
+                        y: 86
+                        text: [glance.out && panel.au.eqActive ? "Equalizer on" : "",
+                               !glance.out && panel.au.nsActive ? "Noise suppression on" : "",
+                               !glance.out && panel.fx.listening ? "Listening through the output" : ""].filter(s => s).join(" · ")
+                        font.pixelSize: Config.Appearance.fs(11)
+                        color: Config.Appearance.accent
+                    }
+                }
+            }
+        }
     }
-    Column {
-        visible: panel.au.streams.length > 0
-        width: panel.width
-        spacing: 2
-        Repeater {
-            model: panel.au.streams
-            Rectangle {
-                id: app
-                required property var modelData
-                readonly property var s: modelData
-                readonly property bool open: !!panel.openStream && panel.openStream.id === s.id
-                readonly property string sinkName: panel.au.streamSinkName(s)
-                width: panel.width
-                height: appCol.implicitHeight + 12
-                radius: Config.Appearance.rSm
-                color: appHover.hovered || app.open ? Config.Appearance.hover : "transparent"
-                HoverHandler { id: appHover }
 
+    // ══ tabs ═════════════════════════════════════════════════════════════
+    Segmented {
+        options: [{ label: "Output", value: "output" },
+                  { label: "Input", value: "input" },
+                  { label: "Apps" + (panel.au.streams.length + panel.au.recorders.length > 0
+                                     ? "  " + (panel.au.streams.length + panel.au.recorders.length) : ""), value: "apps" },
+                  { label: "Options", value: "options" }]
+        value: panel.tab
+        onSelected: v => panel.prefs.soundTab = v
+    }
+
+    // ── output ──
+    Column {
+        visible: panel.tab === "output"
+        width: panel.width
+        spacing: 14
+        Caption { text: "Outputs" }
+        SoundDeviceList {
+            width: panel.width
+            output: true
+            selectedName: panel.inspectOut ? panel.inspectOut.name : ""
+            onSelected: node => panel.pickedOut = node.name
+        }
+        SoundInspector {
+            width: panel.width
+            output: true
+            node: panel.inspectOut
+            shown: panel.shown && panel.tab === "output"
+        }
+        Caption { text: "Equalizer" }
+        SoundEq { width: panel.width }
+    }
+
+    // ── input ──
+    Column {
+        visible: panel.tab === "input"
+        width: panel.width
+        spacing: 14
+        Caption { text: "Inputs" }
+        SoundDeviceList {
+            width: panel.width
+            output: false
+            selectedName: panel.inspectIn ? panel.inspectIn.name : ""
+            onSelected: node => panel.pickedIn = node.name
+        }
+        SoundInspector {
+            width: panel.width
+            output: false
+            node: panel.inspectIn
+            shown: panel.shown && panel.tab === "input"
+        }
+
+        Caption { text: "Microphone effects" }
+        // Noise suppression.
+        Card {
+            width: panel.width
+            height: nsCol.implicitHeight + 32
+            border.color: panel.fx.nsStatus === "error" && panel.prefs.nsEnabled ? panel.danger : Config.Appearance.rule
+            Column {
+                id: nsCol
+                x: 16; y: 16; width: parent.width - 32; spacing: 12
+                Item {
+                    width: parent.width
+                    height: 40
+                    Rectangle {
+                        id: nsBadge
+                        width: 40; height: 40; radius: 20
+                        color: panel.prefs.nsEnabled ? Config.Appearance.accent : Config.Appearance.div
+                        MonoIcon {
+                            anchors.centerIn: parent
+                            name: "mic"; size: 19; monochrome: true
+                            inkColor: panel.prefs.nsEnabled ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
+                        }
+                    }
+                    Column {
+                        anchors.left: nsBadge.right
+                        anchors.leftMargin: 12
+                        anchors.right: nsToggle.left
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+                        StyledText { text: "Noise suppression"; font.pixelSize: Config.Appearance.fs(15); font.weight: Font.DemiBold }
+                        StyledText {
+                            width: parent.width
+                            elide: Text.ElideRight
+                            text: !panel.fx.probed ? "Checking…"
+                                : !panel.fx.nsAvailable ? "Needs the RNNoise plugin — install noise-suppression-for-voice"
+                                : !panel.prefs.nsEnabled ? "Off — keyboard, fans and traffic go out with your voice"
+                                : panel.fx.nsStatus === "starting" ? "Starting…"
+                                : panel.fx.nsStatus === "error" ? "Didn't start — see below"
+                                : "On, for " + (panel.au.source ? panel.au.displayName(panel.au.source) : "the microphone")
+                            font.pixelSize: Config.Appearance.fs(12)
+                            color: Config.Appearance.ink3
+                        }
+                    }
+                    Toggle {
+                        id: nsToggle
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        enabled: panel.fx.nsAvailable
+                        checked: panel.prefs.nsEnabled
+                        onToggled: on => panel.fx.setNsEnabled(on)
+                    }
+                }
+                Item {
+                    visible: panel.fx.nsAvailable
+                    width: parent.width
+                    height: 22
+                    StyledText {
+                        id: thLabel
+                        width: 96
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Strictness"
+                        font.pixelSize: Config.Appearance.fs(12)
+                        color: Config.Appearance.ink2
+                    }
+                    FillSlider {
+                        anchors.left: thLabel.right
+                        anchors.right: thValue.left
+                        anchors.rightMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        trough: 12
+                        showRule: true
+                        value: panel.prefs.nsThreshold / 99
+                        onMoved: v => panel.fx.setNsThreshold(v * 99)
+                        onReleased: v => panel.fx.setNsThreshold(v * 99)
+                    }
+                    StyledText {
+                        id: thValue
+                        width: 46
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        horizontalAlignment: Text.AlignRight
+                        text: panel.prefs.nsThreshold + "%"
+                        font.pixelSize: Config.Appearance.fs(12)
+                    }
+                }
+                Line {
+                    width: parent.width
+                    text: panel.fx.nsStatus === "error" && panel.prefs.nsEnabled ? panel.fx.nsError
+                        : "How sure it has to be that it hears a voice before letting sound through. Higher cuts more "
+                          + "noise and, past a point, the start of words. Apps hear a new input, “Microphone (noise "
+                          + "suppressed)”, which becomes the default."
+                    color: panel.fx.nsStatus === "error" && panel.prefs.nsEnabled ? panel.danger : Config.Appearance.ink3
+                }
+                NetButton {
+                    visible: panel.fx.nsStatus === "error" && panel.prefs.nsEnabled
+                    label: "Try again"
+                    onClicked: panel.fx.retryNs()
+                }
+            }
+        }
+        // Hear yourself.
+        Card {
+            width: panel.width
+            height: lsCol.implicitHeight + 32
+            Column {
+                id: lsCol
+                x: 16; y: 16; width: parent.width - 32; spacing: 10
+                Item {
+                    width: parent.width
+                    height: 40
+                    Rectangle {
+                        id: lsBadge
+                        width: 40; height: 40; radius: 20
+                        color: panel.fx.listening ? Config.Appearance.accent : Config.Appearance.div
+                        MonoIcon {
+                            anchors.centerIn: parent
+                            name: "headphones"; size: 19; monochrome: true
+                            inkColor: panel.fx.listening ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
+                        }
+                    }
+                    Column {
+                        anchors.left: lsBadge.right
+                        anchors.leftMargin: 12
+                        anchors.right: lsToggle.left
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+                        StyledText { text: "Listen to this microphone"; font.pixelSize: Config.Appearance.fs(15); font.weight: Font.DemiBold }
+                        StyledText {
+                            width: parent.width
+                            elide: Text.ElideRight
+                            text: panel.fx.listening
+                                  ? "Playing " + panel.au.displayName(panel.au.sources.find(n => n.name === panel.fx.listenSource)) + " through " + panel.au.displayName(panel.au.sink)
+                                  : "Hear what " + (panel.inspectIn ? panel.au.displayName(panel.inspectIn) : "the microphone") + " picks up, live"
+                            font.pixelSize: Config.Appearance.fs(12)
+                            color: Config.Appearance.ink3
+                        }
+                    }
+                    Toggle {
+                        id: lsToggle
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        enabled: !panel.au.pactlMissing && !!panel.inspectIn
+                        checked: panel.fx.listening
+                        onToggled: on => panel.fx.listen(on, panel.inspectIn)
+                    }
+                }
+                Line {
+                    width: parent.width
+                    text: "Use headphones: through speakers it feeds back. Switches itself off when the shell restarts."
+                }
+            }
+        }
+    }
+
+    // ── apps ──
+    SoundApps {
+        visible: panel.tab === "apps"
+        width: panel.width
+    }
+
+    // ── options ──
+    Column {
+        visible: panel.tab === "options"
+        width: panel.width
+        spacing: 14
+
+        Caption { text: "Volume" }
+        Card {
+            width: panel.width
+            height: opts.implicitHeight + 24
+            Column {
+                id: opts
+                x: 16; y: 12; width: parent.width - 32; spacing: 14
+
+                Item {
+                    width: parent.width
+                    height: 34
+                    Column {
+                        anchors.left: parent.left
+                        anchors.right: stepSeg.left
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        StyledText { text: "Volume key step"; font.pixelSize: Config.Appearance.fs(13) }
+                        StyledText { text: "How far one press of a volume key, or one notch on the bar, moves the level"; width: parent.width; elide: Text.ElideRight; font.pixelSize: Config.Appearance.fs(11.5); color: Config.Appearance.ink3 }
+                    }
+                    Segmented {
+                        id: stepSeg
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        options: [{ label: "1%", value: "1" }, { label: "2%", value: "2" }, { label: "5%", value: "5" }, { label: "10%", value: "10" }]
+                        value: String(panel.prefs.volumeStep)
+                        onSelected: v => panel.prefs.volumeStep = parseInt(v)
+                    }
+                }
                 Column {
-                    id: appCol
-                    x: 12; y: 6
-                    width: parent.width - 24
-                    spacing: 6
+                    id: limitBox
+                    width: parent.width
+                    spacing: 8
+                    readonly property int limit: Math.max(panel.prefs.volumeMax, panel.prefs.volumeBoost ? 150 : 0)
                     Item {
                         width: parent.width
                         height: 34
-                        Rectangle {
-                            id: appBadge
-                            width: 32; height: 32; radius: 16
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: panel.au.nodeMuted(app.s) ? Config.Appearance.div : Config.Appearance.sel
-                            MonoIcon {
-                                anchors.centerIn: parent
-                                name: panel.au.nodeMuted(app.s) ? "volumeX" : Config.Apps.iconFor(panel.au.streamHint(app.s))
-                                size: 16
-                                inkColor: Config.Appearance.ink2
-                                accentColor: Config.Appearance.accent
-                            }
-                            TapHandler { onTapped: panel.au.setNodeMuted(app.s, !panel.au.nodeMuted(app.s)) }
-                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                        }
                         Column {
-                            id: appText
-                            anchors.left: appBadge.right
-                            anchors.leftMargin: 12
-                            width: Math.min(200, parent.width * 0.32)
+                            anchors.left: parent.left
+                            anchors.right: limitValue.left
+                            anchors.rightMargin: 12
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: 1
+                            StyledText { text: "Maximum volume"; font.pixelSize: Config.Appearance.fs(13) }
                             StyledText {
                                 width: parent.width
                                 elide: Text.ElideRight
-                                text: panel.au.streamApp(app.s)
-                                font.pixelSize: Config.Appearance.fs(13)
-                                font.weight: Font.Medium
-                            }
-                            StyledText {
-                                width: parent.width
-                                elide: Text.ElideRight
-                                visible: text !== ""
-                                text: panel.au.streamMedia(app.s)
+                                text: limitBox.limit < 100 ? "A limit, to protect your hearing — nothing goes louder than this"
+                                    : limitBox.limit > 100 ? "Past 100% is software boost: louder, and loud passages distort"
+                                    : "100% — as loud as the device goes without distortion"
                                 font.pixelSize: Config.Appearance.fs(11.5)
                                 color: Config.Appearance.ink3
                             }
                         }
-                        FillSlider {
-                            id: appVol
-                            anchors.left: appText.right
-                            anchors.leftMargin: 12
-                            anchors.right: appPct.left
-                            anchors.rightMargin: 8
-                            anchors.verticalCenter: parent.verticalCenter
-                            trough: 12
-                            showRule: true
-                            fillColor: panel.au.nodeMuted(app.s) ? Config.Appearance.ink3 : Config.Appearance.accent
-                            value: panel.au.nodeVolume(app.s) / panel.au.maxVolume
-                            onMoved: v => panel.au.setNodeVolume(app.s, v * panel.au.maxVolume)
-                            onReleased: v => panel.au.setNodeVolume(app.s, v * panel.au.maxVolume)
-                        }
                         StyledText {
-                            id: appPct
-                            width: 40
-                            anchors.right: outBtn.left
-                            anchors.rightMargin: 8
-                            anchors.verticalCenter: parent.verticalCenter
-                            horizontalAlignment: Text.AlignRight
-                            text: panel.au.nodeMuted(app.s) ? "Muted" : Math.round(panel.au.nodeVolume(app.s) * 100) + "%"
-                            font.pixelSize: Config.Appearance.fs(12)
-                            color: Config.Appearance.ink2
-                        }
-                        // Which output it plays to — only worth a button
-                        // when there is more than one.
-                        NetButton {
-                            id: outBtn
+                            id: limitValue
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: panel.au.sinks.length > 1
-                            width: visible ? implicitWidth : 0
-                            label: {
-                                const n = panel.au.sinks.find(k => k.name === app.sinkName);
-                                const t = n ? panel.au.displayName(n) : "Output";
-                                return (t.length > 18 ? t.slice(0, 17) + "…" : t) + "  ▾";
-                            }
-                            onClicked: panel.openStream = app.open ? null : app.s
+                            text: limitBox.limit + "%"
+                            font.pixelSize: Config.Appearance.fs(13)
+                            font.weight: Font.DemiBold
+                            color: limitBox.limit > 100 ? panel.danger : Config.Appearance.ink
                         }
                     }
-                    // Its outputs, opened in place.
-                    Column {
-                        visible: app.open
+                    FillSlider {
                         width: parent.width
-                        leftPadding: 44
-                        spacing: 2
-                        Repeater {
-                            model: app.open ? panel.au.sinks : []
-                            Rectangle {
-                                id: dest
-                                required property var modelData
-                                readonly property bool current: modelData.name === app.sinkName
-                                width: appCol.width - 44
-                                height: 30
-                                radius: Config.Appearance.rSm
-                                color: dest.current ? Config.Appearance.sel : destHover.hovered ? Config.Appearance.div : "transparent"
-                                MonoIcon {
-                                    id: destIcon
-                                    x: 8
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    name: panel.au.deviceGlyph(dest.modelData)
-                                    size: 14; monochrome: true
-                                    inkColor: Config.Appearance.ink2
-                                }
-                                StyledText {
-                                    anchors.left: destIcon.right
-                                    anchors.leftMargin: 8
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 30
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    elide: Text.ElideRight
-                                    text: panel.au.displayName(dest.modelData)
-                                    font.pixelSize: Config.Appearance.fs(12)
-                                    font.weight: dest.current ? Font.DemiBold : Font.Normal
-                                }
-                                MonoIcon {
-                                    visible: dest.current
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 8
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    name: "check"; size: 14; monochrome: true
-                                    inkColor: Config.Appearance.accent
-                                }
-                                HoverHandler { id: destHover; cursorShape: Qt.PointingHandCursor }
-                                TapHandler {
-                                    onTapped: {
-                                        if (!dest.current) panel.au.moveStream(app.s, dest.modelData);
-                                        panel.openStream = null;
-                                    }
-                                }
-                            }
+                        trough: 12
+                        showRule: true
+                        // 30% to 150%, in steps of 5.
+                        value: (limitBox.limit - 30) / 120
+                        onMoved: v => { panel.prefs.volumeBoost = false; panel.prefs.volumeMax = Math.round((30 + v * 120) / 5) * 5; }
+                        onReleased: v => {
+                            panel.prefs.volumeBoost = false;
+                            panel.prefs.volumeMax = Math.round((30 + v * 120) / 5) * 5;
+                            if (panel.au.volume > panel.au.maxVolume) panel.au.setVolume(panel.au.maxVolume);
+                        }
+                        Rectangle {
+                            x: parent.width * (70 / 120) - 1
+                            y: -3; width: 2; height: parent.height + 6
+                            color: Config.Appearance.ink3
+                            opacity: 0.6
                         }
                     }
                 }
-            }
-        }
-    }
-
-    // Apps listening: worth seeing for its own sake — it is how you find
-    // out what has the microphone open.
-    StyledText {
-        visible: panel.au.recorders.length > 0
-        topPadding: 2
-        text: "Using a microphone"
-        font.pixelSize: Config.Appearance.fs(12)
-        font.weight: Font.DemiBold
-        color: Config.Appearance.ink3
-    }
-    Column {
-        visible: panel.au.recorders.length > 0
-        width: panel.width
-        spacing: 2
-        Repeater {
-            model: panel.au.recorders
-            Item {
-                id: rec
-                required property var modelData
-                width: panel.width
-                height: 40
-                Rectangle {
-                    id: recBadge
-                    x: 12
-                    width: 28; height: 28; radius: 14
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: Qt.rgba(Config.Appearance.accent.r, Config.Appearance.accent.g, Config.Appearance.accent.b, 0.18)
-                    MonoIcon {
-                        anchors.centerIn: parent
-                        name: panel.au.nodeMuted(rec.modelData) ? "micOff" : "mic"
-                        size: 14; monochrome: true
-                        inkColor: Config.Appearance.accent
+                Item {
+                    width: parent.width
+                    height: 34
+                    Column {
+                        anchors.left: parent.left
+                        anchors.right: tickToggle.left
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        StyledText { text: "Sound on volume change"; font.pixelSize: Config.Appearance.fs(13) }
+                        StyledText { text: "A short tick on each press of a volume key, to judge the level by ear"; width: parent.width; elide: Text.ElideRight; font.pixelSize: Config.Appearance.fs(11.5); color: Config.Appearance.ink3 }
                     }
-                }
-                StyledText {
-                    anchors.left: recBadge.right
-                    anchors.leftMargin: 12
-                    anchors.right: recVol.left
-                    anchors.rightMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    elide: Text.ElideRight
-                    text: panel.au.streamApp(rec.modelData)
-                          + (panel.au.streamMedia(rec.modelData) !== "" ? "  ·  " + panel.au.streamMedia(rec.modelData) : "")
-                    font.pixelSize: Config.Appearance.fs(13)
-                }
-                FillSlider {
-                    id: recVol
-                    anchors.right: parent.right
-                    anchors.rightMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(220, panel.width * 0.35)
-                    trough: 12
-                    showRule: true
-                    value: panel.au.nodeVolume(rec.modelData)
-                    onMoved: v => panel.au.setNodeVolume(rec.modelData, v)
-                    onReleased: v => panel.au.setNodeVolume(rec.modelData, v)
-                }
-            }
-        }
-    }
-
-    // ══ options ══════════════════════════════════════════════════════════
-    Caption { text: "Options" }
-    Rectangle {
-        width: panel.width
-        height: opts.implicitHeight + 24
-        radius: Config.Appearance.r
-        color: Config.Appearance.hover
-        border.width: 1
-        border.color: Config.Appearance.rule
-        Column {
-            id: opts
-            x: 16; y: 12; width: parent.width - 32; spacing: 12
-
-            Item {
-                width: parent.width
-                height: 34
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: stepSeg.left
-                    anchors.rightMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    StyledText { text: "Volume key step"; font.pixelSize: Config.Appearance.fs(13) }
-                    StyledText { text: "How far one press of a volume key, or one notch on the bar, moves the level"; width: parent.width; elide: Text.ElideRight; font.pixelSize: Config.Appearance.fs(11.5); color: Config.Appearance.ink3 }
-                }
-                Segmented {
-                    id: stepSeg
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    options: [{ label: "1%", value: "1" }, { label: "2%", value: "2" }, { label: "5%", value: "5" }, { label: "10%", value: "10" }]
-                    value: String(Config.Appearance.volumeStep)
-                    onSelected: v => Config.Appearance.volumeStep = parseInt(v)
-                }
-            }
-            Item {
-                width: parent.width
-                height: 34
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: boostToggle.left
-                    anchors.rightMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    StyledText { text: "Allow above 100%"; font.pixelSize: Config.Appearance.fs(13) }
-                    StyledText { text: "Up to 150%, for a quiet recording or weak speakers — loud sounds will distort"; width: parent.width; elide: Text.ElideRight; font.pixelSize: Config.Appearance.fs(11.5); color: Config.Appearance.ink3 }
-                }
-                Toggle {
-                    id: boostToggle
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    checked: Config.Appearance.volumeBoost
-                    onToggled: on => {
-                        Config.Appearance.volumeBoost = on;
-                        // Coming back down, nothing stays above the new ceiling.
-                        if (!on && panel.au.volume > 1) panel.au.setVolume(1);
+                    Toggle {
+                        id: tickToggle
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: panel.prefs.volumeFeedback
+                        onToggled: on => panel.prefs.volumeFeedback = on
                     }
                 }
             }
-            Item {
-                width: parent.width
-                height: 34
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: tickToggle.left
-                    anchors.rightMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    StyledText { text: "Sound on volume change"; font.pixelSize: Config.Appearance.fs(13) }
-                    StyledText { text: "A short tick on each press of a volume key, to judge the level by ear"; width: parent.width; elide: Text.ElideRight; font.pixelSize: Config.Appearance.fs(11.5); color: Config.Appearance.ink3 }
+        }
+
+        Caption { text: "Devices" }
+        Card {
+            width: panel.width
+            height: devOpts.implicitHeight + 24
+            Column {
+                id: devOpts
+                x: 16; y: 12; width: parent.width - 32; spacing: 14
+                Item {
+                    width: parent.width
+                    height: 34
+                    Column {
+                        anchors.left: parent.left
+                        anchors.right: autoToggle.left
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        StyledText { text: "Switch to new devices"; font.pixelSize: Config.Appearance.fs(13) }
+                        StyledText { text: "Headphones that connect over Bluetooth or USB become the output (or input) in use"; width: parent.width; elide: Text.ElideRight; font.pixelSize: Config.Appearance.fs(11.5); color: Config.Appearance.ink3 }
+                    }
+                    Toggle {
+                        id: autoToggle
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: panel.prefs.soundAutoSwitch
+                        onToggled: on => panel.prefs.soundAutoSwitch = on
+                    }
                 }
-                Toggle {
-                    id: tickToggle
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    checked: Config.Appearance.volumeFeedback
-                    onToggled: on => Config.Appearance.volumeFeedback = on
+                Item {
+                    width: parent.width
+                    height: 34
+                    Column {
+                        anchors.left: parent.left
+                        anchors.right: resetNames.left
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        StyledText { text: "Names and hidden devices"; font.pixelSize: Config.Appearance.fs(13) }
+                        StyledText {
+                            width: parent.width
+                            elide: Text.ElideRight
+                            text: Object.keys(panel.au.nicknames).length + " renamed, " + panel.au.hiddenNames.length + " hidden — set in each device's details"
+                            font.pixelSize: Config.Appearance.fs(11.5)
+                            color: Config.Appearance.ink3
+                        }
+                    }
+                    NetButton {
+                        id: resetNames
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: "Reset all"
+                        active: Object.keys(panel.au.nicknames).length + panel.au.hiddenNames.length > 0
+                        onClicked: { panel.prefs.soundNames = "{}"; panel.prefs.soundHidden = "[]"; }
+                    }
                 }
             }
         }
-    }
 
-    // ══ when it isn't working ════════════════════════════════════════════
-    Caption { text: "Sound not working?" }
-    Rectangle {
-        width: panel.width
-        height: fix.implicitHeight + 24
-        radius: Config.Appearance.r
-        color: Config.Appearance.hover
-        border.width: 1
-        border.color: panel.au.lastError !== "" ? panel.danger : Config.Appearance.rule
-        Column {
-            id: fix
-            x: 16; y: 12; width: parent.width - 32; spacing: 10
-            StyledText {
-                width: parent.width
-                wrapMode: Text.WordWrap
-                text: "A headset stuck in the wrong mode, a device that came back silent, crackling after sleep: restarting "
-                      + "the sound services fixes most of it, at the cost of a second of silence."
-                font.pixelSize: Config.Appearance.fs(12)
-                color: Config.Appearance.ink2
-            }
-            Row {
-                spacing: 8
-                NetButton {
-                    label: panel.au.restarting ? "Restarting…" : "Restart sound"
-                    active: !panel.au.restarting
-                    onClicked: panel.au.restartAudio()
+        Caption { text: "Sound not working?" }
+        Card {
+            width: panel.width
+            height: fix.implicitHeight + 24
+            border.color: panel.au.lastError !== "" ? panel.danger : Config.Appearance.rule
+            Column {
+                id: fix
+                x: 16; y: 12; width: parent.width - 32; spacing: 10
+                Line {
+                    width: parent.width
+                    color: Config.Appearance.ink2
+                    text: "A headset stuck in the wrong mode, a device that came back silent, crackling after sleep: restarting "
+                          + "the sound services fixes most of it, at the cost of a second of silence."
                 }
-                NetButton {
-                    label: "Refresh devices"
-                    onClicked: panel.au.refreshDetails()
+                Row {
+                    spacing: 8
+                    NetButton {
+                        label: panel.au.restarting ? "Restarting…" : "Restart sound"
+                        active: !panel.au.restarting
+                        onClicked: panel.au.restartAudio()
+                    }
+                    NetButton {
+                        label: "Refresh devices"
+                        onClicked: { panel.au.refreshDetails(); panel.fx.reprobe(); }
+                    }
+                    NetButton {
+                        label: "Advanced mixer"
+                        onClicked: Config.Apps.launch(["sh", "-c",
+                            'for m in pavucontrol pwvucontrol pavucontrol-qt; do command -v "$m" >/dev/null 2>&1 && exec "$m"; done; '
+                            + 'notify-send "Sound" "No mixer installed — pavucontrol or pwvucontrol" 2>/dev/null'])
+                    }
                 }
-            }
-            StyledText {
-                visible: panel.au.pactlMissing
-                width: parent.width
-                wrapMode: Text.WordWrap
-                text: "pactl isn't installed, so connectors, card modes and moving an app to another output aren't available. "
-                      + "It comes with pipewire-pulse (or libpulse)."
-                font.pixelSize: Config.Appearance.fs(12)
-                color: Config.Appearance.ink3
-            }
-            StyledText {
-                visible: panel.au.lastError !== ""
-                width: parent.width
-                wrapMode: Text.WordWrap
-                text: panel.au.lastError
-                font.pixelSize: Config.Appearance.fs(12)
-                color: panel.danger
+                Line {
+                    visible: panel.au.pactlMissing
+                    width: parent.width
+                    text: "pactl isn't installed, so connectors, card modes, delays and moving an app to another device "
+                          + "aren't available. It comes with pipewire-pulse (or libpulse)."
+                }
+                Line {
+                    visible: panel.au.lastError !== ""
+                    width: parent.width
+                    text: panel.au.lastError
+                    color: panel.danger
+                }
             }
         }
     }

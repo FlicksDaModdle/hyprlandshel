@@ -179,6 +179,30 @@ Singleton {
             property int volumeStep: 5
             property bool volumeBoost: false
             property bool volumeFeedback: false
+            // The most a level may be set to, in percent: under 100 as a
+            // hearing limit, up to 150 as software boost.
+            property int volumeMax: 100
+            // Settings → Sound's own bookkeeping: devices hidden from its
+            // lists and names given to them (JSON), and switching to a
+            // Bluetooth or USB device when it connects.
+            property string soundHidden: "[]"
+            property string soundNames: "{}"
+            property bool soundAutoSwitch: false
+            property string soundTab: "output"
+            // The equalizer (services/AudioFx.qml): on or off, ten band
+            // gains in dB, a preamp, the preset they came from, and the
+            // real output it passes the sound on to.
+            property bool eqEnabled: false
+            property string eqGains: "0,0,0,0,0,0,0,0,0,0"
+            property real eqPreamp: 0
+            property string eqPreset: "Flat"
+            property string eqTarget: ""
+            // Microphone noise suppression: on or off, how sure it must be
+            // that it is hearing a voice before letting sound through, and
+            // the real microphone it listens to.
+            property bool nsEnabled: false
+            property int nsThreshold: 50
+            property string nsTarget: ""
             property bool clock24: true
             property bool showTray: true
             property bool trayOpen: false
@@ -469,6 +493,19 @@ Singleton {
     property alias volumeStep: prefs.volumeStep
     property alias volumeBoost: prefs.volumeBoost
     property alias volumeFeedback: prefs.volumeFeedback
+    property alias volumeMax: prefs.volumeMax
+    property alias soundHidden: prefs.soundHidden
+    property alias soundNames: prefs.soundNames
+    property alias soundAutoSwitch: prefs.soundAutoSwitch
+    property alias soundTab: prefs.soundTab
+    property alias eqEnabled: prefs.eqEnabled
+    property alias eqGains: prefs.eqGains
+    property alias eqPreamp: prefs.eqPreamp
+    property alias eqPreset: prefs.eqPreset
+    property alias eqTarget: prefs.eqTarget
+    property alias nsEnabled: prefs.nsEnabled
+    property alias nsThreshold: prefs.nsThreshold
+    property alias nsTarget: prefs.nsTarget
     property alias dockPinned: prefs.dockPinned
 
     // ── input devices ─────────────────────────────────────────────────────

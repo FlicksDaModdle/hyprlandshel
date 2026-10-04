@@ -273,7 +273,9 @@ Variants {
             // Nothing to search while the launcher is shut, and building it anyway
             // means instantiating a delegate per installed application at startup.
             if (!visible) return [];
-            const apps = DesktopEntries.applications.values.filter(e => e && !e.noDisplay);
+            // The task manager's own entry is left out: the "Task Manager"
+            // command below opens the same thing, installed or not.
+            const apps = DesktopEntries.applications.values.filter(e => e && !e.noDisplay && e.id !== "hyprshell-tasks");
             const pool = apps.map(e => ({
                 kind: "desktop", entry: e, label: e.name || "",
                 icon: "", appIcon: Config.Apps.themeIcon(e.icon),
@@ -421,6 +423,7 @@ Variants {
             case "overview":  Config.UiState.toggleOverview(); return;   // keep it open
             case "settings":  Config.UiState.openSettings(); return;
             case "displays":  Config.UiState.openSettings("Display"); return;
+            case "tasks":     Config.Apps.launchTasks(); break;
             case "sound":     Config.UiState.openSettings("Sound"); return;
             case "network":   Config.UiState.openSettings("Network"); return;
             case "bluetooth": Config.UiState.openSettings("Bluetooth"); return;

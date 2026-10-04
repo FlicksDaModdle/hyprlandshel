@@ -68,6 +68,8 @@ Singleton {
         "openTerminal":        arg => Config.Apps.launchTerm(
                                    arg ? ["--working-directory", arg] : []),
         "openMusic":           () => Config.Apps.launchTerm(["-e", "ncmpcpp"]),
+        // The task manager (tasks/). An argument is the view to open on.
+        "openTasks":           arg => Config.Apps.launchTasks(arg),
 
         // Appearance
         "toggleTheme":         () => Config.Appearance.toggleTheme(),
