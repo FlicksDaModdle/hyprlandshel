@@ -379,8 +379,8 @@ Variants {
                 return;
             }
             if (item.kind === "command") runCommand(item.key);
-            else if (item.kind === "desktop" && item.entry) item.entry.execute();
-            else if (item.exec && item.exec.length > 0) Quickshell.execDetached(item.exec);
+            else if (item.kind === "desktop" && item.entry) Config.Apps.launchEntry(item.entry);
+            else if (item.exec && item.exec.length > 0) Config.Apps.launch(item.exec);
             close();
         }
 
@@ -449,7 +449,7 @@ Variants {
                 } else if (query.trim().length > 0) {
                     // No match: treat what was typed as a command line, which is
                     // what the mockup's empty state promises.
-                    Quickshell.execDetached(["sh", "-c", query.trim()]);
+                    Config.Apps.launch(["sh", "-c", query.trim()]);
                     close();
                 }
             } else if (pageItems.length > 0) {
@@ -1053,7 +1053,7 @@ Variants {
                                     HoverHandler { id: recentHover; cursorShape: Qt.PointingHandCursor }
                                     TapHandler {
                                         onTapped: {
-                                            Quickshell.execDetached(
+                                            Config.Apps.launch(
                                                 ["xdg-open", recentItem.modelData.path]);
                                             launcher.close();
                                         }

@@ -614,12 +614,26 @@ which holds two themes at once:
   is asked, so the pointer is sharp at any scale. Used for Hyprland's own
   pointer and by every app that asks Hyprland for a cursor by name
   (cursor-shape-v1: most native Wayland apps).
-- **XCursor** — rendered at 24–96 px, for anything that loads a cursor theme
-  itself: XWayland apps (Steam, games), GTK 3.
+- **XCursor** — rendered at the size you chose, the sizes a scaled display
+  multiplies it to, and the usual 24–96 px, for anything that loads a cursor
+  theme itself: XWayland apps (MuseScore, Steam, games), GTK 3, and Qt for
+  any shape it draws on its own. Exact sizes matter: an app asking for 28
+  from a theme that only has 24 and 32 gets 32.
 
 It is put in use with `hyprctl setcursor`, GTK's `cursor-theme` setting, and
 `~/.icons/default/index.theme` — the fallback for apps that name no theme —
 which is only written when it is not there already or is the shell's own.
+
+**One size everywhere.** An app that draws its own pointer takes its size
+from `XCURSOR_SIZE`, not from Hyprland, so if the two disagree the pointer
+changes size as it moves between parts of a window — the app's own cursor
+in one place, Hyprland's in the next. The theme and size are therefore
+also written to `~/.local/state/hyprshell/session.env` and pushed to:
+Hyprland's environment (`hl.env`, and `hyprland.lua` reads the file at
+login), systemd and D-Bus activation, XWayland's resources (`xrdb`),
+KDE's `kcminputrc` for Qt apps on KDE's platform theme, and every app
+started from the launcher, dock or app menu. Apps already running keep the
+size they started with; restart one after changing it.
 
 ## Screen corners
 

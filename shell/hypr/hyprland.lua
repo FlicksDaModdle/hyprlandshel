@@ -109,8 +109,29 @@ end
 ---- ENVIRONMENT VARIABLES ----
 -------------------------------
 
-hl.env("XCURSOR_SIZE", "24")
-hl.env("HYPRCURSOR_SIZE", "24")
+-- The pointer's theme and size, as Settings → Appearance last set them
+-- (the shell writes them to session.env). Every app that draws its own
+-- pointer — XWayland apps, and Qt for shapes it doesn't hand to Hyprland —
+-- reads XCURSOR_SIZE, so when this said 24 and the shell's setting said
+-- something else, the pointer changed size as it moved across a window.
+-- Read here so the very first pointer of the session is already right.
+do
+    local cursor = { XCURSOR_THEME = nil, XCURSOR_SIZE = "24",
+                     HYPRCURSOR_THEME = nil, HYPRCURSOR_SIZE = "24" }
+    local state = os.getenv("XDG_STATE_HOME")
+    if not state or state == "" then state = (os.getenv("HOME") or "") .. "/.local/state" end
+    local f = io.open(state .. "/hyprshell/session.env", "r")
+    if f then
+        local text = f:read("*a") or ""
+        f:close()
+        for k, v in text:gmatch('([%u_]+)="?([^"%s]+)"?') do
+            if cursor[k] ~= nil or k:match("CURSOR_THEME$") then cursor[k] = v end
+        end
+    end
+    for k, v in pairs(cursor) do
+        if v then hl.env(k, v) end
+    end
+end
 -- Qt apps pick up the Wayland backend and drop their own window decorations,
 -- so client windows match the shell's own chrome instead of doubling it.
 hl.env("QT_QPA_PLATFORM", "wayland;xcb")
@@ -195,7 +216,10 @@ hl.exec_cmd('test -n "$WAYLAND_DISPLAY" && { ' .. launch .. "; }")
 -- backend is skipped.
 local shareEnv = "dbus-update-activation-environment --systemd "
     .. "WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE "
-    .. "HYPRLAND_INSTANCE_SIGNATURE XDG_SESSION_DESKTOP 2>/dev/null"
+    .. "HYPRLAND_INSTANCE_SIGNATURE XDG_SESSION_DESKTOP "
+    -- and the pointer, so apps started at login (xdg autostart, portals)
+    -- draw it at the same size as everything else.
+    .. "XCURSOR_THEME XCURSOR_SIZE HYPRCURSOR_THEME HYPRCURSOR_SIZE 2>/dev/null"
 
 hl.on("hyprland.start", function()
     -- Before the shell, and before anything that might ask the bus for a

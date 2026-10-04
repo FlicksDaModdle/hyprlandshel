@@ -255,7 +255,38 @@ Singleton {
         return cmd;
     }
 
-    function launchFiles(arg) { Quickshell.execDetached(filesCommand(arg)); }
+    // Starting an app from the shell — launcher, dock, app menu.
+    //
+    // The shell's environment is the one Hyprland gave it at login, and
+    // nothing can change it afterwards, so anything set since — the
+    // pointer's theme and size above all (Services.Cursor) — would not
+    // reach an app started from here. session.env holds the current
+    // values; each launch reads it on the way out. A missing file is
+    // simply skipped.
+    readonly property string sessionEnvRunner:
+        'f="${XDG_STATE_HOME:-$HOME/.local/state}/hyprshell/session.env"; '
+        + '[ -r "$f" ] && . "$f"; '
+        + 'if [ -n "$HYPRSHELL_CWD" ]; then cd "$HYPRSHELL_CWD" 2>/dev/null; unset HYPRSHELL_CWD; fi; '
+        + 'exec "$@"'
+
+    function launch(argv, workingDirectory) {
+        if (!argv || argv.length === 0) return;
+        const cmd = ["sh", "-c", sessionEnvRunner, "launch"];
+        if (workingDirectory) cmd.splice(0, 0, "env", "HYPRSHELL_CWD=" + workingDirectory);
+        for (const a of argv) cmd.push(String(a));
+        Quickshell.execDetached(cmd);
+    }
+
+    // A desktop entry, through the same door. Its parsed command where the
+    // entry has one; its own execute() otherwise.
+    function launchEntry(entry) {
+        if (!entry) return;
+        const c = entry.command ? Array.from(entry.command) : [];
+        if (c.length > 0) launch(c, entry.workingDirectory || "");
+        else entry.execute();
+    }
+
+    function launchFiles(arg) { launch(filesCommand(arg)); }
 
     // The Files app, run as one file dialog: it prints what was chosen on
     // stdout, one path per line, and exits 1 if it was cancelled.
@@ -310,7 +341,7 @@ Singleton {
         return cmd;
     }
 
-    function launchTerm(args) { Quickshell.execDetached(termCommand(args)); }
+    function launchTerm(args) { launch(termCommand(args)); }
 
     readonly property var defaultPinned: [
         { key: "appTerm",     label: "Terminal", icon: "terminal",   exec: [],           match: /^(hyprshell-term|kitty|foot|alacritty|wezterm|org\.wezfurlong\.wezterm)$/i },

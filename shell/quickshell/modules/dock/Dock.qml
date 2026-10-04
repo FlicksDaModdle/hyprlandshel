@@ -578,7 +578,7 @@ Variants {
                 Services.Commands.run(Config.Apps.shellTiles[app.key]);
                 return;
             }
-            if (app.exec && app.exec.length > 0) Quickshell.execDetached(Config.Apps.commandFor(app));
+            if (app.exec && app.exec.length > 0) Config.Apps.launch(Config.Apps.commandFor(app));
         }
 
         // The menu is drawn on the panel-layer surface, which covers the whole
@@ -602,7 +602,7 @@ Variants {
                 Services.Commands.run(Config.Apps.shellTiles[app.key]);
                 return;
             }
-            if (app.exec && app.exec.length > 0) Quickshell.execDetached(Config.Apps.commandFor(app));
+            if (app.exec && app.exec.length > 0) Config.Apps.launch(Config.Apps.commandFor(app));
         }
 
         // ── pill ──────────────────────────────────────────────────────────
