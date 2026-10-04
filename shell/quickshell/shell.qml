@@ -59,6 +59,9 @@ ShellRoot {
     // back at login only if something starts AudioFx.
     readonly property bool audioFxStarted: Services.AudioFx.probed || true
 
+    // And Battery saver, which has no surface and acts on its own.
+    readonly property bool powerSaverStarted: Services.PowerSaver.active || true
+
     // Shell shortcuts, registered with the compositor over
     // hyprland-global-shortcuts-v1, so anything on the session can dispatch
     // `global, hyprshell:<name>` to the shell.
@@ -114,7 +117,14 @@ ShellRoot {
     Overview {}
     Osd {}
     Settings {}
-    IconMaker {}
+    // Built when opened and let go when closed — it is a whole editor,
+    // and most sessions never open it. Kept while a drawing is unsaved, so
+    // closing the window (or locking the screen) doesn't throw work away.
+    LazyLoader {
+        id: iconMaker
+        active: Config.UiState.iconMakerOpen || (!!iconMaker.item && iconMaker.item.dirty)
+        IconMaker {}
+    }
     Lock {}
     AltTab {}
     // Last: over everything, the screen's own corners rounded off.

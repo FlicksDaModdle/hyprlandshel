@@ -180,9 +180,12 @@ Singleton {
     function watch() { root.watchers++; }
     function unwatch() { root.watchers = Math.max(0, root.watchers - 1); }
 
+    // Twice a second while the panel with its seek bar is open; otherwise
+    // only the bar's thin progress line wants it, and that moves about a
+    // pixel every couple of seconds.
     Timer {
         running: root.available && (root.playing || root.watchers > 0)
-        interval: 500
+        interval: root.watchers > 0 ? 500 : 2000
         repeat: true
         triggeredOnStart: true
         onTriggered: root.refreshPosition()

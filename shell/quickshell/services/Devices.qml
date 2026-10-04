@@ -111,8 +111,9 @@ Singleton {
         }
     }
     // A touchpad that arrives later — a Bluetooth one — is picked up here.
+    // Once a minute: it is a new device, not something to catch instantly.
     Timer {
-        interval: 20000
+        interval: 60000
         running: root.applied
         repeat: true
         onTriggered: scanPointers.running = true
@@ -414,8 +415,9 @@ Singleton {
         }
     }
 
+    // A safety net only: outputs appearing and going are events (below).
     Timer {
-        interval: 30000
+        interval: 120000
         repeat: true
         running: root.applied && prefs.displays !== ""
         onTriggered: root.checkSoon()

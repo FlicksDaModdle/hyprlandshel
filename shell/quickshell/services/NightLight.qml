@@ -39,8 +39,10 @@ Singleton {
         }
     }
 
+    // Only to notice hyprsunset or wlsunset started or stopped from
+    // outside; anything done here re-checks at once (action's onExited).
     Timer {
-        interval: 6000
+        interval: 30000
         running: true
         repeat: true
         triggeredOnStart: true

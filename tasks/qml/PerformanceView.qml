@@ -72,7 +72,7 @@ Item {
                     minScale: modelData.minScale || 1
                     points: 30
                     grid: false
-                    animate: Tasks.settings.smooth
+                    animate: Tasks.smoothNow
                     lineWidth: 1.2
                     color: Appearance.accent
                     color2: Appearance.ink3
@@ -160,7 +160,7 @@ Item {
                             series: "cpu/" + index
                             maxValue: 100
                             points: Tasks.points
-                            animate: Tasks.settings.smooth
+                            animate: Tasks.smoothNow
                             grid: false
                             lineWidth: 1.1
                             color: Appearance.accent

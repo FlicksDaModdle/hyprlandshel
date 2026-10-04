@@ -69,6 +69,13 @@ QtObject {
 
     // How many samples a graph shows: its span over the update interval,
     // within the history Monitor keeps.
+    // On battery and discharging. Smooth graphs redraw at the display's
+    // own rate for as long as they are on screen — 120 times a second on a
+    // fast panel — so on battery they step once a sample instead.
+    readonly property bool onBattery: !!Monitor.battery && Monitor.battery.present === true
+                                      && Monitor.battery.status === "Discharging"
+    readonly property bool smoothNow: root.settings.smooth && !root.onBattery
+
     readonly property int points: Math.max(10, Math.min(Monitor.historySize, Math.round(root.settings.span * 1000 / Math.max(250, root.settings.interval))))
 
     // ── formatting ────────────────────────────────────────────────────────

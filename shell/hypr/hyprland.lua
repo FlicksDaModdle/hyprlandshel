@@ -367,6 +367,18 @@ hl.layer_rule({
 
 ---------------
 ---- INPUT ----
+-- Power. Only draw a frame when something changed (the default, said
+-- out loud), and let a fullscreen game hand its frames straight to the
+-- display rather than through the compositor ("auto": games that ask for
+-- it, not every fullscreen window, since some setups flicker with it on
+-- for everything). The shell gets out of the way of fullscreen windows for
+-- this. pcall: an option a Hyprland release renamed costs this block, not
+-- the rest of the config.
+pcall(hl.config, {
+    misc   = { vfr = true },
+    render = { direct_scanout = 2 },
+})
+
 ---------------
 -- Settings → Input writes these live with `hyprctl keyword`; the values
 -- here are what the session starts from.

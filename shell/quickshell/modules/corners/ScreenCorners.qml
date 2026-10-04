@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import "../../config" as Config
+import "../../services" as Services
 
 // Black, rounded corners over the screen's own (Settings → Appearance →
 // Screen corners), for a panel with square corners in a rounded bezel.
@@ -21,7 +22,14 @@ Variants {
         required property var modelData
 
         readonly property bool builtIn: /^(eDP|LVDS|DSI)/.test(String(modelData ? modelData.name : ""))
-        readonly property bool wanted: !!modelData && Config.Appearance.screenCorners
+        // Gone while a window is fullscreen on this screen. The game or
+        // video fills the panel's own corners anyway, and with nothing of
+        // the shell's over it Hyprland can hand its frames straight to the
+        // display (direct scanout) instead of compositing every one — less
+        // GPU work for as long as the video plays, and less latency.
+        readonly property bool fullscreenHere: !!modelData
+            && Services.Compositor.clientsShownOn(modelData.name).some(c => c.fullscreenMode === 2)
+        readonly property bool wanted: !!modelData && !fullscreenHere && Config.Appearance.screenCorners
                                        && Config.Appearance.screenCornerRadius > 0
                                        && (Config.Appearance.screenCornerScreens === "all" || screenScope.builtIn)
 

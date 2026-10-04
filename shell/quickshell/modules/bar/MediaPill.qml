@@ -103,6 +103,14 @@ Item {
 
             // Four bars rising and falling out of step with each other.
             // The second one is the accent, as in the mockup.
+            Timer {
+                id: eqClock
+                property int tick: 0
+                interval: 83
+                repeat: true
+                running: root.playing && root.visible && Config.Appearance.animated
+                onTriggered: tick++
+            }
             Row {
                 id: eq
                 anchors.verticalCenter: parent.verticalCenter
@@ -137,31 +145,29 @@ Item {
 
                         // The mockup's `eq` keyframes: 0.28 → 1 → 0.28,
                         // a little slower for each bar along, each
-                        // starting a beat after the one before it. The
-                        // stagger is outside the loop because a delay in
-                        // CSS happens once, before the first pass.
-                        SequentialAnimation {
-                            running: root.playing && root.visible
-                                     && Config.Appearance.animated
-                            onStopped: cell.level = 0.28
-
-                            PauseAnimation {
-                                duration: Config.Appearance.anim(cell.index * 90)
+                        // starting a beat after the one before.
+                        //
+                        // Stepped by a timer at twelve frames a second
+                        // rather than animated: a running animation drives
+                        // the bar's window at the display's own rate — 120
+                        // redraws a second on a fast panel — for as long
+                        // as music plays, which is most of the day for
+                        // some people. Bars this size read as moving just
+                        // the same at twelve. Still while Battery saver
+                        // calms the shell.
+                        readonly property real period: 2 * (380 + cell.index * 65)
+                        readonly property real offset: cell.index * 90
+                        Connections {
+                            target: eqClock
+                            function onTickChanged() {
+                                const t = eqClock.tick * eqClock.interval - cell.offset;
+                                const phase = (((t % cell.period) + cell.period) % cell.period) / cell.period;
+                                cell.level = 0.28 + 0.72 * (0.5 - 0.5 * Math.cos(phase * 2 * Math.PI));
                             }
-
-                            SequentialAnimation {
-                                loops: Animation.Infinite
-                                NumberAnimation {
-                                    target: cell; property: "level"; to: 1
-                                    duration: Config.Appearance.anim(380 + cell.index * 65)
-                                    easing.type: Easing.InOutSine
-                                }
-                                NumberAnimation {
-                                    target: cell; property: "level"; to: 0.28
-                                    duration: Config.Appearance.anim(380 + cell.index * 65)
-                                    easing.type: Easing.InOutSine
-                                }
-                            }
+                        }
+                        Connections {
+                            target: eqClock
+                            function onRunningChanged() { if (!eqClock.running) cell.level = 0.28; }
                         }
                     }
                 }

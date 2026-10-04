@@ -68,7 +68,7 @@ Card {
         maxValue: tile.maxValue
         minScale: tile.minScale
         grid: false
-        animate: Tasks.settings.smooth
+        animate: Tasks.smoothNow
         points: Tasks.points
         lineWidth: 1.3
         color: Appearance.accent

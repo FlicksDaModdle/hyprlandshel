@@ -596,6 +596,33 @@ PipeWire's own configuration, and quitting the shell takes them away.
 Connectors, modes, delays and moving apps use `pactl` (pipewire-pulse); the
 live meters need Quickshell 0.3.
 
+## Battery and performance
+
+**Battery saver** (Settings → Power) switches off the desktop's costliest
+effects on battery, below a charge you choose, always, or never: Hyprland's
+blur, window shadows and see-through inactive windows by default, and
+optionally window animations, the shell's own motion, and the power profile
+(set to Power saver and put back afterwards). Hyprland's own values are
+read before anything changes and are what it gets back.
+
+Beyond that, the shell only works when someone can see the result:
+
+- the network follows NetworkManager's events (`nmcli monitor`) instead
+  of polling, and only scans for Wi-Fi while a Wi-Fi list is on screen —
+  it used to trigger a scan twice a minute all day
+- machine facts, brightness, night light and display checks are read
+  rarely, or only while the page showing them is open
+- Settings and the Icon Maker are built when opened and let go after,
+  and Settings' rows stop recomputing while it is closed
+- the bar's music bars step at 12 frames a second instead of redrawing
+  the bar at the display's refresh rate for as long as music plays
+- the screen corners step aside for fullscreen windows, and fullscreen
+  games can be scanned straight out to the display
+- the topographic wallpaper holds still on battery and under Battery saver
+
+The task manager's smooth graphs step once a sample on battery, and it
+samples less often while in the background.
+
 ## Passwords for administrator actions
 
 The shell is the session's polkit agent: when something asks to act as

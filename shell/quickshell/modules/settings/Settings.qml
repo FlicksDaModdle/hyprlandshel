@@ -39,6 +39,18 @@ Scope {
     id: root
 
     readonly property bool tiled: Config.Appearance.settingsTiled
+
+    // True for a minute after Settings closes: its windows keep what they
+    // built, for an instant reopen, then let it go.
+    property bool warm: false
+    Connections {
+        target: Config.UiState
+        function onSettingsOpenChanged() {
+            if (Config.UiState.settingsOpen) { coolDown.stop(); root.warm = true; }
+            else coolDown.restart();
+        }
+    }
+    Timer { id: coolDown; interval: 60000; onTriggered: root.warm = false }
     readonly property string pane: Config.UiState.settingsPane
 
     // Settings → Wallpaper, with a wallpaper per screen: which screen the
@@ -168,7 +180,7 @@ Scope {
             WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
             // Only the window itself takes input; the rest of the desktop stays live.
-            mask: Region { item: frame }
+            mask: Region { item: win.frame }
 
             // The host contract SettingsFrame reads.
             readonly property bool tiled: false
@@ -182,6 +194,7 @@ Scope {
                 const mons = Services.Compositor.monitors || [];
                 const here = modelData ? modelData.name : "";
 
+                const frame = win.frame;
                 if (mons.length > 1 && frame) {
                     // Ordered left to right by their real position in the layout.
                     const ordered = mons.slice().sort((a, b) => a.x - b.x);
@@ -217,10 +230,17 @@ Scope {
                 - (Config.Appearance.dockLeft ? 0 : Config.Appearance.dockPanelBreadth + Config.Appearance.dockEdgeGap)
 
 
-            SettingsFrame {
-                id: frame
-                host: win
-                app: root
+            // Built while shown, and for a minute after, so closing and
+            // reopening is instant but a Settings window nobody has opened
+            // costs nothing. There is one per screen, plus the tiled one.
+            readonly property Item frame: frameLoader.item
+            Loader {
+                id: frameLoader
+                active: win.visible || root.warm
+                sourceComponent: SettingsFrame {
+                    host: win
+                    app: root
+                }
             }
         }
     }
@@ -259,9 +279,12 @@ Scope {
         // No anchors.fill: the frame already takes its size and position
         // from the host, and setting both would have QML resolve a conflict
         // it warns about rather than one of them simply winning.
-        SettingsFrame {
-            host: toplevel
-            app: root
+        Loader {
+            active: toplevel.visible || root.warm
+            sourceComponent: SettingsFrame {
+                host: toplevel
+                app: root
+            }
         }
     }
 
@@ -287,7 +310,12 @@ Scope {
         { n: "Move window there",    k: "super shift 1 – 0" }
     ]
 
+    // Nothing while Settings is closed. These rows read live state — the
+    // battery, every network in range, the volume — and rebuilt themselves
+    // in every Settings window on each change of it whether or not anyone
+    // could see them.
     readonly property var rows: {
+        if (!Config.UiState.settingsOpen) return [];
         const A = Config.Appearance;
         switch (pane) {
 
@@ -1265,6 +1293,32 @@ Scope {
                                       { label: "Performance", value: "performance" }],
                             value: root.powerProfileName,
                             set: v => root.setPowerProfile(v) });
+
+            // Battery saver: what to switch off, and when.
+            const PS = Services.PowerSaver;
+            rows.push({ type: "header", n: "Battery saver", s: PS.summary });
+            rows.push({ n: "Turn on", s: "When the desktop's costliest effects switch off",
+                        type: "seg",
+                        options: [{ label: "On battery", value: "battery" }, { label: "Low battery", value: "low" },
+                                  { label: "Always", value: "always" }, { label: "Never", value: "never" }],
+                        value: A.saverMode, set: v => A.saverMode = v });
+            if (A.saverMode === "low")
+                rows.push({ n: "Below", s: "The charge at which it comes on", type: "slider",
+                            min: 10, max: 80, unit: "%", value: A.saverBelow, set: v => A.saverBelow = v });
+            if (A.saverMode !== "never") {
+                rows.push({ n: "Blur", s: "Off: the costliest thing Hyprland draws, redone whenever anything behind it changes",
+                            type: "toggle", value: A.saverBlur, set: v => A.saverBlur = v });
+                rows.push({ n: "Window shadows", s: "Off",
+                            type: "toggle", value: A.saverShadows, set: v => A.saverShadows = v });
+                rows.push({ n: "See-through inactive windows", s: "Off: drawn solid, so nothing behind them has to be blurred",
+                            type: "toggle", value: A.saverOpacity, set: v => A.saverOpacity = v });
+                rows.push({ n: "Window animations", s: "Off: windows open, close and move instantly",
+                            type: "toggle", value: A.saverAnimations, set: v => A.saverAnimations = v });
+                rows.push({ n: "Shell motion", s: "Off: menus and panels appear at once, the music bars stand still",
+                            type: "toggle", value: A.saverStill, set: v => A.saverStill = v });
+                rows.push({ n: "Power saver profile", s: "Switch the power profile too, and back afterwards",
+                            type: "toggle", value: A.saverProfile, set: v => A.saverProfile = v });
+            }
 
             rows.push({ type: "header", n: "Battery",
                         s: hasBattery ? "" : "No battery — this is a desktop" });

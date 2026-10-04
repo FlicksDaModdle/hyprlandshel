@@ -50,7 +50,7 @@ Item {
             maxValue: big.maxValue
             minScale: big.minScale
             points: Tasks.points
-            animate: Tasks.settings.smooth
+            animate: Tasks.smoothNow
             color: Appearance.accent
             color2: Appearance.ink2
             gridColor: Appearance.rule

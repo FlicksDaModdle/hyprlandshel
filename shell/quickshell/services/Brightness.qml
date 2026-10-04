@@ -93,8 +93,14 @@ Singleton {
         onTriggered: query.running = true
     }
 
+    // Something else changing the backlight (hypridle dimming, a key bound
+    // straight to brightnessctl) is only worth catching quickly while a
+    // slider is on screen; otherwise once a minute, and once more the
+    // moment one appears.
+    readonly property bool shown: Config.UiState.controlCenterOpen || Config.UiState.settingsOpen
+    onShownChanged: if (shown && available) query.running = true
     Timer {
-        interval: 10000
+        interval: root.shown ? 10000 : 60000
         running: root.available
         repeat: true
         onTriggered: query.running = true

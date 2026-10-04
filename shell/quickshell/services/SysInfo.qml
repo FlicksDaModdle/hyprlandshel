@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../config" as Config
 
 // Machine facts for Settings → About, the control center header and the
 // power menu's footer. One shell poll gathers the lot rather than spawning a
@@ -88,9 +89,15 @@ Singleton {
         }
     }
 
+    // Read once at start, then again only while something showing the
+    // changing parts (uptime, memory, disk) is open: the read starts a
+    // dozen small processes, and doing that every fifteen seconds all day
+    // for pages nobody was looking at was most of what this shell cost
+    // when idle.
+    Component.onCompleted: poll.running = true
     Timer {
         interval: 15000
-        running: true
+        running: Config.UiState.settingsOpen || Config.UiState.powerOpen || Config.UiState.controlCenterOpen
         repeat: true
         triggeredOnStart: true
         onTriggered: poll.running = true

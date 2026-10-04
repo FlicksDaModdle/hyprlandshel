@@ -324,7 +324,7 @@ Item {
                                     minScale: 10
                                     points: Tasks.points
                                     grid: false
-                                    animate: Tasks.settings.smooth
+                                    animate: Tasks.smoothNow
                                     lineWidth: 1.2
                                     color: Appearance.accent
                                 }

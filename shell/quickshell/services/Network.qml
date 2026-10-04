@@ -129,22 +129,55 @@ Singleton {
         if (text) root.lastError = text;
     }
 
-    // ── polling ───────────────────────────────────────────────────────────
+    // ── keeping up ────────────────────────────────────────────────────────
+    // NetworkManager says when something changes (`nmcli monitor`): a
+    // connection coming up or dropping, the radio switched, a device
+    // appearing. Each one re-reads, a beat later so a burst of them is one
+    // read. Between events there is nothing to poll for, so the timer below
+    // only catches what has no event — signal strength drifting — and does
+    // that slowly unless a Wi-Fi list is actually on screen.
+    //
+    // It used to read everything every five seconds, and the network list
+    // with `nmcli device wifi list`, which has NetworkManager *scan* if the
+    // last scan is more than thirty seconds old: the Wi-Fi card was
+    // scanning twice a minute for as long as the shell ran, and three
+    // processes were started every five seconds to find out nothing had
+    // changed.
+    readonly property bool listWanted:
+        (Config.UiState.settingsOpen && Config.UiState.settingsPane === "Network")
+        || (Config.UiState.controlCenterOpen && Config.UiState.ccExpanded === "Wi-Fi")
+    onListWantedChanged: if (listWanted) { refresh(); scan(); }
+
     Timer {
-        interval: 5000
+        interval: root.listWanted ? 5000 : (root.monitorLive ? 60000 : 15000)
         running: true
         repeat: true
         triggeredOnStart: true
         onTriggered: root.refresh()
     }
-    // Saved profiles change rarely; between actions they are read less often.
+    // Saved profiles change rarely, and every change made here re-reads them.
     Timer {
-        interval: 30000
+        interval: root.listWanted ? 30000 : 300000
         running: true
         repeat: true
         triggeredOnStart: true
         onTriggered: savedProc.running = true
     }
+
+    property bool monitorLive: false
+    property int monitorEpoch: 0
+    Process {
+        id: monitorProc
+        running: root.available && root.monitorEpoch >= 0
+        command: ["sh", "-c", "export LC_ALL=C; command -v stdbuf >/dev/null 2>&1 && exec stdbuf -oL nmcli monitor; exec nmcli monitor"]
+        stdout: SplitParser {
+            onRead: line => { root.monitorLive = true; changed.restart(); }
+        }
+        onExited: { root.monitorLive = false; remonitor.restart(); }
+    }
+    Timer { id: changed; interval: 400; onTriggered: root.refresh() }
+    // NetworkManager restarted, or was not up yet: try again, unhurried.
+    Timer { id: remonitor; interval: 10000; onTriggered: if (!monitorProc.running) root.monitorEpoch++ }
 
     function refresh() {
         radioProc.running = true;
@@ -239,7 +272,9 @@ Singleton {
     // live name, signal and security come from.
     Process {
         id: apProc
-        command: ["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY,FREQ,RATE", "device", "wifi", "list"]
+        // --rescan no: what NetworkManager already knows. Scanning is
+        // scan()'s job, done when a list is put on screen.
+        command: ["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY,FREQ,RATE", "device", "wifi", "list", "--rescan", "no"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const by = {};

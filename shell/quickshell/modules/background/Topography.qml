@@ -66,7 +66,7 @@ ShaderEffect {
         return Services.Compositor.clientsShownOn(topo.screenName)
             .some(c => !c.floating || c.fullscreenMode > 0);
     }
-    readonly property bool drifting: prefs.topoDrift && topo.visible && !topo.covered && !UPower.onBattery
+    readonly property bool drifting: prefs.topoDrift && topo.visible && !topo.covered && !UPower.onBattery && !Services.PowerSaver.active
 
     // Fifteen frames a second: the terrain moves slowly enough that more
     // would only cost more.

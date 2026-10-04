@@ -179,6 +179,17 @@ Singleton {
             property int volumeStep: 5
             property bool volumeBoost: false
             property bool volumeFeedback: false
+            // Battery saver (services/PowerSaver.qml): when it comes on —
+            // "battery", "low" (below saverBelow %), "always", "never" —
+            // and what it turns off.
+            property string saverMode: "battery"
+            property int saverBelow: 30
+            property bool saverBlur: true
+            property bool saverShadows: true
+            property bool saverOpacity: true
+            property bool saverAnimations: false
+            property bool saverStill: false
+            property bool saverProfile: false
             // The most a level may be set to, in percent: under 100 as a
             // hearing limit, up to 150 as software boost.
             property int volumeMax: 100
@@ -493,6 +504,14 @@ Singleton {
     property alias volumeStep: prefs.volumeStep
     property alias volumeBoost: prefs.volumeBoost
     property alias volumeFeedback: prefs.volumeFeedback
+    property alias saverMode: prefs.saverMode
+    property alias saverBelow: prefs.saverBelow
+    property alias saverBlur: prefs.saverBlur
+    property alias saverShadows: prefs.saverShadows
+    property alias saverOpacity: prefs.saverOpacity
+    property alias saverAnimations: prefs.saverAnimations
+    property alias saverStill: prefs.saverStill
+    property alias saverProfile: prefs.saverProfile
     property alias volumeMax: prefs.volumeMax
     property alias soundHidden: prefs.soundHidden
     property alias soundNames: prefs.soundNames
@@ -851,12 +870,17 @@ Singleton {
     // the lot and 0% is genuinely instant rather than merely brisk. Qt
     // treats a zero-length NumberAnimation as "jump there", which is what
     // is wanted.
+    // Set by Battery saver (services/PowerSaver.qml) while it is asking
+    // the shell to keep still: transitions become instant and the
+    // decorative motion stops. Not a saved setting — it follows the power.
+    property bool saverCalm: false
+
     function anim(ms) {
-        if (animSpeed <= 0) return 0;
+        if (animSpeed <= 0 || saverCalm) return 0;
         return Math.max(1, Math.round(ms * 100 / Math.max(10, animSpeed)));
     }
     // A few places want to know without asking for a number.
-    readonly property bool animated: animSpeed > 0
+    readonly property bool animated: animSpeed > 0 && !saverCalm
 
     // ── per-output scale ──────────────────────────────────────────────────
     // A laptop panel run at a compositor scale that makes applications
