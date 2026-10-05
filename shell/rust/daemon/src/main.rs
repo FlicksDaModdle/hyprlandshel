@@ -18,6 +18,8 @@
 //!                 `pipewire -c` process
 //!   clipboard     history of what was copied, from the compositor's
 //!                 clipboard-manager protocol (wlr-data-control)
+//!   file search   the names under $HOME for the launcher, kept current
+//!                 by inotify, matched with nucleo
 //!
 //! It speaks to the shell as hyprshell-agent does: commands as JSON lines on
 //! stdin, events as JSON lines on stdout (services/Daemon.qml). It exits
@@ -28,6 +30,7 @@
 mod agent;
 mod backlight;
 mod clip;
+mod fsearch;
 mod fx;
 mod net;
 mod nightlight;
@@ -46,6 +49,7 @@ fn main() {
     let agent = agent::start();
     let fx = fx::start();
     let clip = clip::start();
+    let fsearch = fsearch::start();
     #[cfg(feature = "pulse")]
     let pulse: Option<Sender<Value>> = Some(pulse::start());
     #[cfg(not(feature = "pulse"))]
@@ -54,7 +58,7 @@ fn main() {
     out::emit(json!({
         "ev": "ready",
         "version": env!("CARGO_PKG_VERSION"),
-        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "pulse": pulse.is_some() }
+        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "pulse": pulse.is_some() }
     }));
 
     let stdin = std::io::stdin();
@@ -70,6 +74,8 @@ fn main() {
             Some(&nightlight)
         } else if name.starts_with("bt-") || name.starts_with("nm-") {
             Some(&agent)
+        } else if name.starts_with("fs-") {
+            Some(&fsearch)
         } else if name.starts_with("clip-") {
             Some(&clip)
         } else if name.starts_with("fx-") {

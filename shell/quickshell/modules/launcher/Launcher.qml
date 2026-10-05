@@ -305,7 +305,13 @@ Variants {
                 if (score >= 0) scored.push({ item: item, score: score });
             }
             scored.sort((a, b) => (a.score - b.score) || a.item.label.localeCompare(b.item.label));
-            return scored.map(s => s.item);
+            // Then files under home whose names match, after every app and
+            // command: something installed is likelier what was meant.
+            const files = Config.UiState.appPickerFor !== "" ? [] : Services.FileSearch.results.map(r => ({
+                kind: "file", file: r, label: r.name, icon: Services.FileSearch.icon(r), appIcon: "",
+                cat: Services.FileSearch.where(r)
+            }));
+            return scored.map(s => s.item).concat(files);
         }
 
         readonly property string listTitle: Config.UiState.appPickerFor !== ""
@@ -381,6 +387,7 @@ Variants {
                 return;
             }
             if (item.kind === "command") runCommand(item.key);
+            else if (item.kind === "file") Services.FileSearch.open(item.file);
             else if (item.kind === "desktop" && item.entry) Config.Apps.launchEntry(item.entry);
             else if (item.exec && item.exec.length > 0) Config.Apps.launch(item.exec);
             close();
@@ -491,9 +498,9 @@ Variants {
             searchInput.forceActiveFocus();
         }
 
-        onVisibleChanged: if (visible) resetInput()
+        onVisibleChanged: if (visible) { resetInput(); Services.FileSearch.warm(); }
 
-        onQueryChanged: selectedIndex = 0;
+        onQueryChanged: { selectedIndex = 0; Services.FileSearch.search(query); }
         onShowAllChanged: selectedIndex = 0;
 
         // Click-away catcher — no scrim, so the desktop behind stays sharp.

@@ -24,6 +24,8 @@ libpulse-binding = { version = "2", optional = true }
 # speaks. Pure Rust (no libwayland needed to build).
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+# File search in the launcher: the fuzzy matcher Helix uses.
+nucleo-matcher = "0.3"
 
 # Only for examples/mock_nm.rs, a stand-in NetworkManager for testing.
 [dev-dependencies]

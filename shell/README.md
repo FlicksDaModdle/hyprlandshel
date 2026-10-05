@@ -601,6 +601,20 @@ Connectors, modes, delays and moving apps use `pactl` (pipewire-pulse); the
 live meters need Quickshell 0.3.1 (0.3.0's can crash the shell, so they
 stay off there).
 
+## Files in the launcher
+
+Typing in the launcher also finds files and folders in your home folder by
+name — fuzzy, so "taxret" finds `tax-return-2025.pdf` — listed after the
+apps and commands; Enter opens a file in its default app and a folder in
+Files. A space or a `/` matches across the whole path ("taxes 2025").
+Hidden folders, `node_modules`, Python environments and folders marked as
+caches (Cargo's `target/`) are left out.
+
+`hyprshell-daemon` indexes when the launcher opens (about a second for
+150,000 files), keeps up with changes through inotify, and lets the index
+go after ten minutes without a search, so it holds no memory while unused.
+Settings → Launcher → "Search files" turns it off.
+
 ## Clipboard history
 
 **Super+Shift+V** (or "Clipboard history" in the launcher) lists what was
@@ -656,7 +670,8 @@ PulseAudio's own protocol (cards, modes, connectors, which app plays where),
 and whether a night-light program runs, from `/proc`. It is also the
 Bluetooth backend and pairing agent and the Wi-Fi password agent, in place
 of the separate `hyprshell-agent`, runs the equalizer and noise
-suppression, and keeps the clipboard history. It talks to the shell in JSON lines,
+suppression, keeps the clipboard history and finds files for the
+launcher. It talks to the shell in JSON lines,
 uses about 8 MB, and each part falls
 back on its own: without the daemon, or where a part can't reach what it
 reads, the shell goes back to `nmcli`, `brightnessctl`, `pactl` and `pgrep`.

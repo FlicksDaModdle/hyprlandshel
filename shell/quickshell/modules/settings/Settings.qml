@@ -681,6 +681,15 @@ Scope {
                      + Math.max(2, Math.round(3 * A.launcherHeightStretch))
                      + " rows, " + A.launcherIconSize + " px icons" },
 
+            { type: "header", n: "Search", s: "" },
+            { n: "Search files",
+              s: !Services.FileSearch.available
+                  ? "Needs hyprshell-daemon — install.sh builds it when cargo is installed"
+                  : "Files and folders in your home folder, by name, after the apps and "
+                    + "commands. Hidden folders, node_modules and caches are left out. "
+                    + "Indexed when the launcher opens; let go after ten idle minutes.",
+              type: "toggle", value: A.launcherFiles, set: v => A.launcherFiles = v },
+
             { type: "header", n: "Text", s: "" },
             { n: "Entry names", s: "App and command names in the grid and results",
               type: "slider", min: 8, max: 26, unit: "px", value: A.launcherTitleSize,

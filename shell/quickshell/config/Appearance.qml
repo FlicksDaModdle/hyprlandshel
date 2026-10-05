@@ -333,6 +333,8 @@ Singleton {
             // The launcher grows out of the dock's pill rather than
             // appearing above it.
             property bool launcherMorph: true
+            // Files under home in the launcher's results (hyprshell-daemon).
+            property bool launcherFiles: true
             property int launcherTitleSize: 13        // launcher entry names
             property int launcherMetaSize: 11         // launcher categories and hints
 
@@ -584,6 +586,7 @@ Singleton {
     property alias dockGapPx: prefs.dockGap
     property alias iconSmoothing: prefs.iconSmoothing
     property alias launcherMorph: prefs.launcherMorph
+    property alias launcherFiles: prefs.launcherFiles
     property alias launcherTitleSize: prefs.launcherTitleSize
     property alias launcherMetaSize: prefs.launcherMetaSize
 
