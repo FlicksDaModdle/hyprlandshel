@@ -8,9 +8,11 @@ import "." as Services
 // Sound effects the shell runs itself, for Settings → Sound:
 //
 //   equalizer           ten bands and a preamp over everything played. A
-//                       PipeWire filter-chain, run as its own `pipewire -c`
-//                       process: a virtual output that becomes the default
-//                       and passes the sound on to the real device.
+//                       PipeWire filter-chain: a virtual output that
+//                       becomes the default and passes the sound on to the
+//                       real device. Loaded into hyprshell-daemon when it
+//                       is running, or else run as a `pipewire -c` process
+//                       of its own.
 //   noise suppression   RNNoise over the microphone, the same way round: a
 //                       virtual input, fed from the real one, that becomes
 //                       the default. Needs the RNNoise LADSPA plugin
@@ -31,13 +33,21 @@ Singleton {
     readonly property var prefs: Config.Appearance
     readonly property string dir: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/hyprshell"
 
+    // Where the filter-chains run: inside hyprshell-daemon when it has the
+    // part (one PipeWire client in a process already running), else each
+    // as a `pipewire -c` process. Neither while the daemon is starting, so
+    // the two never both make the same device.
+    readonly property bool fxDaemon: Services.Daemon.running && Services.Daemon.modules.fx === true
+    readonly property bool fxProcess: Services.Daemon.missing
+        || (Services.Daemon.running && Services.Daemon.modules.fx !== true)
+
     // ── what this machine has ────────────────────────────────────────────
     property bool probed: false
     property bool hasPipewire: false
     property bool hasPwCli: false
     property string rnnoisePlugin: ""
-    readonly property bool eqAvailable: hasPipewire
-    readonly property bool nsAvailable: hasPipewire && rnnoisePlugin !== ""
+    readonly property bool eqAvailable: hasPipewire || fxDaemon
+    readonly property bool nsAvailable: (hasPipewire || fxDaemon) && rnnoisePlugin !== ""
 
     Process {
         id: probe
@@ -92,7 +102,7 @@ Singleton {
     function bandLabel(f) { return f >= 1000 ? (f / 1000) + "k" : String(f); }
     function num(v) { return Number(v).toFixed(2); }
 
-    function eqConf() {
+    function eqArgs() {
         const nodes = ['{ type = builtin name = preamp label = bq_highshelf control = { "Freq" = 0.0 "Q" = 1.0 "Gain" = '
                        + num(prefs.eqPreamp) + ' } }'];
         const links = [];
@@ -107,15 +117,7 @@ Singleton {
             prev = name;
         }
         const target = prefs.eqTarget !== "" ? '\n                target.object = "' + prefs.eqTarget.replace(/"/g, "") + '"' : "";
-        return 'context.properties = { log.level = 0 }\n'
-            + 'context.spa-libs = {\n    audio.convert.* = audioconvert/libspa-audioconvert\n    support.* = support/libspa-support\n}\n'
-            + 'context.modules = [\n'
-            + '    { name = libpipewire-module-rt args = { nice.level = -11 } flags = [ ifexists nofail ] }\n'
-            + '    { name = libpipewire-module-protocol-native }\n'
-            + '    { name = libpipewire-module-client-node }\n'
-            + '    { name = libpipewire-module-adapter }\n'
-            + '    { name = libpipewire-module-filter-chain\n'
-            + '        args = {\n'
+        return '{\n'
             + '            node.description = "Equalizer"\n'
             + '            media.name = "Equalizer"\n'
             + '            filter.graph = {\n'
@@ -134,7 +136,20 @@ Singleton {
             + '                node.passive = true\n'
             + '                application.name = "hyprshell-eq"' + target + '\n'
             + '            }\n'
-            + '        }\n'
+            + '        }';
+    }
+    // A whole PipeWire configuration around a filter-chain, for running
+    // it as a process of its own.
+    function conf(args) {
+        return 'context.properties = { log.level = 0 }\n'
+            + 'context.spa-libs = {\n    audio.convert.* = audioconvert/libspa-audioconvert\n    support.* = support/libspa-support\n}\n'
+            + 'context.modules = [\n'
+            + '    { name = libpipewire-module-rt args = { nice.level = -11 } flags = [ ifexists nofail ] }\n'
+            + '    { name = libpipewire-module-protocol-native }\n'
+            + '    { name = libpipewire-module-client-node }\n'
+            + '    { name = libpipewire-module-adapter }\n'
+            + '    { name = libpipewire-module-filter-chain\n'
+            + '        args = ' + args + '\n'
             + '    }\n'
             + ']\n';
     }
@@ -143,12 +158,13 @@ Singleton {
     // life is the equalizer's.
     Process {
         id: eqProc
-        running: root.eqWanted && root.eqEpoch >= 0
+        running: root.eqWanted && root.fxProcess && root.eqEpoch >= 0
         command: ["sh", "-c", 'mkdir -p "$(dirname "$1")" && printf "%s" "$2" > "$1" && exec pipewire -c "$1"',
-                  "sh", root.dir + "/equalizer.conf", root.eqConf()]
+                  "sh", root.dir + "/equalizer.conf", root.conf(root.eqArgs())]
         stderr: StdioCollector { id: eqErr }
         onStarted: { root.eqStatus = "starting"; root.eqError = ""; eqWatchdog.restart(); }
         onExited: code => {
+            if (root.fxDaemon) return; // handed over to the daemon
             if (root.prefs.eqEnabled && !root.eqStopping) {
                 root.eqStatus = "error";
                 root.eqError = eqErr.text.split("\n").filter(l => l.trim() !== "").pop() || ("pipewire exited " + code);
@@ -165,7 +181,63 @@ Singleton {
         onTriggered: if (root.eqStatus === "starting" && !root.au.eqSink) {
             root.eqStatus = "error";
             root.eqError = "PipeWire started the equalizer but no device appeared. "
-                         + (eqErr.text.split("\n").filter(l => l.trim() !== "").pop() || "Nothing was logged.");
+                         + (root.fxDaemon ? "" : (eqErr.text.split("\n").filter(l => l.trim() !== "").pop() || "Nothing was logged."));
+        }
+    }
+
+    // The same, in the daemon: loaded when wanted, unloaded when not.
+    readonly property bool eqInDaemon: eqWanted && fxDaemon
+    onEqInDaemonChanged: daemonSync("eq")
+    onEqEpochChanged: if (eqInDaemon) daemonSync("eq")
+    onNsInDaemonChanged: daemonSync("ns")
+    onNsEpochChanged: if (nsInDaemon) daemonSync("ns")
+
+    function daemonSync(key) {
+        const eq = key === "eq";
+        if (eq ? eqInDaemon : nsInDaemon) {
+            if (eq) { eqStatus = "starting"; eqError = ""; eqWatchdog.restart(); }
+            else { nsStatus = "starting"; nsError = ""; nsWatchdog.restart(); }
+            Services.Daemon.send({ cmd: "fx-load", key: key, args: eq ? eqArgs() : nsArgs() });
+        } else if (fxDaemon) {
+            Services.Daemon.send({ cmd: "fx-unload", key: key });
+        }
+    }
+
+    // PipeWire restarting takes the chains with it; brought back a few
+    // times, then said.
+    property int fxRetries: 0
+    Timer {
+        id: fxRetry
+        interval: 3000
+        onTriggered: {
+            root.fxRetries++;
+            if (root.eqInDaemon && root.eqStatus === "error") root.daemonSync("eq");
+            if (root.nsInDaemon && root.nsStatus === "error") root.daemonSync("ns");
+        }
+    }
+    onEqStatusChanged: if (eqStatus === "on") fxRetries = 0
+    onNsStatusChanged: if (nsStatus === "on") fxRetries = 0
+
+    Connections {
+        target: Services.Daemon
+        function onEvent(ev) {
+            if (ev.ev === "exited") {
+                // Its chains went with it; loaded again when it is back.
+                if (root.eqWanted && root.eqStatus !== "error") root.eqStatus = "starting";
+                if (root.nsWanted && root.nsStatus !== "error") root.nsStatus = "starting";
+                return;
+            }
+            if (ev.ev !== "fx" || ev.loaded) return;
+            const eq = ev.key === "eq";
+            const wanted = eq ? root.eqInDaemon : root.nsInDaemon;
+            if (wanted && ev.error) {
+                if (eq) { root.eqStatus = "error"; root.eqError = ev.error; }
+                else { root.nsStatus = "error"; root.nsError = ev.error; }
+                if (root.fxRetries < 3) fxRetry.restart();
+            } else if (!wanted) {
+                if (eq) { root.eqStatus = "off"; root.eqStopping = false; }
+                else { root.nsStatus = "off"; root.nsStopping = false; }
+            }
         }
     }
     // The configuration is only read at start, so the command changing
@@ -242,18 +314,11 @@ Singleton {
     property bool nsStopping: false
     property int nsEpoch: 0
     readonly property bool nsWanted: prefs.nsEnabled && nsAvailable && au.pipewireUp
+    readonly property bool nsInDaemon: nsWanted && fxDaemon
 
-    function nsConf() {
+    function nsArgs() {
         const target = prefs.nsTarget !== "" ? '\n                target.object = "' + prefs.nsTarget.replace(/"/g, "") + '"' : "";
-        return 'context.properties = { log.level = 0 }\n'
-            + 'context.spa-libs = {\n    audio.convert.* = audioconvert/libspa-audioconvert\n    support.* = support/libspa-support\n}\n'
-            + 'context.modules = [\n'
-            + '    { name = libpipewire-module-rt args = { nice.level = -11 } flags = [ ifexists nofail ] }\n'
-            + '    { name = libpipewire-module-protocol-native }\n'
-            + '    { name = libpipewire-module-client-node }\n'
-            + '    { name = libpipewire-module-adapter }\n'
-            + '    { name = libpipewire-module-filter-chain\n'
-            + '        args = {\n'
+        return '{\n'
             + '            node.description = "Noise suppression"\n'
             + '            media.name = "Noise suppression"\n'
             + '            filter.graph = {\n'
@@ -275,19 +340,18 @@ Singleton {
             + '                node.description = "Microphone (noise suppressed)"\n'
             + '                media.class = Audio/Source\n'
             + '            }\n'
-            + '        }\n'
-            + '    }\n'
-            + ']\n';
+            + '        }';
     }
 
     Process {
         id: nsProc
-        running: root.nsWanted && root.nsEpoch >= 0
+        running: root.nsWanted && root.fxProcess && root.nsEpoch >= 0
         command: ["sh", "-c", 'mkdir -p "$(dirname "$1")" && printf "%s" "$2" > "$1" && exec pipewire -c "$1"',
-                  "sh", root.dir + "/noise-suppression.conf", root.nsConf()]
+                  "sh", root.dir + "/noise-suppression.conf", root.conf(root.nsArgs())]
         stderr: StdioCollector { id: nsErr }
         onStarted: { root.nsStatus = "starting"; root.nsError = ""; nsWatchdog.restart(); }
         onExited: code => {
+            if (root.fxDaemon) return;
             if (root.prefs.nsEnabled && !root.nsStopping) {
                 root.nsStatus = "error";
                 root.nsError = nsErr.text.split("\n").filter(l => l.trim() !== "").pop() || ("pipewire exited " + code);

@@ -98,7 +98,7 @@ Singleton {
         stderr: SplitParser { onRead: line => console.log("hyprshell-agent:", line) }
         onStarted: root.helperLaunched = true
         onExited: code => {
-            // Quickshell can report an exit for a process never started.
+            // Only a run that got going counts.
             if (!root.helperLaunched) return;
             root.helperLaunched = false;
             root.helperRunning = false;

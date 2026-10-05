@@ -591,12 +591,15 @@ level, mute and a live meter, and four tabs below:
   has stopped altogether.
 
 The equalizer and noise suppression are PipeWire filter-chains the shell
-runs itself (`services/AudioFx.qml`, `pipewire -c` on a file in
-`~/.cache/hyprshell`): a virtual output or microphone that becomes the
-default and passes the sound on to the real device. Nothing is written into
+runs itself (`services/AudioFx.qml`): a virtual output or microphone that
+becomes the default and passes the sound on to the real device. They are
+loaded into `hyprshell-daemon` (which opens libpipewire when it runs, so
+building it needs no PipeWire headers), or without the daemon each runs as
+`pipewire -c` on a file in `~/.cache/hyprshell`. Nothing is written into
 PipeWire's own configuration, and quitting the shell takes them away.
 Connectors, modes, delays and moving apps use `pactl` (pipewire-pulse); the
-live meters need Quickshell 0.3.
+live meters need Quickshell 0.3.1 (0.3.0's can crash the shell, so they
+stay off there).
 
 ## Battery and performance
 
