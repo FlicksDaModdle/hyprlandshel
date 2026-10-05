@@ -127,7 +127,8 @@ Scope {
         "Notifications": { icon: "bell",      group: "Shell",  note: "Banner behaviour, badge counts and how the center stacks items." },
         "Launcher":      { icon: "search",    group: "Shell",  note: "Size of the start menu, its grid, and its text." },
         "Fonts":         { icon: "font",      group: "Shell",  note: "Every typeface the shell uses, and one scale over all of them." },
-        "Keybinds":      { icon: "keyboard",  group: "Shell",  note: "Hyprland bindings this shell listens for." }
+        "Keybinds":      { icon: "keyboard",  group: "Shell",  note: "Hyprland bindings this shell listens for." },
+        "Clipboard":     { icon: "clipboard", group: "Shell",  note: "What you copied, kept to paste again — Super+Shift+V." }
     })
 
     // System first, then Shell. The device panes are the ones people open
@@ -138,7 +139,7 @@ Scope {
                                    "Hyprland", "About"] },
         { label: "Shell",  items: ["Appearance", "Wallpaper", "Icons", "Fonts",
                                    "App theming", "Bar", "Dock", "Alt+Tab", "Launcher",
-                                   "Notifications", "Keybinds"] }
+                                   "Notifications", "Clipboard", "Keybinds"] }
     ]
 
 
@@ -814,6 +815,25 @@ Scope {
               type: "info", value: A.fs(12) + " px" },
             { n: "Menus and tooltips", s: "Dock tooltips, dropdown options, context menus",
               type: "info", value: A.fs(12) + " px" }
+        ];
+
+        case "Clipboard": return [
+            { n: "Keep clipboard history",
+              s: "Everything copied, newest first, to put back with Super+Shift+V or the "
+                 + "launcher. Kept in memory for this login only; what a password manager "
+                 + "marks as secret is never kept. Turning it off forgets everything.",
+              type: "toggle", value: A.clipboardHistory, set: v => A.clipboardHistory = v },
+            { n: "Entries kept", s: "Older ones drop off the end. Images count too (at most 20 of them).",
+              type: "slider", min: 10, max: 500, unit: "", value: A.clipboardMax,
+              set: v => A.clipboardMax = Math.round(v) },
+            { n: "In the history now",
+              s: !Services.Clipboard.daemonHas
+                  ? "Needs hyprshell-daemon — install.sh builds it when cargo is installed"
+                  : Services.Clipboard.error !== "" ? Services.Clipboard.error
+                  : "Shown with Super+Shift+V",
+              type: "info", value: Services.Clipboard.entries.length },
+            { n: "Forget everything", s: "Empties the history now",
+              type: "action", label: "Clear", set: () => Services.Clipboard.clear() }
         ];
 
         case "Notifications": return [

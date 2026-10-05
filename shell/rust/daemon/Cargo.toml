@@ -2,7 +2,7 @@
 name = "hyprshell-daemon"
 version = "1.0.0"
 edition = "2021"
-description = "System state for Hyprshell from D-Bus, sysfs and PulseAudio, without polling"
+description = "System state for Hyprshell from D-Bus, sysfs, PulseAudio and Wayland, without polling"
 
 [[bin]]
 name = "hyprshell-daemon"
@@ -20,6 +20,10 @@ futures-channel = "0.3"
 serde_json = "1"
 libc = "0.2"
 libpulse-binding = { version = "2", optional = true }
+# Clipboard history: the wlroots data-control protocol, which Hyprland
+# speaks. Pure Rust (no libwayland needed to build).
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 # Only for examples/mock_nm.rs, a stand-in NetworkManager for testing.
 [dev-dependencies]

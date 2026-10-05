@@ -601,6 +601,22 @@ Connectors, modes, delays and moving apps use `pactl` (pipewire-pulse); the
 live meters need Quickshell 0.3.1 (0.3.0's can crash the shell, so they
 stay off there).
 
+## Clipboard history
+
+**Super+Shift+V** (or "Clipboard history" in the launcher) lists what was
+copied, newest first — text and images. Click one, or arrows and Enter, and
+it is on the clipboard again; Delete forgets one, **Clear** forgets all.
+
+`hyprshell-daemon` keeps it, from the compositor's clipboard-manager
+protocol (wlr-data-control), in `$XDG_RUNTIME_DIR` — memory, this login
+only, readable by you alone — so a shell reload keeps it and logging out
+ends it. What a password manager marks as secret
+(`x-kde-passwordManagerHint`, which KeePassXC and others set) is never
+kept. When the program you copied from closes, Wayland's clipboard would go
+empty with it; the newest entry is offered instead, so the paste still
+works. Settings → Clipboard turns it off (which forgets everything) and
+sets how many entries it keeps.
+
 ## Battery and performance
 
 **Battery saver** (Settings → Power) switches off the desktop's costliest
@@ -639,7 +655,8 @@ kernel's change events (set through logind), audio devices through
 PulseAudio's own protocol (cards, modes, connectors, which app plays where),
 and whether a night-light program runs, from `/proc`. It is also the
 Bluetooth backend and pairing agent and the Wi-Fi password agent, in place
-of the separate `hyprshell-agent`. It talks to the shell in JSON lines,
+of the separate `hyprshell-agent`, runs the equalizer and noise
+suppression, and keeps the clipboard history. It talks to the shell in JSON lines,
 uses about 8 MB, and each part falls
 back on its own: without the daemon, or where a part can't reach what it
 reads, the shell goes back to `nmcli`, `brightnessctl`, `pactl` and `pgrep`.

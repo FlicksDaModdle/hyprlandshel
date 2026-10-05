@@ -424,6 +424,7 @@ Variants {
             case "settings":  Config.UiState.openSettings(); return;
             case "displays":  Config.UiState.openSettings("Display"); return;
             case "tasks":     Config.Apps.launchTasks(); break;
+            case "clipboard": Config.UiState.toggleClipboard(); return;
             case "sound":     Config.UiState.openSettings("Sound"); return;
             case "network":   Config.UiState.openSettings("Network"); return;
             case "bluetooth": Config.UiState.openSettings("Bluetooth"); return;

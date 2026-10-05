@@ -26,6 +26,7 @@ Singleton {
     property bool calendarOpen: false
     property bool mediaOpen: false
     property bool powerOpen: false
+    property bool clipboardOpen: false
     // A panel wants to be typed into — the control center's password field,
     // for one. The panel layer takes keyboard focus only while this is set,
     // because a layer surface that holds focus the rest of the time takes it
@@ -108,7 +109,7 @@ Singleton {
     readonly property bool iconPickerOpen: iconPickerFor !== ""
 
     readonly property bool anyPanelOpen: controlCenterOpen || notificationsOpen
-                                         || calendarOpen || mediaOpen || powerOpen || desktopMenuOpen
+                                         || calendarOpen || mediaOpen || powerOpen || clipboardOpen || desktopMenuOpen
                                          || windowMenuOpen || appMenuOpen || iconPickerOpen
 
     function closeAll() {
@@ -122,6 +123,7 @@ Singleton {
         calendarOpen = false;
         mediaOpen = false;
         powerOpen = false;
+        clipboardOpen = false;
         desktopMenuOpen = false;
         windowMenuOpen = false;
         appMenuOpen = false;
@@ -174,6 +176,7 @@ Singleton {
     function toggleCalendar() { toggle("calendar"); }
     function toggleMedia() { toggle("media"); }
     function togglePower() { toggle("power"); }
+    function toggleClipboard() { toggle("clipboard"); }
 
     function toggleWindowMenu(x) {
         const was = windowMenuOpen;

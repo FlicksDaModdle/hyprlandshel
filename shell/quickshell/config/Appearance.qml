@@ -202,6 +202,10 @@ Singleton {
             // The live level meters in Settings → Sound (only offered on a
             // Quickshell whose peak monitor is safe; see Audio.qml).
             property bool soundMeters: true
+            // Clipboard history (services/Clipboard.qml): on or off, and
+            // how many entries it keeps.
+            property bool clipboardHistory: true
+            property int clipboardMax: 100
             property string soundTab: "output"
             // The equalizer (services/AudioFx.qml): on or off, ten band
             // gains in dB, a preamp, the preset they came from, and the
@@ -520,6 +524,8 @@ Singleton {
     property alias soundNames: prefs.soundNames
     property alias soundAutoSwitch: prefs.soundAutoSwitch
     property alias soundMeters: prefs.soundMeters
+    property alias clipboardHistory: prefs.clipboardHistory
+    property alias clipboardMax: prefs.clipboardMax
     property alias soundTab: prefs.soundTab
     property alias eqEnabled: prefs.eqEnabled
     property alias eqGains: prefs.eqGains

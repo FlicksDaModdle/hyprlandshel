@@ -59,6 +59,10 @@ ShellRoot {
     // back at login only if something starts AudioFx.
     readonly property bool audioFxStarted: Services.AudioFx.probed || true
 
+    // And clipboard history, which has to be listening before anything is
+    // copied, not from the first time its panel opens.
+    readonly property bool clipboardStarted: Services.Clipboard.enabled || true
+
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
 
@@ -160,6 +164,7 @@ ShellRoot {
         function toggleNotifications(): void { Services.Commands.run("toggleNotifications"); }
         function toggleCalendar(): void { Services.Commands.run("toggleCalendar"); }
         function togglePower(): void { Services.Commands.run("togglePower"); }
+        function toggleClipboard(): void { Services.Commands.run("toggleClipboard"); }
         function closePanels(): void { Services.Commands.run("closePanels"); }
         function openSettings(pane: string): void { Services.Commands.run("openSettings " + pane); }
         function openFiles(path: string): void { Services.Commands.run("openFiles " + path); }

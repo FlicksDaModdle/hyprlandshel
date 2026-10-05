@@ -161,6 +161,11 @@ var icons = {
         ink: "M9.5 7.5V5H14.5V7.5 M6.5 7.5L7.5 19.5H16.5L17.5 7.5",
         acc: "M4.5 7.5H19.5"
     },
+    // Clipboard history.
+    clipboard: {
+        ink: join(rrect(5, 4.5, 14, 16, 2), "M9 12H15 M9 15.5H13"),
+        acc: rrect(9, 3, 6, 3.5, 1)
+    },
 
     // Added for the file manager: the house its sidebar opens in, the glyph
     // for a video file, and the mark for a bookmarked folder.

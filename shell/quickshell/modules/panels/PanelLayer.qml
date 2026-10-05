@@ -123,6 +123,17 @@ Variants {
             MediaPanel {}
         }
 
+        // Centred on the screen, like a dialog: it is reached from the
+        // keyboard, not from anything on the bar.
+        Entrance {
+            shown: Config.UiState.clipboardOpen
+            x: Math.round((layer.width - width) / 2)
+            y: Math.round(layer.height * 0.22)
+            ClipboardPanel {
+                visible: Config.UiState.clipboardOpen
+            }
+        }
+
         Entrance {
             shown: Config.UiState.powerOpen
             x: layer.panelRight - width

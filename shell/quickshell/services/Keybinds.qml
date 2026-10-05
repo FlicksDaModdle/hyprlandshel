@@ -43,6 +43,7 @@ Singleton {
         // people never want and a few people need every day, and any
         // chord picked for it would be taken from something they do use.
         { key: "osk",         n: "On-screen keyboard",   def: "",                  ipc: "toggleKeyboard" },
+        { key: "clipboard",   n: "Clipboard history",    def: "SUPER + SHIFT + V", ipc: "toggleClipboard" },
         { key: "terminal",    n: "Terminal",             def: "SUPER + Return",    exec: "terminal" },
         { key: "files",       n: "File manager",         def: "SUPER + E",         exec: "files" },
         { key: "browser",     n: "Browser",              def: "SUPER + B",         exec: "browser" },

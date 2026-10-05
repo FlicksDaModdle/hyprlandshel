@@ -65,6 +65,8 @@ Singleton {
         // The on-screen keyboard. A toggle rather than an open, because
         // the thing that summons it is the same thing that dismisses it.
         "toggleKeyboard":      () => Config.UiState.toggleOsk(),
+        // Clipboard history: what was copied, to put back.
+        "toggleClipboard":     () => Config.UiState.toggleClipboard(),
         "openTerminal":        arg => Config.Apps.launchTerm(
                                    arg ? ["--working-directory", arg] : []),
         "openMusic":           () => Config.Apps.launchTerm(["-e", "ncmpcpp"]),
