@@ -228,8 +228,8 @@ need c++           optional "builds hyprshell-agent"     gcc g++ gcc-c++ gcc-c++
 # resvg. Without cargo the shell polls nmcli/brightnessctl/pactl instead,
 # and the cursor builder is the Qt one (which needs qt6-svg).
 need cargo         optional "builds hyprshell-daemon (no polling) and the cursor builder" rust cargo cargo cargo
-if command -v rustup >/dev/null 2>&1 && ! cargo --version >/dev/null 2>&1; then
-    printf '  %s!%s %-14s %s\n' "$YEL" "$RST" "rust toolchain" "rustup has none chosen yet — run: rustup default stable"
+if command -v rustup >/dev/null 2>&1 && ! { cargo --version && rustc --version; } >/dev/null 2>&1; then
+    printf '  %s!%s %-14s %s\n' "$YEL" "$RST" "rust toolchain" "not usable — see the note at the build step below"
 fi
 need brightnessctl optional "brightness slider and keys" brightnessctl brightnessctl brightnessctl brightnessctl
 need grim          optional "screenshots"                grim grim grim grim
@@ -508,13 +508,21 @@ RUST_TARGET="${XDG_CACHE_HOME:-$HOME/.cache}/hyprshell/rust-target"
 # `cargo` on PATH is not the same as a working cargo: with rustup installed
 # but no toolchain chosen yet (how Arch and CachyOS ship it), every cargo
 # command stops with "no default is configured". Ask it, and say the fix.
+# A toolchain whose download was interrupted is the other way it goes
+# wrong: cargo starts, rustc doesn't ("missing manifest in toolchain").
 CARGO_OK=0
-if command -v cargo >/dev/null 2>&1 && cargo --version >/dev/null 2>&1; then
+if command -v cargo >/dev/null 2>&1 && cargo --version >/dev/null 2>&1 && rustc --version >/dev/null 2>&1; then
     CARGO_OK=1
 elif command -v rustup >/dev/null 2>&1; then
-    printf '  %srustup is installed but has no Rust toolchain yet, so the Rust helpers were not built.%s\n' "$YEL" "$RST"
-    printf '  %sRun this once, then install.sh again:%s\n' "$YEL" "$RST"
-    printf '      rustup default stable\n'
+    if rustup default >/dev/null 2>&1 && rustup default 2>/dev/null | grep -qv "no default"; then
+        printf '  %sthe Rust toolchain is installed but broken (an interrupted download?), so the Rust helpers were not built.%s\n' "$YEL" "$RST"
+        printf '  %sReinstall it, then run install.sh again:%s\n' "$YEL" "$RST"
+        printf '      rustup toolchain uninstall stable && rustup toolchain install stable && rustup default stable\n'
+    else
+        printf '  %srustup is installed but has no Rust toolchain yet, so the Rust helpers were not built.%s\n' "$YEL" "$RST"
+        printf '  %sRun this once, then install.sh again:%s\n' "$YEL" "$RST"
+        printf '      rustup default stable\n'
+    fi
 fi
 if [ "$CARGO_OK" = 1 ]; then
     mkdir -p "$RUST_TARGET" "$QS_DIR/bin" 2>/dev/null
