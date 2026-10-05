@@ -228,6 +228,9 @@ need c++           optional "builds hyprshell-agent"     gcc g++ gcc-c++ gcc-c++
 # resvg. Without cargo the shell polls nmcli/brightnessctl/pactl instead,
 # and the cursor builder is the Qt one (which needs qt6-svg).
 need cargo         optional "builds hyprshell-daemon (no polling) and the cursor builder" rust cargo cargo cargo
+if command -v rustup >/dev/null 2>&1 && ! cargo --version >/dev/null 2>&1; then
+    printf '  %s!%s %-14s %s\n' "$YEL" "$RST" "rust toolchain" "rustup has none chosen yet — run: rustup default stable"
+fi
 need brightnessctl optional "brightness slider and keys" brightnessctl brightnessctl brightnessctl brightnessctl
 need grim          optional "screenshots"                grim grim grim grim
 need slurp         optional "screenshot region picker"   slurp slurp slurp slurp
@@ -502,7 +505,18 @@ fi
 # are incremental. The PulseAudio part links libpulse (part of libpulse /
 # pipewire-pulse); without its headers the daemon is built without it.
 RUST_TARGET="${XDG_CACHE_HOME:-$HOME/.cache}/hyprshell/rust-target"
-if command -v cargo >/dev/null 2>&1; then
+# `cargo` on PATH is not the same as a working cargo: with rustup installed
+# but no toolchain chosen yet (how Arch and CachyOS ship it), every cargo
+# command stops with "no default is configured". Ask it, and say the fix.
+CARGO_OK=0
+if command -v cargo >/dev/null 2>&1 && cargo --version >/dev/null 2>&1; then
+    CARGO_OK=1
+elif command -v rustup >/dev/null 2>&1; then
+    printf '  %srustup is installed but has no Rust toolchain yet, so the Rust helpers were not built.%s\n' "$YEL" "$RST"
+    printf '  %sRun this once, then install.sh again:%s\n' "$YEL" "$RST"
+    printf '      rustup default stable\n'
+fi
+if [ "$CARGO_OK" = 1 ]; then
     mkdir -p "$RUST_TARGET" "$QS_DIR/bin" 2>/dev/null
     RUST_LOG="$RUST_TARGET/build.log"
     built_daemon=0
@@ -526,8 +540,11 @@ if command -v cargo >/dev/null 2>&1; then
         [ -x "$OLD/bin/hyprshell-daemon" ] && cp -- "$OLD/bin/hyprshell-daemon" "$QS_DIR/bin/" \
             && printf '  kept the previous hyprshell-daemon\n'
     fi
-else
+elif ! command -v rustup >/dev/null 2>&1; then
     printf '  %snot building hyprshell-daemon: needs cargo (rust) — the shell polls nmcli, brightnessctl and pactl instead%s\n' "$YEL" "$RST"
+fi
+if [ "$CARGO_OK" != 1 ] && [ -x "$OLD/bin/hyprshell-daemon" ] && [ ! -x "$QS_DIR/bin/hyprshell-daemon" ]; then
+    cp -- "$OLD/bin/hyprshell-daemon" "$QS_DIR/bin/" && printf '  kept the previous hyprshell-daemon\n'
 fi
 
 # The task manager (../tasks), built and installed alongside, so Ctrl+Shift+Esc
