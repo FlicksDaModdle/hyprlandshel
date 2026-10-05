@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Pipewire
 import "../config" as Config
+import "." as Services
 
 // PipeWire audio: the default output and input, every device and every
 // application stream, for the bar's volume readout, the control center's
@@ -429,7 +430,29 @@ Singleton {
     property int watchers: 0
     function watch(on) {
         watchers = Math.max(0, watchers + (on ? 1 : -1));
+        if (viaDaemon) Services.Daemon.send({ cmd: "pa-watch", on: watchers > 0 });
         if (on) refreshDetails();
+    }
+
+    // ── hyprshell-daemon ──────────────────────────────────────────────────
+    // When it is running it speaks PulseAudio's protocol itself: snapshots
+    // in pactl's own JSON shapes, pushed as things change while watched, and
+    // the same commands pactl was used for. Nothing below starts pactl then.
+    readonly property bool viaDaemon: Services.Daemon.paLive
+    onViaDaemonChanged: if (viaDaemon) Services.Daemon.send({ cmd: "pa-watch", on: watchers > 0 })
+    Connections {
+        target: Services.Daemon
+        function onEvent(ev) {
+            if (ev.ev === "pa" && ev.available === true) {
+                root.pactlMissing = false;
+                root.parseLists(ev.cards || [], ev.sinks || [], ev.sources || [], ev.sinkInputs || [], ev.sourceOutputs || []);
+            } else if (ev.ev === "pa-done" && ev.ok === false) {
+                const what = { "pa-profile": "change the mode", "pa-port": "change the connector",
+                               "pa-move-input": "move the app", "pa-move-output": "move the app",
+                               "pa-latency": "set the delay" }[ev.op] || "do that";
+                root.lastError = "The sound server couldn't " + what + ".";
+            }
+        }
     }
 
     function details(node) {
@@ -447,7 +470,10 @@ Singleton {
                  canOffset: !!cardPort };
     }
 
-    function refreshDetails() { detailsDebounce.restart(); }
+    function refreshDetails() {
+        if (viaDaemon) { Services.Daemon.send({ cmd: "pa-snapshot" }); return; }
+        detailsDebounce.restart();
+    }
     Timer {
         id: detailsDebounce
         interval: 200
@@ -472,7 +498,7 @@ Singleton {
         id: subscribeProc
         // subscribeEpoch only re-runs the binding: a restart after an exit
         // has to go through it, since assigning `running` would break it.
-        running: root.watchers > 0 && !root.pactlMissing && root.pipewireUp && root.subscribeEpoch >= 0
+        running: root.watchers > 0 && !root.viaDaemon && !root.pactlMissing && root.pipewireUp && root.subscribeEpoch >= 0
         // C locale, because the event lines are translated; line-buffered,
         // or events sit in a pipe buffer until it fills.
         command: ["sh", "-c", "export LC_ALL=C; command -v stdbuf >/dev/null 2>&1 && exec stdbuf -oL pactl subscribe; exec pactl subscribe"]
@@ -520,9 +546,11 @@ Singleton {
         pactlMissing = false;
         const parts = text.split("@@");
         const parse = s => { try { const v = JSON.parse(s.trim() || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
-        const rawCards = parse(parts[0] || ""), rawSinks = parse(parts[1] || ""),
-              rawSources = parse(parts[2] || ""), rawInputs = parse(parts[3] || ""),
-              rawOutputs = parse(parts[4] || "");
+        parseLists(parse(parts[0] || ""), parse(parts[1] || ""), parse(parts[2] || ""),
+                   parse(parts[3] || ""), parse(parts[4] || ""));
+    }
+    // pactl's JSON lists, from pactl or from the daemon.
+    function parseLists(rawCards, rawSinks, rawSources, rawInputs, rawOutputs) {
 
         cards = rawCards.map(c => {
             const p = c.properties || {};
@@ -628,6 +656,17 @@ Singleton {
         actProc.running = true;
     }
     function pactl(args) {
+        if (viaDaemon) {
+            const a = args;
+            const cmd = a[0] === "set-card-profile" ? { cmd: "pa-profile", card: a[1], profile: a[2] }
+                : a[0] === "set-sink-port" ? { cmd: "pa-port", kind: "sink", name: a[1], port: a[2] }
+                : a[0] === "set-source-port" ? { cmd: "pa-port", kind: "source", name: a[1], port: a[2] }
+                : a[0] === "move-sink-input" ? { cmd: "pa-move-input", index: parseInt(a[1]), sink: a[2] }
+                : a[0] === "move-source-output" ? { cmd: "pa-move-output", index: parseInt(a[1]), source: a[2] }
+                : a[0] === "set-port-latency-offset" ? { cmd: "pa-latency", card: a[1], port: a[2], usec: parseInt(a[3]) }
+                : null;
+            if (cmd) { lastError = ""; Services.Daemon.send(cmd); return; }
+        }
         if (pactlMissing) { lastError = "pactl isn't installed (it comes with pipewire-pulse)."; return; }
         lastError = "";
         actQueue = actQueue.concat([["pactl"].concat(args)]);

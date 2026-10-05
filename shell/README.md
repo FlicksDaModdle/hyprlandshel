@@ -623,6 +623,20 @@ Beyond that, the shell only works when someone can see the result:
 The task manager's smooth graphs step once a sample on battery, and it
 samples less often while in the background.
 
+**Fewer processes.** The shell talks to Hyprland over its socket
+(`services/HyprIpc.qml`) instead of starting `hyprctl` on every window event
+and settings change, and reads `/proc` itself for Settings → About.
+
+**hyprshell-daemon** (`rust/daemon`, built by install.sh when `cargo` is
+installed) supplies the rest without polling. It reads NetworkManager over
+D-Bus and is told when anything changes, the backlight from sysfs with the
+kernel's change events (set through logind), audio devices through
+PulseAudio's own protocol (cards, modes, connectors, which app plays where),
+and whether a night-light program runs, from `/proc`. It talks to the shell
+in JSON lines like `hyprshell-agent`, uses about 8 MB, and each part falls
+back on its own: without the daemon, or where a part can't reach what it
+reads, the shell goes back to `nmcli`, `brightnessctl`, `pactl` and `pgrep`.
+
 ## Passwords for administrator actions
 
 The shell is the session's polkit agent: when something asks to act as
@@ -648,9 +662,10 @@ and rebuilds it whenever the accent or the theme changes. Fill (accent,
 white, black), outline and size are settings; **System** goes back to a
 cursor theme of your choosing (Adwaita by default).
 
-`hyprshell-cursors` (`agent/cursors.cpp`, built by install.sh beside the
-agent; needs `qt6-svg`) turns the drawing into `~/.local/share/icons/Hyprshell`,
-which holds two themes at once:
+`hyprshell-cursors` turns the drawing into `~/.local/share/icons/Hyprshell`.
+install.sh builds it from `rust/cursors` (drawn with resvg) when cargo is
+there, and from `agent/cursors.cpp` (needs `qt6-svg`) when it isn't; the
+two produce the same theme. It holds two themes at once:
 
 - **hyprcursor** — the SVGs themselves, which Hyprland draws at whatever size
   is asked, so the pointer is sharp at any scale. Used for Hyprland's own

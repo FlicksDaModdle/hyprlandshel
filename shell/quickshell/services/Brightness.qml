@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "../config" as Config
+import "." as Services
 
 // Backlight via brightnessctl. Machines without a backlight (desktops) just
 // report unavailable, and every consumer — the control center's brightness
@@ -24,6 +25,37 @@ Singleton {
     // Writes are debounced: dragging the slider would otherwise spawn a
     // brightnessctl process per pixel of travel.
     property real pendingValue: -1
+
+    // ── hyprshell-daemon ──────────────────────────────────────────────────
+    // When it is running it reads the backlight from sysfs itself, hears the
+    // kernel announce changes, and sets it through logind — so none of the
+    // brightnessctl reading and writing below runs.
+    readonly property bool viaDaemon: Services.Daemon.backlightLive
+    onViaDaemonChanged: if (viaDaemon) Services.Daemon.send({ cmd: "bl-watch", on: shown })
+    Connections {
+        target: Services.Daemon
+        function onEvent(ev) {
+            if (ev.ev === "backlight" && ev.available === true) {
+                // While a drag is being sent, the daemon's echo of an older
+                // value would pull the slider back under the pointer.
+                if (root.pendingValue >= 0 || daemonFlush.running) return;
+                root.device = ev.device || "";
+                root.maximum = ev.max || 0;
+                root.current = ev.value || 0;
+            } else if (ev.ev === "backlight-error") {
+                root.lastError = ev.message || "";
+            }
+        }
+    }
+    Timer {
+        id: daemonFlush
+        interval: 30
+        onTriggered: {
+            if (root.pendingValue < 0) return;
+            Services.Daemon.send({ cmd: "bl-set", value: Math.max(1, Math.round(root.pendingValue * root.maximum)) });
+            root.pendingValue = -1;
+        }
+    }
 
     Process {
         id: query
@@ -98,10 +130,13 @@ Singleton {
     // slider is on screen; otherwise once a minute, and once more the
     // moment one appears.
     readonly property bool shown: Config.UiState.controlCenterOpen || Config.UiState.settingsOpen
-    onShownChanged: if (shown && available) query.running = true
+    onShownChanged: {
+        if (viaDaemon) Services.Daemon.send({ cmd: "bl-watch", on: shown });
+        else if (shown && available) query.running = true;
+    }
     Timer {
         interval: root.shown ? 10000 : 60000
-        running: root.available
+        running: root.available && !root.viaDaemon
         repeat: true
         onTriggered: query.running = true
     }
@@ -114,7 +149,8 @@ Singleton {
         // Update optimistically so the slider tracks the pointer.
         current = Math.round(clamped * maximum);
         pendingValue = clamped;
-        flush.restart();
+        if (viaDaemon) daemonFlush.restart();
+        else flush.restart();
     }
 
     function step(delta) {

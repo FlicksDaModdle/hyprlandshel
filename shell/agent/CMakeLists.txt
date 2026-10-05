@@ -7,7 +7,8 @@ project(hyprshell-agent VERSION 1.0 LANGUAGES CXX)
 #                      agent. QtCore and QtDBus only, both in qt6-base.
 #   hyprshell-cursors  builds the accent-coloured cursor theme. Needs QtSvg
 #                      (qt6-svg, which Quickshell itself depends on); skipped
-#                      when it is not there.
+#                      when it is not there. install.sh replaces it with the
+#                      Rust one (../rust/cursors) when cargo is installed.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)

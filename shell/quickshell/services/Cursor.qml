@@ -8,8 +8,9 @@ import "CursorShapes.js" as Shapes
 
 // The pointer, in the shell's accent colour.
 //
-// CursorShapes.js draws the set as SVG; hyprshell-cursors (shell/agent,
-// built by install.sh) turns it into a theme in ~/.local/share/icons/
+// CursorShapes.js draws the set as SVG; hyprshell-cursors (shell/rust/
+// cursors with resvg, or shell/agent's Qt one without cargo — both built by
+// install.sh, same output) turns it into a theme in ~/.local/share/icons/
 // Hyprshell — hyprcursor for Hyprland and the apps that ask it for a cursor
 // by name, XCursor for those that load one themselves (XWayland, GTK 3) —
 // and then it is put in use:

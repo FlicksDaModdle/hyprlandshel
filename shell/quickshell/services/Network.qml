@@ -146,11 +146,33 @@ Singleton {
     readonly property bool listWanted:
         (Config.UiState.settingsOpen && Config.UiState.settingsPane === "Network")
         || (Config.UiState.controlCenterOpen && Config.UiState.ccExpanded === "Wi-Fi")
-    onListWantedChanged: if (listWanted) { refresh(); scan(); }
+    onListWantedChanged: {
+        if (viaDaemon) Services.Daemon.send({ cmd: "net-watch", on: listWanted });
+        if (listWanted) { refresh(); scan(); }
+    }
+
+    // ── hyprshell-daemon ──────────────────────────────────────────────────
+    // When it is running and reaching NetworkManager, it pushes everything
+    // below as it changes (from NetworkManager's own D-Bus signals), and
+    // none of the nmcli reading runs. Actions — joining, forgetting,
+    // profiles — still go through nmcli either way.
+    readonly property bool viaDaemon: Services.Daemon.netLive
+    onViaDaemonChanged: if (viaDaemon) Services.Daemon.send({ cmd: "net-watch", on: listWanted })
+    Connections {
+        target: Services.Daemon
+        function onEvent(ev) {
+            if (ev.ev !== "net" || ev.available !== true) return;
+            root.available = true;
+            root.applyRadio(!!ev.wifiEnabled);
+            if (root.applyActive(ev.active || []) && ev.wifi) root.applyDetails(ev.wifi);
+            if (root.wifiEnabled) root.applyAps(ev.aps || [], !!ev.full);
+            if (ev.saved) root.applySaved(ev.saved);
+        }
+    }
 
     Timer {
         interval: root.listWanted ? 5000 : (root.monitorLive ? 60000 : 15000)
-        running: true
+        running: !root.viaDaemon
         repeat: true
         triggeredOnStart: true
         onTriggered: root.refresh()
@@ -158,7 +180,7 @@ Singleton {
     // Saved profiles change rarely, and every change made here re-reads them.
     Timer {
         interval: root.listWanted ? 30000 : 300000
-        running: true
+        running: !root.viaDaemon
         repeat: true
         triggeredOnStart: true
         onTriggered: savedProc.running = true
@@ -168,7 +190,7 @@ Singleton {
     property int monitorEpoch: 0
     Process {
         id: monitorProc
-        running: root.available && root.monitorEpoch >= 0
+        running: root.available && !root.viaDaemon && root.monitorEpoch >= 0
         command: ["sh", "-c", "export LC_ALL=C; command -v stdbuf >/dev/null 2>&1 && exec stdbuf -oL nmcli monitor; exec nmcli monitor"]
         stdout: SplitParser {
             onRead: line => { root.monitorLive = true; changed.restart(); }
@@ -180,6 +202,7 @@ Singleton {
     Timer { id: remonitor; interval: 10000; onTriggered: if (!monitorProc.running) root.monitorEpoch++ }
 
     function refresh() {
+        if (viaDaemon) { Services.Daemon.send({ cmd: "net-refresh" }); return; }
         radioProc.running = true;
         activeProc.running = true;
     }
@@ -203,9 +226,8 @@ Singleton {
         command: ["nmcli", "-t", "radio", "wifi"]
         stdout: StdioCollector {
             onStreamFinished: {
-                root.wifiEnabled = text.trim() === "enabled";
+                root.applyRadio(text.trim() === "enabled");
                 if (root.wifiEnabled) apProc.running = true;
-                else { root.networks = []; root.ssid = ""; root.signalStrength = 0; }
             }
         }
         onExited: code => root.available = code === 0
@@ -216,10 +238,33 @@ Singleton {
         command: ["nmcli", "-t", "-f", "TYPE,STATE,UUID,DEVICE,NAME", "connection", "show", "--active"]
         stdout: StdioCollector {
             onStreamFinished: {
-                let wifi = false, activating = false, vpn = false, vpnLabel = "", dev = "", uuid = "";
+                const list = [];
                 for (const line of text.trim().split("\n")) {
                     if (!line) continue;
                     const f = root.splitFields(line);
+                    list.push({ type: f[0] || "", state: f[1] || "", uuid: f[2] || "",
+                                device: f[3] || "", name: f.slice(4).join(":") });
+                }
+                const wifiDev = root.applyActive(list);
+                if (wifiDev) { detailProc.command = ["nmcli", "-t", "-f",
+                    "GENERAL.HWADDR,IP4.ADDRESS,IP4.GATEWAY,IP4.DNS,IP6.ADDRESS", "device", "show", wifiDev];
+                    detailProc.running = true; }
+            }
+        }
+    }
+
+    // ── applying what was read ────────────────────────────────────────────
+    // From nmcli's output or from hyprshell-daemon's events (Daemon.qml) —
+    // the same shapes either way.
+    function applyRadio(on) {
+        root.wifiEnabled = on;
+        if (!on) { root.networks = []; root.ssid = ""; root.signalStrength = 0; }
+    }
+    // [{ type, state, uuid, device, name }] → the Wi-Fi device in use, or "".
+    function applyActive(list) {
+                let wifi = false, activating = false, vpn = false, vpnLabel = "", dev = "", uuid = "";
+                for (const a of list) {
+                    const f = [a.type, a.state, a.uuid, a.device, a.name];
                     const type = f[0] || "";
                     if (type === "802-11-wireless" || type === "wifi") {
                         if (f[1] === "activated") wifi = true;
@@ -238,19 +283,25 @@ Singleton {
                 root.vpnActive = vpn;
                 root.vpnName = vpnLabel;
                 if (!wifi) { root.ssid = root.connecting ? root.ssid : ""; root.signalStrength = 0; root.details = ({}); }
-                if (dev && wifi) { detailProc.command = ["nmcli", "-t", "-f",
-                    "GENERAL.HWADDR,IP4.ADDRESS,IP4.GATEWAY,IP4.DNS,IP6.ADDRESS", "device", "show", dev];
-                    detailProc.running = true; }
-            }
-        }
+                return dev && wifi ? dev : "";
+    }
+    // { hw, ip4 ("a.b.c.d/24"), gateway, dns ([]), ip6 }
+    function applyDetails(i) {
+        const d = Object.assign({}, root.details);
+        d.hw = i.hw || "";
+        d.ip4 = i.ip4 || "";
+        d.gateway = i.gateway || "";
+        d.dns = (i.dns || []).join(", ");
+        d.ip6 = i.ip6 || "";
+        root.details = d;
+        root.ipv4 = (d.ip4 || "").replace(/\/.*/, "");
     }
 
     Process {
         id: detailProc
         stdout: StdioCollector {
             onStreamFinished: {
-                const d = Object.assign({}, root.details);
-                const dns = [];
+                const d = { dns: [] };
                 for (const line of text.split("\n")) {
                     const i = line.indexOf(":");
                     if (i < 0) continue;
@@ -258,12 +309,10 @@ Singleton {
                     if (k === "GENERAL.HWADDR") d.hw = v;
                     else if (k === "IP4.ADDRESS[1]") d.ip4 = v;
                     else if (k === "IP4.GATEWAY") d.gateway = v;
-                    else if (k.indexOf("IP4.DNS") === 0) dns.push(v);
+                    else if (k.indexOf("IP4.DNS") === 0) d.dns.push(v);
                     else if (k === "IP6.ADDRESS[1]") d.ip6 = v;
                 }
-                d.dns = dns.join(", ");
-                root.details = d;
-                root.ipv4 = (d.ip4 || "").replace(/\/.*/, "");
+                root.applyDetails(d);
             }
         }
     }
@@ -277,10 +326,25 @@ Singleton {
         command: ["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY,FREQ,RATE", "device", "wifi", "list", "--rescan", "no"]
         stdout: StdioCollector {
             onStreamFinished: {
-                const by = {};
+                const list = [];
                 for (const line of text.trim().split("\n")) {
                     if (!line) continue;
                     const f = root.splitFields(line);
+                    list.push({ inUse: (f[0] || "").indexOf("*") >= 0, ssid: f[1] || "",
+                                signal: parseInt(f[2]) || 0, security: f[3] || "",
+                                freq: parseInt(f[4]) || 0, rate: f[5] || "" });
+                }
+                root.applyAps(list, true);
+            }
+        }
+    }
+    // [{ inUse, ssid, signal, security, freq, rate }]. `complete` is false
+    // when only the network in use was read (the daemon, with no list on
+    // screen): that updates the name and signal and leaves the list be.
+    function applyAps(list, complete) {
+                const by = {};
+                for (const a of list) {
+                    const f = [a.inUse ? "*" : "", a.ssid, String(a.signal), a.security, String(a.freq), a.rate];
                     const name = f[1] || "";
                     if (!name) continue;
                     const freq = parseInt(f[4]) || 0;
@@ -314,10 +378,8 @@ Singleton {
                     d.rate = e.rate;
                     root.details = d;
                 }
-                root.networks = out;
+                if (complete) root.networks = out;
                 root.scanning = false;
-            }
-        }
     }
 
     // Each Wi-Fi profile, with the three things about it the list needs.
@@ -350,14 +412,19 @@ Singleton {
                         else if (k === "802-1x.eap") by[t[1]].eap = v;
                     }
                 }
-                root.saved = order.map(u => {
-                    const p = by[u];
-                    if (!p.ssid) p.ssid = p.name;
-                    p.enterprise = p.keyMgmt === "wpa-eap" || p.keyMgmt === "ieee8021x";
-                    return p;
-                });
+                root.applySaved(order.map(u => by[u]));
             }
         }
+    }
+
+    // [{ uuid, autoconnect, name, ssid, keyMgmt, eap }]
+    function applySaved(list) {
+        root.saved = list.map(p => {
+            p = Object.assign({}, p);
+            if (!p.ssid) p.ssid = p.name;
+            p.enterprise = p.keyMgmt === "wpa-eap" || p.keyMgmt === "ieee8021x";
+            return p;
+        });
     }
 
     // An enterprise profile's sign-in settings, read when its row opens:
@@ -424,7 +491,7 @@ Singleton {
                 if (job.done) job.done(code === 0);
             }
             root.refresh();
-            savedProc.running = true;
+            if (!root.viaDaemon) savedProc.running = true;
             root.pump();
         }
     }
@@ -456,6 +523,7 @@ Singleton {
 
     function scan() {
         scanning = true;
+        if (viaDaemon) { Services.Daemon.send({ cmd: "net-scan" }); return; }
         run(["nmcli", "device", "wifi", "rescan"]);
     }
 

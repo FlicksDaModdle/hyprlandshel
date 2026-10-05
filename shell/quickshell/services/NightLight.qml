@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "." as Services
 
 // Colour temperature via hyprsunset, with wlsunset as a fallback. Backs the
 // control center's "Night light" tile and Settings → Display → Night shift.
@@ -43,13 +44,32 @@ Singleton {
     // outside; anything done here re-checks at once (action's onExited).
     Timer {
         interval: 30000
-        running: true
+        running: !root.viaDaemon
         repeat: true
         triggeredOnStart: true
         onTriggered: probe.running = true
     }
 
-    Process { id: action; onExited: probe.running = true }
+    // hyprshell-daemon reads the process table itself and says when it
+    // changes, so neither the timer above nor the probe's sh and pgrep run.
+    readonly property bool viaDaemon: Services.Daemon.nightLightLive
+    Connections {
+        target: Services.Daemon
+        function onEvent(ev) {
+            if (ev.ev !== "nightlight") return;
+            const run = ev.running || "", inst = ev.installed || "";
+            root.available = run !== "" || inst !== "";
+            root.active = run !== "";
+            if (run !== "") root.backend = run;
+            else if (inst !== "") root.backend = inst;
+        }
+    }
+    function recheck() {
+        if (viaDaemon) Services.Daemon.send({ cmd: "nl-refresh" });
+        else probe.running = true;
+    }
+
+    Process { id: action; onExited: root.recheck() }
 
     function setActive(on) {
         if (!available) return;

@@ -223,6 +223,11 @@ need bluetoothctl  optional "Bluetooth tile and pane"    bluez-utils bluez bluez
 # the Wi-Fi password prompts. Qt itself is already here for Quickshell.
 need cmake         optional "builds hyprshell-agent (pairing and Wi-Fi prompts)" cmake cmake cmake cmake
 need c++           optional "builds hyprshell-agent"     gcc g++ gcc-c++ gcc-c++
+# hyprshell-daemon and the cursor builder (rust/): network, brightness and
+# audio-device state without polling, and the accent cursor drawn with
+# resvg. Without cargo the shell polls nmcli/brightnessctl/pactl instead,
+# and the cursor builder is the Qt one (which needs qt6-svg).
+need cargo         optional "builds hyprshell-daemon (no polling) and the cursor builder" rust cargo cargo cargo
 need brightnessctl optional "brightness slider and keys" brightnessctl brightnessctl brightnessctl brightnessctl
 need grim          optional "screenshots"                grim grim grim grim
 need slurp         optional "screenshot region picker"   slurp slurp slurp slurp
@@ -446,7 +451,7 @@ if [ -d "$OLD" ]; then
         # Shipped by this tree, so the new copy is the right one.
         [ -e "$SRC/quickshell/$rel" ] && continue
         # Our own, copied in or built here rather than from the source tree.
-        case "$rel" in run.sh|hyprshellctl|bin/hyprshell-agent|bin/hyprshell-cursors) continue ;; esac
+        case "$rel" in run.sh|hyprshellctl|bin/hyprshell-agent|bin/hyprshell-cursors|bin/hyprshell-daemon) continue ;; esac
         mkdir -p "$QS_DIR/$(dirname -- "$rel")" 2>/dev/null
         if cp -- "$f" "$QS_DIR/$rel" 2>/dev/null; then
             printf '  kept your %s\n' "$rel"
@@ -487,6 +492,42 @@ if command -v cmake >/dev/null 2>&1 && command -v c++ >/dev/null 2>&1; then
     fi
 else
     printf '  %snot building hyprshell-agent: needs cmake and a C++ compiler%s\n' "$YEL" "$RST"
+fi
+
+# The Rust helpers (rust/). The daemon replaces the shell's polling of
+# nmcli, brightnessctl, pactl and pgrep with NetworkManager's D-Bus signals,
+# kernel events and PulseAudio's own protocol; the cursor builder draws
+# with resvg and takes over from the Qt one built above. Crates come from
+# crates.io on the first build, so that one needs the network; later ones
+# are incremental. The PulseAudio part links libpulse (part of libpulse /
+# pipewire-pulse); without its headers the daemon is built without it.
+RUST_TARGET="${XDG_CACHE_HOME:-$HOME/.cache}/hyprshell/rust-target"
+if command -v cargo >/dev/null 2>&1; then
+    mkdir -p "$RUST_TARGET" "$QS_DIR/bin" 2>/dev/null
+    RUST_LOG="$RUST_TARGET/build.log"
+    built_daemon=0
+    if (cd "$SRC/rust" && CARGO_TARGET_DIR="$RUST_TARGET" cargo build --release --locked >"$RUST_LOG" 2>&1 \
+        || CARGO_TARGET_DIR="$RUST_TARGET" cargo build --release >>"$RUST_LOG" 2>&1); then
+        built_daemon=1
+    elif (cd "$SRC/rust" && CARGO_TARGET_DIR="$RUST_TARGET" cargo build --release \
+              -p hyprshell-daemon --no-default-features >>"$RUST_LOG" 2>&1 \
+          && CARGO_TARGET_DIR="$RUST_TARGET" cargo build --release -p hyprshell-cursors >>"$RUST_LOG" 2>&1); then
+        built_daemon=1
+        printf '  %sbuilt hyprshell-daemon without its audio part (no libpulse headers) — pactl does that%s\n' "$YEL" "$RST"
+    fi
+    if [ "$built_daemon" = 1 ]; then
+        cp -- "$RUST_TARGET/release/hyprshell-daemon" "$QS_DIR/bin/hyprshell-daemon" \
+            && printf '  built     %s/bin/hyprshell-daemon\n' "$QS_DIR"
+        [ -x "$RUST_TARGET/release/hyprshell-cursors" ] \
+            && cp -- "$RUST_TARGET/release/hyprshell-cursors" "$QS_DIR/bin/hyprshell-cursors" \
+            && printf '  built     %s/bin/hyprshell-cursors (resvg)\n' "$QS_DIR"
+    else
+        printf '  %scould not build the Rust helpers — see %s; the shell polls instead%s\n' "$YEL" "$RUST_LOG" "$RST"
+        [ -x "$OLD/bin/hyprshell-daemon" ] && cp -- "$OLD/bin/hyprshell-daemon" "$QS_DIR/bin/" \
+            && printf '  kept the previous hyprshell-daemon\n'
+    fi
+else
+    printf '  %snot building hyprshell-daemon: needs cargo (rust) — the shell polls nmcli, brightnessctl and pactl instead%s\n' "$YEL" "$RST"
 fi
 
 # The task manager (../tasks), built and installed alongside, so Ctrl+Shift+Esc
