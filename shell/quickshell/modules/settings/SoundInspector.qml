@@ -179,6 +179,7 @@ Rectangle {
 
         // ── live level ──
         Item {
+            visible: root.au.metersOn || !root.au.metersSafe
             width: parent.width
             height: 22
             Label { id: meterLabel; anchors.verticalCenter: parent.verticalCenter; text: root.output ? "Playing" : "Hearing" }
@@ -189,7 +190,7 @@ Rectangle {
                 anchors.rightMargin: 50
                 anchors.verticalCenter: parent.verticalCenter
                 height: 10
-                active: root.shown && !!root.node
+                active: root.shown && !!root.node && root.au.metersOn
                 source: "SoundLevel.qml"
                 onLoaded: {
                     item.node = Qt.binding(() => root.node);
@@ -197,10 +198,10 @@ Rectangle {
                 }
             }
             Hint {
-                visible: meter.status === Loader.Error
+                visible: meter.status === Loader.Error || !root.au.metersSafe
                 anchors.left: meterLabel.right
                 anchors.verticalCenter: parent.verticalCenter
-                text: "A live meter needs Quickshell 0.3 or newer"
+                text: "A live meter needs Quickshell 0.3.1 or newer"
             }
         }
 

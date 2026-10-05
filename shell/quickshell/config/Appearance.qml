@@ -199,6 +199,9 @@ Singleton {
             property string soundHidden: "[]"
             property string soundNames: "{}"
             property bool soundAutoSwitch: false
+            // The live level meters in Settings → Sound (only offered on a
+            // Quickshell whose peak monitor is safe; see Audio.qml).
+            property bool soundMeters: true
             property string soundTab: "output"
             // The equalizer (services/AudioFx.qml): on or off, ten band
             // gains in dB, a preamp, the preset they came from, and the
@@ -516,6 +519,7 @@ Singleton {
     property alias soundHidden: prefs.soundHidden
     property alias soundNames: prefs.soundNames
     property alias soundAutoSwitch: prefs.soundAutoSwitch
+    property alias soundMeters: prefs.soundMeters
     property alias soundTab: prefs.soundTab
     property alias eqEnabled: prefs.eqEnabled
     property alias eqGains: prefs.eqGains

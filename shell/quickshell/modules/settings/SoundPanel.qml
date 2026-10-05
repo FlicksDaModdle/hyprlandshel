@@ -188,7 +188,7 @@ Column {
                         anchors.rightMargin: 8
                         y: 76
                         height: 6
-                        active: panel.shown && !!glance.n
+                        active: panel.shown && !!glance.n && panel.au.metersOn
                         source: "SoundLevel.qml"
                         onLoaded: {
                             item.node = Qt.binding(() => glance.n);
@@ -556,6 +556,35 @@ Column {
                         anchors.verticalCenter: parent.verticalCenter
                         checked: panel.prefs.soundAutoSwitch
                         onToggled: on => panel.prefs.soundAutoSwitch = on
+                    }
+                }
+                Item {
+                    width: parent.width
+                    height: 34
+                    Column {
+                        anchors.left: parent.left
+                        anchors.right: meterToggle.left
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        StyledText { text: "Live level meters"; font.pixelSize: Config.Appearance.fs(13) }
+                        StyledText {
+                            width: parent.width
+                            elide: Text.ElideRight
+                            text: panel.au.metersSafe
+                                ? "What each device is playing or hearing, as it happens"
+                                : "Needs Quickshell 0.3.1 or newer — the meter in "
+                                  + (panel.au.qsVersion || "this version") + " can crash the shell"
+                            font.pixelSize: Config.Appearance.fs(11.5)
+                            color: Config.Appearance.ink3
+                        }
+                    }
+                    Toggle {
+                        id: meterToggle
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        enabled: panel.au.metersSafe
+                        checked: panel.au.metersOn
+                        onToggled: on => panel.prefs.soundMeters = on
                     }
                 }
                 Item {

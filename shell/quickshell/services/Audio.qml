@@ -50,6 +50,31 @@ Singleton {
     // have no `ready`, and undefined is not a reason to say audio is down.
     readonly property bool pipewireUp: Pipewire.ready !== false
 
+    // The level meters' peak monitor (PwNodePeakMonitor) arrived in
+    // Quickshell 0.3.0 and crashes the whole shell there when a device's
+    // channels differ from what it samples — fixed in 0.3.1. QML can tell
+    // 0.3 from 0.2 but not 0.3.0 from 0.3.1, so ask the running binary
+    // (this process's parent's executable) for its version, once.
+    property string qsVersion: ""
+    readonly property bool metersSafe: {
+        const m = /(\d+)\.(\d+)\.(\d+)/.exec(qsVersion);
+        if (!m) return false;
+        const v = [Number(m[1]), Number(m[2]), Number(m[3])];
+        return v[0] > 0 || v[1] > 3 || (v[1] === 3 && v[2] >= 1);
+    }
+    readonly property bool metersOn: metersSafe && Config.Appearance.soundMeters
+    Process {
+        running: true
+        command: ["sh", "-c",
+            'exe=$(readlink "/proc/$PPID/exe" 2>/dev/null); '
+          + 'for q in "$exe" quickshell qs; do '
+          + '  [ -n "$q" ] && command -v "$q" >/dev/null 2>&1 || continue; '
+          + '  v=$("$q" --version 2>/dev/null); '
+          + '  case "$v" in *[Qq]uickshell*) printf "%s\\n" "$v"; exit 0 ;; esac; '
+          + 'done; true']
+        stdout: StdioCollector { onStreamFinished: root.qsVersion = text.trim() }
+    }
+
     // Node properties (volume/mute) are only live while the node is bound.
     // Either default can be null before PipeWire is up, so the list is
     // filtered rather than handed nulls.
