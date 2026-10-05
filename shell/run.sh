@@ -86,4 +86,7 @@ if [ "${1:-}" = "--restart" ]; then
     fi
 fi
 
+# Hyprland hangs up after each request on its socket, which Quickshell
+# would log as a warning every time (services/HyprIpc.qml).
+export QT_LOGGING_RULES="${QT_LOGGING_RULES:+$QT_LOGGING_RULES;}quickshell.io.socket.warning=false"
 exec qs -c hyprshell "$@"

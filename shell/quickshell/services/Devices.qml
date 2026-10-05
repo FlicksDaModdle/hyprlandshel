@@ -60,7 +60,7 @@ Singleton {
     function applyInput() {
         Services.Compositor.setConfig(inputTree());
         applyTouchpads();
-        scanPointers.running = true;
+        root.scanForPointers();
     }
 
     // ── mouse and touchpad apart ──────────────────────────────────────────
@@ -95,20 +95,27 @@ Singleton {
         id: scanPointers
         command: ["hyprctl", "devices", "-j"]
         stdout: StdioCollector {
-            onStreamFinished: {
-                let mice = [];
-                try { mice = (JSON.parse(text).mice || []).map(m => m.name).filter(n => !!n); }
-                catch (e) { return; }
-                root.pointers = mice;
-                const found = mice.filter(n => root.isTouchpad(n));
-                const fresh = found.some(n => root.touchpads.indexOf(n) < 0);
-                root.touchpads = found;
-                // Sent again only when one appears that was not there
-                // before; the rest already have theirs, and Hyprland keeps
-                // them by name.
-                if (fresh && root.applied) root.applyTouchpads();
-            }
+            onStreamFinished: root.gotPointers(text)
         }
+    }
+    // Over Hyprland's socket, hyprctl only without one.
+    function scanForPointers() {
+        Services.HyprIpc.request("j/devices", r => {
+            if (r === null) scanPointers.running = true;
+            else root.gotPointers(r);
+        });
+    }
+    function gotPointers(text) {
+        let mice = [];
+        try { mice = (JSON.parse(text).mice || []).map(m => m.name).filter(n => !!n); }
+        catch (e) { return; }
+        root.pointers = mice;
+        const found = mice.filter(n => root.isTouchpad(n));
+        const fresh = found.some(n => root.touchpads.indexOf(n) < 0);
+        root.touchpads = found;
+        // Sent again only when one appears that was not there before; the
+        // rest already have theirs, and Hyprland keeps them by name.
+        if (fresh && root.applied) root.applyTouchpads();
     }
     // A touchpad that arrives later — a Bluetooth one — is picked up here.
     // Once a minute: it is a new device, not something to catch instantly.
@@ -116,7 +123,7 @@ Singleton {
         interval: 60000
         running: root.applied
         repeat: true
-        onTriggered: scanPointers.running = true
+        onTriggered: root.scanForPointers()
     }
 
     // ── window frame ──────────────────────────────────────────────────────

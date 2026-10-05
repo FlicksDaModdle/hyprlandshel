@@ -3,10 +3,10 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "../config" as Config
+import "." as Services
 
 // Machine facts for Settings → About, the control center header and the
-// power menu's footer. One shell poll gathers the lot rather than spawning a
-// process per field.
+// power menu's footer.
 Singleton {
     id: root
 
@@ -45,65 +45,79 @@ Singleton {
     readonly property string memLabel: memTotalKb > 0 ? gib(memUsedKb) + " of " + gib(memTotalKb) + " in use" : "—"
     readonly property string diskLabel: diskTotalKb > 0 ? gib(diskUsedKb) + " of " + gib(diskTotalKb) + " used" : "—"
 
-    // Fields are emitted as `key<TAB>value` lines so parsing stays trivial.
-    Process {
-        id: poll
-        command: ["sh", "-c",
-            "printf 'host\\t%s\\n' \"$(uname -n)\"; "
-            + "printf 'kernel\\t%s\\n' \"$(uname -r)\"; "
-            + "printf 'uptime\\t%s\\n' \"$(cut -d' ' -f1 /proc/uptime)\"; "
-            + "awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{printf \"mem\\t%d\\t%d\\n\", t, t-a}' /proc/meminfo; "
-            + "awk -F: '/^model name/{m=$2} /^processor/{th++} /^cpu cores/{c=$2} END{gsub(/^ +/,\"\",m); printf \"cpu\\t%s\\t%d\\t%d\\n\", m, c, th}' /proc/cpuinfo; "
-            + "df -Pk / | awk 'NR==2{printf \"disk\\t%d\\t%d\\n\", $2, $3}'; "
-            + ". /etc/os-release 2>/dev/null; printf 'distro\\t%s\\n' \"${PRETTY_NAME:-Linux}\"; "
-            + "printf 'wm\\t%s\\n' \"$(hyprctl version -j 2>/dev/null | sed -n 's/.*\"tag\": *\"\\([^\"]*\\)\".*/\\1/p' | head -1)\"; "
-            + "printf 'keymap\\t%s\\n' \"$(hyprctl -j devices 2>/dev/null | sed -n 's/.*\"active_keymap\": *\"\\([^\"]*\\)\".*/\\1/p' | head -1)\""]
+    // Read straight from the files the old shell pipeline read (/proc,
+    // /etc/os-release) and from Hyprland's socket — no processes, except
+    // `df` for the disk, which has no file to read. The facts that never
+    // change while running (model, kernel, distribution) are read once.
+    FileView { id: fHost; path: "/proc/sys/kernel/hostname"; printErrors: false; blockLoading: true }
+    FileView { id: fKernel; path: "/proc/sys/kernel/osrelease"; printErrors: false; blockLoading: true }
+    FileView { id: fUptime; path: "/proc/uptime"; printErrors: false; blockLoading: true }
+    FileView { id: fMem; path: "/proc/meminfo"; printErrors: false; blockLoading: true }
+    FileView { id: fCpu; path: "/proc/cpuinfo"; printErrors: false; blockLoading: true }
+    FileView { id: fOs; path: "/etc/os-release"; printErrors: false; blockLoading: true }
 
+    function readOnce() {
+        fHost.reload(); fKernel.reload(); fCpu.reload(); fOs.reload();
+        {
+            root.host = String(fHost.text() || "").trim();
+            root.kernel = String(fKernel.text() || "").trim();
+            const os = /^PRETTY_NAME="?([^"\n]*)"?/m.exec(String(fOs.text() || ""));
+            root.distro = os ? os[1] : "Linux";
+            const cpu = String(fCpu.text() || "");
+            const model = /^model name\s*:\s*(.+)$/m.exec(cpu);
+            root.cpuModel = model ? model[1].trim() : "";
+            root.cpuThreads = (cpu.match(/^processor\s*:/gm) || []).length;
+            const cores = /^cpu cores\s*:\s*(\d+)/m.exec(cpu);
+            root.cpuCores = cores ? parseInt(cores[1]) : root.cpuThreads;
+        }
+        Services.HyprIpc.request("j/version", r => {
+            if (r === null) return;
+            try { root.compositorVersion = JSON.parse(r).tag || ""; } catch (e) {}
+        });
+    }
+    function readLive() {
+        fUptime.reload(); fMem.reload();
+        {
+            root.uptimeSeconds = parseFloat(String(fUptime.text() || "0").split(" ")[0]) || 0;
+            const mem = String(fMem.text() || "");
+            const kb = key => { const m = new RegExp("^" + key + ":\\s*(\\d+)", "m").exec(mem); return m ? parseFloat(m[1]) : 0; };
+            root.memTotalKb = kb("MemTotal");
+            root.memUsedKb = root.memTotalKb - kb("MemAvailable");
+        }
+        Services.HyprIpc.request("j/devices", r => {
+            if (r === null) return;
+            try {
+                const kbs = (JSON.parse(r).keyboards || []);
+                const main = kbs.find(k => k.main) || kbs[0];
+                root.keymap = main ? (main.active_keymap || "") : "";
+            } catch (e) {}
+        });
+        df.running = true;
+    }
+    Process {
+        id: df
+        command: ["df", "-Pk", "/"]
         stdout: StdioCollector {
             onStreamFinished: {
-                for (const line of text.split("\n")) {
-                    const f = line.split("\t");
-                    switch (f[0]) {
-                    case "host":    root.host = f[1] || ""; break;
-                    case "kernel":  root.kernel = f[1] || ""; break;
-                    case "uptime":  root.uptimeSeconds = parseFloat(f[1]) || 0; break;
-                    case "distro":  root.distro = f[1] || ""; break;
-                    case "wm":      root.compositorVersion = f[1] || ""; break;
-                    case "keymap":  root.keymap = f[1] || ""; break;
-                    case "mem":
-                        root.memTotalKb = parseFloat(f[1]) || 0;
-                        root.memUsedKb = parseFloat(f[2]) || 0;
-                        break;
-                    case "disk":
-                        root.diskTotalKb = parseFloat(f[1]) || 0;
-                        root.diskUsedKb = parseFloat(f[2]) || 0;
-                        break;
-                    case "cpu":
-                        root.cpuModel = f[1] || "";
-                        root.cpuCores = parseInt(f[2]) || 0;
-                        root.cpuThreads = parseInt(f[3]) || 0;
-                        break;
-                    }
-                }
+                const f = (text.split("\n")[1] || "").trim().split(/\s+/);
+                root.diskTotalKb = parseFloat(f[1]) || 0;
+                root.diskUsedKb = parseFloat(f[2]) || 0;
             }
         }
     }
 
     // Read once at start, then again only while something showing the
-    // changing parts (uptime, memory, disk) is open: the read starts a
-    // dozen small processes, and doing that every fifteen seconds all day
-    // for pages nobody was looking at was most of what this shell cost
-    // when idle.
-    Component.onCompleted: poll.running = true
+    // changing parts (uptime, memory, disk) is open.
+    Component.onCompleted: { readOnce(); readLive(); }
     Timer {
         interval: 15000
         running: Config.UiState.settingsOpen || Config.UiState.powerOpen || Config.UiState.controlCenterOpen
         repeat: true
         triggeredOnStart: true
-        onTriggered: poll.running = true
+        onTriggered: root.readLive()
     }
 
-    function refresh() { poll.running = true; }
+    function refresh() { readLive(); }
 
     readonly property string cpuLabel: cpuThreads > 0
         ? cpuCores + (cpuCores === 1 ? " core · " : " cores · ") + cpuThreads + " threads"

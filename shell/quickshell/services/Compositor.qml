@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+import "." as Services
 
 // Compositor state: workspaces, windows and their geometry.
 //
@@ -79,11 +80,26 @@ Singleton {
                          + "does not report: " + root.ghostWorkspaces);
     }
 
+    function fetchWorkspaces() {
+        Services.HyprIpc.request("j/workspaces", r => {
+            if (r === null) wsProc.running = true;
+            else root.parseWorkspaces(r);
+        });
+    }
+    function fetchActiveWs() {
+        Services.HyprIpc.request("j/activeworkspace", r => {
+            if (r === null) activeWsProc.running = true;
+            else root.parseActiveWs(r);
+        });
+    }
     Process {
         id: wsProc
         command: ["hyprctl", "-j", "workspaces"]
         stdout: StdioCollector {
-            onStreamFinished: {
+            onStreamFinished: root.parseWorkspaces(text)
+        }
+    }
+    function parseWorkspaces(text) {
                 let parsed;
                 try { parsed = JSON.parse(text); } catch (e) { return; }
                 if (!Array.isArray(parsed)) return;
@@ -96,8 +112,6 @@ Singleton {
                 out.sort((a, b) => a.id - b.id);
                 root.polledWorkspaces = out;
                 root.polled = true;
-            }
-        }
     }
 
     readonly property var monitors: Hyprland.monitors.values
@@ -134,13 +148,14 @@ Singleton {
         id: activeWsProc
         command: ["hyprctl", "-j", "activeworkspace"]
         stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    const o = JSON.parse(text);
-                    if (o && o.id > 0) root.activeWorkspaceId = o.id;
-                } catch (e) { /* leave the last known value */ }
-            }
+            onStreamFinished: root.parseActiveWs(text)
         }
+    }
+    function parseActiveWs(text) {
+        try {
+            const o = JSON.parse(text);
+            if (o && o.id > 0) root.activeWorkspaceId = o.id;
+        } catch (e) { /* leave the last known value */ }
     }
 
     // Queued, and the reply is read. A Process is one slot: assigning
@@ -306,11 +321,34 @@ Singleton {
         return root.clients.filter(c => c.monitor === m.id);
     }
 
+    // Asked over Hyprland's socket (HyprIpc), and through hyprctl only when
+    // that isn't there: this runs after every window event.
+    function fetchClients() {
+        Services.HyprIpc.request("j/clients", r => {
+            if (r === null) clientsProc.running = true;
+            else root.parseClients(r);
+        });
+    }
+    function fetchActive() {
+        Services.HyprIpc.request("j/activewindow", r => {
+            if (r === null) activeProc.running = true;
+            else root.parseActive(r);
+        });
+    }
+    function parseActive(text) {
+        try {
+            const o = JSON.parse(text);
+            root.activeAddress = (o && o.address) || "";
+        } catch (e) { root.activeAddress = ""; }
+    }
     Process {
         id: clientsProc
         command: ["hyprctl", "-j", "clients"]
         stdout: StdioCollector {
-            onStreamFinished: {
+            onStreamFinished: root.parseClients(text)
+        }
+    }
+    function parseClients(text) {
                 let parsed;
                 try { parsed = JSON.parse(text); } catch (e) { return; }
                 if (!Array.isArray(parsed)) return;
@@ -339,20 +377,13 @@ Singleton {
                                   ? c.focusHistoryID : 1e6,
                     pid: c.pid || 0
                 }));
-            }
-        }
     }
 
     Process {
         id: activeProc
         command: ["hyprctl", "-j", "activewindow"]
         stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    const o = JSON.parse(text);
-                    root.activeAddress = (o && o.address) || "";
-                } catch (e) { root.activeAddress = ""; }
-            }
+            onStreamFinished: root.parseActive(text)
         }
     }
 
@@ -362,10 +393,10 @@ Singleton {
         id: debounce
         interval: 60
         onTriggered: {
-            clientsProc.running = true;
-            activeProc.running = true;
-            activeWsProc.running = true;
-            if (!root.ipcReady) wsProc.running = true;
+            root.fetchClients();
+            root.fetchActive();
+            root.fetchActiveWs();
+            if (!root.ipcReady) root.fetchWorkspaces();
         }
     }
 
@@ -380,9 +411,9 @@ Singleton {
         repeat: true
         running: !root.ipcReady
         onTriggered: {
-            activeWsProc.running = true;
-            wsProc.running = true;
-            clientsProc.running = true;
+            root.fetchActiveWs();
+            root.fetchWorkspaces();
+            root.fetchClients();
         }
     }
 
@@ -393,10 +424,10 @@ Singleton {
         id: actionSettle
         interval: 120
         onTriggered: {
-            activeWsProc.running = true;
-            wsProc.running = true;
-            clientsProc.running = true;
-            activeProc.running = true;
+            root.fetchActiveWs();
+            root.fetchWorkspaces();
+            root.fetchClients();
+            root.fetchActive();
         }
     }
 
@@ -664,16 +695,7 @@ Singleton {
     Process {
         id: evalProc
         stdout: StdioCollector {
-            onStreamFinished: {
-                const reply = text.trim();
-                // "ok" is success. Anything else is Lua or Hyprland
-                // complaining, and is worth seeing.
-                if (reply && reply.toLowerCase() !== "ok") {
-                    console.warn("Compositor: hyprctl eval rejected",
-                                 JSON.stringify(root.evalLast), "->", reply);
-                    root.configFailed(root.evalLast, reply);
-                }
-            }
+            onStreamFinished: root.checkEval(text.trim())
         }
         onExited: {
             root.evalBusy = false;
@@ -691,8 +713,25 @@ Singleton {
         const code = evalQueue.shift();
         evalLast = code;
         evalBusy = true;
-        evalProc.command = ["hyprctl", "eval", code];
-        evalProc.running = true;
+        // Over the socket when it is there; hyprctl sends exactly this.
+        Services.HyprIpc.request("/eval " + code, r => {
+            if (r === null) {
+                evalProc.command = ["hyprctl", "eval", code];
+                evalProc.running = true;
+                return;
+            }
+            root.checkEval(r.trim());
+            root.evalBusy = false;
+            root.pumpEval();
+        });
+    }
+    function checkEval(reply) {
+        // "ok" is success. Anything else is Lua or Hyprland complaining,
+        // and is worth seeing.
+        if (reply && reply.toLowerCase() !== "ok") {
+            console.warn("Compositor: hyprctl eval rejected", JSON.stringify(root.evalLast), "->", reply);
+            root.configFailed(root.evalLast, reply);
+        }
     }
 
     function evalLua(code) {

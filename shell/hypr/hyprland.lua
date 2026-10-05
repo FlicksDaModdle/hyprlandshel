@@ -195,7 +195,10 @@ hl.env("TERMCMD", "hyprshell-term")
 -- through /bin/sh. They just must not *start* with "[", which Hyprland
 -- would read as an exec rule.
 local launch = "pgrep -x qs >/dev/null 2>&1 || "
-    .. "exec env QT_QPA_PLATFORM=wayland qs -c hyprshell"
+    -- QT_LOGGING_RULES: Hyprland hangs up after answering each request on
+    -- its socket, and Quickshell logs every hang-up as a warning; the shell
+    -- asks it something on every window event (services/HyprIpc.qml).
+    .. "exec env QT_QPA_PLATFORM=wayland QT_LOGGING_RULES='quickshell.io.socket.warning=false' qs -c hyprshell"
 
 -- Reload only: WAYLAND_DISPLAY is empty on the first parse, so this does
 -- nothing then and the hook below does the real work.
