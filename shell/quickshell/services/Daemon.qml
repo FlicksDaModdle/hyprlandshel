@@ -50,7 +50,7 @@ Singleton {
                 let ev;
                 try { ev = JSON.parse(line); } catch (e) { return; }
                 switch (ev.ev) {
-                case "ready":      root.running = true; root.modules = ev.modules || {}; break;
+                case "ready":      root.modules = ev.modules || {}; root.running = true; break;
                 case "net":        root.netLive = ev.available === true; break;
                 case "pa":         root.paLive = ev.available === true; break;
                 case "backlight":  root.backlightLive = ev.available === true; break;

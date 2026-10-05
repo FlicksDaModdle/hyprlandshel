@@ -220,7 +220,8 @@ head1 "Optional — each one only affects the feature named"
 need nmcli         optional "Wi-Fi tile, Network pane"   networkmanager network-manager NetworkManager NetworkManager
 need bluetoothctl  optional "Bluetooth tile and pane"    bluez-utils bluez bluez bluez
 # hyprshell-agent (agent/) is built here: the Bluetooth pairing prompts and
-# the Wi-Fi password prompts. Qt itself is already here for Quickshell.
+# the Wi-Fi password prompts, for when hyprshell-daemon (cargo, below) is
+# not there to do them. Qt itself is already here for Quickshell.
 need cmake         optional "builds hyprshell-agent (pairing and Wi-Fi prompts)" cmake cmake cmake cmake
 need c++           optional "builds hyprshell-agent"     gcc g++ gcc-c++ gcc-c++
 # hyprshell-daemon and the cursor builder (rust/): network, brightness and
@@ -468,11 +469,13 @@ if [ -d "$OLD" ]; then
     [ "$kept" -gt 0 ] || printf '  nothing of yours to carry across\n'
 fi
 
-# The agent: Bluetooth pairing (the prompts a phone or keyboard needs
+# The C++ agent: Bluetooth pairing (the prompts a phone or keyboard needs
 # answered, without which pairing them fails) and NetworkManager's
-# password requests. Built rather than shipped, against the Qt that is
-# here. Without it the shell falls back to bluetoothctl, which can pair
-# headphones and mice but nothing that asks a question.
+# password requests. hyprshell-daemon (below) does the same and is used
+# when it is there; this one is for when it can't be built. Built rather
+# than shipped, against the Qt that is here. Without either the shell
+# falls back to bluetoothctl, which can pair headphones and mice but
+# nothing that asks a question.
 AGENT_BUILD="${XDG_CACHE_HOME:-$HOME/.cache}/hyprshell/agent-build"
 if command -v cmake >/dev/null 2>&1 && command -v c++ >/dev/null 2>&1; then
     mkdir -p "$AGENT_BUILD" "$QS_DIR/bin" 2>/dev/null
@@ -494,7 +497,7 @@ if command -v cmake >/dev/null 2>&1 && command -v c++ >/dev/null 2>&1; then
         [ -x "$OLD/bin/hyprshell-cursors" ] && cp -- "$OLD/bin/hyprshell-cursors" "$QS_DIR/bin/"
     fi
 else
-    printf '  %snot building hyprshell-agent: needs cmake and a C++ compiler%s\n' "$YEL" "$RST"
+    printf '  not building hyprshell-agent (needs cmake and a C++ compiler; hyprshell-daemon does its job)\n'
 fi
 
 # The Rust helpers (rust/). The daemon replaces the shell's polling of

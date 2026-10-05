@@ -29,7 +29,7 @@ shell/
       Commands.qml         Shell commands the launcher can run
       UiState.qml          Which panel is open, OSD state, lock state
     services/
-      Agent.qml            Runs hyprshell-agent (agent/): BlueZ + NM agents
+      Agent.qml            BlueZ + NM agents: hyprshell-daemon's, or hyprshell-agent's
       Audio.qml            PipeWire sink/source volume, mute, device list
       Bluetooth.qml        Devices, pairing and its prompts (bluetoothctl fallback)
       Brightness.qml       brightnessctl backlight, debounced
@@ -138,7 +138,7 @@ so; with no `nmcli` the Wi-Fi readout goes quiet.
 | The themed terminal | `kitty` |
 | Wi-Fi tile, network pane | `nmcli` (NetworkManager) |
 | Bluetooth tile and pane | `bluetoothctl` (BlueZ) |
-| Pairing prompts, Wi-Fi password requests | `cmake` and a C++ compiler, to build `hyprshell-agent` |
+| Pairing prompts, Wi-Fi password requests | `cargo` (hyprshell-daemon), or else `cmake` and a C++ compiler (`hyprshell-agent`) |
 | Brightness slider and keys | `brightnessctl` |
 | Night light | `hyprsunset` or `wlsunset` |
 | Screenshots | `grim`, `slurp`, `wl-clipboard` |
@@ -524,9 +524,10 @@ Settings → Network and Settings → Bluetooth are laid out like KDE's and
 Windows': the switch and what is connected at the top, then one list, each
 entry opening in place to what it needs.
 
-Both lean on `hyprshell-agent` (`agent/`, built by install.sh into
-`bin/` beside the Quickshell tree). It does what KDE's background services
-do and a bare Hyprland session lacks:
+Both lean on an agent that does what KDE's background services do and a
+bare Hyprland session lacks. It is part of `hyprshell-daemon` (`rust/`,
+below); where that can't be built, install.sh builds the older C++ one,
+`hyprshell-agent` (`agent/`), and the shell uses that instead:
 
 - **A Bluetooth pairing agent.** Phones, most keyboards and many newer
   headphones ask a question while pairing — "does this code match?",
@@ -551,7 +552,8 @@ refused if one of these differs from what the network expects; the
 university's IT pages list them. A saved network shows what it signs in
 with, and **Change sign-in** edits it in place.
 
-To build the agent without reinstalling:
+To build the C++ agent without reinstalling (only used when there is no
+`hyprshell-daemon`):
 
 ```
 cmake -S agent -B /tmp/hyprshell-agent && cmake --build /tmp/hyprshell-agent
@@ -632,8 +634,10 @@ installed) supplies the rest without polling. It reads NetworkManager over
 D-Bus and is told when anything changes, the backlight from sysfs with the
 kernel's change events (set through logind), audio devices through
 PulseAudio's own protocol (cards, modes, connectors, which app plays where),
-and whether a night-light program runs, from `/proc`. It talks to the shell
-in JSON lines like `hyprshell-agent`, uses about 8 MB, and each part falls
+and whether a night-light program runs, from `/proc`. It is also the
+Bluetooth backend and pairing agent and the Wi-Fi password agent, in place
+of the separate `hyprshell-agent`. It talks to the shell in JSON lines,
+uses about 8 MB, and each part falls
 back on its own: without the daemon, or where a part can't reach what it
 reads, the shell goes back to `nmcli`, `brightnessctl`, `pactl` and `pgrep`.
 

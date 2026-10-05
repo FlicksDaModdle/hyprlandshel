@@ -243,8 +243,9 @@ Column {
                 visible: !panel.bt.live
                 color: panel.danger
                 text: Services.Agent.missing
-                    ? "The pairing helper (hyprshell-agent) isn't built, so devices that ask for a code — phones, "
-                      + "most keyboards — can't pair. Run install.sh again; it needs cmake and a C++ compiler."
+                    ? "The pairing helper isn't built, so devices that ask for a code — phones, "
+                      + "most keyboards — can't pair. Run install.sh again; it needs Rust (cargo), "
+                      + "or cmake and a C++ compiler."
                     : "Starting the pairing helper…"
             }
         }
