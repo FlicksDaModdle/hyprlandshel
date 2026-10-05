@@ -327,9 +327,17 @@ Scope {
             { n: "Theme", s: "Light, dark, or follow the clock after sunset", type: "seg",
               options: [{ label: "Light", value: "light" }, { label: "Dark", value: "dark" }, { label: "Auto", value: "auto" }],
               value: A.theme, set: v => A.theme = v },
-            { n: "Accent", s: A.accentIndex === -1
+            { n: "Accent", s: A.wallAccentOn
+                ? "From the wallpaper · " + String(A.accent).toUpperCase() + " — pick a swatch to use your own"
+                : A.accentIndex === -1
                 ? "Custom · " + String(A.customAccent).toUpperCase()
                 : "Pick a preset, or cycle the custom swatch", type: "swatch" },
+            { n: "Accent from wallpaper",
+              s: Services.WallpaperAccent.status !== "" ? Services.WallpaperAccent.status
+                 : "The most vivid colour in the picture on the desktop, in a shade for "
+                   + "each theme, following it when the wallpaper changes. Off puts your "
+                   + "own accent back.",
+              type: "toggle", value: A.accentFromWallpaper, set: v => A.accentFromWallpaper = v },
         ].concat(root.cursorRows()).concat([
             { type: "header", n: "Surfaces",
               s: "The bar, the dock, panels and menus" },

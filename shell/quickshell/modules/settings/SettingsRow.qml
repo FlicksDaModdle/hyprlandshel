@@ -653,7 +653,7 @@ Item {
 
                     MonoIcon {
                         anchors.centerIn: parent
-                        visible: Config.Appearance.accentIndex === swatch.index
+                        visible: Config.Appearance.accentIndex === swatch.index && !Config.Appearance.wallAccentOn
                         name: "check"
                         size: 18
                         inkColor: Config.Appearance.dark ? "#201e1d" : "#fff2ef"
@@ -661,7 +661,9 @@ Item {
                     }
 
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Config.Appearance.accentIndex = swatch.index }
+                    // Choosing a colour is choosing not to take it from the
+                    // wallpaper.
+                    TapHandler { onTapped: { Config.Appearance.accentFromWallpaper = false; Config.Appearance.accentIndex = swatch.index; } }
                 }
             }
 
@@ -700,6 +702,7 @@ Item {
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler {
                     onTapped: {
+                        Config.Appearance.accentFromWallpaper = false;
                         Config.Appearance.accentIndex = -1;
                         picker.open = !picker.open;
                     }
@@ -750,6 +753,7 @@ Item {
                     backdrop: root.overlay ? root.overlay.backdrop : null
                     value: Config.Appearance.customAccent
                     onPicked: c => {
+                        Config.Appearance.accentFromWallpaper = false;
                         Config.Appearance.customAccent = c;
                         Config.Appearance.accentIndex = -1;
                     }

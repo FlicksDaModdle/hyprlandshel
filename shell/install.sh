@@ -503,7 +503,10 @@ fi
 # The Rust helpers (rust/). The daemon replaces the shell's polling of
 # nmcli, brightnessctl, pactl and pgrep with NetworkManager's D-Bus signals,
 # kernel events and PulseAudio's own protocol; the cursor builder draws
-# with resvg and takes over from the Qt one built above. Crates come from
+# with resvg and takes over from the Qt one built above. The daemon is
+# also the Bluetooth and Wi-Fi password agent, runs the equalizer and noise
+# suppression, keeps the clipboard history, finds files for the launcher
+# and reads the wallpaper's colour. Crates come from
 # crates.io on the first build, so that one needs the network; later ones
 # are incremental. The PulseAudio part links libpulse (part of libpulse /
 # pipewire-pulse); without its headers the daemon is built without it.

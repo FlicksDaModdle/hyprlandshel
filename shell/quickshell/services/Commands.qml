@@ -83,7 +83,8 @@ Singleton {
                                           : Services.LiveWallpaper.stop(),
         // The next live wallpaper video — bindable.
         "nextLiveWallpaper":   () => Services.LiveWallpaper.next(),
-        "setAccent":           arg => Config.Appearance.accentIndex = parseInt(arg, 10) || 0,
+        "setAccent":           arg => { Config.Appearance.accentFromWallpaper = false;
+                                        Config.Appearance.accentIndex = parseInt(arg, 10) || 0; },
         "syncTheming":         () => Services.Theming.resync(),
 
         // Session

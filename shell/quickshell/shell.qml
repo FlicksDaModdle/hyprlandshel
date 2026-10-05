@@ -63,6 +63,10 @@ ShellRoot {
     // copied, not from the first time its panel opens.
     readonly property bool clipboardStarted: Services.Clipboard.enabled || true
 
+    // And the wallpaper's accent, which has to follow a wallpaper changed
+    // from anywhere, Settings open or not.
+    readonly property bool wallAccentStarted: Services.WallpaperAccent.enabled || true
+
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
 

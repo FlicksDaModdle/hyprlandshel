@@ -601,6 +601,18 @@ Connectors, modes, delays and moving apps use `pactl` (pipewire-pulse); the
 live meters need Quickshell 0.3.1 (0.3.0's can crash the shell, so they
 stay off there).
 
+## Accent from the wallpaper
+
+Off unless chosen: Settings → Appearance → "Accent from wallpaper" takes the
+most vivid colour in the picture on the desktop — in a darker shade for the
+light theme and a lighter one for the dark theme — and follows the wallpaper
+when it changes (a live wallpaper is read from its gallery thumbnail).
+`hyprshell-daemon` does the reading, in a few milliseconds for most
+pictures and ~50 ms for a 4K JPEG. Your own accent is kept underneath: turn
+the switch off, or pick a swatch, and it is back. A picture with no real
+colour in it (black and white, grey), or no picture at all (the gradient,
+the contour map), leaves your own accent in place.
+
 ## Files in the launcher
 
 Typing in the launcher also finds files and folders in your home folder by
@@ -670,8 +682,8 @@ PulseAudio's own protocol (cards, modes, connectors, which app plays where),
 and whether a night-light program runs, from `/proc`. It is also the
 Bluetooth backend and pairing agent and the Wi-Fi password agent, in place
 of the separate `hyprshell-agent`, runs the equalizer and noise
-suppression, keeps the clipboard history and finds files for the
-launcher. It talks to the shell in JSON lines,
+suppression, keeps the clipboard history, finds files for the launcher and (when
+asked) takes the accent from the wallpaper. It talks to the shell in JSON lines,
 uses about 8 MB, and each part falls
 back on its own: without the daemon, or where a part can't reach what it
 reads, the shell goes back to `nmcli`, `brightnessctl`, `pactl` and `pgrep`.

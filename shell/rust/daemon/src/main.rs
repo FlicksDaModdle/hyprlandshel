@@ -20,6 +20,7 @@
 //!                 clipboard-manager protocol (wlr-data-control)
 //!   file search   the names under $HOME for the launcher, kept current
 //!                 by inotify, matched with nucleo
+//!   accent        a colour taken from the wallpaper, when that is chosen
 //!
 //! It speaks to the shell as hyprshell-agent does: commands as JSON lines on
 //! stdin, events as JSON lines on stdout (services/Daemon.qml). It exits
@@ -27,6 +28,7 @@
 //! on its own and fails on its own: a machine without NetworkManager still
 //! gets the backlight.
 
+mod accent;
 mod agent;
 mod backlight;
 mod clip;
@@ -50,6 +52,7 @@ fn main() {
     let fx = fx::start();
     let clip = clip::start();
     let fsearch = fsearch::start();
+    let accent = accent::start();
     #[cfg(feature = "pulse")]
     let pulse: Option<Sender<Value>> = Some(pulse::start());
     #[cfg(not(feature = "pulse"))]
@@ -58,7 +61,7 @@ fn main() {
     out::emit(json!({
         "ev": "ready",
         "version": env!("CARGO_PKG_VERSION"),
-        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "pulse": pulse.is_some() }
+        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "pulse": pulse.is_some() }
     }));
 
     let stdin = std::io::stdin();
@@ -74,6 +77,8 @@ fn main() {
             Some(&nightlight)
         } else if name.starts_with("bt-") || name.starts_with("nm-") {
             Some(&agent)
+        } else if name.starts_with("wp-") {
+            Some(&accent)
         } else if name.starts_with("fs-") {
             Some(&fsearch)
         } else if name.starts_with("clip-") {

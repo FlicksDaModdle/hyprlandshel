@@ -93,6 +93,14 @@ Singleton {
             property string theme: "light"          // "light" | "dark" | "auto"
             property int accent: 0                    // index into accentPresets, -1 = custom
             property string customAccent: "#3b6ef5"
+            // The accent taken from the wallpaper instead (off unless
+            // chosen; services/WallpaperAccent.qml): the switch, and the
+            // last colours found — one for each theme — with the picture
+            // they came from, so a restart does not wait for it again.
+            property bool accentFromWallpaper: false
+            property string wallAccentLight: ""
+            property string wallAccentDark: ""
+            property string wallAccentFor: ""
             property int translucency: 50             // 0-100 %, how much shows through panels
             property int rounding: 100                // 0-160 %
             property string tint: "Warm"              // "Warm" | "Neutral" | "Cool"
@@ -440,6 +448,13 @@ Singleton {
     property alias theme: prefs.theme
     property alias accentIndex: prefs.accent
     property alias customAccent: prefs.customAccent
+    property alias accentFromWallpaper: prefs.accentFromWallpaper
+    property alias wallAccentLight: prefs.wallAccentLight
+    property alias wallAccentDark: prefs.wallAccentDark
+    property alias wallAccentFor: prefs.wallAccentFor
+    // In use: switched on, and a colour found. Your own accent stays as it
+    // was underneath, and comes back when this goes off.
+    readonly property bool wallAccentOn: accentFromWallpaper && wallAccentLight !== "" && wallAccentDark !== ""
     property alias translucency: prefs.translucency
     property alias roundingPct: prefs.rounding
     property alias tint: prefs.tint
@@ -694,6 +709,7 @@ Singleton {
     ]
 
     readonly property color accent: {
+        if (wallAccentOn) return dark ? wallAccentDark : wallAccentLight;
         if (accentIndex === -1) return customAccent;
         const preset = accentPresets[Math.max(0, Math.min(accentPresets.length - 1, accentIndex))];
         return dark ? preset.dark : preset.light;
