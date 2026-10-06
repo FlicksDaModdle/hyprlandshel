@@ -1,0 +1,22 @@
+[package]
+name = "hyprshell-tools"
+version = "1.0.0"
+edition = "2021"
+description = "Small build-time tools for Hyprshell, in place of the Python scripts that did these jobs"
+
+# Writes the accent out to fastfetch and ~/.config/hyprshell/accent (run by
+# ../install.sh; was tools/accent-files.py).
+[[bin]]
+name = "hyprshell-accent-files"
+path = "src/bin/accent-files.rs"
+
+# Renders an SVG icon to the PNG sizes desktops and Firefox use (for
+# browser/branding; was browser/branding/render.py, which needed PyQt5).
+[[bin]]
+name = "hyprshell-render-icon"
+path = "src/bin/render-icon.rs"
+
+[dependencies]
+serde_json = "1"
+resvg = { version = "0.48", default-features = false }
+png = "0.17"

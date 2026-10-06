@@ -490,6 +490,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyprshell-tools"
+version = "1.0.0"
+dependencies = [
+ "png 0.17.16",
+ "resvg",
+ "serde_json",
+]
+
+[[package]]
 name = "image"
 version = "0.25.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"

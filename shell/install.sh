@@ -539,7 +539,7 @@ if [ "$CARGO_OK" = 1 ]; then
         built_daemon=1
     elif (cd "$SRC/rust" && CARGO_TARGET_DIR="$RUST_TARGET" cargo build --release \
               -p hyprshell-daemon --no-default-features >>"$RUST_LOG" 2>&1 \
-          && CARGO_TARGET_DIR="$RUST_TARGET" cargo build --release -p hyprshell-cursors >>"$RUST_LOG" 2>&1); then
+          && CARGO_TARGET_DIR="$RUST_TARGET" cargo build --release -p hyprshell-cursors -p hyprshell-tools >>"$RUST_LOG" 2>&1); then
         built_daemon=1
         printf '  %sbuilt hyprshell-daemon without its audio part (no libpulse headers) — pactl does that%s\n' "$YEL" "$RST"
     fi
@@ -643,20 +643,21 @@ fi
 # too, and exist from the moment this finishes rather than from the next
 # time the shell starts.
 #
-# The accent is resolved by tools/accent-files.py exactly as
+# The accent is resolved by hyprshell-accent-files (rust/tools) exactly as
 # config/Appearance.qml resolves it, reading the palette out of that file
-# rather than carrying a copy.
-if command -v python3 >/dev/null 2>&1; then
+# rather than carrying a copy. It is built with the other Rust helpers
+# above; without cargo the shell writes these on its first start instead.
+ACCENT_TOOL="$RUST_TARGET/release/hyprshell-accent-files"
+if [ -x "$ACCENT_TOOL" ]; then
     head1 "Accent"
-    if _accent=$(python3 "$SRC/tools/accent-files.py" \
-                 "$QS_DIR/config/Appearance.qml" "$CONFIG_HOME" 2>/dev/null); then
+    if _accent=$("$ACCENT_TOOL" "$QS_DIR/config/Appearance.qml" "$CONFIG_HOME" 2>/dev/null); then
         ok "fastfetch preset" "$CONFIG_HOME/fastfetch/presets/hyprshell.jsonc"
         ok "accent" "$_accent — $CONFIG_HOME/hyprshell/accent"
     else
         warn "accent files" "could not be written"
     fi
 else
-    warn "python3" "not installed — the accent files are left to the shell"
+    warn "accent files" "left to the shell, which writes them when it starts (no Rust helpers built)"
 fi
 
 # ── the files the shell generates ────────────────────────────────────────────

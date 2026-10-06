@@ -6,8 +6,10 @@
 #                      pactl and pgrep (see ../quickshell/services/Daemon.qml)
 #   hyprshell-cursors  builds the accent cursor theme, drawn with resvg (in
 #                      place of the Qt one in ../agent, which needs qt6-svg)
+#   hyprshell-accent-files, hyprshell-render-icon (tools/)
+#                      small build-time jobs that were Python scripts
 [workspace]
-members = ["daemon", "cursors"]
+members = ["daemon", "cursors", "tools"]
 resolver = "2"
 
 [profile.release]

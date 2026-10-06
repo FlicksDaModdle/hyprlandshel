@@ -106,6 +106,16 @@ node tools/gen-icons.js
 
 It reads the shell's `IconPaths.js` and writes `app/hyprshell/icons/`.
 
+## After changing the app icon
+
+```sh
+cd ../shell/rust && cargo run --release -p hyprshell-tools --bin hyprshell-render-icon -- \
+    ../../browser/branding/hyprshell-browser.svg ../../browser/branding
+```
+
+It renders `branding/hyprshell-browser.svg` to the `default16.png` …
+`default256.png` the installer copies into the icon theme.
+
 ## When a site works in Firefox but not here
 
 ```sh
