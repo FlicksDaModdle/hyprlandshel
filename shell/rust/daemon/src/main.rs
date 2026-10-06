@@ -11,8 +11,7 @@
 //!   night light   whether hyprsunset or wlsunset runs, from /proc — in
 //!                 place of `pgrep`
 //!   agent         Bluetooth from BlueZ with a pairing agent, and the
-//!                 NetworkManager password agent — what hyprshell-agent
-//!                 (C++) did, in this process rather than another one
+//!                 NetworkManager password agent
 //!   effects       the equalizer's and noise suppression's PipeWire
 //!                 filter-chains, loaded here rather than each run as a
 //!                 `pipewire -c` process
@@ -24,7 +23,7 @@
 //!   rog           ASUS ROG laptops through asusd: performance profile,
 //!                 charge limit, keyboard lighting, GPU mode, panel options
 //!
-//! It speaks to the shell as hyprshell-agent does: commands as JSON lines on
+//! It speaks to the shell in JSON lines: commands on
 //! stdin, events as JSON lines on stdout (services/Daemon.qml). It exits
 //! when stdin closes, so a shell reload takes it with it. Every part runs
 //! on its own and fails on its own: a machine without NetworkManager still

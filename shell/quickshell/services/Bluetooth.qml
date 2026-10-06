@@ -7,7 +7,7 @@ import "." as Services
 
 // Bluetooth: the adapter, its devices, and pairing.
 //
-// Through hyprshell-agent (Services.Agent) when it is there: live state from
+// Through hyprshell-daemon's agent (Services.Agent) when it is there: live state from
 // BlueZ, and a pairing agent — the thing that answers "does this code match
 // the one on the phone?" and "type this code on the keyboard". Pairing
 // without one fails with AuthenticationFailed for anything that asks, which

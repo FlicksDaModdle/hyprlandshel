@@ -8,7 +8,7 @@ import Quickshell.Io
 // PulseAudio and /proc and pushed here as it changes — where the services
 // otherwise poll nmcli, brightnessctl, pactl and pgrep.
 //
-// JSON a line each way, like hyprshell-agent (Agent.qml). The services
+// JSON a line each way. The services
 // listen to `event` and look at `has(module)`; each keeps its command-line
 // path for when the daemon isn't built (no cargo at install time) or a
 // part of it can't reach what it reads.

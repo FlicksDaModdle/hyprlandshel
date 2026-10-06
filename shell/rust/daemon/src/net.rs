@@ -14,8 +14,8 @@
 //! Events:    net {available, wifiEnabled, full, active[], wifi{}, aps[],
 //!                 saved[] (when read)}
 //!
-//! Joining networks, profiles and secrets stay with nmcli and
-//! hyprshell-agent: they are rare, and nmcli's handling of them is what
+//! Joining networks, profiles and secrets stay with nmcli and the
+//! password agent (agent.rs): they are rare, and nmcli's handling of them is what
 //! the shell's forms were written against.
 
 use crate::out;

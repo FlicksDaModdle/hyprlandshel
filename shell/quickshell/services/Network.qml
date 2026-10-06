@@ -5,7 +5,7 @@ import Quickshell.Io
 import "../config" as Config
 import "." as Services
 
-// Wi-Fi through nmcli, with hyprshell-agent (Services.Agent) as
+// Wi-Fi through nmcli, with hyprshell-daemon's agent (Services.Agent) as
 // NetworkManager's secret agent — the part of KDE's network handling that a
 // bare session lacks. When NetworkManager needs a password it has not got
 // (a saved one that stopped working; a network set up in KDE, which keeps

@@ -1,4 +1,4 @@
-//! What hyprshell-agent (../../agent, C++) did, here: Bluetooth from BlueZ —
+//! Bluetooth from BlueZ —
 //! the adapter, its devices, power, discovery, pair, connect, trust, remove —
 //! with a pairing agent BlueZ can ask "does 123456 match?", "what PIN?",
 //! "may this phone pair?"; and a NetworkManager secret agent, asked for a

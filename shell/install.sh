@@ -219,15 +219,12 @@ fi
 head1 "Optional — each one only affects the feature named"
 need nmcli         optional "Wi-Fi tile, Network pane"   networkmanager network-manager NetworkManager NetworkManager
 need bluetoothctl  optional "Bluetooth tile and pane"    bluez-utils bluez bluez bluez
-# hyprshell-agent (agent/) is built here: the Bluetooth pairing prompts and
-# the Wi-Fi password prompts, for when hyprshell-daemon (cargo, below) is
-# not there to do them. Qt itself is already here for Quickshell.
-need cmake         optional "builds hyprshell-agent (pairing and Wi-Fi prompts)" cmake cmake cmake cmake
-need c++           optional "builds hyprshell-agent"     gcc g++ gcc-c++ gcc-c++
-# hyprshell-daemon and the cursor builder (rust/): network, brightness and
-# audio-device state without polling, and the accent cursor drawn with
-# resvg. Without cargo the shell polls nmcli/brightnessctl/pactl instead,
-# and the cursor builder is the Qt one (which needs qt6-svg).
+# hyprshell-daemon and the cursor builder (rust/): Bluetooth pairing and
+# Wi-Fi password prompts, network, brightness and audio-device state
+# without polling, the equalizer, clipboard history, file search, ASUS
+# laptop controls, and the accent cursor drawn with resvg. Without cargo
+# the shell polls nmcli/brightnessctl/pactl, pairs only what asks no
+# questions, and has none of the rest.
 need cargo         optional "builds hyprshell-daemon (no polling) and the cursor builder" rust cargo cargo cargo
 # ASUS laptops: Settings → Laptop (performance profile, charge limit,
 # keyboard light, GPU mode) talks to asusctl's service. Only asked for on
@@ -475,37 +472,6 @@ if [ -d "$OLD" ]; then
     [ "$kept" -gt 0 ] || printf '  nothing of yours to carry across\n'
 fi
 
-# The C++ agent: Bluetooth pairing (the prompts a phone or keyboard needs
-# answered, without which pairing them fails) and NetworkManager's
-# password requests. hyprshell-daemon (below) does the same and is used
-# when it is there; this one is for when it can't be built. Built rather
-# than shipped, against the Qt that is here. Without either the shell
-# falls back to bluetoothctl, which can pair headphones and mice but
-# nothing that asks a question.
-AGENT_BUILD="${XDG_CACHE_HOME:-$HOME/.cache}/hyprshell/agent-build"
-if command -v cmake >/dev/null 2>&1 && command -v c++ >/dev/null 2>&1; then
-    mkdir -p "$AGENT_BUILD" "$QS_DIR/bin" 2>/dev/null
-    if cmake -S "$SRC/agent" -B "$AGENT_BUILD" -DCMAKE_BUILD_TYPE=Release >"$AGENT_BUILD/build.log" 2>&1 \
-       && cmake --build "$AGENT_BUILD" >>"$AGENT_BUILD/build.log" 2>&1 \
-       && cp -- "$AGENT_BUILD/hyprshell-agent" "$QS_DIR/bin/hyprshell-agent"; then
-        printf '  built     %s/bin/hyprshell-agent\n' "$QS_DIR"
-        # The accent cursor's builder: only there when Qt's SVG module is.
-        if [ -x "$AGENT_BUILD/hyprshell-cursors" ]; then
-            cp -- "$AGENT_BUILD/hyprshell-cursors" "$QS_DIR/bin/hyprshell-cursors" \
-                && printf '  built     %s/bin/hyprshell-cursors\n' "$QS_DIR"
-        else
-            printf '  %sno hyprshell-cursors: needs qt6-svg — the accent cursor is off until then%s\n' "$YEL" "$RST"
-        fi
-    else
-        printf '  %scould not build hyprshell-agent — see %s/build.log%s\n' "$YEL" "$AGENT_BUILD" "$RST"
-        [ -x "$OLD/bin/hyprshell-agent" ] && cp -- "$OLD/bin/hyprshell-agent" "$QS_DIR/bin/" \
-            && printf '  kept the previous hyprshell-agent\n'
-        [ -x "$OLD/bin/hyprshell-cursors" ] && cp -- "$OLD/bin/hyprshell-cursors" "$QS_DIR/bin/"
-    fi
-else
-    printf '  not building hyprshell-agent (needs cmake and a C++ compiler; hyprshell-daemon does its job)\n'
-fi
-
 # The Rust helpers (rust/). The daemon replaces the shell's polling of
 # nmcli, brightnessctl, pactl and pgrep with NetworkManager's D-Bus signals,
 # kernel events and PulseAudio's own protocol; the cursor builder draws
@@ -559,12 +525,16 @@ if [ "$CARGO_OK" = 1 ]; then
         printf '  %scould not build the Rust helpers — see %s; the shell polls instead%s\n' "$YEL" "$RUST_LOG" "$RST"
         [ -x "$OLD/bin/hyprshell-daemon" ] && cp -- "$OLD/bin/hyprshell-daemon" "$QS_DIR/bin/" \
             && printf '  kept the previous hyprshell-daemon\n'
+        [ -x "$OLD/bin/hyprshell-cursors" ] && cp -- "$OLD/bin/hyprshell-cursors" "$QS_DIR/bin/"
     fi
 elif ! command -v rustup >/dev/null 2>&1; then
-    printf '  %snot building hyprshell-daemon: needs cargo (rust) — the shell polls nmcli, brightnessctl and pactl instead%s\n' "$YEL" "$RST"
+    printf '  %snot building hyprshell-daemon: needs cargo (rust) — no pairing prompts, clipboard history, file search or laptop controls, and the shell polls nmcli, brightnessctl and pactl%s\n' "$YEL" "$RST"
 fi
 if [ "$CARGO_OK" != 1 ] && [ -x "$OLD/bin/hyprshell-daemon" ] && [ ! -x "$QS_DIR/bin/hyprshell-daemon" ]; then
     cp -- "$OLD/bin/hyprshell-daemon" "$QS_DIR/bin/" && printf '  kept the previous hyprshell-daemon\n'
+fi
+if [ "$CARGO_OK" != 1 ] && [ -x "$OLD/bin/hyprshell-cursors" ] && [ ! -x "$QS_DIR/bin/hyprshell-cursors" ]; then
+    cp -- "$OLD/bin/hyprshell-cursors" "$QS_DIR/bin/"
 fi
 
 # The task manager (../tasks), built and installed alongside, so Ctrl+Shift+Esc
