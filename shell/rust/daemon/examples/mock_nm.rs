@@ -4,8 +4,13 @@
 //! a fixed little world — one Wi-Fi card, three networks, one connected,
 //! two saved — and every few seconds changes the signal strength of the
 //! network in use, the way the real one does.
+//!
+//! Joins, profile changes and the rest are answered too, and printed: a
+//! connection whose password is "wrong" fails as a bad password does (the
+//! device to "failed" with no-secrets); any other comes up.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zbus::blocking::{Connection, MessageIterator};
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
@@ -83,7 +88,7 @@ fn props(path: &str, iface: &str, strength: u8, wifi_on: bool) -> Option<HashMap
     Some(m)
 }
 
-fn settings(i: u32) -> HashMap<String, HashMap<String, OwnedValue>> {
+fn settings(i: u32) -> Settings {
     let mut s = HashMap::new();
     let mut c: HashMap<String, OwnedValue> = HashMap::new();
     let mut w: HashMap<String, OwnedValue> = HashMap::new();
@@ -110,6 +115,67 @@ fn settings(i: u32) -> HashMap<String, HashMap<String, OwnedValue>> {
     s
 }
 
+type Settings = HashMap<String, HashMap<String, OwnedValue>>;
+type Active = Arc<Mutex<HashMap<String, (u32, String)>>>;
+
+fn sval(st: &Settings, sec: &str, key: &str) -> String {
+    match st.get(sec).and_then(|s| s.get(key)).map(|v| &**v) {
+        Some(Value::Str(s)) => s.to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Settings in a line, sorted, byte arrays as text.
+fn show(st: &Settings) -> String {
+    let mut secs: Vec<_> = st.iter().collect();
+    secs.sort_by_key(|(k, _)| k.as_str());
+    secs.iter().map(|(name, kv)| {
+        let mut kv: Vec<_> = kv.iter().collect();
+        kv.sort_by_key(|(k, _)| k.as_str());
+        format!("[{name}] {}", kv.iter().map(|(k, v)| {
+            let v = match &***v {
+                Value::Array(a) if a.iter().all(|x| matches!(x, Value::U8(_))) =>
+                    format!("{:?}", String::from_utf8_lossy(&a.iter().filter_map(|x| if let Value::U8(b) = x { Some(*b) } else { None }).collect::<Vec<_>>())),
+                Value::Str(s) => format!("{:?}", s.as_str()),
+                other => format!("{other}"),
+            };
+            format!("{k}={v}")
+        }).collect::<Vec<_>>().join(" "))
+    }).collect::<Vec<_>>().join(" ")
+}
+
+fn vpn() -> Settings {
+    let mut s = Settings::new();
+    let mut c: HashMap<String, OwnedValue> = HashMap::new();
+    c.insert("type".into(), ov(Value::from("wireguard")));
+    c.insert("id".into(), ov(Value::from("Office VPN")));
+    c.insert("uuid".into(), ov(Value::from("3333-vpn")));
+    s.insert("connection".into(), c);
+    s
+}
+
+/// An activation: up after a moment, or failed as a wrong password fails.
+fn start_active(conn: &Connection, active: &Active, n: u32, st: &Settings) -> String {
+    let path = format!("/org/freedesktop/NetworkManager/ActiveConnection/{n}");
+    let kind = sval(st, "connection", "type");
+    let wrong = sval(st, "802-11-wireless-security", "psk") == "wrong" || sval(st, "802-1x", "password") == "wrong";
+    active.lock().unwrap().insert(path.clone(), (1, kind));
+    let (conn, active, p) = (conn.clone(), active.clone(), path.clone());
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(700));
+        if wrong {
+            let _ = conn.emit_signal(None::<&str>, DEV, "org.freedesktop.NetworkManager.Device", "StateChanged", &(120u32, 50u32, 7u32));
+            let _ = conn.emit_signal(None::<&str>, p.as_str(), "org.freedesktop.NetworkManager.Connection.Active", "StateChanged", &(4u32, 9u32));
+            active.lock().unwrap().remove(&p);
+            eprintln!("ACTIVATION {p} failed (no secrets)");
+        } else {
+            active.lock().unwrap().get_mut(&p).map(|e| e.0 = 2);
+            eprintln!("ACTIVATION {p} up");
+        }
+    });
+    path
+}
+
 fn main() -> zbus::Result<()> {
     let conn = Connection::system()?;
     conn.request_name(NM)?;
@@ -129,6 +195,13 @@ fn main() -> zbus::Result<()> {
         });
     }
     let mut wifi_on = true;
+    let mut store: Vec<(String, Settings)> = vec![
+        ("/org/freedesktop/NetworkManager/Settings/1".into(), settings(1)),
+        ("/org/freedesktop/NetworkManager/Settings/2".into(), settings(2)),
+    ];
+    store.push(("/org/freedesktop/NetworkManager/Settings/3".into(), vpn()));
+    let active: Active = Arc::new(Mutex::new(HashMap::new()));
+    let mut next = 10u32;
     for msg in MessageIterator::from(conn.clone()).flatten() {
         let h = msg.header();
         if h.message_type() != zbus::message::Type::MethodCall {
@@ -155,11 +228,81 @@ fn main() -> zbus::Result<()> {
                 }
                 conn.reply(&h, &())
             }
+            "Get" => {
+                let (want, prop): (String, String) = msg.body().deserialize()?;
+                let v = if want == "org.freedesktop.NetworkManager.Connection.Active" && path != AC {
+                    active.lock().unwrap().get(&path).map(|(st, t)| {
+                        if prop == "State" { ov(Value::from(*st)) } else { ov(Value::from(t.clone())) }
+                    })
+                } else {
+                    props(&path, &want, s, wifi_on).and_then(|mut p| p.remove(&prop))
+                };
+                match v {
+                    Some(v) => conn.reply(&h, &v),
+                    None => conn.reply_error(&h, "org.freedesktop.DBus.Error.UnknownObject", &"no such object"),
+                }
+            }
             "GetDevices" => conn.reply(&h, &vec![ObjectPath::try_from(DEV).unwrap()]),
-            "ListConnections" => conn.reply(&h, &vec![
-                ObjectPath::try_from("/org/freedesktop/NetworkManager/Settings/1").unwrap(),
-                ObjectPath::try_from("/org/freedesktop/NetworkManager/Settings/2").unwrap()]),
-            "GetSettings" => conn.reply(&h, &settings(if path.ends_with("/1") { 1 } else { 2 })),
+            "ListConnections" => conn.reply(&h, &store.iter().map(|(p, _)| ObjectPath::try_from(p.clone()).unwrap()).collect::<Vec<_>>()),
+            "GetSettings" => match store.iter().find(|(p, _)| *p == path) {
+                Some((_, st)) => {
+                    // As the real one: secrets are not handed out here.
+                    let mut st = st.clone();
+                    for sec in st.values_mut() { sec.remove("psk"); sec.remove("password"); }
+                    conn.reply(&h, &st)
+                }
+                None => conn.reply_error(&h, "org.freedesktop.NetworkManager.Settings.Connection.Error", &"no such connection"),
+            },
+            "GetConnectionByUuid" => {
+                let (uuid,): (String,) = msg.body().deserialize()?;
+                match store.iter().find(|(_, st)| sval(st, "connection", "uuid") == uuid) {
+                    Some((p, _)) => conn.reply(&h, &ObjectPath::try_from(p.clone()).unwrap()),
+                    None => conn.reply_error(&h, "org.freedesktop.NetworkManager.Settings.InvalidConnection", &"No connection with the UUID was found."),
+                }
+            }
+            "Update" => {
+                let (new,): (Settings,) = msg.body().deserialize()?;
+                eprintln!("UPDATE {path}: {}", show(&new));
+                if let Some(e) = store.iter_mut().find(|(p, _)| *p == path) {
+                    // Secrets not sent are kept, as NetworkManager does.
+                    let mut new = new;
+                    for (sec, keys) in &e.1 {
+                        for k in ["psk", "password"] {
+                            if let Some(v) = keys.get(k) {
+                                new.entry(sec.clone()).or_default().entry(k.to_string()).or_insert_with(|| v.try_clone().unwrap());
+                            }
+                        }
+                    }
+                    e.1 = new;
+                }
+                conn.reply(&h, &())
+            }
+            "Delete" => {
+                eprintln!("DELETE {path}");
+                store.retain(|(p, _)| *p != path);
+                conn.reply(&h, &())
+            }
+            "AddAndActivateConnection" => {
+                let (mut st, dev, ap): (Settings, zbus::zvariant::OwnedObjectPath, zbus::zvariant::OwnedObjectPath) = msg.body().deserialize()?;
+                next += 1;
+                let uuid = format!("{next}{next}{next}{next}-new");
+                st.entry("connection".into()).or_default().insert("uuid".into(), ov(Value::from(uuid)));
+                eprintln!("ADD+ACTIVATE on {} via {}: {}", dev.as_str(), ap.as_str(), show(&st));
+                let cp = format!("/org/freedesktop/NetworkManager/Settings/{next}");
+                let ap_path = start_active(&conn, &active, next, &st);
+                store.push((cp.clone(), st));
+                conn.reply(&h, &(ObjectPath::try_from(cp).unwrap(), ObjectPath::try_from(ap_path).unwrap()))
+            }
+            "ActivateConnection" => {
+                let (cp, dev, _sp): (zbus::zvariant::OwnedObjectPath, zbus::zvariant::OwnedObjectPath, zbus::zvariant::OwnedObjectPath) = msg.body().deserialize()?;
+                eprintln!("ACTIVATE {} on {}", cp.as_str(), dev.as_str());
+                next += 1;
+                let st = store.iter().find(|(p, _)| p == cp.as_str()).map(|e| e.1.clone()).unwrap_or_default();
+                let ap_path = start_active(&conn, &active, next, &st);
+                conn.reply(&h, &ObjectPath::try_from(ap_path).unwrap())
+            }
+            "DeactivateConnection" => { eprintln!("DEACTIVATE"); conn.reply(&h, &()) }
+            "Disconnect" => { eprintln!("DISCONNECT {path}"); conn.reply(&h, &()) }
             "RequestScan" => { eprintln!("scan requested"); conn.reply(&h, &()) }
             _ => continue,
         };

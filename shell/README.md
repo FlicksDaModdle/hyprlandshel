@@ -36,7 +36,7 @@ shell/
       Compositor.qml       Hyprland workspaces, windows and their geometry
       Cursor.qml           The accent-coloured pointer (CursorShapes.js draws it)
       Kvantum.qml          Generates a Kvantum widget theme from the palette
-      Network.qml          nmcli: Wi-Fi, university sign-in, saved networks
+      Network.qml          Wi-Fi, university sign-in, saved networks (daemon; nmcli without)
       NightLight.qml       night light: built in (daemon), or hyprsunset / wlsunset
       Notifications.qml    The org.freedesktop.Notifications server
       Session.qml          Lock / suspend / reboot / log out / reload
@@ -745,8 +745,11 @@ samples less often while in the background.
 and settings change, and reads `/proc` itself for Settings → About.
 
 **hyprshell-daemon** (`rust/daemon`, built by install.sh when `cargo` is
-installed) supplies the rest without polling. It reads NetworkManager over
-D-Bus and is told when anything changes, the backlight from sysfs with the
+installed) supplies the rest without polling. It reads and drives
+NetworkManager over D-Bus and is told when anything changes — joining a
+network, a university sign-in, forgetting one: the password goes to
+NetworkManager directly, never onto a command line, where nmcli has to put
+it — the backlight from sysfs with the
 kernel's change events (set through logind), audio devices through
 PulseAudio's own protocol (cards, modes, connectors, which app plays where),
 and whether a night-light program runs, from `/proc`. It is also the

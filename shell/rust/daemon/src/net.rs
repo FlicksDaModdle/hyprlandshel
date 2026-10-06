@@ -14,9 +14,8 @@
 //! Events:    net {available, wifiEnabled, full, active[], wifi{}, aps[],
 //!                 saved[] (when read)}
 //!
-//! Joining networks, profiles and secrets stay with nmcli and the
-//! password agent (agent.rs): they are rare, and nmcli's handling of them is what
-//! the shell's forms were written against.
+//! Joining, forgetting and the rest are netact.rs, on a thread of their
+//! own; passwords NetworkManager asks for are the agent's (agent.rs).
 
 use crate::out;
 use serde_json::{json, Value as Json};
@@ -407,6 +406,21 @@ fn run(rx: &Receiver<Json>, tx: &Sender<Json>, full: &mut bool) -> zbus::Result<
 pub fn start() -> Sender<Json> {
     let (tx, rx) = channel::<Json>();
     let tx2 = tx.clone();
+    // Actions to their own thread, everything else to the reader.
+    let (atx, arx) = channel::<Json>();
+    crate::netact::worker(arx);
+    let (ptx, prx) = channel::<Json>();
+    {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            for c in prx {
+                let to = if crate::netact::is_action(c["cmd"].as_str().unwrap_or("")) { &atx } else { &tx };
+                if to.send(c).is_err() {
+                    return;
+                }
+            }
+        });
+    }
     std::thread::spawn(move || {
         let mut full = false;
         loop {
@@ -428,5 +442,5 @@ pub fn start() -> Sender<Json> {
             }
         }
     });
-    tx
+    ptx
 }

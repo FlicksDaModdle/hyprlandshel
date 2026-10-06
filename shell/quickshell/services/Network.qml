@@ -5,7 +5,9 @@ import Quickshell.Io
 import "../config" as Config
 import "." as Services
 
-// Wi-Fi through nmcli, with hyprshell-daemon's agent (Services.Agent) as
+// Wi-Fi through hyprshell-daemon, which reads and drives NetworkManager over
+// its D-Bus API (rust/daemon/src/net.rs, netact.rs) — nmcli when the daemon
+// is not there — with the daemon's agent (Services.Agent) as
 // NetworkManager's secret agent — the part of KDE's network handling that a
 // bare session lacks. When NetworkManager needs a password it has not got
 // (a saved one that stopped working; a network set up in KDE, which keeps
@@ -109,7 +111,7 @@ Singleton {
             return "The network didn't accept the sign-in. The username and password may be right "
                  + "and the method wrong — open More options and try what your university lists "
                  + "(often PEAP with MSCHAPv2, or TTLS with PAP).";
-        if (/No network with SSID/i.test(t))
+        if (/No network with SSID|could not be found/i.test(t))
             return "That network isn't in range any more.";
         if (/timed out|timeout/i.test(t))
             return "The network didn't answer in time.";
@@ -155,12 +157,28 @@ Singleton {
     // When it is running and reaching NetworkManager, it pushes everything
     // below as it changes (from NetworkManager's own D-Bus signals), and
     // none of the nmcli reading runs. Actions — joining, forgetting,
-    // profiles — still go through nmcli either way.
+    // profiles — go to it too (see "actions" below).
     readonly property bool viaDaemon: Services.Daemon.netLive
     onViaDaemonChanged: if (viaDaemon) Services.Daemon.send({ cmd: "net-watch", on: listWanted })
     Connections {
         target: Services.Daemon
         function onEvent(ev) {
+            if (ev.ev === "net-done") {
+                const job = root.daemonJob;
+                if (job && ev.id === job.id) {
+                    root.daemonJob = null;
+                    daemonTimeout.stop();
+                    root.finish(job, ev.ok === true, ev.error || "");
+                }
+                return;
+            }
+            if (ev.ev === "net-profile") { root.applyProfile(ev.uuid, ev); return; }
+            if (ev.ev === "exited" && root.daemonJob) {
+                const job = root.daemonJob;
+                root.daemonJob = null;
+                root.finish(job, false, "hyprshell-daemon stopped");
+                return;
+            }
             if (ev.ev !== "net" || ev.available !== true) return;
             root.available = true;
             root.applyRadio(!!ev.wifiEnabled);
@@ -441,8 +459,7 @@ Singleton {
                     if (c < 0) continue;
                     i[line.slice(0, c)] = line.slice(c + 1).replace(/\\:/g, ":");
                 }
-                const p = Object.assign({}, root.profileInfo);
-                p[profileProc.uuid] = {
+                root.applyProfile(profileProc.uuid, {
                     eap: (i["802-1x.eap"] || "").split(",")[0],
                     phase2: i["802-1x.phase2-auth"] || i["802-1x.phase2-autheap"] || "",
                     identity: i["802-1x.identity"] || "",
@@ -450,13 +467,21 @@ Singleton {
                     domain: i["802-1x.domain-suffix-match"] || "",
                     ca: i["802-1x.ca-cert"] || "",
                     systemCa: i["802-1x.system-ca-certs"] === "yes"
-                };
-                root.profileInfo = p;
+                });
             }
         }
     }
+    function applyProfile(uuid, i) {
+        const p = Object.assign({}, root.profileInfo);
+        p[uuid] = { eap: i.eap || "", phase2: i.phase2 || "", identity: i.identity || "",
+                    anonymous: i.anonymous || "", domain: i.domain || "", ca: i.ca || "",
+                    systemCa: i.systemCa === true };
+        root.profileInfo = p;
+    }
     function loadProfile(uuid) {
-        if (!uuid || profileProc.running) return;
+        if (!uuid) return;
+        if (root.viaDaemon) { Services.Daemon.send({ cmd: "net-profile", id: 0, uuid: uuid }); return; }
+        if (profileProc.running) return;
         profileProc.uuid = uuid;
         profileProc.command = ["nmcli", "-t", "-f",
             "802-1x.eap,802-1x.phase2-auth,802-1x.phase2-autheap,802-1x.identity,802-1x.anonymous-identity,"
@@ -466,11 +491,27 @@ Singleton {
     }
 
     // ── actions ───────────────────────────────────────────────────────────
-    // One at a time, in order. A password reaches the script on stdin, which
-    // reads it into $HYPRSHELL_WIFI_SECRET as its first line. nmcli itself
-    // still takes it as an argument — for adding or changing a profile it
-    // has no other way — so it is visible in /proc for the moment nmcli runs.
+    // One at a time, in order. Through hyprshell-daemon when it reaches
+    // NetworkManager: the command goes over its stdin, password and all,
+    // and NetworkManager is driven over D-Bus — the password is never on a
+    // command line. Otherwise nmcli: a password reaches the script on
+    // stdin, which reads it into $HYPRSHELL_WIFI_SECRET as its first line;
+    // nmcli itself still takes it as an argument — for adding or changing
+    // a profile it has no other way — so there it is visible in /proc for
+    // the moment nmcli runs.
     property var queue: []
+    property var daemonJob: null
+    property int daemonSeq: 0
+    // A join waits for the connection, up to 90 seconds in the daemon.
+    Timer {
+        id: daemonTimeout
+        interval: 120000
+        onTriggered: {
+            const job = root.daemonJob;
+            root.daemonJob = null;
+            if (job) root.finish(job, false, "timed out");
+        }
+    }
     Process {
         id: action
         property var job: null
@@ -482,32 +523,49 @@ Singleton {
         onExited: code => {
             const job = action.job;
             action.job = null;
-            if (job) {
-                if (job.ssid) {
-                    root.setError(job.ssid, code === 0 ? "" : root.explain(job.err || ("nmcli exited with " + code)));
-                    if (root.busySsid === job.ssid) root.busySsid = "";
-                }
-                if (code === 0 && !job.ssid) root.lastError = "";
-                if (job.done) job.done(code === 0);
-            }
-            root.refresh();
-            if (!root.viaDaemon) savedProc.running = true;
-            root.pump();
+            root.finish(job, code === 0, job ? (job.err || ("nmcli exited with " + code)) : "");
         }
+    }
+    function finish(job, ok, err) {
+        if (job) {
+            if (job.ssid) {
+                root.setError(job.ssid, ok ? "" : root.explain(err));
+                if (root.busySsid === job.ssid) root.busySsid = "";
+            } else if (!ok && err) {
+                root.lastError = root.explain(err);
+            }
+            if (ok && !job.ssid) root.lastError = "";
+            if (job.done) job.done(ok);
+        }
+        root.refresh();
+        if (!root.viaDaemon) savedProc.running = true;
+        root.pump();
     }
     // secret: a string for a script that reads one, else null.
     function run(cmd, secret, ssid, done) {
-        root.queue = root.queue.concat([{ cmd: cmd, secret: secret === undefined ? null : secret,
+        root.act(null, cmd, secret, ssid, done);
+    }
+    // daemon: the command for hyprshell-daemon (netact.rs), secret
+    // included; cmd and secret: the nmcli way, when it is not there.
+    function act(daemon, cmd, secret, ssid, done) {
+        root.queue = root.queue.concat([{ daemon: daemon, cmd: cmd, secret: secret === undefined ? null : secret,
                                           ssid: ssid || "", done: done || null }]);
         root.pump();
     }
     readonly property string readSecret: 'IFS= read -r HYPRSHELL_WIFI_SECRET || HYPRSHELL_WIFI_SECRET=""\n'
 
     function pump() {
-        if (action.running || root.queue.length === 0) return;
+        if (action.running || root.daemonJob || root.queue.length === 0) return;
         const job = root.queue[0];
         root.queue = root.queue.slice(1);
         job.err = "";
+        if (job.daemon && root.viaDaemon) {
+            job.id = ++root.daemonSeq;
+            root.daemonJob = job;
+            daemonTimeout.restart();
+            Services.Daemon.send(Object.assign({}, job.daemon, { id: job.id }));
+            return;
+        }
         action.job = job;
         action.command = job.cmd;
         action.running = true;
@@ -515,7 +573,7 @@ Singleton {
 
     function setWifiEnabled(on) {
         wifiEnabled = on;               // optimistic, corrected by the next poll
-        run(["nmcli", "radio", "wifi", on ? "on" : "off"]);
+        act({ cmd: "net-wifi", on: on }, ["nmcli", "radio", "wifi", on ? "on" : "off"]);
         if (on) settle.restart();
     }
     Timer { id: settle; interval: 2000; onTriggered: root.scan() }
@@ -539,15 +597,16 @@ Singleton {
         if (p) {
             if (password) {
                 const field = p.enterprise ? "802-1x.password" : "wifi-sec.psk";
-                run(["sh", "-c", root.readSecret + 'nmcli connection modify "$1" ' + field
+                act({ cmd: "net-up", uuid: p.uuid, secret: password },
+                    ["sh", "-c", root.readSecret + 'nmcli connection modify "$1" ' + field
                      + ' "$HYPRSHELL_WIFI_SECRET" ' + field + '-flags 0 && exec nmcli connection up "$1"',
                      "wifi-join", p.uuid], password, name);
             } else {
-                run(["nmcli", "connection", "up", p.uuid], null, name);
+                act({ cmd: "net-up", uuid: p.uuid }, ["nmcli", "connection", "up", p.uuid], null, name);
             }
             return;
         }
-        run(["sh", "-c", root.readSecret
+        act({ cmd: "net-join", ssid: name, secret: password || "" }, ["sh", "-c", root.readSecret
            + 'if [ -n "$HYPRSHELL_WIFI_SECRET" ]; then\n'
            + '  exec nmcli device wifi connect "$1" password "$HYPRSHELL_WIFI_SECRET"\n'
            + 'fi\n'
@@ -591,7 +650,10 @@ Singleton {
         setError(name, "");
         busySsid = name;
         const p = root.profileFor(name);
-        run(["sh", "-c", root.readSecret
+        const daemon = { cmd: "net-enterprise", ssid: name, uuid: p ? p.uuid : "", hidden: !!o.hidden,
+                         eap: eap, phase2: phase2, identity: o.identity || "", anonymous: o.anonymous || "",
+                         domain: o.domain || "", ca: ca, secret: o.password || "" };
+        act(daemon, ["sh", "-c", root.readSecret
            + 'ssid=$1 uuid=$2 dev=$3; shift 3\n'
            + 'pw=""; [ -n "$HYPRSHELL_WIFI_SECRET" ] && pw="802-1x.password"\n'
            + 'if [ -n "$uuid" ]; then\n'
@@ -620,12 +682,13 @@ Singleton {
         }
         setError(name, "");
         busySsid = name;
-        run(["sh", "-c", root.readSecret
+        const secret = kind === "psk" ? (password || "") : "";
+        act({ cmd: "net-join", ssid: name, hidden: true, secret: secret }, ["sh", "-c", root.readSecret
            + 'if [ -n "$HYPRSHELL_WIFI_SECRET" ]; then\n'
            + '  exec nmcli device wifi connect "$1" password "$HYPRSHELL_WIFI_SECRET" hidden yes\n'
            + 'fi\n'
            + 'exec nmcli device wifi connect "$1" hidden yes', "wifi-hidden", name],
-            kind === "psk" ? (password || "") : "", name);
+            secret, name);
     }
 
     // Deletes the saved profile, so the next join asks again.
@@ -634,24 +697,25 @@ Singleton {
         const id = p ? p.uuid : nameOrUuid;
         if (!id) return;
         if (p) setError(p.ssid, "");
-        run(["nmcli", "connection", "delete", id]);
+        act(p ? { cmd: "net-forget", uuid: p.uuid } : null, ["nmcli", "connection", "delete", id]);
     }
 
     function setAutoconnect(uuid, on) {
-        run(["nmcli", "connection", "modify", uuid, "connection.autoconnect", on ? "yes" : "no"]);
+        act({ cmd: "net-autoconnect", uuid: uuid, on: on },
+            ["nmcli", "connection", "modify", uuid, "connection.autoconnect", on ? "yes" : "no"]);
     }
 
     function disconnect() {
         if (!ifname) return;
-        run(["nmcli", "device", "disconnect", ifname]);
+        act({ cmd: "net-disconnect" }, ["nmcli", "device", "disconnect", ifname]);
     }
 
     function setVpn(on) {
-        if (!on && vpnName) run(["nmcli", "connection", "down", vpnName]);
+        if (!on && vpnName) act({ cmd: "net-vpn", on: false }, ["nmcli", "connection", "down", vpnName]);
         else if (on)
             // The first configured VPN profile; with none, nothing happens
             // and the toggle springs back on the next poll.
-            run(["sh", "-c",
+            act({ cmd: "net-vpn", on: true }, ["sh", "-c",
                 "nmcli -t -f NAME,TYPE connection show | awk -F: '$2==\"vpn\"||$2==\"wireguard\"{print $1; exit}' | xargs -r -I{} nmcli connection up {}"]);
     }
 
@@ -702,7 +766,8 @@ Singleton {
             const j = rememberLater.job;
             rememberLater.job = null;
             if (!j) return;
-            root.run(["sh", "-c", root.readSecret
+            root.act({ cmd: "net-secret", uuid: j.uuid, key: j.key === "wifi-sec.psk" ? "psk" : "password", secret: j.secret },
+                     ["sh", "-c", root.readSecret
                       + 'exec nmcli connection modify "$1" "$2" "$HYPRSHELL_WIFI_SECRET" "$2-flags" 0',
                       "wifi-remember", j.uuid, j.key], j.secret);
         }

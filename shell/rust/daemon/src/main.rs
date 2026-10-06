@@ -51,6 +51,7 @@ mod gamma;
 mod idle;
 mod fx;
 mod net;
+mod netact;
 mod nhist;
 mod nightlight;
 mod out;
