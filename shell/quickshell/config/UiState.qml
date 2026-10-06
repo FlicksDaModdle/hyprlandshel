@@ -27,6 +27,11 @@ Singleton {
     property bool mediaOpen: false
     property bool powerOpen: false
     property bool clipboardOpen: false
+    // A tray icon's menu, drawn by the shell (modules/panels/TrayMenu.qml):
+    // which item, and the x of the icon it hangs from.
+    property bool trayMenuOpen: false
+    property var trayMenuItem: null
+    property real trayMenuX: 0
     // A panel wants to be typed into — the control center's password field,
     // for one. The panel layer takes keyboard focus only while this is set,
     // because a layer surface that holds focus the rest of the time takes it
@@ -109,7 +114,7 @@ Singleton {
     readonly property bool iconPickerOpen: iconPickerFor !== ""
 
     readonly property bool anyPanelOpen: controlCenterOpen || notificationsOpen
-                                         || calendarOpen || mediaOpen || powerOpen || clipboardOpen || desktopMenuOpen
+                                         || calendarOpen || mediaOpen || powerOpen || clipboardOpen || trayMenuOpen || desktopMenuOpen
                                          || windowMenuOpen || appMenuOpen || iconPickerOpen
 
     function closeAll() {
@@ -124,6 +129,7 @@ Singleton {
         mediaOpen = false;
         powerOpen = false;
         clipboardOpen = false;
+        trayMenuOpen = false;
         desktopMenuOpen = false;
         windowMenuOpen = false;
         appMenuOpen = false;
@@ -177,6 +183,15 @@ Singleton {
     function toggleMedia() { toggle("media"); }
     function togglePower() { toggle("power"); }
     function toggleClipboard() { toggle("clipboard"); }
+    // The same icon again closes it; another icon moves it there.
+    function openTrayMenu(item, x) {
+        const same = trayMenuOpen && trayMenuItem === item;
+        closeAll();
+        if (same) return;
+        trayMenuItem = item;
+        trayMenuX = x;
+        trayMenuOpen = true;
+    }
 
     function toggleWindowMenu(x) {
         const was = windowMenuOpen;

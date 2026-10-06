@@ -11,8 +11,9 @@ import "../icons"
 //
 // Icons come from the apps themselves, so these are real app icons rather
 // than pack glyphs — left click activates, middle click is the secondary
-// action, right click opens the app's own menu through Quickshell's
-// DBusMenu bridge.
+// action, right click opens the app's menu: its entries, read through
+// Quickshell's DBusMenu bridge, drawn by the shell (panels/TrayMenu.qml)
+// rather than by the app's own toolkit.
 Item {
     id: root
 
@@ -106,11 +107,10 @@ Item {
                 }
 
                 function openMenu() {
-                    if (!modelData.hasMenu) return;
-                    // Anchor the app's own menu just below the bar, under
-                    // this icon.
+                    if (!modelData.hasMenu || !modelData.menu) return;
+                    // Hung below the bar, centred under this icon.
                     const pos = root.barWindow.itemRect(entry);
-                    modelData.display(root.barWindow, Math.round(pos.x), Math.round(pos.y + pos.height));
+                    Config.UiState.openTrayMenu(modelData, pos.x + pos.width / 2);
                 }
             }
         }

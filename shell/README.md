@@ -168,6 +168,11 @@ On the right: the StatusNotifier tray, the notification bell with its count,
 a status capsule showing SSID / volume / battery that opens the control
 center, a clock that opens the calendar, and the power button.
 
+Right-clicking a tray icon opens the app's menu drawn by the shell — the
+same surface, rows and accent hover as the shell's own menus, whatever
+toolkit the app uses — with its submenus beside it, its checkboxes and
+radio items, its disabled entries greyed, and arrows / Enter / Escape.
+
 **Dock.** Start and overview, pinned apps, then any unpinned app that
 happens to be running, then Settings and show-desktop. Right-click a tile
 for its menu: open a new window, re-point the slot at a different

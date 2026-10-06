@@ -141,6 +141,16 @@ Variants {
             PowerMenu {}
         }
 
+        // A tray icon's menu, under the icon, drawn as the shell's own.
+        TrayMenu {
+            anchors.fill: parent
+            visible: Config.UiState.trayMenuOpen
+            screenWidth: layer.width
+            screenHeight: layer.height
+            anchorX: Config.UiState.trayMenuX
+            topY: layer.panelTop
+        }
+
         // The bar's window menu hangs under its button rather than at the
         // right gutter, so it reads as belonging to it.
         WindowMenuPanel {
