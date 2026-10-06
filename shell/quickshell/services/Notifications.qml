@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Services.Notifications
 import "../config" as Config
+import "." as Services
 
 // The desktop notification server. This is what makes the bar's bell badge,
 // the notification center and the banner toasts real: anything on the system
@@ -36,6 +37,7 @@ Singleton {
             // it, so it stays listed in the center until dismissed here.
             notification.tracked = true;
             root.stamp(notification.id);
+            Services.NotifHistory.add(notification);
 
             if (!Config.Appearance.dnd && !notification.transient) {
                 root.popups = [notification].concat(root.popups);

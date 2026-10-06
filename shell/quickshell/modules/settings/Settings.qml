@@ -871,7 +871,19 @@ Scope {
               type: "slider", min: 2, max: 20, unit: "s",
               value: A.popupTimeout, set: v => A.popupTimeout = v },
             { n: "Waiting in the center", s: "Notifications the shell is currently holding",
-              type: "info", value: Services.Notifications.count }
+              type: "info", value: Services.Notifications.count },
+            { n: "Keep a history",
+              s: !Services.NotifHistory.daemonHas
+                  ? "Needs hyprshell-daemon — install.sh builds it when cargo is installed"
+                  : "Every notification, kept after it is dismissed, to search from the center's "
+                    + "History. Stored for you alone; turning it off forgets everything.",
+              type: "toggle", value: A.notifHistory, set: v => A.notifHistory = v },
+            { n: "Keep for", s: "Older ones are forgotten",
+              type: "seg", options: ["1 day", "7 days", "30 days"],
+              value: A.notifHistoryDays === 1 ? "1 day" : A.notifHistoryDays === 30 ? "30 days" : "7 days",
+              set: v => A.notifHistoryDays = parseInt(v, 10) },
+            { n: "Forget the history", s: Services.NotifHistory.total + " kept",
+              type: "action", label: "Clear", set: () => Services.NotifHistory.clear() }
         ];
 
         case "Display": {

@@ -32,6 +32,7 @@
 //!                 the lock before any sleep — in place of hypridle
 //!   drives        USB sticks and SD cards through UDisks2: mounted on
 //!                 arrival if chosen, announced, ejected safely
+//!   history       the notifications shown, kept to search later
 //!
 //! It speaks to the shell in JSON lines: commands on
 //! stdin, events as JSON lines on stdout (services/Daemon.qml). It exits
@@ -50,6 +51,7 @@ mod gamma;
 mod idle;
 mod fx;
 mod net;
+mod nhist;
 mod nightlight;
 mod out;
 #[cfg(feature = "pulse")]
@@ -76,6 +78,7 @@ fn main() {
     let gamma = gamma::start();
     let idle = idle::start();
     let usb = usb::start();
+    let nhist = nhist::start();
     #[cfg(feature = "pulse")]
     let pulse: Option<Sender<Value>> = Some(pulse::start());
     #[cfg(not(feature = "pulse"))]
@@ -84,7 +87,7 @@ fn main() {
     out::emit(json!({
         "ev": "ready",
         "version": env!("CARGO_PKG_VERSION"),
-        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "usb": true, "pulse": pulse.is_some() }
+        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "usb": true, "nhist": true, "pulse": pulse.is_some() }
     }));
 
     let stdin = std::io::stdin();
@@ -100,6 +103,8 @@ fn main() {
             Some(&nightlight)
         } else if name.starts_with("bt-") || name.starts_with("nm-") {
             Some(&agent)
+        } else if name.starts_with("nh-") {
+            Some(&nhist)
         } else if name.starts_with("usb-") {
             Some(&usb)
         } else if name.starts_with("idle-") {

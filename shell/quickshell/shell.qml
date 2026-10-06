@@ -78,6 +78,9 @@ ShellRoot {
     // And removable drives, which mount and notify on their own.
     readonly property bool usbStarted: Services.Usb.available || true
 
+    // And notification history, whose days' limit applies from the start.
+    readonly property bool notifHistoryStarted: Services.NotifHistory.on || true
+
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
 

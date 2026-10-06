@@ -655,6 +655,18 @@ the drive and then powers it off, so it is safe to pull. If something still
 has a file open on it, it says so instead of failing quietly.
 `hyprshell-daemon` does it through UDisks2; internal disks are never shown.
 
+## Notification history
+
+The notification center has a **History** beside Notifications: everything
+shown, still there after it is dismissed, by day, with a search over the
+app, title and text. Clear asks once more before it forgets. A notification
+its sender marks transient (a volume change) is never kept, and markup is
+kept as the text it reads as.
+
+`hyprshell-daemon` keeps it in `~/.local/state/hyprshell/notifications.json`,
+readable by you alone, for 1, 7 or 30 days (Settings → Notifications), at
+most 1000. Turning it off forgets everything.
+
 ## Night light
 
 Settings → Display → Night light: **Off**, **On**, **Sunset to sunrise** or

@@ -217,6 +217,10 @@ Singleton {
             // plugged in, and a notification saying so.
             property bool usbAutomount: true
             property bool usbNotify: true
+            // Notification history (rust/daemon/src/nhist.rs): kept, and
+            // for how many days.
+            property bool notifHistory: true
+            property int notifHistoryDays: 7
             // Night light (services/NightLight.qml): off, on, sunset to
             // sunrise, or set times; the warmth; the times; and a place
             // for sunset (empty: the time zone's city).
@@ -569,6 +573,8 @@ Singleton {
     property alias clipboardHistory: prefs.clipboardHistory
     property alias usbAutomount: prefs.usbAutomount
     property alias usbNotify: prefs.usbNotify
+    property alias notifHistory: prefs.notifHistory
+    property alias notifHistoryDays: prefs.notifHistoryDays
     property alias idleLock: prefs.idleLock
     property alias idleOff: prefs.idleOff
     property alias idleSuspend: prefs.idleSuspend
