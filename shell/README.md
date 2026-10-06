@@ -667,6 +667,23 @@ kept as the text it reads as.
 readable by you alone, for 1, 7 or 30 days (Settings → Notifications), at
 most 1000. Turning it off forgets everything.
 
+## Screenshots, recordings and text from the screen
+
+**Print** opens the capture toolbar: a picture or a video, of a region, a
+window (the windows on screen are offered to snap to), the screen or every
+screen, with a delay and the pointer, sound for a video (the desktop's or
+the microphone), and **Text**, which reads a region's words onto the
+clipboard (tesseract). **Super+Shift+S** grabs a region straight away,
+**Shift+Print** the screen, and **Super+Shift+Print** starts or stops a
+recording; the bar shows a red timer while one runs — click it to stop.
+
+Shots go to `~/Pictures/Screenshots` and the clipboard, and the
+notification (with the shot in it) has **Edit**: pen, arrow, box,
+highlighter, pixelate for what should not be shared, text, crop, undo,
+Copy and Save. Choose "Edit after" in the toolbar to go straight there.
+Recordings (wf-recorder) go to `~/Videos/Recordings`. All of it is in
+Settings → Keybinds to rebind, and in the launcher.
+
 ## Updates
 
 The bar shows a package button with a count while updates are waiting;

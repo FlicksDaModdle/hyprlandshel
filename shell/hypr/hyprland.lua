@@ -505,16 +505,14 @@ hl.bind(mainMod .. " + SHIFT + R",   hl.dsp.exec_cmd(shell("reloadShell")))
 hl.bind(mainMod .. " + L",           hl.dsp.exec_cmd(shell("lock")))
 hl.bind(mainMod .. " + D",           hl.dsp.exec_cmd(shell("showDesktop")))
 
--- Screenshots: region to ~/Pictures and the clipboard, matching what the
--- control center's Capture tile and the launcher's Screenshot command do.
-hl.bind(mainMod .. " + SHIFT + S", hl.dsp.exec_cmd(
-    "f=\"$HOME/Pictures/$(date +%Y-%m-%d-%H%M%S).png\"; mkdir -p \"$HOME/Pictures\"; "
-    .. "grim -g \"$(slurp)\" \"$f\" && wl-copy < \"$f\" && "
-    .. "notify-send -a Screenshot 'Region saved' \"$f\""))
-hl.bind("Print", hl.dsp.exec_cmd(
-    "f=\"$HOME/Pictures/$(date +%Y-%m-%d-%H%M%S).png\"; mkdir -p \"$HOME/Pictures\"; "
-    .. "grim \"$f\" && wl-copy < \"$f\" && "
-    .. "notify-send -a Screenshot 'Screen saved' \"$f\""))
+-- Screenshots and recording, through the shell (services/Capture.qml):
+-- Print opens the capture toolbar; Super+Shift+S grabs a region and
+-- Shift+Print the screen, straight to ~/Pictures/Screenshots and the
+-- clipboard; Super+Shift+Print starts or stops a screen recording.
+hl.bind("Print",                         hl.dsp.exec_cmd(shell("toggleCapture")))
+hl.bind(mainMod .. " + SHIFT + S",       hl.dsp.exec_cmd(shell("screenshot", "region")))
+hl.bind("SHIFT + Print",                 hl.dsp.exec_cmd(shell("screenshot", "screen")))
+hl.bind(mainMod .. " + SHIFT + Print",   hl.dsp.exec_cmd(shell("toggleRecording")))
 
 -- Focus movement
 hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }))

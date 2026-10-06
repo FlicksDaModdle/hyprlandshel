@@ -239,6 +239,8 @@ need brightnessctl optional "brightness slider and keys" brightnessctl brightnes
 need grim          optional "screenshots"                grim grim grim grim
 need slurp         optional "screenshot region picker"   slurp slurp slurp slurp
 need wl-copy       optional "screenshot to clipboard"    wl-clipboard wl-clipboard wl-clipboard wl-clipboard
+need wf-recorder   optional "screen recording"            wf-recorder wf-recorder wf-recorder wf-recorder
+need tesseract     optional "text from the screen (OCR)"  "tesseract tesseract-data-eng" tesseract-ocr tesseract tesseract-ocr
 need notify-send   optional "timers, alarms and screenshot confirmations"   libnotify libnotify-bin libnotify libnotify-tools
 need playerctl     optional "media transport keys"       playerctl playerctl playerctl playerctl
 need checkupdates  optional "update checks without a password" pacman-contrib "" "" ""

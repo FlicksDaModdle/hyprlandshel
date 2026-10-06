@@ -917,16 +917,8 @@ PanelSurface {
     }
 
     // ── tile actions ──────────────────────────────────────────────────────
-    function capture() {
-        Config.UiState.closeAll();
-        // grim + slurp is the standard wlroots pair; the file lands where
-        // the mockup's screenshot notification says it does.
-        Quickshell.execDetached(["sh", "-c",
-            "sleep 0.15; f=\"$HOME/Pictures/$(date +%Y-%m-%d-%H%M%S).png\"; "
-            + "mkdir -p \"$HOME/Pictures\"; "
-            + "grim -g \"$(slurp)\" \"$f\" && (wl-copy < \"$f\" 2>/dev/null; "
-            + "notify-send -a Screenshot 'Region saved' \"$f\")"]);
-    }
+    // The capture toolbar: region, window or screen, picture or video.
+    function capture() { Config.UiState.toggleCapture(); }
 
     function setGameMode(on) {
         Config.Appearance.gameMode = on;

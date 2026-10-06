@@ -18,6 +18,7 @@ import "modules/iconmaker"
 import "modules/lock"
 import "modules/switcher"
 import "modules/corners"
+import "modules/capture"
 
 // Entry point. Run as `qs -c hyprshell` (this directory should live at
 // ~/.config/quickshell/hyprshell/). hyprland.lua's autostart hook and
@@ -91,6 +92,7 @@ ShellRoot {
 
     // And updates, checked on their own timer.
     readonly property bool updatesStarted: Services.Updates.checking || true
+    readonly property bool captureStarted: Services.Capture.busy || true
 
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
@@ -158,6 +160,11 @@ ShellRoot {
         active: Config.UiState.iconMakerOpen || (!!iconMaker.item && iconMaker.item.dirty)
         IconMaker {}
     }
+    // The screenshot editor, while a shot is open in it.
+    LazyLoader {
+        active: Config.UiState.shotEditorPath !== ""
+        ShotEditor { path: Config.UiState.shotEditorPath }
+    }
     Lock {}
     AltTab {}
     // Last: over everything, the screen's own corners rounded off.
@@ -197,6 +204,10 @@ ShellRoot {
         function toggleTimers(): void { Services.Commands.run("toggleTimers"); }
         function toggleUpdates(): void { Services.Commands.run("toggleUpdates"); }
         function checkUpdates(): void { Services.Commands.run("checkUpdates"); }
+        function toggleCapture(): void { Services.Commands.run("toggleCapture"); }
+        function screenshot(mode: string): void { Services.Commands.run("screenshot " + mode); }
+        function toggleRecording(): void { Services.Commands.run("toggleRecording"); }
+        function ocr(): void { Services.Commands.run("ocr"); }
         function timer(length: string): void { Services.Commands.run("timer " + length); }
         function pomodoro(): void { Services.Commands.run("pomodoro"); }
         function closePanels(): void { Services.Commands.run("closePanels"); }

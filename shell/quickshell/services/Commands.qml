@@ -86,6 +86,11 @@ Singleton {
         "toggleTimers":        () => Config.UiState.toggleTimers(),
         "toggleUpdates":       () => Config.UiState.toggleUpdates(),
         "checkUpdates":        () => Services.Updates.check(),
+        "toggleCapture":       () => Config.UiState.toggleCapture(),
+        // region (default) | window | screen | all
+        "screenshot":          arg => Services.Capture.shot(arg || "region"),
+        "toggleRecording":     () => Services.Capture.toggleRecording(),
+        "ocr":                 () => Services.Capture.ocr(),
         // "timer 10m", "timer 1h30, tea"
         "timer":               arg => {
             const s = String(arg || "");

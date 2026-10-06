@@ -356,6 +356,34 @@ Variants {
                     barWindow: bar
                 }
 
+                // Recording the screen: a red dot and how long; click to stop.
+                BarButton {
+                    id: recPill
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: Services.Capture.recording
+                    spacing: 6
+                    onActivated: Services.Capture.stopRecording()
+
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 10; height: 10; radius: 5
+                        color: "#e5484d"
+                        SequentialAnimation on opacity {
+                            running: recPill.visible
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 0.35; duration: 700; easing.type: Easing.InOutSine }
+                            NumberAnimation { to: 1; duration: 700; easing.type: Easing.InOutSine }
+                        }
+                    }
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: Services.Capture.clock(Services.Capture.recordedSeconds)
+                        font.pixelSize: Config.Appearance.barFs(0)
+                        font.weight: Font.DemiBold
+                        font.features: { "tnum": 1 }
+                    }
+                }
+
                 // The microphone, camera or screen in use: an accent pill
                 // with one glyph for each, there only while something is.
                 BarButton {

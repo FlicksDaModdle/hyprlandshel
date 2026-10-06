@@ -186,6 +186,19 @@ var icons = {
         ink: circle(12, 13.5, 7.5),
         acc: "M12 6V3.5 M12 6C10 4.5 8 4.8 7 5.8 M12 6C14 4.5 16 4.8 17 5.8"
     },
+    // The screenshot editor's tools.
+    arrowTool: {
+        ink: "M5 19L18 6",
+        acc: "M10 6H18V14"
+    },
+    highlighter: {
+        ink: "M14.5 4.5L19.5 9.5L11 18H6V13L14.5 4.5Z M12 7L17 12",
+        acc: "M4 21H20"
+    },
+    crop: {
+        ink: "M6 2V18H22",
+        acc: "M2 6H18V22"
+    },
     // Focus: a target.
     focus: {
         ink: join(circle(12, 12, 8.5), circle(12, 12, 4.5)),

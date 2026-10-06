@@ -14,7 +14,9 @@ Singleton {
         { key: "overview",   label: "Overview",     icon: "panelsTopLeft", cat: "Command · workspaces" },
         { key: "settings",   label: "Settings",     icon: "settings",      cat: "System · shell and device" },
         { key: "theme",      label: "Theme",        icon: "palette",       cat: "Command · switch light / dark" },
-        { key: "capture",    label: "Screenshot",   icon: "camera",        cat: "Command · grab a region" },
+        { key: "capture",    label: "Screenshot",   icon: "camera",        cat: "Command · region, window or screen — or a recording" },
+        { key: "record",     label: "Record screen", icon: "monitor",      cat: "Command · start or stop a screen recording" },
+        { key: "ocr",        label: "Text from screen", icon: "font",      cat: "Command · copy the words in a region" },
         { key: "displays",   label: "Displays",     icon: "monitor",       cat: "System · monitors and scaling" },
         // Here as well as as a desktop entry: the entry only exists once
         // tasks/install.sh has run and the shell has seen it, and this

@@ -34,6 +34,9 @@ Singleton {
     property bool timersOpen: false
     property bool privacyOpen: false
     property bool updatesOpen: false
+    property bool captureOpen: false
+    // The screenshot open in the editor (modules/capture), "" for none.
+    property string shotEditorPath: ""
     property var trayMenuItem: null
     property real trayMenuX: 0
     // A panel wants to be typed into — the control center's password field,
@@ -118,7 +121,7 @@ Singleton {
     readonly property bool iconPickerOpen: iconPickerFor !== ""
 
     readonly property bool anyPanelOpen: controlCenterOpen || notificationsOpen
-                                         || calendarOpen || mediaOpen || powerOpen || clipboardOpen || trayMenuOpen || drivesOpen || timersOpen || privacyOpen || updatesOpen || desktopMenuOpen
+                                         || calendarOpen || mediaOpen || powerOpen || clipboardOpen || trayMenuOpen || drivesOpen || timersOpen || privacyOpen || updatesOpen || captureOpen || desktopMenuOpen
                                          || windowMenuOpen || appMenuOpen || iconPickerOpen
 
     function closeAll() {
@@ -138,6 +141,7 @@ Singleton {
         timersOpen = false;
         privacyOpen = false;
         updatesOpen = false;
+        captureOpen = false;
         desktopMenuOpen = false;
         windowMenuOpen = false;
         appMenuOpen = false;
@@ -195,6 +199,7 @@ Singleton {
     function toggleTimers() { toggle("timers"); }
     function togglePrivacy() { toggle("privacy"); }
     function toggleUpdates() { toggle("updates"); }
+    function toggleCapture() { toggle("capture"); }
     // The same icon again closes it; another icon moves it there.
     function openTrayMenu(item, x) {
         const same = trayMenuOpen && trayMenuItem === item;

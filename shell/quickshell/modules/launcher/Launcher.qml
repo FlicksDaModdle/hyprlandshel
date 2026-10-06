@@ -509,12 +509,9 @@ Variants {
             case "logout":    Services.Session.logout(); break;
             case "suspend":   Services.Session.suspend(); break;
             case "poweroff":  Services.Session.powerOff(); break;
-            case "capture":
-                Quickshell.execDetached(["sh", "-c",
-                    "sleep 0.2; f=\"$HOME/Pictures/$(date +%Y-%m-%d-%H%M%S).png\"; "
-                    + "mkdir -p \"$HOME/Pictures\"; grim -g \"$(slurp)\" \"$f\" && "
-                    + "(wl-copy < \"$f\" 2>/dev/null; notify-send -a Screenshot 'Region saved' \"$f\")"]);
-                break;
+            case "capture":   Config.UiState.toggleCapture(); return;
+            case "record":    Services.Capture.toggleRecording(); break;
+            case "ocr":       Services.Capture.ocr(); break;
             }
         }
 

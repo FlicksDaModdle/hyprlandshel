@@ -44,6 +44,10 @@ Singleton {
         // chord picked for it would be taken from something they do use.
         { key: "osk",         n: "On-screen keyboard",   def: "",                  ipc: "toggleKeyboard" },
         { key: "clipboard",   n: "Clipboard history",    def: "SUPER + SHIFT + V", ipc: "toggleClipboard" },
+        { key: "capture",     n: "Capture toolbar",      def: "Print",             ipc: "toggleCapture" },
+        { key: "screenshot",  n: "Screenshot a region",  def: "SUPER + SHIFT + S", ipc: "screenshot", arg: "region" },
+        { key: "shotscreen",  n: "Screenshot the screen", def: "SHIFT + Print",    ipc: "screenshot", arg: "screen" },
+        { key: "record",      n: "Start / stop recording", def: "SUPER + SHIFT + Print", ipc: "toggleRecording" },
         { key: "terminal",    n: "Terminal",             def: "SUPER + Return",    exec: "terminal" },
         { key: "files",       n: "File manager",         def: "SUPER + E",         exec: "files" },
         { key: "browser",     n: "Browser",              def: "SUPER + B",         exec: "browser" },

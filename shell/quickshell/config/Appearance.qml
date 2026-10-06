@@ -235,6 +235,17 @@ Singleton {
             property int updatesEvery: 3
             property bool updatesNotify: true
             property bool updatesInBar: true
+            // Capture (services/Capture.qml): seconds before a shot, the
+            // pointer in it, the editor after every shot ("always") or
+            // only from the notification ("ask"), a recording's sound
+            // ("none" | "desktop" | "mic"), what a bare record captures,
+            // and the OCR language (tesseract's code).
+            property int captureDelay: 0
+            property bool capturePointer: false
+            property string captureEdit: "ask"
+            property string captureAudio: "none"
+            property string captureRecordMode: "screen"
+            property string captureOcrLang: "eng"
             // Night light (services/NightLight.qml): off, on, sunset to
             // sunrise, or set times; the warmth; the times; and a place
             // for sunset (empty: the time zone's city).
@@ -597,6 +608,12 @@ Singleton {
     property alias updatesEvery: prefs.updatesEvery
     property alias updatesNotify: prefs.updatesNotify
     property alias updatesInBar: prefs.updatesInBar
+    property alias captureDelay: prefs.captureDelay
+    property alias capturePointer: prefs.capturePointer
+    property alias captureEdit: prefs.captureEdit
+    property alias captureAudio: prefs.captureAudio
+    property alias captureRecordMode: prefs.captureRecordMode
+    property alias captureOcrLang: prefs.captureOcrLang
     property alias idleLock: prefs.idleLock
     property alias idleOff: prefs.idleOff
     property alias idleSuspend: prefs.idleSuspend

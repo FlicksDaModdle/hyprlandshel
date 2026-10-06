@@ -162,6 +162,16 @@ Variants {
             UpdatesPanel {}
         }
 
+        // The capture toolbar sits low and in the middle, out of the way
+        // of what is being captured.
+        Entrance {
+            shown: Config.UiState.captureOpen
+            fromY: 12
+            x: Math.round((layer.width - width) / 2)
+            y: layer.height - height - 110
+            CapturePanel {}
+        }
+
         Entrance {
             shown: Config.UiState.powerOpen
             x: layer.panelRight - width
