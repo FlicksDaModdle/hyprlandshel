@@ -67,7 +67,8 @@ Variants {
         readonly property bool live: Services.LiveWallpaper.enabled
         readonly property bool useImage: Config.Appearance.wallpaper !== ""
         readonly property bool useTopo: !useImage && Config.Appearance.wallpaperStyle === "topo"
-        readonly property bool useGradient: !useImage && !useTopo
+        readonly property bool useAnimated: !useImage && !useTopo && Config.Appearance.wallpaperStyle !== "gradient"
+        readonly property bool useGradient: !useImage && !useTopo && !useAnimated
 
         // String tints promoted to color values, so the radial washes can
         // fade their own hue out to alpha 0 instead of to grey.
@@ -153,6 +154,12 @@ Variants {
             anchors.fill: parent
             active: win.useTopo
             sourceComponent: Topography { screen: win.modelData }
+        }
+
+        Loader {
+            anchors.fill: parent
+            active: win.useAnimated
+            sourceComponent: AnimatedWallpaper { screen: win.modelData }
         }
 
         Image {

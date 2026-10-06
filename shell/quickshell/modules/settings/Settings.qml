@@ -8,6 +8,7 @@ import "../../config" as Config
 import "../../services" as Services
 import "../common"
 import "../icons"
+import "../background/Palettes.js" as Palettes
 
 // The Settings app.
 //
@@ -65,7 +66,7 @@ Scope {
     readonly property string wallpaperShown: wallpaperMode !== "" ? wallpaperMode
         : Services.LiveWallpaper.enabled ? "live"
         : Config.Appearance.wallpaper !== "" ? "image"
-        : Config.Appearance.wallpaperStyle === "topo" ? "topo" : "gradient"
+        : Config.Appearance.wallpaperStyle !== "gradient" ? "animated" : "gradient"
 
     // The galleries' search and filter. Objects rather than properties of
     // this Scope, so typing into them does not rebuild the rows — which
@@ -80,9 +81,9 @@ Scope {
         // What is being switched away from is kept, to come back to.
         if (A.wallpaper !== "") A.wallpaperLast = A.wallpaper;
         if (L.enabled) A.liveLast = A.liveWallpaper;
-        if (v === "gradient" || v === "topo") {
+        if (v === "gradient" || v === "animated") {
             A.wallpaper = "";
-            A.wallpaperStyle = v;
+            A.wallpaperStyle = v === "animated" ? (A.animLastStyle || "topo") : v;
             if (L.enabled) L.stop();
             root.wallpaperMode = "";
         } else if (v === "image") {
@@ -1975,19 +1976,21 @@ Scope {
         const mode = root.wallpaperShown;
         const rows = [{ n: "Desktop",
             s: mode === "gradient" ? "The shell's tinted gradient"
-               : mode === "topo" ? "A contour map of a made-up terrain"
+               : mode === "animated" ? "Drawn and animated by the shell, in colours you choose"
                : mode === "image" ? "A picture of your own"
                : "A video, played by mpvpaper",
             type: "seg",
-            options: [{ label: "Gradient", value: "gradient" }, { label: "Topo", value: "topo" },
+            options: [{ label: "Gradient", value: "gradient" }, { label: "Animated", value: "animated" },
                       { label: "Image", value: "image" }, { label: "Live", value: "live" }],
             value: mode, set: v => root.setWallpaperMode(v) }];
 
         if (mode === "gradient") {
             rows.push({ n: "Tint", s: "Its temperature", type: "seg",
                 options: ["Warm", "Neutral", "Cool"], value: A.tint, set: v => A.tint = v });
-        } else if (mode === "topo") {
-            return rows.concat(root.topoRows());
+        } else if (mode === "animated") {
+            rows.push({ type: "panel", panel: "animated" });
+            return rows.concat(A.wallpaperStyle === "topo" ? root.topoRows() : root.animRows())
+                       .concat(root.motionRows());
         } else if (mode === "image") {
             rows.push({ n: "Image",
                 s: A.wallpaper !== "" ? A.wallpaper.split("/").pop() : "None picked yet",
@@ -2113,6 +2116,49 @@ Scope {
 
     // The Topographic part: the terrain, its lines, and its colours. Every
     // change is on the desktop behind the window as it is made.
+    // The animated styles other than the map: their colours, and what the
+    // sliders mean for the style chosen.
+    function animRows() {
+        const A = Config.Appearance;
+        const hex = c => String(c).toUpperCase();
+        const st = Palettes.style(A.wallpaperStyle) || { density: "Density", glow: "Glow" };
+        const rows = [];
+        if (A.animPalette === "custom") {
+            rows.push({ type: "header", n: "Colours", s: "" });
+            for (const [n, k] of [["Background, top", "animBg1"], ["Background, bottom", "animBg2"],
+                                  ["First colour", "animC1"], ["Second colour", "animC2"], ["Third colour", "animC3"]])
+                rows.push({ n: n, s: hex(A[k]), type: "color", value: A[k], set: c => A[k] = c.toString() });
+        }
+        rows.push({ type: "header", n: "Look", s: "" });
+        rows.push({ n: "Size", s: "How big everything is drawn", type: "slider", min: 25, max: 300, unit: "%",
+            value: A.animScale, set: v => A.animScale = Math.round(v) });
+        rows.push({ n: st.density, type: "slider", min: 0, max: 100, unit: "%",
+            value: A.animDensity, set: v => A.animDensity = Math.round(v) });
+        rows.push({ n: st.glow, type: "slider", min: 0, max: 100, unit: "%",
+            value: A.animGlow, set: v => A.animGlow = Math.round(v) });
+        rows.push({ n: "Brightness", s: "How strongly it shows against the background", type: "slider",
+            min: 0, max: 100, unit: "%", value: A.animIntensity, set: v => A.animIntensity = Math.round(v) });
+        rows.push({ n: "Variation", s: "Variation " + A.animSeed, type: "buttons",
+            buttons: [{ label: "Previous", quiet: true, enabled: A.animSeed > 1,
+                        set: () => A.animSeed = Math.max(1, A.animSeed - 1) },
+                      { label: "Next", quiet: true, set: () => A.animSeed = A.animSeed + 1 }] });
+        rows.push({ type: "header", n: "Motion", s: "" });
+        rows.push({ n: "Speed", type: "slider", min: 5, max: 300, unit: "%",
+            value: A.animWallSpeed, set: v => A.animWallSpeed = Math.round(v) });
+        return rows;
+    }
+    // Shared by every animated style, the map included.
+    function motionRows() {
+        const A = Config.Appearance;
+        return [
+            { n: "Frame rate", s: "Smoother costs more power", type: "seg",
+              options: [{ label: "15", value: "15" }, { label: "30", value: "30" }, { label: "60", value: "60" }],
+              value: String(A.animFps), set: v => A.animFps = parseInt(v, 10) },
+            { n: "Keep moving on battery", s: "Otherwise it holds still until the charger is in",
+              type: "toggle", value: A.animOnBattery, set: v => A.animOnBattery = v }
+        ];
+    }
+
     function topoRows() {
         const A = Config.Appearance;
         const hex = c => String(c).toUpperCase();
@@ -2146,6 +2192,8 @@ Scope {
                 value: A.topoLineCustom, set: c => A.topoLineCustom = c.toString() });
         rows.push({ n: "Strength", type: "slider", min: 5, max: 100, unit: "%",
             value: A.topoStrength, set: v => A.topoStrength = v });
+        rows.push({ n: "Glow", s: "A soft light either side of each line", type: "slider", min: 0, max: 100, unit: "%",
+            value: A.topoGlow, set: v => A.topoGlow = v });
 
         rows.push({ type: "header", n: "Ground", s: "" });
         rows.push({ n: "Shading", s: A.topoShade === "flat" ? "One wash, top to bottom"
@@ -2166,11 +2214,20 @@ Scope {
                 value: A.topoHigh, set: c => A.topoHigh = c.toString() });
         }
 
-        rows.push({ n: "Drift", s: "The terrain slowly moving — held still behind windows and on battery",
+        rows.push({ type: "header", n: "Motion", s: "" });
+        rows.push({ n: "Animate", s: "Held still behind windows, and on battery unless allowed below",
             type: "toggle", value: A.topoDrift, set: v => A.topoDrift = v });
-        if (A.topoDrift)
-            rows.push({ n: "Speed", type: "slider", min: 5, max: 100, unit: "%",
+        if (A.topoDrift) {
+            rows.push({ n: "What moves", s: A.topoMotion === "drift" ? "The terrain wanders"
+                    : A.topoMotion === "flow" ? "The contours climb the slopes and the next takes their place"
+                    : "The contours flow over wandering terrain",
+                type: "seg",
+                options: [{ label: "Terrain", value: "drift" }, { label: "Contours", value: "flow" },
+                          { label: "Both", value: "both" }],
+                value: A.topoMotion, set: v => A.topoMotion = v });
+            rows.push({ n: "Speed", type: "slider", min: 5, max: 200, unit: "%",
                 value: A.topoSpeed, set: v => A.topoSpeed = v });
+        }
         return rows;
     }
 

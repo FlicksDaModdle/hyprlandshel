@@ -133,7 +133,8 @@ Item {
                 case "gallery": return galleryComponent;
                 case "panel":  return root.spec.panel === "bluetooth" ? bluetoothComponent
                                    : root.spec.panel === "sound" ? soundComponent
-                                   : root.spec.panel === "focus" ? focusComponent : wifiComponent;
+                                   : root.spec.panel === "focus" ? focusComponent
+                                   : root.spec.panel === "animated" ? animatedComponent : wifiComponent;
                 case "color":  return colorComponent;
                 case "buttons": return buttonsComponent;
                 default:       return infoComponent;
@@ -1031,6 +1032,10 @@ Item {
     Component {
         id: focusComponent
         FocusPanel { width: control.width }
+    }
+    Component {
+        id: animatedComponent
+        AnimatedGallery { width: control.width }
     }
 
     Component {

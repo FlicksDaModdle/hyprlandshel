@@ -107,7 +107,8 @@ Singleton {
             property string wallpaper: ""             // absolute path; empty = tinted gradient
             // With no image: the tinted gradient, or a contour map drawn by a
             // shader (modules/background/Topography.qml).
-            property string wallpaperStyle: "gradient" // gradient | topo
+            // gradient | topo | aurora | blobs | waves | stars | synth | cells
+            property string wallpaperStyle: "gradient"
             property int topoSeed: 1                  // which terrain
             property int topoScale: 100               // 25-300 %, size of the hills
             property int topoDetail: 4                // 1-6, roughness
@@ -124,6 +125,27 @@ Singleton {
             property string topoHigh: "#3a4146"
             property bool topoDrift: false            // the terrain slowly moving
             property int topoSpeed: 30                // 5-100 %
+            property string topoMotion: "both"        // drift | flow | both
+            property int topoGlow: 0                  // 0-100 %, light around the lines
+            // The animated wallpapers (modules/background/AnimatedWallpaper.qml):
+            // a palette (a preset's key, "theme" or "custom", with the five
+            // custom colours), speed, size, density, glow and brightness in
+            // %, a variation, frames a second, and whether to move on battery.
+            property string animPalette: "theme"
+            property string animBg1: "#0b1020"
+            property string animBg2: "#1b2440"
+            property string animC1: "#5b8cff"
+            property string animC2: "#c36bff"
+            property string animC3: "#44e0c8"
+            property int animWallSpeed: 100
+            property int animScale: 100
+            property int animDensity: 50
+            property int animGlow: 50
+            property int animIntensity: 70
+            property int animSeed: 1
+            property int animFps: 30
+            property bool animOnBattery: false
+            property string animLastStyle: "topo"
             // A video playing on the desktop, drawn over the ground by
             // mpvpaper (services/LiveWallpaper.qml): its path. Empty = none.
             property string liveWallpaper: ""
@@ -515,6 +537,23 @@ Singleton {
     property alias wallpaper: prefs.wallpaper
     property alias wallpaperStyle: prefs.wallpaperStyle
     property alias topoSeed: prefs.topoSeed
+    property alias topoMotion: prefs.topoMotion
+    property alias topoGlow: prefs.topoGlow
+    property alias animPalette: prefs.animPalette
+    property alias animBg1: prefs.animBg1
+    property alias animBg2: prefs.animBg2
+    property alias animC1: prefs.animC1
+    property alias animC2: prefs.animC2
+    property alias animC3: prefs.animC3
+    property alias animWallSpeed: prefs.animWallSpeed
+    property alias animScale: prefs.animScale
+    property alias animDensity: prefs.animDensity
+    property alias animGlow: prefs.animGlow
+    property alias animIntensity: prefs.animIntensity
+    property alias animSeed: prefs.animSeed
+    property alias animFps: prefs.animFps
+    property alias animOnBattery: prefs.animOnBattery
+    property alias animLastStyle: prefs.animLastStyle
     property alias topoScale: prefs.topoScale
     property alias topoDetail: prefs.topoDetail
     property alias topoFlow: prefs.topoFlow

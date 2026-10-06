@@ -802,7 +802,7 @@ Beyond that, the shell only works when someone can see the result:
   the bar at the display's refresh rate for as long as music plays
 - the screen corners step aside for fullscreen windows, and fullscreen
   games can be scanned straight out to the display
-- the topographic wallpaper holds still on battery and under Battery saver
+- the animated wallpapers hold still behind windows, on battery and under Battery saver
 
 The task manager's smooth graphs step once a sample on battery, and it
 samples less often while in the background.
@@ -899,36 +899,47 @@ shell moves it back to the edge of the curve with Hyprland's
 hover and clicks reach whatever is there as usual. The lock screen draws the
 same corners itself, since it is above every layer.
 
-## Topographic wallpaper
+## Animated wallpapers
 
-Settings → Wallpaper → **Topo** draws a contour map of a made-up terrain
-as the desktop — not a video or an image, but a fragment shader in the
-shell's own background layer (`modules/background/Topography.qml`,
-`shaders/topo.frag`). Still, it is drawn once and then costs nothing; Qt
-draws it again only when a setting changes. Monitors side by side show one
-continuous map, placed by where each sits in the layout.
+Settings → Wallpaper → **Animated** draws the desktop with the shell's own
+shaders — no video, no extra program — in seven styles, each shown as a
+small live preview to pick from:
 
-Everything about it is a setting: the terrain (step through maps with
-Previous and Next), the size of the hills, roughness, and how much the
-ridges wander; how many contour lines, their width, heavier index lines
-every 4th, 5th or 10th, and their colour (the theme's ink, the accent, or
-any) and strength; the ground shaded flat, smoothly from low to high, or in
-bands between lines, in the theme's colours or two of your own. **Drift**
-moves the terrain slowly at fifteen frames a second, and holds it still
-while a window covers the screen or the machine is on battery.
+- **Topographic** — a contour map of a made-up terrain whose lines flow up
+  the slopes (the Wallpaper Engine look), over terrain that slowly wanders,
+  or both, with an optional glow
+- **Aurora** — curtains of light over a night sky
+- **Blobs** — soft pools of colour drifting over each other
+- **Waves** — many fine lines rolling across the screen
+- **Starfield** — layers of drifting, twinkling stars over a nebula
+- **Synthwave** — a striped sun over a neon grid rolling towards you
+- **Cells** — a shifting mosaic with glowing edges
 
-The shader is compiled with Qt's `qsb`; after changing `topo.frag`:
+Colours come from a palette: the theme's own (it follows light and dark and
+the accent), one of ten presets (Aurora, Sunset, Ocean, Forest, Neon, Ember,
+Rosé, Mono, Paper, Mint), or five of your own. Each style also has size,
+density (curtains, pools, lines, stars, grid, cells), glow, brightness, a
+variation to step through, and speed; the map keeps its own detailed
+settings (hills, roughness, flow, contour count and width, index lines,
+shading in flat, smooth or bands). Monitors side by side show one
+continuous picture.
+
+They move at 15, 30 or 60 frames a second and hold still while a window
+covers the screen, under Battery saver, and on battery unless "Keep moving
+on battery" is on. Still, they cost nothing.
+
+The shaders are compiled with Qt's `qsb`; after changing one:
 
 ```
-qsb --glsl "100 es,120,150,300 es" --hlsl 50 --msl 12 \
-    -o modules/background/shaders/topo.frag.qsb modules/background/shaders/topo.frag
+cd modules/background/shaders
+qsb --glsl "100 es,120,150,300 es" --hlsl 50 --msl 12 -o waves.frag.qsb waves.frag
 ```
 
 (`qsb` is in `qt6-shadertools`, under `/usr/lib/qt6/bin`.)
 
 ## Live wallpapers
 
-Settings → Wallpaper starts with one choice — **Gradient**, **Topo**,
+Settings → Wallpaper starts with one choice — **Gradient**, **Animated**,
 **Image** or **Live** — and shows only what that one needs; switching away and back
 brings the last image or live wallpaper with it. Live plays a video as the
 wallpaper, with [mpvpaper](https://github.com/GhostNaN/mpvpaper)

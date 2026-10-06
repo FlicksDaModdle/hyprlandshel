@@ -8,10 +8,12 @@ import "../../services" as Services
 // drawn by a fragment shader (shaders/topo.frag).
 //
 // Still, it is drawn once and then costs nothing — Qt only draws the
-// wallpaper again when something about it changes. With Drift on, the
-// terrain moves slowly at a low frame rate, and holds still while windows
-// cover the screen or the machine is on battery, when nobody would see it
-// or it would cost battery for nothing.
+// wallpaper again when something about it changes. Animated, the terrain
+// drifts, the contours flow up the slopes (the Wallpaper Engine look), or
+// both, at the animated wallpapers' frame rate — and hold still while
+// windows cover the screen, on battery (unless asked otherwise) or under
+// Battery saver, when nobody would see it or it would cost power for
+// nothing.
 //
 // shaders/topo.frag.qsb is compiled from topo.frag with Qt's qsb:
 //   qsb --glsl "100 es,120,150,300 es" --hlsl 50 --msl 12 \
@@ -21,6 +23,9 @@ ShaderEffect {
 
     // The screen this is on, for its place in the layout and its pixels.
     property var screen: null
+    // The small live version in Settings' gallery: always moving, and its
+    // sizes shrunk with it.
+    property bool preview: false
     readonly property string screenName: screen ? screen.name : ""
 
     readonly property var prefs: Config.Appearance
@@ -33,15 +38,19 @@ ShaderEffect {
         const r = n => { const x = Math.sin(n) * 43758.5453; return x - Math.floor(x); };
         return Qt.vector2d(r(prefs.topoSeed * 12.9898) * 240 - 120, r(prefs.topoSeed * 78.233) * 240 - 120);
     }
-    readonly property real unit: 650 * Math.max(25, prefs.topoScale) / 100
+    readonly property real unit: 650 * Math.max(25, prefs.topoScale) / 100 * (preview ? width / 1280 : 1)
     readonly property real detail: Math.max(1, Math.min(6, prefs.topoDetail))
     readonly property real warp: prefs.topoFlow / 100
     readonly property real levels: Math.max(2, prefs.topoLevels)
-    readonly property real lineWidth: prefs.topoWidth * ((screen && screen.devicePixelRatio) || 1)
+    readonly property real lineWidth: preview ? Math.max(0.7, prefs.topoWidth * 0.6)
+                                              : prefs.topoWidth * ((screen && screen.devicePixelRatio) || 1)
     readonly property real majorEvery: prefs.topoMajor
     readonly property real lineAlpha: prefs.topoStrength / 100
     readonly property real shade: prefs.topoShade === "bands" ? 2 : prefs.topoShade === "smooth" ? 1 : 0
     property real time: 0
+    // Flowing: the contours climbing, a level every few seconds.
+    property real rise: 0
+    readonly property real glowAmt: prefs.topoGlow / 100
 
     // ── colours ───────────────────────────────────────────────────────────
     function opaque(c) { return Qt.rgba(c.r, c.g, c.b, 1); }
@@ -62,18 +71,25 @@ ShaderEffect {
     // ── drifting ──────────────────────────────────────────────────────────
     // Covered: a tiled, maximised or fullscreen window on this screen.
     readonly property bool covered: {
-        if (topo.screenName === "") return false;
+        if (topo.preview || topo.screenName === "") return false;
         return Services.Compositor.clientsShownOn(topo.screenName)
             .some(c => !c.floating || c.fullscreenMode > 0);
     }
-    readonly property bool drifting: prefs.topoDrift && topo.visible && !topo.covered && !UPower.onBattery && !Services.PowerSaver.active
+    readonly property bool drifting: topo.preview ? topo.visible : prefs.topoDrift && topo.visible && !topo.covered
+        && (!UPower.onBattery || prefs.animOnBattery) && !Services.PowerSaver.active
+    // What moves: the terrain drifting, the contours flowing, or both.
+    readonly property bool moveTerrain: prefs.topoMotion !== "flow"
+    readonly property bool moveLines: prefs.topoMotion !== "drift"
 
-    // Fifteen frames a second: the terrain moves slowly enough that more
-    // would only cost more.
+    // At the animated wallpapers' frame rate (Settings → Wallpaper).
     Timer {
-        interval: 66
+        interval: Math.round(1000 / Math.max(10, Math.min(60, topo.prefs.animFps)))
         repeat: true
         running: topo.drifting
-        onTriggered: topo.time += 0.066 * topo.prefs.topoSpeed / 30
+        onTriggered: {
+            const dt = interval / 1000 * topo.prefs.topoSpeed / 30;
+            if (topo.moveTerrain) topo.time += dt;
+            if (topo.moveLines) topo.rise += dt * 0.35;
+        }
     }
 }

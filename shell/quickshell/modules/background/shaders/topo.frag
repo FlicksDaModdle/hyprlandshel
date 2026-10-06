@@ -29,6 +29,8 @@ layout(std140, binding = 0) uniform buf {
     float lineAlpha;   // 0-1
     float shade;       // 0 flat, 1 smooth, 2 bands
     float time;        // drift
+    float rise;        // contours flowing: how far they have moved, in levels
+    float glowAmt;     // 0-1, light around the lines
     vec4 lineColor;
     vec4 bgLow;
     vec4 bgHigh;
@@ -73,7 +75,9 @@ void main() {
     float h = fbm(p + warp * 2.5 * q);
     h = clamp(0.5 + h * 1.25, 0.0, 1.0);
 
-    float v = h * levels;
+    // Flowing: every line climbs the slope and the next takes its place,
+    // which reads as the ground itself rising and falling.
+    float v = h * levels + rise;
     float fw = max(fwidth(v), 1e-5);
     // Distance to the nearest line, in device pixels.
     float d = abs(fract(v + 0.5) - 0.5) / fw;
@@ -84,11 +88,17 @@ void main() {
     a *= lineAlpha * (major || majorEvery < 0.5 ? 1.0 : 0.65);
     // Lines closer together than a few pixels are a smear, not a map.
     a *= 1.0 - smoothstep(0.25, 0.5, fw);
+    // Glow: a soft light either side of each line.
+    float g = glowAmt * exp(-d / max(w * 2.5, 1.0)) * lineAlpha * (1.0 - smoothstep(0.25, 0.5, fw));
 
     float t = shade < 0.5 ? qt_TexCoord0.y
             : shade < 1.5 ? h
-            : floor(v) / max(levels - 1.0, 1.0);
+            // Back and forth rather than round: a flowing map's bands
+            // would otherwise jump from the top colour to the bottom.
+            : 1.0 - abs(fract(floor(v) / max(levels - 1.0, 1.0) * 0.5) * 2.0 - 1.0);
     vec3 bg = mix(bgLow.rgb, bgHigh.rgb, clamp(t, 0.0, 1.0));
 
-    fragColor = vec4(mix(bg, lineColor.rgb, a), 1.0) * qt_Opacity;
+    // Bands follow the flow, so they move with their lines.
+    vec3 outc = mix(bg, lineColor.rgb, a) + lineColor.rgb * g * 0.6;
+    fragColor = vec4(outc, 1.0) * qt_Opacity;
 }
