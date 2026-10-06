@@ -88,4 +88,12 @@ ShaderEffect {
         running: fx.animating
         onTriggered: fx.time += interval / 1000 * fx.prefs.animWallSpeed / 100
     }
+
+    // For `qs -c hyprshell ipc call shell wallpaperStatus`.
+    readonly property string styleName: style
+    readonly property int gfxApi: GraphicsInfo.api
+    readonly property bool moving: animating
+    Component.onCompleted: if (!preview) Services.WallMotion.add(fx)
+    Component.onDestruction: if (!preview) Services.WallMotion.remove(fx)
+    onAnimatingChanged: if (!preview) console.log("AnimatedWallpaper:", animating ? "moving" : "still", "on", screenName)
 }

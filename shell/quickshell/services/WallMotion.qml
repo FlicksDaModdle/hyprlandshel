@@ -58,6 +58,27 @@ Singleton {
         return r;
     }
 
+    // ── what each screen is doing, for `qs -c hyprshell ipc call shell wallpaperStatus` ────
+    // The desktop's wallpapers add themselves while they are up.
+    property var shown: []
+    function add(w) { root.shown = root.shown.concat([w]); }
+    function remove(w) { root.shown = root.shown.filter(x => x !== w); }
+    function status() {
+        const api = ["unknown", "software", "openvg", "opengl", "direct3d11", "vulkan", "metal", "null", "direct3d12"];
+        return JSON.stringify({
+            style: prefs.wallpaperStyle, image: prefs.wallpaper !== "", live: Services.LiveWallpaper.enabled,
+            onBattery: root.onBattery, saver: root.saver, keepOnBattery: prefs.animOnBattery,
+            holdBehindWindows: prefs.animPauseCovered, fps: prefs.animFps, otherPrograms: root.foreignNames,
+            topo: { animate: prefs.topoDrift, motion: prefs.topoMotion, speed: prefs.topoSpeed },
+            screens: root.shown.map(w => ({
+                screen: w.screenName, style: w.styleName, moving: w.moving, why: root.reason(w.screenName),
+                time: Math.round(w.time * 100) / 100, rise: w.rise !== undefined ? Math.round(w.rise * 100) / 100 : null,
+                size: Math.round(w.width) + "x" + Math.round(w.height), status: w.status,
+                graphics: api[w.gfxApi] || String(w.gfxApi)
+            }))
+        });
+    }
+
     // ── another program drawing a wallpaper ──────────────────────────────
     // Process names as the kernel keeps them: 15 characters at most.
     readonly property var others: [

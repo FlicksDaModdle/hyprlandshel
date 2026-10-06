@@ -76,15 +76,24 @@ ShaderEffect {
     readonly property bool moveTerrain: prefs.topoMotion !== "flow"
     readonly property bool moveLines: prefs.topoMotion !== "drift"
 
-    // At the animated wallpapers' frame rate (Settings → Wallpaper).
+    // At the animated wallpapers' frame rate (Settings → Wallpaper); never
+    // slower than the slider's own least, whatever a settings file says.
     Timer {
-        interval: Math.round(1000 / Math.max(10, Math.min(60, topo.prefs.animFps)))
+        interval: Math.round(1000 / Math.max(10, Math.min(60, topo.prefs.animFps || 30)))
         repeat: true
         running: topo.drifting
         onTriggered: {
-            const dt = interval / 1000 * topo.prefs.topoSpeed / 30;
+            const dt = interval / 1000 * Math.max(5, topo.prefs.topoSpeed || 30) / 30;
             if (topo.moveTerrain) topo.time += dt;
             if (topo.moveLines) topo.rise += dt * 0.35;
         }
     }
+
+    // For `qs -c hyprshell ipc call shell wallpaperStatus`.
+    readonly property string styleName: "topo"
+    readonly property int gfxApi: GraphicsInfo.api
+    readonly property bool moving: drifting
+    Component.onCompleted: if (!preview) Services.WallMotion.add(topo)
+    Component.onDestruction: if (!preview) Services.WallMotion.remove(topo)
+    onDriftingChanged: if (!preview) console.log("Topography:", drifting ? "moving" : "still", "on", screenName)
 }

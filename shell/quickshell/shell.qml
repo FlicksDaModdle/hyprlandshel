@@ -213,6 +213,8 @@ ShellRoot {
         function closePanels(): void { Services.Commands.run("closePanels"); }
         function openSettings(pane: string): void { Services.Commands.run("openSettings " + pane); }
         function openFiles(path: string): void { Services.Commands.run("openFiles " + path); }
+        // What the desktop's wallpaper is doing and why, as JSON.
+        function wallpaperStatus(): string { return Services.WallMotion.status(); }
 
         // Appearance
         function toggleTheme(): void { Services.Commands.run("toggleTheme"); }
