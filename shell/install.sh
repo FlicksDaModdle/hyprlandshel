@@ -241,6 +241,7 @@ need slurp         optional "screenshot region picker"   slurp slurp slurp slurp
 need wl-copy       optional "screenshot to clipboard"    wl-clipboard wl-clipboard wl-clipboard wl-clipboard
 need notify-send   optional "timers, alarms and screenshot confirmations"   libnotify libnotify-bin libnotify libnotify-tools
 need playerctl     optional "media transport keys"       playerctl playerctl playerctl playerctl
+need checkupdates  optional "update checks without a password" pacman-contrib "" "" ""
 need kitty         optional "the themed terminal"        kitty kitty kitty kitty
 # The style plugin is what actually draws; kvantummanager only comes with it
 # and is the thing that is reliably on PATH to look for.

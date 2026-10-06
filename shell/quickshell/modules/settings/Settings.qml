@@ -1762,7 +1762,23 @@ Scope {
             { n: "Shell config", s: Config.Appearance.configDir + "/theme.json", type: "info",
               value: "theme.json" },
             { n: "Reload shell", s: "Re-read the QML tree without logging out", type: "action",
-              label: "Reload", set: () => Services.Session.reloadShell() }
+              label: "Reload", set: () => Services.Session.reloadShell() },
+            { type: "header", n: "Updates", s: "" },
+            { n: "Pending updates",
+              s: Services.Updates.checking ? "Checking…"
+                 : !Services.Updates.haveCheckupdates ? "Needs pacman-contrib (checkupdates)"
+                 : Services.Updates.checkedAt ? "Checked " + Services.Updates.agoText() : "Not checked yet",
+              type: "action", label: Services.Updates.count > 0 ? Services.Updates.count + " — show" : "Check",
+              set: () => Services.Updates.count > 0 ? Config.UiState.toggleUpdates() : Services.Updates.check() },
+            { n: "Check for updates", s: "In the background, without a password (checkupdates syncs a copy of the databases)",
+              type: "toggle", value: A.updatesAuto, set: v => A.updatesAuto = v },
+            { n: "How often", s: "Hours between checks", type: "seg",
+              options: ["1", "3", "6", "12", "24"], value: String(A.updatesEvery),
+              set: v => A.updatesEvery = parseInt(v, 10) },
+            { n: "Say when there are some", s: "A notification when updates first appear",
+              type: "toggle", value: A.updatesNotify, set: v => A.updatesNotify = v },
+            { n: "Show in the bar", s: "The package button and its count, while there are updates",
+              type: "toggle", value: A.updatesInBar, set: v => A.updatesInBar = v }
         ];
         }
         return [];

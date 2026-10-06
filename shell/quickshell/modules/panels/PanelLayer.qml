@@ -156,6 +156,13 @@ Variants {
         }
 
         Entrance {
+            shown: Config.UiState.updatesOpen
+            x: layer.panelRight - width
+            y: layer.panelTop
+            UpdatesPanel {}
+        }
+
+        Entrance {
             shown: Config.UiState.powerOpen
             x: layer.panelRight - width
             y: layer.panelTop

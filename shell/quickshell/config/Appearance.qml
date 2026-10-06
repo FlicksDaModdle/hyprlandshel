@@ -229,6 +229,12 @@ Singleton {
             property bool focusUrgent: true
             property string notifRules: "{}"
             property string notifApps: "[]"
+            // Updates (services/Updates.qml): check on a timer, how often
+            // (hours), say when some appear, show the count in the bar.
+            property bool updatesAuto: true
+            property int updatesEvery: 3
+            property bool updatesNotify: true
+            property bool updatesInBar: true
             // Night light (services/NightLight.qml): off, on, sunset to
             // sunrise, or set times; the warmth; the times; and a place
             // for sunset (empty: the time zone's city).
@@ -587,6 +593,10 @@ Singleton {
     property alias focusUrgent: prefs.focusUrgent
     property alias notifRules: prefs.notifRules
     property alias notifApps: prefs.notifApps
+    property alias updatesAuto: prefs.updatesAuto
+    property alias updatesEvery: prefs.updatesEvery
+    property alias updatesNotify: prefs.updatesNotify
+    property alias updatesInBar: prefs.updatesInBar
     property alias idleLock: prefs.idleLock
     property alias idleOff: prefs.idleOff
     property alias idleSuspend: prefs.idleSuspend

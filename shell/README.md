@@ -667,6 +667,19 @@ kept as the text it reads as.
 readable by you alone, for 1, 7 or 30 days (Settings → Notifications), at
 most 1000. Turning it off forgets everything.
 
+## Updates
+
+The bar shows a package button with a count while updates are waiting;
+its panel lists them — official repositories, AUR and Flatpak — with
+versions and download sizes, says when a new kernel is among them (or when
+the running one has already been replaced and a restart is due), and
+**Update now** runs the update in a terminal (`paru -Syu` or `yay -Syu`
+when installed, so the AUR comes too, else `sudo pacman -Syu`; then
+`flatpak update`) and checks again when it closes. Checking uses
+`checkupdates` from pacman-contrib, which syncs a private copy of the
+databases — nothing on the system changes and no password is asked.
+Settings → About → Updates: how often, the notification, the bar button.
+
 ## Microphone, camera and screen in use
 
 While anything records the microphone, uses the camera or captures the

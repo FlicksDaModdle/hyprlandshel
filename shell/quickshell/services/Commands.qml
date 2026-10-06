@@ -84,6 +84,8 @@ Singleton {
         // Clipboard history: what was copied, to put back.
         "toggleClipboard":     () => Config.UiState.toggleClipboard(),
         "toggleTimers":        () => Config.UiState.toggleTimers(),
+        "toggleUpdates":       () => Config.UiState.toggleUpdates(),
+        "checkUpdates":        () => Services.Updates.check(),
         // "timer 10m", "timer 1h30, tea"
         "timer":               arg => {
             const s = String(arg || "");

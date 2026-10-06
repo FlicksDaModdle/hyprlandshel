@@ -89,6 +89,9 @@ ShellRoot {
     // from the start.
     readonly property bool privacyStarted: Services.Privacy.any || true
 
+    // And updates, checked on their own timer.
+    readonly property bool updatesStarted: Services.Updates.checking || true
+
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
 
@@ -192,6 +195,8 @@ ShellRoot {
         function togglePower(): void { Services.Commands.run("togglePower"); }
         function toggleClipboard(): void { Services.Commands.run("toggleClipboard"); }
         function toggleTimers(): void { Services.Commands.run("toggleTimers"); }
+        function toggleUpdates(): void { Services.Commands.run("toggleUpdates"); }
+        function checkUpdates(): void { Services.Commands.run("checkUpdates"); }
         function timer(length: string): void { Services.Commands.run("timer " + length); }
         function pomodoro(): void { Services.Commands.run("pomodoro"); }
         function closePanels(): void { Services.Commands.run("closePanels"); }

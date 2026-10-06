@@ -417,6 +417,30 @@ Variants {
                     }
                 }
 
+                // Updates waiting: the package glyph and how many.
+                BarButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: Config.Appearance.updatesInBar && (Services.Updates.count > 0 || Services.Updates.rebootNeeded)
+                    open: Config.UiState.updatesOpen
+                    spacing: 5
+                    onActivated: Config.UiState.toggleUpdates()
+
+                    MonoIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "package"
+                        size: bar.u(Config.Appearance.barIconSize)
+                        inkColor: Config.Appearance.ink
+                        accentColor: Config.Appearance.accent
+                    }
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: Services.Updates.count > 0
+                        text: Services.Updates.count
+                        font.pixelSize: Config.Appearance.barFs(0)
+                        font.weight: Font.DemiBold
+                    }
+                }
+
                 // Removable drives, while one is connected.
                 BarButton {
                     anchors.verticalCenter: parent.verticalCenter

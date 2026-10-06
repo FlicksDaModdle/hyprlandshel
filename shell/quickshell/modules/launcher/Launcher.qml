@@ -496,6 +496,7 @@ Variants {
             case "tasks":     Config.Apps.launchTasks(); break;
             case "clipboard": Config.UiState.toggleClipboard(); return;
             case "timers": Config.UiState.toggleTimers(); return;
+            case "updates": Config.UiState.toggleUpdates(); return;
             case "sound":     Config.UiState.openSettings("Sound"); return;
             case "network":   Config.UiState.openSettings("Network"); return;
             case "bluetooth": Config.UiState.openSettings("Bluetooth"); return;
