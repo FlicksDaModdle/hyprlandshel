@@ -348,8 +348,10 @@ A shortcut appends one line to a file:
 echo toggleLauncher >> "$XDG_RUNTIME_DIR/hyprshell.cmd"
 ```
 
-The shell reads that file — `services/Commands.qml` holds `tail -n 0 -F` on
-it — and runs the matching entry from its command table. That table is the
+The shell reads that file — `hyprshell-daemon` follows it with inotify and
+hands each line to `services/Commands.qml` (a shell loop around `tail -n 0
+-F` does it where the daemon isn't built) — and runs the matching entry
+from its command table. That table is the
 same one `qs ipc call` reaches, so a shortcut and an IPC call cannot drift
 into doing different things.
 

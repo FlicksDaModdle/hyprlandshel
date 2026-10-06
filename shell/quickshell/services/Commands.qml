@@ -1,4 +1,5 @@
 pragma Singleton
+import QtQuick
 import Quickshell
 import Quickshell.Io
 import "../config" as Config
@@ -34,10 +35,25 @@ Singleton {
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string cmdFile: runtimeDir + "/hyprshell.cmd"
 
-    // True once the watcher process is up. shell.qml holds a reference to
-    // this so the singleton is constructed at startup rather than whenever
-    // something first happens to touch it.
-    readonly property bool watching: watcher.running
+    // True once something is reading the command file. shell.qml holds a
+    // reference to this so the singleton is constructed at startup rather
+    // than whenever something first happens to touch it.
+    //
+    // hyprshell-daemon reads it (inotify, rust/daemon/src/cmds.rs) and
+    // writes the status file; the shell loop below does the same job where
+    // there is no daemon, or one without that part.
+    readonly property bool daemonHas: Services.Daemon.running && Services.Daemon.modules.cmds === true
+    readonly property bool useShellWatcher: Services.Daemon.missing
+        || (Services.Daemon.running && Services.Daemon.modules.cmds !== true)
+    readonly property bool watching: daemonHas || watcher.running
+    // Each daemon that starts (a restart included) is told to watch.
+    onDaemonHasChanged: if (daemonHas)
+        Services.Daemon.send({ cmd: "cmd-watch", shellPid: Number(root.ownPid()) || 0,
+                               socket: root.runtimeDir + "/quickshell/by-pid/" + root.ownPid() + "/ipc.sock" })
+    Connections {
+        target: Services.Daemon
+        function onEvent(ev) { if (ev.ev === "cmd" && ev.line) root.run(ev.line); }
+    }
 
     // The one table. shell.qml's IpcHandler calls into it by name and so
     // does every keybind, so a shortcut and `qs ipc call` cannot drift into
@@ -191,7 +207,7 @@ Singleton {
     // this build" is a fact to read rather than a thing to guess at.
     Process {
         id: watcher
-        running: true
+        running: root.useShellWatcher
         command: ["sh", "-c",
             'f="${XDG_RUNTIME_DIR:-/tmp}/hyprshell.cmd"; '
             + 's="${XDG_RUNTIME_DIR:-/tmp}/quickshell/by-pid/$1/ipc.sock"; '

@@ -22,6 +22,8 @@
 //!   accent        a colour taken from the wallpaper, when that is chosen
 //!   rog           ASUS ROG laptops through asusd: performance profile,
 //!                 charge limit, keyboard lighting, GPU mode, panel options
+//!   shortcuts     the keybinds' command file, read with inotify (in place
+//!                 of a shell loop running tail -F)
 //!
 //! It speaks to the shell in JSON lines: commands on
 //! stdin, events as JSON lines on stdout (services/Daemon.qml). It exits
@@ -33,6 +35,7 @@ mod accent;
 mod agent;
 mod backlight;
 mod clip;
+mod cmds;
 mod fsearch;
 mod fx;
 mod net;
@@ -56,6 +59,7 @@ fn main() {
     let fsearch = fsearch::start();
     let accent = accent::start();
     let rog = rog::start();
+    let cmds = cmds::start();
     #[cfg(feature = "pulse")]
     let pulse: Option<Sender<Value>> = Some(pulse::start());
     #[cfg(not(feature = "pulse"))]
@@ -64,7 +68,7 @@ fn main() {
     out::emit(json!({
         "ev": "ready",
         "version": env!("CARGO_PKG_VERSION"),
-        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "pulse": pulse.is_some() }
+        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "pulse": pulse.is_some() }
     }));
 
     let stdin = std::io::stdin();
@@ -80,6 +84,8 @@ fn main() {
             Some(&nightlight)
         } else if name.starts_with("bt-") || name.starts_with("nm-") {
             Some(&agent)
+        } else if name.starts_with("cmd-") {
+            Some(&cmds)
         } else if name.starts_with("rog-") {
             Some(&rog)
         } else if name.starts_with("wp-") {
