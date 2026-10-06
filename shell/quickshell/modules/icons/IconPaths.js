@@ -161,6 +161,11 @@ var icons = {
         ink: "M9.5 7.5V5H14.5V7.5 M6.5 7.5L7.5 19.5H16.5L17.5 7.5",
         acc: "M4.5 7.5H19.5"
     },
+    // The launcher's calculator.
+    calculator: {
+        ink: join(rrect(5, 3, 14, 18, 2.5), "M9 12H9.01 M12 12H12.01 M15 12H15.01 M9 15.5H9.01 M12 15.5H12.01 M9 19H12"),
+        acc: "M8.5 7H15.5 M15 15.5V19"
+    },
     // Clipboard history.
     clipboard: {
         ink: join(rrect(5, 4.5, 14, 16, 2), "M9 12H15 M9 15.5H13"),

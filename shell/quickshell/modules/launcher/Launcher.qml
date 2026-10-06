@@ -311,7 +311,13 @@ Variants {
                 kind: "file", file: r, label: r.name, icon: Services.FileSearch.icon(r), appIcon: "",
                 cat: Services.FileSearch.where(r)
             }));
-            return scored.map(s => s.item).concat(files);
+            // A sum or a conversion answers first: typing one is asking it.
+            const calc = Config.UiState.appPickerFor === "" && Services.Calc.result !== ""
+                ? [{ kind: "calc", label: "= " + Services.Calc.result, icon: "calculator", appIcon: "",
+                     cat: query.trim() + " · Enter copies " + Services.Calc.plain(Services.Calc.result),
+                     value: Services.Calc.result }]
+                : [];
+            return calc.concat(scored.map(s => s.item)).concat(files);
         }
 
         readonly property string listTitle: Config.UiState.appPickerFor !== ""
@@ -388,6 +394,7 @@ Variants {
             }
             if (item.kind === "command") runCommand(item.key);
             else if (item.kind === "file") Services.FileSearch.open(item.file);
+            else if (item.kind === "calc") Services.Calc.copy(item.value);
             else if (item.kind === "desktop" && item.entry) Config.Apps.launchEntry(item.entry);
             else if (item.exec && item.exec.length > 0) Config.Apps.launch(item.exec);
             close();
@@ -500,7 +507,7 @@ Variants {
 
         onVisibleChanged: if (visible) { resetInput(); Services.FileSearch.warm(); }
 
-        onQueryChanged: { selectedIndex = 0; Services.FileSearch.search(query); }
+        onQueryChanged: { selectedIndex = 0; Services.FileSearch.search(query); Services.Calc.ask(query); }
         onShowAllChanged: selectedIndex = 0;
 
         // Click-away catcher — no scrim, so the desktop behind stays sharp.

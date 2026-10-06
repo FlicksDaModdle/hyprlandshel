@@ -645,6 +645,21 @@ caches (Cargo's `target/`) are left out.
 go after ten minutes without a search, so it holds no memory while unused.
 Settings → Launcher → "Search files" turns it off.
 
+## Calculator in the launcher
+
+Type a sum or a conversion in the launcher and the answer is the first
+result; Enter copies the number.
+
+    12*7.5          2^10 / 3        sqrt(2)*pi      (4+5)%4
+    15% of 80       80 + 15%        5 km in miles   72f in c
+    3 GB in MiB     90 min in h     2 cups in ml    5 km + 300 m
+    60 mph in km/h  1.5 kWh in J    sin(90 deg)
+
+Lengths, weights, times, data sizes (kB/MB/GB and KiB/MiB/GiB), speeds,
+volumes, energy, angles and temperatures. Anything that is not a
+calculation — "firefox", a bare "2048" — is left to the app search.
+`hyprshell-daemon` works it out (`rust/daemon/src/calc.rs`).
+
 ## Clipboard history
 
 **Super+Shift+V** (or "Clipboard history" in the launcher) lists what was
