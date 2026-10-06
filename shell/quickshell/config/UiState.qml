@@ -30,6 +30,7 @@ Singleton {
     // A tray icon's menu, drawn by the shell (modules/panels/TrayMenu.qml):
     // which item, and the x of the icon it hangs from.
     property bool trayMenuOpen: false
+    property bool drivesOpen: false
     property var trayMenuItem: null
     property real trayMenuX: 0
     // A panel wants to be typed into — the control center's password field,
@@ -114,7 +115,7 @@ Singleton {
     readonly property bool iconPickerOpen: iconPickerFor !== ""
 
     readonly property bool anyPanelOpen: controlCenterOpen || notificationsOpen
-                                         || calendarOpen || mediaOpen || powerOpen || clipboardOpen || trayMenuOpen || desktopMenuOpen
+                                         || calendarOpen || mediaOpen || powerOpen || clipboardOpen || trayMenuOpen || drivesOpen || desktopMenuOpen
                                          || windowMenuOpen || appMenuOpen || iconPickerOpen
 
     function closeAll() {
@@ -130,6 +131,7 @@ Singleton {
         powerOpen = false;
         clipboardOpen = false;
         trayMenuOpen = false;
+        drivesOpen = false;
         desktopMenuOpen = false;
         windowMenuOpen = false;
         appMenuOpen = false;
@@ -183,6 +185,7 @@ Singleton {
     function toggleMedia() { toggle("media"); }
     function togglePower() { toggle("power"); }
     function toggleClipboard() { toggle("clipboard"); }
+    function toggleDrives() { toggle("drives"); }
     // The same icon again closes it; another icon moves it there.
     function openTrayMenu(item, x) {
         const same = trayMenuOpen && trayMenuItem === item;

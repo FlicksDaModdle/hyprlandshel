@@ -30,6 +30,8 @@
 //!                 sunrise, or set times) — in place of hyprsunset
 //!   idle          lock, screen off and sleep after a while untouched, and
 //!                 the lock before any sleep — in place of hypridle
+//!   drives        USB sticks and SD cards through UDisks2: mounted on
+//!                 arrival if chosen, announced, ejected safely
 //!
 //! It speaks to the shell in JSON lines: commands on
 //! stdin, events as JSON lines on stdout (services/Daemon.qml). It exits
@@ -53,6 +55,7 @@ mod out;
 #[cfg(feature = "pulse")]
 mod pulse;
 mod rog;
+mod usb;
 
 use serde_json::{json, Value};
 use std::io::BufRead;
@@ -72,6 +75,7 @@ fn main() {
     let calc = calc::start();
     let gamma = gamma::start();
     let idle = idle::start();
+    let usb = usb::start();
     #[cfg(feature = "pulse")]
     let pulse: Option<Sender<Value>> = Some(pulse::start());
     #[cfg(not(feature = "pulse"))]
@@ -80,7 +84,7 @@ fn main() {
     out::emit(json!({
         "ev": "ready",
         "version": env!("CARGO_PKG_VERSION"),
-        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "pulse": pulse.is_some() }
+        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "usb": true, "pulse": pulse.is_some() }
     }));
 
     let stdin = std::io::stdin();
@@ -96,6 +100,8 @@ fn main() {
             Some(&nightlight)
         } else if name.starts_with("bt-") || name.starts_with("nm-") {
             Some(&agent)
+        } else if name.starts_with("usb-") {
+            Some(&usb)
         } else if name.starts_with("idle-") {
             Some(&idle)
         } else if name.starts_with("gamma-") {

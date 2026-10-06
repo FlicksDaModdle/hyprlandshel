@@ -645,6 +645,16 @@ caches (Cargo's `target/`) are left out.
 go after ten minutes without a search, so it holds no memory while unused.
 Settings → Launcher → "Search files" turns it off.
 
+## USB drives and SD cards
+
+Plug one in and it is mounted (Settings in its panel: "Open on plug-in")
+and announced, with **Open** (in Files) and **Eject** on the notification.
+While one is connected a drive button sits in the bar; its panel lists each
+drive and its filesystems, Open, and Eject — which unmounts everything on
+the drive and then powers it off, so it is safe to pull. If something still
+has a file open on it, it says so instead of failing quietly.
+`hyprshell-daemon` does it through UDisks2; internal disks are never shown.
+
 ## Night light
 
 Settings → Display → Night light: **Off**, **On**, **Sunset to sunrise** or

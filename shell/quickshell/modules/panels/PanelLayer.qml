@@ -135,6 +135,13 @@ Variants {
         }
 
         Entrance {
+            shown: Config.UiState.drivesOpen
+            x: layer.panelRight - width
+            y: layer.panelTop
+            DrivesPanel {}
+        }
+
+        Entrance {
             shown: Config.UiState.powerOpen
             x: layer.panelRight - width
             y: layer.panelTop

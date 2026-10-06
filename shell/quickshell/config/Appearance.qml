@@ -213,6 +213,10 @@ Singleton {
             // Clipboard history (services/Clipboard.qml): on or off, and
             // how many entries it keeps.
             property bool clipboardHistory: true
+            // USB sticks and SD cards (services/Usb.qml): mounted when
+            // plugged in, and a notification saying so.
+            property bool usbAutomount: true
+            property bool usbNotify: true
             // Night light (services/NightLight.qml): off, on, sunset to
             // sunrise, or set times; the warmth; the times; and a place
             // for sunset (empty: the time zone's city).
@@ -563,6 +567,8 @@ Singleton {
     property alias soundAutoSwitch: prefs.soundAutoSwitch
     property alias soundMeters: prefs.soundMeters
     property alias clipboardHistory: prefs.clipboardHistory
+    property alias usbAutomount: prefs.usbAutomount
+    property alias usbNotify: prefs.usbNotify
     property alias idleLock: prefs.idleLock
     property alias idleOff: prefs.idleOff
     property alias idleSuspend: prefs.idleSuspend

@@ -161,6 +161,11 @@ var icons = {
         ink: "M9.5 7.5V5H14.5V7.5 M6.5 7.5L7.5 19.5H16.5L17.5 7.5",
         acc: "M4.5 7.5H19.5"
     },
+    // A removable drive (USB stick, SD card).
+    drive: {
+        ink: join(rrect(7, 9, 10, 12, 2), "M9.5 9V4H14.5V9"),
+        acc: "M10.5 6H10.51 M13.5 6H13.51 M10 14.5H14"
+    },
     // The launcher's calculator.
     calculator: {
         ink: join(rrect(5, 3, 14, 18, 2.5), "M9 12H9.01 M12 12H12.01 M15 12H15.01 M9 15.5H9.01 M12 15.5H12.01 M9 19H12"),

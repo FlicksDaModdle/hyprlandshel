@@ -356,6 +356,22 @@ Variants {
                     barWindow: bar
                 }
 
+                // Removable drives, while one is connected.
+                BarButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: Services.Usb.drives.length > 0
+                    open: Config.UiState.drivesOpen
+                    onActivated: Config.UiState.toggleDrives()
+
+                    MonoIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "drive"
+                        size: bar.u(Config.Appearance.barIconSize)
+                        inkColor: Config.Appearance.ink
+                        monochrome: true
+                    }
+                }
+
                 // Notifications
                 BarButton {
                     anchors.verticalCenter: parent.verticalCenter

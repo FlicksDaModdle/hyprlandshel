@@ -75,6 +75,9 @@ ShellRoot {
     // the start, Settings open or not.
     readonly property bool idleStarted: Services.Idle.available || true
 
+    // And removable drives, which mount and notify on their own.
+    readonly property bool usbStarted: Services.Usb.available || true
+
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
 
