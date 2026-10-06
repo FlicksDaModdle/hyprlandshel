@@ -33,13 +33,22 @@ Singleton {
         persistenceSupported: true
 
         onNotification: notification => {
+            const app = root.appNameOf(notification);
+            Services.NotifHistory.add(notification);
+            Services.Focus.noteApp(app);
+            // Muted: not kept, not shown — only the history has it.
+            if (Services.Focus.rule(app) === "mute") return;
+
             // Tracking keeps the object alive after the sending app drops
             // it, so it stays listed in the center until dismissed here.
             notification.tracked = true;
             root.stamp(notification.id);
-            Services.NotifHistory.add(notification);
 
-            if (!Config.Appearance.dnd && !notification.transient) {
+            // A banner unless Focus says otherwise: quiet hours, Do not
+            // disturb, or the app's own rule. Urgent ones (an alarm, a
+            // battery about to die) get through quiet unless that is off.
+            if (!notification.transient
+                && Services.Focus.banner(app, notification.urgency === NotificationUrgency.Critical)) {
                 root.popups = [notification].concat(root.popups);
             }
         }
@@ -65,10 +74,12 @@ Singleton {
         if (live.length !== popups.length) popups = live;
     }
 
-    // Turning DND on clears what's already on screen, rather than leaving
-    // stale banners up until they time out.
-    readonly property bool dnd: Config.Appearance.dnd
-    onDndChanged: if (dnd) popups = [];
+    // Going quiet clears what's already on screen, rather than leaving
+    // stale banners up until they time out — all but the ones that would
+    // have been let through anyway.
+    readonly property bool dnd: Services.Focus.quiet
+    onDndChanged: if (dnd) popups = popups.filter(n => n && Services.Focus.banner(
+        appNameOf(n), n.urgency === NotificationUrgency.Critical));
 
     // ── arrival times ─────────────────────────────────────────────────────
     // The protocol carries no timestamp, so the server records one per id.
@@ -130,7 +141,7 @@ Singleton {
     }
 
     function toggleDnd() {
-        Config.Appearance.dnd = !Config.Appearance.dnd;
+        Services.Focus.toggle();
     }
 
     // ── grouping ──────────────────────────────────────────────────────────

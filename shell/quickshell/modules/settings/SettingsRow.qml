@@ -17,8 +17,8 @@ import "../icons"
 //   color   a swatch that opens the colour picker
 //   buttons several accent buttons, from spec.buttons [{ label, set }]
 //   panel   a whole pane of its own, full width: spec.panel is "wifi",
-//           "bluetooth" or "sound" (WifiPanel.qml, BluetoothPanel.qml,
-//           SoundPanel.qml)
+//           "bluetooth", "sound" or "focus" (WifiPanel.qml,
+//           BluetoothPanel.qml, SoundPanel.qml, FocusPanel.qml)
 Item {
     id: root
 
@@ -132,7 +132,8 @@ Item {
                 case "monitors": return monitorsComponent;
                 case "gallery": return galleryComponent;
                 case "panel":  return root.spec.panel === "bluetooth" ? bluetoothComponent
-                                   : root.spec.panel === "sound" ? soundComponent : wifiComponent;
+                                   : root.spec.panel === "sound" ? soundComponent
+                                   : root.spec.panel === "focus" ? focusComponent : wifiComponent;
                 case "color":  return colorComponent;
                 case "buttons": return buttonsComponent;
                 default:       return infoComponent;
@@ -1026,6 +1027,10 @@ Item {
     Component {
         id: soundComponent
         SoundPanel { width: control.width }
+    }
+    Component {
+        id: focusComponent
+        FocusPanel { width: control.width }
     }
 
     Component {

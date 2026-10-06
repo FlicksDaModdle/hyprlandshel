@@ -667,6 +667,17 @@ kept as the text it reads as.
 readable by you alone, for 1, 7 or 30 days (Settings → Notifications), at
 most 1000. Turning it off forgets everything.
 
+## Focus: quiet hours and per-app rules
+
+Settings → Notifications → Focus sets quiet hours — Do not disturb on a
+schedule, as many as you like, each with its days (a window past midnight
+belongs to the day it starts). The bell turns the current window off until
+it ends; pressed again, it comes back. Each app that has sent anything can
+be **Always** (a banner even while quiet), **Normal**, **Silent** (no
+banner, still in the center) or **Mute** (only the history keeps it).
+Urgent notifications — alarms, a battery about to run out — still show
+while quiet unless "Let urgent ones through" is off.
+
 ## Timers, pomodoro and alarms
 
 The bar shows a countdown while a timer or the pomodoro runs; click it for

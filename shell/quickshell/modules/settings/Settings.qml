@@ -866,6 +866,12 @@ Scope {
         case "Notifications": return [
             { n: "Do not disturb", s: "Silence banners, keep them in the center", type: "toggle",
               value: A.dnd, set: v => A.dnd = v },
+            { n: "Let urgent ones through", s: "Alarms, a battery about to run out and other critical "
+                 + "notifications still show while quiet",
+              type: "toggle", value: A.focusUrgent, set: v => A.focusUrgent = v },
+            { type: "header", n: "Focus", s: "Quiet hours, and how each app may interrupt" },
+            { type: "panel", panel: "focus" },
+            { type: "header", n: "The center", s: "" },
             { n: "Badge counts", s: "Numeric badge on the bar bell", type: "toggle",
               value: A.badges, set: v => A.badges = v },
             { n: "Grouping", s: "Stack by source app, or by arrival time", type: "seg",
@@ -1777,6 +1783,8 @@ Scope {
                       ["VPN", "Connect the VPN"], ["IP address", "Addresses, gateway and DNS of this connection"]],
         "Bluetooth": [["Bluetooth", "Turn Bluetooth on or off"], ["Pair a device", "Find and pair headphones, mice, keyboards"],
                       ["Paired devices", "Connect, disconnect or forget a device"]],
+        "Notifications": [["Quiet hours", "Do not disturb on a schedule"],
+                          ["App notifications", "Always, normal, silent or muted, per app"]],
         "Sound":     [["Output device", "Speakers, headphones, HDMI"], ["Input device", "Microphones"],
                       ["Volume", "Output and input levels, balance"], ["Equalizer", "Shape the sound per device"],
                       ["Noise suppression", "Clean up the microphone"], ["App volume", "Each app's volume and output"],

@@ -98,7 +98,7 @@ PanelSurface {
                 width: dndRow.implicitWidth + 20
                 height: 28
                 radius: 9
-                color: Config.Appearance.dnd ? Config.Appearance.accent
+                color: Services.Focus.quiet ? Config.Appearance.accent
                      : (dndHover.hovered ? Config.Appearance.sel : Config.Appearance.hover)
                 Behavior on color { ColorAnimation { duration: Config.Appearance.anim(140) } }
 
@@ -110,15 +110,15 @@ PanelSurface {
                         anchors.verticalCenter: parent.verticalCenter
                         name: "moon"
                         size: 13
-                        inkColor: Config.Appearance.dnd ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
+                        inkColor: Services.Focus.quiet ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                         monochrome: true
                     }
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "Do not disturb"
+                        text: Services.Focus.scheduled && !Config.Appearance.dnd ? (Services.Focus.current.schedule.name || "Focus") : "Do not disturb"
                         font.pixelSize: Config.Appearance.fs(11)
                         font.weight: Font.DemiBold
-                        color: Config.Appearance.dnd ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
+                        color: Services.Focus.quiet ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                     }
                 }
 
@@ -225,7 +225,7 @@ PanelSurface {
 
                 StyledText {
                     anchors.centerIn: parent
-                    text: Config.Appearance.dnd ? "Do not disturb is on" : "No notifications"
+                    text: Services.Focus.quiet ? Services.Focus.reason + " — banners are quiet" : "No notifications"
                     font.pixelSize: Config.Appearance.fs(12)
                     color: Config.Appearance.ink3
                 }

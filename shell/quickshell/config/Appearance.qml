@@ -221,6 +221,14 @@ Singleton {
             // for how many days.
             property bool notifHistory: true
             property int notifHistoryDays: 7
+            // Focus (services/Focus.qml): quiet hours as JSON
+            // [{ id, name, from, to, days, on }], whether urgent ones get
+            // through while quiet, how each app is treated (JSON
+            // { app: rule }), and the apps that have sent anything.
+            property string focusSchedules: "[]"
+            property bool focusUrgent: true
+            property string notifRules: "{}"
+            property string notifApps: "[]"
             // Night light (services/NightLight.qml): off, on, sunset to
             // sunrise, or set times; the warmth; the times; and a place
             // for sunset (empty: the time zone's city).
@@ -575,6 +583,10 @@ Singleton {
     property alias usbNotify: prefs.usbNotify
     property alias notifHistory: prefs.notifHistory
     property alias notifHistoryDays: prefs.notifHistoryDays
+    property alias focusSchedules: prefs.focusSchedules
+    property alias focusUrgent: prefs.focusUrgent
+    property alias notifRules: prefs.notifRules
+    property alias notifApps: prefs.notifApps
     property alias idleLock: prefs.idleLock
     property alias idleOff: prefs.idleOff
     property alias idleSuspend: prefs.idleSuspend

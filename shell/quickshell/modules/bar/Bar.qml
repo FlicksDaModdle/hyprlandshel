@@ -412,9 +412,9 @@ Variants {
 
                     MonoIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        name: Config.Appearance.dnd ? "bellOff" : "bell"
+                        name: Services.Focus.quiet ? "bellOff" : "bell"
                         size: bar.u(Config.Appearance.barIconSize)
-                        inkColor: Config.Appearance.dnd ? Config.Appearance.ink3 : Config.Appearance.ink
+                        inkColor: Services.Focus.quiet ? Config.Appearance.ink3 : Config.Appearance.ink
                         monochrome: true
                     }
 
