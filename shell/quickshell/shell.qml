@@ -71,6 +71,10 @@ ShellRoot {
     // when chosen, Settings open or not.
     readonly property bool rogStarted: Services.Rog.available || true
 
+    // And idle: the lock, screen off and sleep timers have to be set from
+    // the start, Settings open or not.
+    readonly property bool idleStarted: Services.Idle.available || true
+
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
 

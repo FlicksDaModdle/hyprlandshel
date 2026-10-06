@@ -24,6 +24,8 @@ libpulse-binding = { version = "2", optional = true }
 # speaks. Pure Rust (no libwayland needed to build).
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+# Idle timers (ext-idle-notify-v1), in place of hypridle.
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 # File search in the launcher: the fuzzy matcher Helix uses.
 nucleo-matcher = "0.3"
 # The accent colour taken from the wallpaper (off unless chosen): decoding

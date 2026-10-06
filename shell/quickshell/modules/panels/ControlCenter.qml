@@ -796,7 +796,13 @@ PanelSurface {
                         : (canSetProfile ? "balanced" : "vrr off"),
             go: () => root.setGameMode(!gameMode)
         }
-    ].concat(Services.Rog.hasProfiles ? [{
+    ].concat(Services.Idle.builtin ? [{
+            // No lock, screen off or sleep until switched off again.
+            n: "Keep awake", icon: "sun",
+            on: Services.Idle.keepAwake,
+            s: Services.Idle.keepAwake ? "on" : "off",
+            go: () => Services.Idle.keepAwake = !Services.Idle.keepAwake
+        }] : []).concat(Services.Rog.hasProfiles ? [{
             // asusd's profile (ROG laptops): each press moves one along.
             n: "Performance", icon: "zap",
             on: Services.Rog.profile === 1,

@@ -28,6 +28,8 @@
 //!   night light   the screens' colour temperature through the
 //!                 compositor's gamma control, on a schedule (sunset to
 //!                 sunrise, or set times) — in place of hyprsunset
+//!   idle          lock, screen off and sleep after a while untouched, and
+//!                 the lock before any sleep — in place of hypridle
 //!
 //! It speaks to the shell in JSON lines: commands on
 //! stdin, events as JSON lines on stdout (services/Daemon.qml). It exits
@@ -43,6 +45,7 @@ mod clip;
 mod cmds;
 mod fsearch;
 mod gamma;
+mod idle;
 mod fx;
 mod net;
 mod nightlight;
@@ -68,6 +71,7 @@ fn main() {
     let cmds = cmds::start();
     let calc = calc::start();
     let gamma = gamma::start();
+    let idle = idle::start();
     #[cfg(feature = "pulse")]
     let pulse: Option<Sender<Value>> = Some(pulse::start());
     #[cfg(not(feature = "pulse"))]
@@ -76,7 +80,7 @@ fn main() {
     out::emit(json!({
         "ev": "ready",
         "version": env!("CARGO_PKG_VERSION"),
-        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "pulse": pulse.is_some() }
+        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "pulse": pulse.is_some() }
     }));
 
     let stdin = std::io::stdin();
@@ -92,6 +96,8 @@ fn main() {
             Some(&nightlight)
         } else if name.starts_with("bt-") || name.starts_with("nm-") {
             Some(&agent)
+        } else if name.starts_with("idle-") {
+            Some(&idle)
         } else if name.starts_with("gamma-") {
             Some(&gamma)
         } else if name == "calc" {

@@ -229,9 +229,10 @@ hl.on("hyprland.start", function()
     -- program: an activation that happens first gets the old environment.
     hl.exec_cmd(shareEnv)
     hl.exec_cmd(launch)
-    -- The shell draws its own lock screen; hypridle just decides when to ask
-    -- for it. Safe to drop if hypridle isn't installed.
-    hl.exec_cmd("pgrep -x hypridle >/dev/null 2>&1 || exec hypridle")
+    -- Idle (lock, screen off, sleep) is the shell's own, through
+    -- hyprshell-daemon. hypridle only runs where its file still has
+    -- listeners: your own, or the shell's on a machine without the daemon.
+    hl.exec_cmd([[pgrep -x hypridle >/dev/null 2>&1 || { grep -qs listener "$HOME/.config/hypr/hypridle.conf" && exec hypridle; }]])
     -- The programs set to start at login (~/.config/autostart and
     -- /etc/xdg/autostart — the list the task manager's Startup apps view
     -- edits). Desktops like GNOME and KDE run these themselves; Hyprland

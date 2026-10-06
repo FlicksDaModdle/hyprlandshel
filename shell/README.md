@@ -144,7 +144,7 @@ so; with no `nmcli` the Wi-Fi readout goes quiet.
 | Screenshots | `grim`, `slurp`, `wl-clipboard` |
 | Power profiles, Game mode | `power-profiles-daemon` |
 | Suspend / reboot / power off | `systemd` (`loginctl`) |
-| Idle → lock | `hypridle` |
+| Idle → lock | `cargo` (built in), or `hypridle` |
 | Media keys | `playerctl` |
 | Wallpaper picker | `zenity` or `kdialog` |
 | Live wallpapers | `mpvpaper` (AUR), `ffmpeg` for thumbnails |
@@ -1084,9 +1084,18 @@ of the surface but not part of the dock.
 ### Idle timers
 
 Settings → Display → "When you leave it alone": screen off, sleep, lock.
-hypridle owns this and is configured by a file rather than any control
-interface, so `services/Idle.qml` reads and writes
-`~/.config/hypr/hypridle.conf` and restarts the daemon.
+`hyprshell-daemon` keeps the timers (the compositor's own idle
+notifications), so an app that keeps the screen on — a video, a call —
+holds them too; so do media playing and a fullscreen window, if those
+switches are on, and the control center's **Keep awake** tile. Lock brings
+up the shell's lock screen, and the screen is locked before any sleep
+(logind waits for it) and on `loginctl lock-session`. Moving over from
+hypridle takes its timings from the block below, removes the block, and
+stops hypridle unless your own listeners are left in the file.
+
+Without the daemon it is hypridle's, configured by a file rather than any
+control interface, so `services/Idle.qml` reads and writes
+`~/.config/hypr/hypridle.conf` and restarts it.
 
 The file is not ours — people put their own listeners in it — so the three
 this panel manages live inside a marked block and everything outside it is

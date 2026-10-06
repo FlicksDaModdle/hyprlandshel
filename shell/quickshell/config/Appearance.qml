@@ -216,6 +216,15 @@ Singleton {
             // Night light (services/NightLight.qml): off, on, sunset to
             // sunrise, or set times; the warmth; the times; and a place
             // for sunset (empty: the time zone's city).
+            // Idle (services/Idle.qml, built in): minutes before lock,
+            // screen off and sleep (0 = never); holding them while media
+            // plays or a window is fullscreen; hypridle's timings taken over.
+            property int idleLock: 10
+            property int idleOff: 12
+            property int idleSuspend: 30
+            property bool idleHoldMedia: true
+            property bool idleHoldFullscreen: true
+            property bool idleMigrated: false
             property string nightMode: "off"
             property int nightTemp: 3400
             property string nightFrom: "20:00"
@@ -554,6 +563,12 @@ Singleton {
     property alias soundAutoSwitch: prefs.soundAutoSwitch
     property alias soundMeters: prefs.soundMeters
     property alias clipboardHistory: prefs.clipboardHistory
+    property alias idleLock: prefs.idleLock
+    property alias idleOff: prefs.idleOff
+    property alias idleSuspend: prefs.idleSuspend
+    property alias idleHoldMedia: prefs.idleHoldMedia
+    property alias idleHoldFullscreen: prefs.idleHoldFullscreen
+    property alias idleMigrated: prefs.idleMigrated
     property alias nightMode: prefs.nightMode
     property alias nightTemp: prefs.nightTemp
     property alias nightFrom: prefs.nightFrom

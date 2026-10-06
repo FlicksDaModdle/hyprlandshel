@@ -1234,10 +1234,16 @@ Scope {
             }
 
             rows.push({ type: "header", n: "When you leave it alone",
-                s: Services.Idle.available
+                s: Services.Idle.builtin
+                   ? (Services.Idle.error !== "" ? Services.Idle.error
+                      : Services.Idle.held.length > 0
+                        ? "Held now: " + Services.Idle.held.map(h => ({ awake: "Keep awake", media: "media playing",
+                                                                         fullscreen: "a fullscreen window" })[h] || h).join(", ")
+                        : "Apps that keep the screen on — a video, a call — hold these too")
+                   : Services.Idle.available
                    ? "Written to hypridle.conf. Anything you put in that "
                      + "file yourself is left alone."
-                   : "Install hypridle to use these" });
+                   : "Run install.sh with cargo for the built-in one, or install hypridle" });
 
             const idleUnit = v => v === 0 ? "Never"
                                 : (v === 1 ? "1 minute" : v + " minutes");
@@ -1250,7 +1256,7 @@ Scope {
                 type: Services.Idle.available ? "slider" : "info",
                 min: 0, max: 60, unit: " min",
                 value: Services.Idle.screenOffAfter,
-                set: v => { Services.Idle.screenOffAfter = v; Services.Idle.save(); } });
+                set: v => Services.Idle.setOff(v) });
 
             rows.push({ n: "Sleep after",
                 s: Services.Idle.suspendAfter === 0
@@ -1259,7 +1265,7 @@ Scope {
                 type: Services.Idle.available ? "slider" : "info",
                 min: 0, max: 180, unit: " min",
                 value: Services.Idle.suspendAfter,
-                set: v => { Services.Idle.suspendAfter = v; Services.Idle.save(); } });
+                set: v => Services.Idle.setSuspend(v) });
 
             rows.push({ n: "Lock after",
                 s: Services.Idle.lockAfter === 0 ? "Never locks on its own"
@@ -1267,7 +1273,14 @@ Scope {
                 type: Services.Idle.available ? "slider" : "info",
                 min: 0, max: 120, unit: " min",
                 value: Services.Idle.lockAfter,
-                set: v => { Services.Idle.lockAfter = v; Services.Idle.save(); } });
+                set: v => Services.Idle.setLock(v) });
+
+            if (Services.Idle.builtin) {
+                rows.push({ n: "Not while media plays", s: "Music or a video playing holds the timers",
+                            type: "toggle", value: A.idleHoldMedia, set: v => A.idleHoldMedia = v });
+                rows.push({ n: "Not while a window is fullscreen", s: "A game or a film in fullscreen holds them",
+                            type: "toggle", value: A.idleHoldFullscreen, set: v => A.idleHoldFullscreen = v });
+            }
 
             rows.push({ type: "header", n: "All displays",
                 s: "These apply to every screen" });
