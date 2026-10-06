@@ -606,6 +606,28 @@ Connectors, modes, delays and moving apps use `pactl` (pipewire-pulse); the
 live meters need Quickshell 0.3.1 (0.3.0's can crash the shell, so they
 stay off there).
 
+## ASUS ROG laptops
+
+On an ASUS laptop with asusctl's service running (`systemctl enable --now
+asusd`), Settings gains a **Laptop** pane and the control center two tiles:
+
+- **Performance** — Quiet, Balanced or Performance: the firmware's fan and
+  power limits. The tile moves one along per press.
+- **Charge limit** — charging stops at 20–100%; 80% keeps a mostly-plugged-in
+  battery healthy for years. "Charge to full once" lifts it for one charge.
+- **Keyboard light** — brightness (also a tile), the effect (Static,
+  Breathe, Rainbow …), and optionally the colour following the shell's
+  accent: a new swatch, the wallpaper's colour, light or dark.
+- **GPU mode** — Integrated (the NVIDIA GPU off, longest battery), Hybrid,
+  or Ultimate (the NVIDIA GPU driving the screen). asusd applies it at the
+  next restart; the pane says what is pending.
+- **Panel and firmware** — panel overdrive, MiniLED dimming, boot sound,
+  low-power standby: whichever this model has.
+
+`hyprshell-daemon` reads all of it from asusd over D-Bus and finds what the
+model offers rather than assuming, so a part a laptop lacks is simply not
+shown. Without asusd the pane and tiles do not appear.
+
 ## Accent from the wallpaper
 
 Off unless chosen: Settings → Appearance → "Accent from wallpaper" takes the
@@ -688,7 +710,8 @@ and whether a night-light program runs, from `/proc`. It is also the
 Bluetooth backend and pairing agent and the Wi-Fi password agent, in place
 of the separate `hyprshell-agent`, runs the equalizer and noise
 suppression, keeps the clipboard history, finds files for the launcher and (when
-asked) takes the accent from the wallpaper. It talks to the shell in JSON lines,
+asked) takes the accent from the wallpaper, and on ASUS laptops talks to
+asusd. It talks to the shell in JSON lines,
 uses about 8 MB, and each part falls
 back on its own: without the daemon, or where a part can't reach what it
 reads, the shell goes back to `nmcli`, `brightnessctl`, `pactl` and `pgrep`.

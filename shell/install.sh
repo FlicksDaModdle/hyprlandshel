@@ -229,6 +229,12 @@ need c++           optional "builds hyprshell-agent"     gcc g++ gcc-c++ gcc-c++
 # resvg. Without cargo the shell polls nmcli/brightnessctl/pactl instead,
 # and the cursor builder is the Qt one (which needs qt6-svg).
 need cargo         optional "builds hyprshell-daemon (no polling) and the cursor builder" rust cargo cargo cargo
+# ASUS laptops: Settings → Laptop (performance profile, charge limit,
+# keyboard light, GPU mode) talks to asusctl's service. Only asked for on
+# an ASUS machine.
+if grep -qi asus /sys/class/dmi/id/sys_vendor 2>/dev/null; then
+    need asusctl   optional "Settings → Laptop: profile, charge limit, keyboard light, GPU (then: systemctl enable --now asusd)" asusctl asusctl asusctl asusctl
+fi
 if command -v rustup >/dev/null 2>&1 && ! { cargo --version && rustc --version; } >/dev/null 2>&1; then
     printf '  %s!%s %-14s %s\n' "$YEL" "$RST" "rust toolchain" "not usable — see the note at the build step below"
 fi

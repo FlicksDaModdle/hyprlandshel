@@ -796,7 +796,18 @@ PanelSurface {
                         : (canSetProfile ? "balanced" : "vrr off"),
             go: () => root.setGameMode(!gameMode)
         }
-    ]
+    ].concat(Services.Rog.hasProfiles ? [{
+            // asusd's profile (ROG laptops): each press moves one along.
+            n: "Performance", icon: "zap",
+            on: Services.Rog.profile === 1,
+            s: Services.Rog.profileName(Services.Rog.profile).toLowerCase(),
+            go: () => Services.Rog.cycleProfile()
+        }] : []).concat(Services.Rog.hasKbd ? [{
+            n: "Keyboard light", icon: "keyboard",
+            on: Services.Rog.kbdBrightness > 0,
+            s: (Services.Rog.kbdLevels[Services.Rog.kbdBrightness] || "").toLowerCase(),
+            go: () => Services.Rog.cycleKbd()
+        }] : [])
 
     // The slider list is deliberately just keys, not built objects.
     //

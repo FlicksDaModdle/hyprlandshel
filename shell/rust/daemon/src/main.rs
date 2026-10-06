@@ -21,6 +21,8 @@
 //!   file search   the names under $HOME for the launcher, kept current
 //!                 by inotify, matched with nucleo
 //!   accent        a colour taken from the wallpaper, when that is chosen
+//!   rog           ASUS ROG laptops through asusd: performance profile,
+//!                 charge limit, keyboard lighting, GPU mode, panel options
 //!
 //! It speaks to the shell as hyprshell-agent does: commands as JSON lines on
 //! stdin, events as JSON lines on stdout (services/Daemon.qml). It exits
@@ -39,6 +41,7 @@ mod nightlight;
 mod out;
 #[cfg(feature = "pulse")]
 mod pulse;
+mod rog;
 
 use serde_json::{json, Value};
 use std::io::BufRead;
@@ -53,6 +56,7 @@ fn main() {
     let clip = clip::start();
     let fsearch = fsearch::start();
     let accent = accent::start();
+    let rog = rog::start();
     #[cfg(feature = "pulse")]
     let pulse: Option<Sender<Value>> = Some(pulse::start());
     #[cfg(not(feature = "pulse"))]
@@ -61,7 +65,7 @@ fn main() {
     out::emit(json!({
         "ev": "ready",
         "version": env!("CARGO_PKG_VERSION"),
-        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "pulse": pulse.is_some() }
+        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "pulse": pulse.is_some() }
     }));
 
     let stdin = std::io::stdin();
@@ -77,6 +81,8 @@ fn main() {
             Some(&nightlight)
         } else if name.starts_with("bt-") || name.starts_with("nm-") {
             Some(&agent)
+        } else if name.starts_with("rog-") {
+            Some(&rog)
         } else if name.starts_with("wp-") {
             Some(&accent)
         } else if name.starts_with("fs-") {

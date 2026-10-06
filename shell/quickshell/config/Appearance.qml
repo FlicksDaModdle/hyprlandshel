@@ -213,6 +213,9 @@ Singleton {
             // Clipboard history (services/Clipboard.qml): on or off, and
             // how many entries it keeps.
             property bool clipboardHistory: true
+            // ROG laptops (services/Rog.qml): the keyboard light in the
+            // accent colour.
+            property bool rogKbdAccent: false
             property int clipboardMax: 100
             property string soundTab: "output"
             // The equalizer (services/AudioFx.qml): on or off, ten band
@@ -542,6 +545,7 @@ Singleton {
     property alias soundAutoSwitch: prefs.soundAutoSwitch
     property alias soundMeters: prefs.soundMeters
     property alias clipboardHistory: prefs.clipboardHistory
+    property alias rogKbdAccent: prefs.rogKbdAccent
     property alias clipboardMax: prefs.clipboardMax
     property alias soundTab: prefs.soundTab
     property alias eqEnabled: prefs.eqEnabled

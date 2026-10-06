@@ -67,6 +67,10 @@ ShellRoot {
     // from anywhere, Settings open or not.
     readonly property bool wallAccentStarted: Services.WallpaperAccent.enabled || true
 
+    // And the ROG laptop controls, whose keyboard light follows the accent
+    // when chosen, Settings open or not.
+    readonly property bool rogStarted: Services.Rog.available || true
+
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
 

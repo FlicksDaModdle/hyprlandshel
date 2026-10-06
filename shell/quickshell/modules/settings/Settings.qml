@@ -106,6 +106,10 @@ Scope {
         Services.LiveWallpaper.scan();
     }
 
+    // Settings → Laptop's charge slider shows where it was dragged to until
+    // asusd reports the new limit, rather than jumping back meanwhile.
+    Timer { id: chargeHold; interval: 1500 }
+
     readonly property var paneMeta: ({
         "Display":       { icon: "monitor",   group: "System", note: "Every connected display, with its own resolution, refresh rate, scale and colour." },
         "Keyboard":      { icon: "keyboard",  group: "System", note: "Layout, key repeat and the modifier behaviour libinput exposes." },
@@ -115,6 +119,7 @@ Scope {
         "Bluetooth":     { icon: "bluetooth", group: "System", note: "Your devices, and adding new ones." },
         "Sound":         { icon: "volume",    group: "System", note: "Devices, levels, balance, connectors and modes, each app\u2019s volume and output." },
         "Power":         { icon: "battery",   group: "System", note: "Power profile, idle timing and battery care." },
+        "Laptop":        { icon: "zap",       group: "System", note: "This ASUS laptop's own controls, through asusd: performance, charge limit, keyboard light, graphics and panel." },
         "Hyprland":      { icon: "grid",      group: "System", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
         "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
         "Appearance":    { icon: "palette",   group: "Shell",  note: "Theme, accent, translucency, corners and motion. Every change repaints the shell live." },
@@ -133,10 +138,12 @@ Scope {
 
     // System first, then Shell. The device panes are the ones people open
     // Settings *for*; the shell's own appearance is the thing you set once.
+    // Laptop only where asusd answers: an ASUS ROG / TUF machine.
     readonly property var paneGroups: [
         { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
-                                   "Network", "Bluetooth", "Sound", "Power",
-                                   "Hyprland", "About"] },
+                                   "Network", "Bluetooth", "Sound", "Power"]
+                                  .concat(Services.Rog.available ? ["Laptop"] : [])
+                                  .concat(["Hyprland", "About"]) },
         { label: "Shell",  items: ["Appearance", "Wallpaper", "Icons", "Fonts",
                                    "App theming", "Bar", "Dock", "Alt+Tab", "Launcher",
                                    "Notifications", "Clipboard", "Keybinds"] }
@@ -1309,6 +1316,67 @@ Scope {
             return [{ type: "panel", panel: "sound" }];
 
         // ── Power ─────────────────────────────────────────────────────────
+        case "Laptop": {
+            const R = Services.Rog;
+            if (!R.available) return [
+                { type: "header", n: "Not available",
+                  s: "No asusd on this machine. On an ASUS ROG or TUF laptop, install asusctl "
+                     + "and start asusd (systemctl enable --now asusd), and this fills in." }
+            ];
+            const rows = [];
+            if (R.error !== "") rows.push({ n: "Couldn't do that", s: R.error, type: "info", value: "" });
+            if (R.hasProfiles) {
+                rows.push({ type: "header", n: "Performance",
+                            s: "The firmware's fan and power limits. Also in the control center." });
+                rows.push({ n: "Profile", s: "Quiet keeps the fans down; Performance lets the CPU and GPU draw the most",
+                            type: "seg", options: R.profiles.map(p => ({ label: R.profileName(p), value: p })),
+                            value: R.profile, set: v => R.setProfile(v) });
+            }
+            if (R.hasCharge) {
+                rows.push({ type: "header", n: "Battery",
+                            s: "A battery kept below full lasts years longer. 80% suits a laptop that is mostly plugged in." });
+                rows.push({ n: "Charge limit", s: "Charging stops here",
+                            type: "slider", min: 20, max: 100, unit: "%",
+                            value: R.pendingCharge >= 0 && chargeHold.running ? R.pendingCharge : R.platform.chargeLimit,
+                            set: v => { R.setCharge(v); chargeHold.restart(); } });
+                rows.push({ n: "Charge to full once", s: "To 100% this time — for a trip — then back to the limit",
+                            type: "action", label: "Charge", set: () => R.fullCharge() });
+            }
+            if (R.hasKbd) {
+                rows.push({ type: "header", n: "Keyboard light", s: "" });
+                rows.push({ n: "Brightness", s: "Also in the control center",
+                            type: "seg", options: R.kbdLevels.map((l, i) => ({ label: l, value: i })),
+                            value: R.kbdBrightness, set: v => R.setKbdBrightness(v) });
+                const modes = (R.kbd.modes || []).filter(m => [0, 1, 2, 3, 10].indexOf(m) >= 0);
+                if (modes.length > 1)
+                    rows.push({ n: "Effect", s: "Static and Breathe use the colour below",
+                                type: "seg", options: modes.map(m => ({ label: R.kbdModeNames[m] || ("Mode " + m), value: m })),
+                                value: R.kbdMode, set: v => R.setKbdMode(v, A.rogKbdAccent ? String(A.accent) : "") });
+                rows.push({ n: "In the accent colour",
+                            s: "The keyboard follows the shell's accent — a new swatch, the wallpaper's colour, light or dark"
+                               + (R.kbd.effect && R.kbd.effect.colour ? " · now " + String(R.kbd.effect.colour).toUpperCase() : ""),
+                            type: "toggle", value: A.rogKbdAccent, set: v => A.rogKbdAccent = v });
+            }
+            if (R.hasGpu) {
+                rows.push({ type: "header", n: "Graphics",
+                            s: R.gpu.pending !== ""
+                               ? "Switching to " + R.gpuNames[R.gpu.pending] + " at the next restart"
+                               : "Takes effect at the next restart" });
+                rows.push({ n: "GPU mode", s: R.gpuNotes[R.gpu.pending || R.gpu.mode] || "",
+                            type: "seg", options: R.gpu.choices.map(c => ({ label: R.gpuNames[c], value: c })),
+                            value: R.gpu.pending || R.gpu.mode, set: v => R.setGpu(v) });
+            }
+            if (R.toggles.length > 0) {
+                rows.push({ type: "header", n: "Panel and firmware", s: "" });
+                for (const n of R.toggles) {
+                    const name = n;
+                    rows.push({ n: R.attrNames[name][0], s: R.attrNames[name][1], type: "toggle",
+                                value: R.attrs[name].value === 1, set: v => R.setAttr(name, v ? 1 : 0) });
+                }
+            }
+            return rows;
+        }
+
         case "Power": {
             const bat = UPower.displayDevice;
             const hasBattery = !!bat && bat.isLaptopBattery;
