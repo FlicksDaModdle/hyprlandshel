@@ -243,6 +243,17 @@ Singleton {
         desktopMenuOpen = true;
     }
 
+    // Settings itself (modules/settings/Settings.qml), for the launcher's
+    // search; and the row to scroll to and flash once a pane opens.
+    property var settingsApp: null
+    property string settingsFocus: ""
+    property int settingsFocusSeq: 0
+    function openSettingsAt(pane, row) {
+        openSettings(pane);
+        settingsFocus = row || "";
+        settingsFocusSeq++;
+    }
+
     function openSettings(pane) {
         closeAll();
         if (pane) settingsPane = pane;

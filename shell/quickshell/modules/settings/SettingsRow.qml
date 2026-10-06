@@ -36,6 +36,25 @@ Item {
     readonly property bool hasLabels: !!(root.spec.n || root.spec.s)
 
     implicitWidth: parent ? parent.width : 560
+    // Found by the launcher's settings search: a brief wash of the accent
+    // behind the row, so the eye lands on it.
+    function flash() { flashAnim.restart(); }
+    Rectangle {
+        id: flashRect
+        anchors.fill: parent
+        anchors.leftMargin: -10
+        anchors.rightMargin: -10
+        radius: Config.Appearance.rSm
+        color: Config.Appearance.accent
+        opacity: 0
+        SequentialAnimation {
+            id: flashAnim
+            NumberAnimation { target: flashRect; property: "opacity"; to: 0.22; duration: 160 }
+            PauseAnimation { duration: 700 }
+            NumberAnimation { target: flashRect; property: "opacity"; to: 0; duration: 900 }
+        }
+    }
+
     implicitHeight: root.isHeader
         ? labels.implicitHeight + 34
         : root.isWide

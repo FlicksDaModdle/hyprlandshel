@@ -335,6 +335,31 @@ PanelSurface {
         }
     }
 
+    // ── a row asked for by the launcher's search ──────────────────────
+    // Once the pane's rows are built: scrolled into view, a little below
+    // the top, and flashed.
+    Connections {
+        target: Config.UiState
+        function onSettingsFocusSeqChanged() { focusSoon.restart(); }
+    }
+    Timer {
+        id: focusSoon
+        interval: 180
+        onTriggered: {
+            const want = Config.UiState.settingsFocus;
+            if (want === "" || want === frame.app.pane) { paneFlick.contentY = 0; return; }
+            for (let i = 0; i < paneColumn.children.length; ++i) {
+                const item = paneColumn.children[i];
+                if (item.spec && item.spec.n === want) {
+                    const max = Math.max(0, paneFlick.contentHeight - paneFlick.height);
+                    paneFlick.contentY = Math.max(0, Math.min(max, paneColumn.y + item.y - 80));
+                    item.flash();
+                    return;
+                }
+            }
+        }
+    }
+
     // ── pane ──────────────────────────────────────────────────────────
     Flickable {
         id: paneFlick

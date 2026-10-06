@@ -322,8 +322,11 @@ Scope {
     // battery, every network in range, the volume — and rebuilt themselves
     // in every Settings window on each change of it whether or not anyone
     // could see them.
-    readonly property var rows: {
-        if (!Config.UiState.settingsOpen) return [];
+    readonly property var rows: Config.UiState.settingsOpen ? rowsFor(pane) : []
+
+    // Any pane's rows, open or not — the launcher's settings search reads
+    // every pane through this (searchIndex below).
+    function rowsFor(pane) {
         const A = Config.Appearance;
         switch (pane) {
 
@@ -1758,6 +1761,48 @@ Scope {
         }
         return [];
     }
+
+    // ── search ────────────────────────────────────────────────────────────
+    // Every row of every pane, for the launcher: [{ pane, n, s, section }].
+    // Read fresh each time the launcher asks (rows read live state, and
+    // a pane that appears — Laptop — should be found once it does).
+    //
+    // The panes drawn by a component of their own (Network, Bluetooth,
+    // Sound) have no rows to read, so what they hold is listed here.
+    readonly property var panelIndex: ({
+        "Network":   [["Wi-Fi", "Turn Wi-Fi on or off and join a network"],
+                      ["Hidden network", "Join a network that does not show its name"],
+                      ["Saved networks", "Forget a network or stop joining it automatically"],
+                      ["University or office sign-in", "802.1X / eduroam: username, method, certificate"],
+                      ["VPN", "Connect the VPN"], ["IP address", "Addresses, gateway and DNS of this connection"]],
+        "Bluetooth": [["Bluetooth", "Turn Bluetooth on or off"], ["Pair a device", "Find and pair headphones, mice, keyboards"],
+                      ["Paired devices", "Connect, disconnect or forget a device"]],
+        "Sound":     [["Output device", "Speakers, headphones, HDMI"], ["Input device", "Microphones"],
+                      ["Volume", "Output and input levels, balance"], ["Equalizer", "Shape the sound per device"],
+                      ["Noise suppression", "Clean up the microphone"], ["App volume", "Each app's volume and output"],
+                      ["Live level meters", "Show levels as sound plays"], ["Listen to this device", "Hear the microphone"],
+                      ["Switch on connect", "Use Bluetooth or USB audio as soon as it connects"]]
+    })
+    function searchIndex() {
+        const out = [];
+        for (const g of root.paneGroups) {
+            for (const p of g.items) {
+                out.push({ pane: p, n: p, s: (root.paneMeta[p] || {}).note || "", section: "", isPane: true });
+                for (const e of (root.panelIndex[p] || []))
+                    out.push({ pane: p, n: e[0], s: e[1], section: "" });
+                let section = "";
+                let rows = [];
+                try { rows = root.rowsFor(p) || []; } catch (err) { rows = []; }
+                for (const r of rows) {
+                    if (!r || !r.n) continue;
+                    if (r.type === "header") { section = r.n; continue; }
+                    out.push({ pane: p, n: String(r.n), s: typeof r.s === "string" ? r.s : "", section: section });
+                }
+            }
+        }
+        return out;
+    }
+    Component.onCompleted: Config.UiState.settingsApp = root
 
     // The device settings themselves live in theme.json via
     // Config.Appearance, and Services.Devices is what pushes them to

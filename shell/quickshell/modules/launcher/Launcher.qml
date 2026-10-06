@@ -252,6 +252,47 @@ Variants {
 
         readonly property string queryLower: query.trim().toLowerCase()
         readonly property bool searching: queryLower.length > 0
+
+        // Every Settings row, read once when a search starts (Settings
+        // reads live state, and re-reading it on every keystroke would be
+        // work for nothing).
+        property var settingsIdx: []
+        onSearchingChanged: {
+            const app = Config.UiState.settingsApp;
+            settingsIdx = searching && app ? app.searchIndex() : [];
+        }
+        // The best few, by the row's name first and its description after.
+        readonly property var settingsResults: {
+            const q = queryLower;
+            if (q.length < 2 || Config.UiState.appPickerFor !== "") return [];
+            // "wifi" finds "Wi-Fi", "alttab" finds "Alt+Tab".
+            const squash = t => t.replace(/[-+\s_.]/g, "");
+            const qs = squash(q);
+            const meta = Config.UiState.settingsApp ? Config.UiState.settingsApp.paneMeta : ({});
+            const hits = [];
+            const seen = {};
+            for (const e of settingsIdx) {
+                const n = e.n.toLowerCase();
+                let score = -1;
+                if (n.startsWith(q)) score = 0;
+                else if (n.indexOf(" " + q) >= 0) score = 1;
+                else if (n.indexOf(q) >= 0 || (qs.length >= 2 && squash(n).indexOf(qs) >= 0)) score = 2;
+                else if (q.length >= 3 && (e.section.toLowerCase().indexOf(q) >= 0
+                                           || e.s.toLowerCase().indexOf(q) >= 0)) score = 3;
+                if (score < 0) continue;
+                // The same name twice (a row per display) is one result.
+                const key = e.pane + "/" + e.n;
+                if (seen[key]) continue;
+                seen[key] = true;
+                hits.push({ e: e, score: score + (e.isPane ? -0.5 : 0) });
+            }
+            hits.sort((a, b) => (a.score - b.score) || a.e.n.length - b.e.n.length);
+            return hits.slice(0, 6).map(h => ({
+                kind: "setting", pane: h.e.pane, row: h.e.isPane ? "" : h.e.n,
+                label: h.e.n, icon: (meta[h.e.pane] || {}).icon || "settings", appIcon: "",
+                cat: "Settings · " + h.e.pane + (h.e.section ? " › " + h.e.section : "")
+            }));
+        }
         readonly property bool showingList: searching || showAll
 
         // ── pinned grid ───────────────────────────────────────────────────────
@@ -317,7 +358,7 @@ Variants {
                      cat: query.trim() + " · Enter copies " + Services.Calc.plain(Services.Calc.result),
                      value: Services.Calc.result }]
                 : [];
-            return calc.concat(scored.map(s => s.item)).concat(files);
+            return calc.concat(scored.map(s => s.item)).concat(settingsResults).concat(files);
         }
 
         readonly property string listTitle: Config.UiState.appPickerFor !== ""
@@ -395,6 +436,7 @@ Variants {
             if (item.kind === "command") runCommand(item.key);
             else if (item.kind === "file") Services.FileSearch.open(item.file);
             else if (item.kind === "calc") Services.Calc.copy(item.value);
+            else if (item.kind === "setting") { close(); Config.UiState.openSettingsAt(item.pane, item.row); return; }
             else if (item.kind === "desktop" && item.entry) Config.Apps.launchEntry(item.entry);
             else if (item.exec && item.exec.length > 0) Config.Apps.launch(item.exec);
             close();
