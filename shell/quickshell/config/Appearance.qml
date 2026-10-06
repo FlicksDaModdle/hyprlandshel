@@ -213,6 +213,15 @@ Singleton {
             // Clipboard history (services/Clipboard.qml): on or off, and
             // how many entries it keeps.
             property bool clipboardHistory: true
+            // Night light (services/NightLight.qml): off, on, sunset to
+            // sunrise, or set times; the warmth; the times; and a place
+            // for sunset (empty: the time zone's city).
+            property string nightMode: "off"
+            property int nightTemp: 3400
+            property string nightFrom: "20:00"
+            property string nightTo: "07:00"
+            property string nightLat: ""
+            property string nightLon: ""
             // ROG laptops (services/Rog.qml): the keyboard light in the
             // accent colour.
             property bool rogKbdAccent: false
@@ -545,6 +554,12 @@ Singleton {
     property alias soundAutoSwitch: prefs.soundAutoSwitch
     property alias soundMeters: prefs.soundMeters
     property alias clipboardHistory: prefs.clipboardHistory
+    property alias nightMode: prefs.nightMode
+    property alias nightTemp: prefs.nightTemp
+    property alias nightFrom: prefs.nightFrom
+    property alias nightTo: prefs.nightTo
+    property alias nightLat: prefs.nightLat
+    property alias nightLon: prefs.nightLon
     property alias rogKbdAccent: prefs.rogKbdAccent
     property alias clipboardMax: prefs.clipboardMax
     property alias soundTab: prefs.soundTab

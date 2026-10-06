@@ -37,7 +37,7 @@ shell/
       Cursor.qml           The accent-coloured pointer (CursorShapes.js draws it)
       Kvantum.qml          Generates a Kvantum widget theme from the palette
       Network.qml          nmcli: Wi-Fi, university sign-in, saved networks
-      NightLight.qml       hyprsunset / wlsunset colour temperature
+      NightLight.qml       night light: built in (daemon), or hyprsunset / wlsunset
       Notifications.qml    The org.freedesktop.Notifications server
       Session.qml          Lock / suspend / reboot / log out / reload
       SysInfo.qml          Host, CPU, memory, disk, uptime, compositor
@@ -140,7 +140,7 @@ so; with no `nmcli` the Wi-Fi readout goes quiet.
 | Bluetooth tile and pane | `bluetoothctl` (BlueZ) |
 | Pairing prompts, Wi-Fi password requests | `cargo` (hyprshell-daemon) |
 | Brightness slider and keys | `brightnessctl` |
-| Night light | `hyprsunset` or `wlsunset` |
+| Night light | `cargo` (built in), or `hyprsunset` / `wlsunset` |
 | Screenshots | `grim`, `slurp`, `wl-clipboard` |
 | Power profiles, Game mode | `power-profiles-daemon` |
 | Suspend / reboot / power off | `systemd` (`loginctl`) |
@@ -644,6 +644,21 @@ caches (Cargo's `target/`) are left out.
 150,000 files), keeps up with changes through inotify, and lets the index
 go after ten minutes without a search, so it holds no memory while unused.
 Settings → Launcher → "Search files" turns it off.
+
+## Night light
+
+Settings → Display → Night light: **Off**, **On**, **Sunset to sunrise** or
+**Set times**, and how warm (1900–6500 K). `hyprshell-daemon` sets the
+screens' colour through the compositor's gamma control, so there is nothing
+to install and no program left running; changes fade, and a display plugged
+in later is warmed too. Sunset and sunrise are worked out on the machine for
+your time zone's city, or for a latitude/longitude you give — nothing is
+looked up online. The control center's tile switches it; on a schedule, the
+tile's choice lasts until the next scheduled change.
+
+If hyprsunset or wlsunset is already running it is stopped (two programs
+cannot both own the screen's colours). Where the compositor will not hand
+the colours over, the shell falls back to hyprsunset, if installed.
 
 ## Calculator in the launcher
 

@@ -2,24 +2,59 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../config" as Config
 import "." as Services
 
-// Colour temperature via hyprsunset, with wlsunset as a fallback. Backs the
-// control center's "Night light" tile and Settings → Display → Night shift.
+// Night light: the screens warmed after dark. Backs the control center's
+// "Night light" tile and Settings → Display.
 //
-// Both tools are daemons rather than one-shot commands, so "on" means the
-// daemon is running at the configured temperature and "off" means it isn't.
-// State is read back from the process table so an externally started daemon
-// shows up as on, instead of the tile lying about it.
+// Built in, through hyprshell-daemon (rust/daemon/src/gamma.rs): the
+// compositor's gamma control, with a schedule — always, sunset to sunrise
+// (worked out for your time zone's city, or a place you give), or set
+// times — and fades. Nothing to install and no program left running.
+//
+// Without the daemon, hyprsunset (or wlsunset) as before: "on" means that
+// program running at the temperature, read back from the process table so
+// one started from outside shows as on.
 Singleton {
     id: root
 
+    readonly property var prefs: Config.Appearance
     property bool active: false
-    property int temperature: 3400     // Kelvin; 2500 (warm) – 6000 (neutral)
+    readonly property int temperature: prefs.nightTemp
     property bool available: true
     property string backend: "hyprsunset"
 
-    readonly property string label: active ? temperature + " K" : "off"
+    // ── built in ──
+    readonly property bool builtin: Services.Daemon.running && Services.Daemon.modules.gamma === true && !builtinRefused
+    // The compositor would not give the gamma (and no rival explains it):
+    // hyprsunset, if there is one, can still do it its own way.
+    property bool builtinRefused: false
+    property string error: ""
+    property string sunrise: ""
+    property string sunset: ""
+    property string place: ""
+    property string next: ""
+    readonly property string mode: prefs.nightMode       // off | on | sun | times
+
+    readonly property string label: active ? temperature + " K"
+        : (builtin && mode === "sun" && sunset !== "" ? "at " + sunset
+           : builtin && mode === "times" ? "at " + prefs.nightFrom : "off")
+
+    function configure() {
+        if (!builtin) return;
+        const lat = parseFloat(prefs.nightLat), lon = parseFloat(prefs.nightLon);
+        const msg = { cmd: "gamma-config", mode: prefs.nightMode, temp: prefs.nightTemp,
+                      from: prefs.nightFrom, to: prefs.nightTo };
+        if (isFinite(lat) && isFinite(lon)) { msg.lat = lat; msg.lon = lon; }
+        Services.Daemon.send(msg);
+    }
+    // Every change to the settings, sent once the burst is over (a dragged
+    // temperature slider).
+    readonly property string config: [builtin, prefs.settingsReady, prefs.nightMode, prefs.nightTemp,
+                                      prefs.nightFrom, prefs.nightTo, prefs.nightLat, prefs.nightLon].join("|")
+    onConfigChanged: if (builtin && prefs.settingsReady) configSoon.restart()
+    Timer { id: configSoon; interval: 120; onTriggered: root.configure() }
 
     Process {
         id: probe
@@ -44,7 +79,7 @@ Singleton {
     // outside; anything done here re-checks at once (action's onExited).
     Timer {
         interval: 30000
-        running: !root.viaDaemon
+        running: !root.viaDaemon && !root.builtin
         repeat: true
         triggeredOnStart: true
         onTriggered: probe.running = true
@@ -56,7 +91,24 @@ Singleton {
     Connections {
         target: Services.Daemon
         function onEvent(ev) {
-            if (ev.ev !== "nightlight") return;
+            if (ev.ev === "gamma") {
+                if (root.builtinRefused) return;
+                root.active = !!ev.active;
+                root.error = ev.error || "";
+                root.sunrise = ev.sunrise || "";
+                root.sunset = ev.sunset || "";
+                root.place = ev.place || "";
+                root.next = ev.next || "";
+                if (ev.available === false && ev.active && !root.builtinRefused) {
+                    // The compositor will not do it: hyprsunset's way, if
+                    // there is one, and its state rather than ours.
+                    root.builtinRefused = true;
+                    root.active = false;
+                    root.recheck();
+                }
+                return;
+            }
+            if (ev.ev !== "nightlight" || root.builtin) return;
             const run = ev.running || "", inst = ev.installed || "";
             root.available = run !== "" || inst !== "";
             root.active = run !== "";
@@ -71,7 +123,21 @@ Singleton {
 
     Process { id: action; onExited: root.recheck() }
 
+    // Programs that would fight the built-in one for the screen's colours.
+    Process { id: stopRivals; command: ["sh", "-c", "pkill -x hyprsunset; pkill -x wlsunset; true"] }
+    onBuiltinChanged: if (builtin) { stopRivals.running = true; configSoon.restart(); }
+
     function setActive(on) {
+        if (builtin) {
+            // On a schedule, the tile overrides it until the next change;
+            // otherwise it is the switch itself.
+            if (mode === "sun" || mode === "times")
+                Services.Daemon.send({ cmd: "gamma-override", on: on });
+            else
+                prefs.nightMode = on ? "on" : "off";
+            active = on;
+            return;
+        }
         if (!available) return;
         active = on;   // optimistic; the probe corrects it
         if (!on) {
@@ -92,7 +158,8 @@ Singleton {
     function toggle() { setActive(!active); }
 
     function setTemperature(k) {
-        temperature = Math.round(Math.max(2500, Math.min(6000, k)));
-        if (active) setActive(true);
+        prefs.nightTemp = Math.round(Math.max(1900, Math.min(6000, k)));
+        if (!builtin && active) setActive(true);
     }
+    function setMode(m) { prefs.nightMode = m; }
 }

@@ -1282,15 +1282,7 @@ Scope {
                 min: 1, max: 100, unit: "%",
                 value: Services.Brightness.percent,
                 set: v => Services.Brightness.set(v / 100) });
-            rows.push({ n: "Night shift", s: Services.NightLight.available
-                    ? "Warm the panel — " + Services.NightLight.temperature + " K"
-                    : "Install hyprsunset or wlsunset to enable", type: "toggle",
-                value: Services.NightLight.active,
-                set: v => Services.NightLight.setActive(v) });
-            rows.push({ n: "Colour temperature", s: "Warmth applied while night shift is on",
-                type: "slider", min: 2500, max: 6000, unit: "K",
-                value: Services.NightLight.temperature,
-                set: v => Services.NightLight.setTemperature(v) });
+            for (const r of root.nightRows()) rows.push(r);
             rows.push({ n: "Forget saved layouts",
                 s: "Drops the remembered mode, scale, arrangement and colour "
                    + "settings for every output, so they fall back to what "
@@ -1455,15 +1447,7 @@ Scope {
                 rows.push({ n: "Brightness", s: "No backlight device was found",
                             type: "info", value: "—" });
 
-            rows.push({ n: "Night light", s: "Warms the screen after dark. "
-                           + "Driven by " + Services.NightLight.backend + ".",
-                        type: "toggle", value: Services.NightLight.active,
-                        set: v => Services.NightLight.setActive(v) });
-            rows.push({ n: "Colour temperature",
-                        s: "Lower is warmer. Only applies while night light is on.",
-                        type: "slider", min: 2500, max: 6000, unit: " K",
-                        value: Services.NightLight.temperature,
-                        set: v => Services.NightLight.setTemperature(v) });
+            for (const r of root.nightRows()) rows.push(r);
             return rows;
         }
 
@@ -1951,6 +1935,49 @@ Scope {
             { n: "Bottom left", type: "toggle", value: A.screenCornerBL, set: v => A.screenCornerBL = v },
             { n: "Bottom right", type: "toggle", value: A.screenCornerBR, set: v => A.screenCornerBR = v }
         ]);
+    }
+
+    // Night light's rows, in Display and wherever else it appears.
+    function nightRows() {
+        const N = Services.NightLight;
+        if (!N.builtin) return [
+            { n: "Night light", s: N.available ? "Warms the screen. Driven by " + N.backend + "."
+                                               : "Run install.sh with cargo for the built-in one, or install hyprsunset",
+              type: "toggle", value: N.active, set: v => N.setActive(v) },
+            { n: "Colour temperature", s: "Lower is warmer", type: "slider", min: 1900, max: 6000, unit: " K",
+              value: N.temperature, set: v => N.setTemperature(v) }
+        ];
+        const rows = [
+            { n: "Night light",
+              s: N.error !== "" ? N.error
+                 : N.mode === "sun" ? (N.sunset !== "" ? "Sunset " + N.sunset + ", sunrise " + N.sunrise
+                                                         + (N.place !== "" ? " · " + N.place : "") : "Working out sunset…")
+                 : N.mode === "times" ? "From " + A.nightFrom + " to " + A.nightTo
+                 : "Warms the screen; fades in and out",
+              type: "seg", options: [{ label: "Off", value: "off" }, { label: "On", value: "on" },
+                                     { label: "Sunset to sunrise", value: "sun" }, { label: "Set times", value: "times" }],
+              value: N.mode, set: v => N.setMode(v) },
+            { n: "Colour temperature", s: "Lower is warmer. Around 3400 K suits most evenings.",
+              type: "slider", min: 1900, max: 6000, unit: " K", value: N.temperature, set: v => N.setTemperature(v) }
+        ];
+        const hhmm = v => /^\s*([01]?\d|2[0-3]):[0-5]\d\s*$/.test(v);
+        if (N.mode === "times") {
+            rows.push({ n: "From", s: "24-hour, like 20:00", type: "text", value: A.nightFrom, placeholder: "20:00", label: "Set",
+                        set: v => { if (hhmm(v)) A.nightFrom = v.trim(); } });
+            rows.push({ n: "Until", s: "24-hour, like 07:00", type: "text", value: A.nightTo, placeholder: "07:00", label: "Set",
+                        set: v => { if (hhmm(v)) A.nightTo = v.trim(); } });
+        }
+        if (N.mode === "sun") {
+            rows.push({ n: "Location", s: "Latitude, longitude — empty uses your time zone's city. Only for the sun's times; never sent anywhere.",
+                        type: "text", value: A.nightLat !== "" ? A.nightLat + ", " + A.nightLon : "",
+                        placeholder: "e.g. 51.5, -0.12", label: "Set",
+                        set: v => {
+                            const m = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/.exec(v);
+                            if (m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180) { A.nightLat = m[1]; A.nightLon = m[2]; }
+                            else if (v.trim() === "") { A.nightLat = ""; A.nightLon = ""; }
+                        } });
+        }
+        return rows;
     }
 
     function cursorRows() {
