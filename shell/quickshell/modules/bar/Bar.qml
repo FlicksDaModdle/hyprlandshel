@@ -356,6 +356,37 @@ Variants {
                     barWindow: bar
                 }
 
+                // The microphone, camera or screen in use: an accent pill
+                // with one glyph for each, there only while something is.
+                BarButton {
+                    id: privacyPill
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: Services.Privacy.any
+                    open: Config.UiState.privacyOpen
+                    spacing: 3
+                    onActivated: Config.UiState.togglePrivacy()
+
+                    Repeater {
+                        model: [["mic", Services.Privacy.mic], ["camera", Services.Privacy.camera],
+                                ["monitor", Services.Privacy.sharing]].filter(e => e[1])
+                        Rectangle {
+                            required property var modelData
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: bar.u(Config.Appearance.barIconSize) + 8
+                            height: width
+                            radius: width / 2
+                            color: Config.Appearance.accent
+                            MonoIcon {
+                                anchors.centerIn: parent
+                                name: modelData[0]
+                                size: bar.u(Config.Appearance.barIconSize) - 2
+                                inkColor: Config.Appearance.inkOnAccent
+                                monochrome: true
+                            }
+                        }
+                    }
+                }
+
                 // A countdown, while a timer or the pomodoro runs: the one
                 // that ends first. Paused, it stays, greyed.
                 BarButton {

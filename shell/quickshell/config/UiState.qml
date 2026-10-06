@@ -32,6 +32,7 @@ Singleton {
     property bool trayMenuOpen: false
     property bool drivesOpen: false
     property bool timersOpen: false
+    property bool privacyOpen: false
     property var trayMenuItem: null
     property real trayMenuX: 0
     // A panel wants to be typed into — the control center's password field,
@@ -116,7 +117,7 @@ Singleton {
     readonly property bool iconPickerOpen: iconPickerFor !== ""
 
     readonly property bool anyPanelOpen: controlCenterOpen || notificationsOpen
-                                         || calendarOpen || mediaOpen || powerOpen || clipboardOpen || trayMenuOpen || drivesOpen || timersOpen || desktopMenuOpen
+                                         || calendarOpen || mediaOpen || powerOpen || clipboardOpen || trayMenuOpen || drivesOpen || timersOpen || privacyOpen || desktopMenuOpen
                                          || windowMenuOpen || appMenuOpen || iconPickerOpen
 
     function closeAll() {
@@ -134,6 +135,7 @@ Singleton {
         trayMenuOpen = false;
         drivesOpen = false;
         timersOpen = false;
+        privacyOpen = false;
         desktopMenuOpen = false;
         windowMenuOpen = false;
         appMenuOpen = false;
@@ -189,6 +191,7 @@ Singleton {
     function toggleClipboard() { toggle("clipboard"); }
     function toggleDrives() { toggle("drives"); }
     function toggleTimers() { toggle("timers"); }
+    function togglePrivacy() { toggle("privacy"); }
     // The same icon again closes it; another icon moves it there.
     function openTrayMenu(item, x) {
         const same = trayMenuOpen && trayMenuItem === item;

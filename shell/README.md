@@ -667,6 +667,17 @@ kept as the text it reads as.
 readable by you alone, for 1, 7 or 30 days (Settings → Notifications), at
 most 1000. Turning it off forgets everything.
 
+## Microphone, camera and screen in use
+
+While anything records the microphone, uses the camera or captures the
+screen, the bar shows an accent badge for each; click it to see which apps
+(and mute the microphone from there). The microphone and PipeWire cameras
+are read from PipeWire — not counting visualisers that record the speakers,
+or the shell's own meters. Apps that open the camera directly, as most
+browsers do, are found by `hyprshell-daemon` watching `/dev/video*`. Screen
+sharing comes from Hyprland's own screencast event and the portal's
+PipeWire streams.
+
 ## Focus: quiet hours and per-app rules
 
 Settings → Notifications → Focus sets quiet hours — Do not disturb on a

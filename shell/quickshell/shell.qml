@@ -85,6 +85,10 @@ ShellRoot {
     // ever opened.
     readonly property bool timersStarted: Services.Timers.ready || true
 
+    // And the microphone / camera / screen indicator, which the bar shows
+    // from the start.
+    readonly property bool privacyStarted: Services.Privacy.any || true
+
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
 

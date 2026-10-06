@@ -149,6 +149,13 @@ Variants {
         }
 
         Entrance {
+            shown: Config.UiState.privacyOpen
+            x: layer.panelRight - width
+            y: layer.panelTop
+            PrivacyPanel {}
+        }
+
+        Entrance {
             shown: Config.UiState.powerOpen
             x: layer.panelRight - width
             y: layer.panelTop

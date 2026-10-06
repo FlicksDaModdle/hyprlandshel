@@ -44,6 +44,7 @@ mod accent;
 mod agent;
 mod backlight;
 mod calc;
+mod camera;
 mod clip;
 mod cmds;
 mod fsearch;
@@ -79,6 +80,7 @@ fn main() {
     let gamma = gamma::start();
     let idle = idle::start();
     let usb = usb::start();
+    let camera = camera::start();
     let nhist = nhist::start();
     #[cfg(feature = "pulse")]
     let pulse: Option<Sender<Value>> = Some(pulse::start());
@@ -88,7 +90,7 @@ fn main() {
     out::emit(json!({
         "ev": "ready",
         "version": env!("CARGO_PKG_VERSION"),
-        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "usb": true, "nhist": true, "pulse": pulse.is_some() }
+        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "usb": true, "nhist": true, "camera": true, "pulse": pulse.is_some() }
     }));
 
     let stdin = std::io::stdin();
@@ -106,6 +108,8 @@ fn main() {
             Some(&agent)
         } else if name.starts_with("nh-") {
             Some(&nhist)
+        } else if name.starts_with("camera-") {
+            Some(&camera)
         } else if name.starts_with("usb-") {
             Some(&usb)
         } else if name.starts_with("idle-") {
