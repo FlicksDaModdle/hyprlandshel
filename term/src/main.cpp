@@ -15,9 +15,10 @@
 // window matches the rest of the desktop rather than sitting inside
 // someone else's idea of a title bar.
 //
-// What is underneath it is libvterm, which is the part nobody should
-// write twice: it is the VT220/xterm state machine, and everything here
-// is the pty in front of it and the grid behind it.
+// What is underneath it is alacritty_terminal (core/, Rust) — the parser
+// and grid Alacritty itself runs on, which is the part nobody should
+// write twice; everything here is the pty in front of it and the drawing
+// behind it.
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
 

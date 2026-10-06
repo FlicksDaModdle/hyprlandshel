@@ -97,9 +97,10 @@ bool Pty::start(const QStringList &argv, int rows, int cols) {
         for (int sig = 1; sig < NSIG; ++sig) ::signal(sig, SIG_DFL);
 
         // TERM says what this emulator can do. xterm-256color is the
-        // honest answer for what libvterm implements, and claiming more
-        // (kitty's terminfo, say) would have programs send sequences that
-        // go nowhere.
+        // honest answer for what alacritty_terminal implements as set up
+        // here (Alacritty's own terminfo is not installed everywhere), and
+        // claiming more (kitty's, say) would have programs send sequences
+        // that go nowhere.
         ::setenv("TERM", "xterm-256color", 1);
         ::setenv("COLORTERM", "truecolor", 1);
         ::unsetenv("TERM_PROGRAM");

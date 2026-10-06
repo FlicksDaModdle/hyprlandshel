@@ -1,84 +1,52 @@
 #include "term.h"
 #include "ptyproc.h"
 
-#include <QDebug>
-#include <QUrl>
-
-#include <cstring>
+#include <QClipboard>
+#include <QGuiApplication>
 
 // Qt's key codes, kept out of the header so this file is the only place
 // that knows about both halves.
 #include <QtGui/qevent.h>
 
 Term::Term(QObject *parent) : QObject(parent) {
-    m_vt = vterm_new(m_rows, m_cols);
-    vterm_set_utf8(m_vt, 1);
-
-    m_screen = vterm_obtain_screen(m_vt);
-
-    static const VTermScreenCallbacks callbacks = {
-        &Term::onDamage,
-        &Term::onMoveRect,
-        &Term::onMoveCursor,
-        &Term::onSetTermProp,
-        &Term::onBell,
-        &Term::onResize,
-        &Term::onPushLine,
-        &Term::onPopLine,
-        nullptr,   // sb_clear
-    };
-    vterm_screen_set_callbacks(m_screen, &callbacks, this);
-
-    // OSC 7 (the working directory) is not one of the properties libvterm
-    // interprets, so it arrives here as an unrecognised sequence. It is
-    // the only way a shell tells a terminal where it is.
-    static const VTermStateFallbacks fallbacks = {
-        nullptr,        // control
-        nullptr,        // csi
-        &Term::onOsc,
-        nullptr,        // dcs
-        nullptr,        // apc
-        nullptr,        // pm
-        nullptr,        // sos
-    };
-    vterm_screen_set_unrecognised_fallbacks(m_screen, &fallbacks, this);
-
-    vterm_output_set_callback(m_vt, &Term::onOutput, this);
-    vterm_screen_enable_altscreen(m_screen, 1);
-    vterm_screen_reset(m_screen, 1);
-
-    // After the reset, not before: resetting announces the terminal's
-    // properties through the same callback the program uses, so a default
-    // set first would simply be overwritten by libvterm's own.
-    m_appCursorShape = VTERM_PROP_CURSORSHAPE_BAR_LEFT;
-    m_cursorBlink = true;
+    m_core = ht_new(m_rows, m_cols);
+    ht_set_callback(m_core, &Term::onCore, this);
+    ht_state(m_core, &m_st);
 
     m_repaint.setSingleShot(true);
     m_repaint.setInterval(8);   // about a frame
     connect(&m_repaint, &QTimer::timeout, this, &Term::damaged);
+
+    m_sync.setSingleShot(true);
+    connect(&m_sync, &QTimer::timeout, this, [this] {
+        ht_sync_flush(m_core);
+        refresh();
+        markDamaged();
+    });
 }
 
 Term::~Term() {
-    if (m_vt) vterm_free(m_vt);
+    // The pty first: its last output must not arrive at a core that is
+    // gone.
+    delete m_pty;
+    m_pty = nullptr;
+    if (m_core) ht_free(m_core);
 }
 
 void Term::setPalette(const QColor &fg, const QColor &bg, const QStringList &ansi16) {
     m_defaultFg = fg;
     m_defaultBg = bg;
-
-    VTermState *state = vterm_obtain_state(m_vt);
-    VTermColor vfg, vbg;
-    vterm_color_rgb(&vfg, fg.red(), fg.green(), fg.blue());
-    vterm_color_rgb(&vbg, bg.red(), bg.green(), bg.blue());
-    vterm_state_set_default_colors(state, &vfg, &vbg);
-
-    for (int i = 0; i < ansi16.size() && i < 16; ++i) {
-        const QColor c(ansi16.at(i));
-        if (!c.isValid()) continue;
-        VTermColor vc;
-        vterm_color_rgb(&vc, c.red(), c.green(), c.blue());
-        vterm_state_set_palette_color(state, i, &vc);
+    uint32_t pal[16];
+    // Anything not given keeps a sensible colour rather than black.
+    static const uint32_t fallback[16] = {
+        0x1a1a18, 0xd9534f, 0x5cb85c, 0xe5c07b, 0x61afef, 0xc678dd, 0x56b6c2, 0xdcdcdc,
+        0x5c6370, 0xe06c75, 0x98c379, 0xf0d58c, 0x7cbcf5, 0xd7a0e8, 0x7fd0db, 0xffffff,
+    };
+    for (int i = 0; i < 16; ++i) {
+        const QColor c = i < ansi16.size() ? QColor(ansi16.at(i)) : QColor();
+        pal[i] = c.isValid() ? (c.rgb() & 0xffffff) : fallback[i];
     }
+    ht_set_palette(m_core, fg.rgb() & 0xffffff, bg.rgb() & 0xffffff, pal);
     markDamaged();
 }
 
@@ -97,12 +65,59 @@ void Term::start(const QStringList &argv) {
 bool Term::running() const { return m_pty && m_pty->running(); }
 
 void Term::feed(const QByteArray &data) {
-    vterm_input_write(m_vt, data.constData(), data.size());
+    ht_feed(m_core, reinterpret_cast<const uint8_t *>(data.constData()),
+            static_cast<size_t>(data.size()));
+    const qint64 wait = ht_sync_wait(m_core);
+    if (wait >= 0) m_sync.start(static_cast<int>(wait) + 1);
     // Anything arriving means the live screen is what should be shown:
     // watching output scroll past while looking at history is a terminal
     // fighting you.
     if (m_scrollOffset != 0) { m_scrollOffset = 0; emit scrollOffsetChanged(); }
+    refresh();
     markDamaged();
+}
+
+void Term::refresh() {
+    const HtState was = m_st;
+    ht_state(m_core, &m_st);
+
+    // Line ids: the line at the bottom keeps its id however far it went
+    // up — see lineIdFor().
+    const qint64 scrolled = ht_take_scrolled(m_core);
+    m_firstLineId += was.history - m_st.history + scrolled;
+
+    if (m_st.rows != was.rows || m_st.cols != was.cols) {
+        m_rows = m_st.rows;
+        m_cols = m_st.cols;
+        emit sizeChanged();
+    }
+    if (m_st.history != was.history || scrolled != 0) emit scrollbackChanged();
+    if (m_st.cursor_row != was.cursor_row || m_st.cursor_col != was.cursor_col
+        || m_st.cursor_visible != was.cursor_visible) {
+        m_cursorVisible = m_st.cursor_visible != 0;
+        emit cursorChanged();
+    }
+    if (m_st.mouse != was.mouse) {
+        m_mouse = m_st.mouse;
+        emit mouseEnabledChanged();
+    }
+    const bool styleChanged = m_st.cursor_shape != was.cursor_shape
+                           || m_st.cursor_blink != was.cursor_blink
+                           || m_st.alt_screen != was.alt_screen;
+    m_appCursorShape = m_st.cursor_shape;
+    m_cursorBlink = m_st.cursor_blink != 0;
+    if (m_st.alt_screen != was.alt_screen) {
+        // Nothing scrolls back out of the alternate screen, and a view
+        // still scrolled up when `less` starts would be showing history
+        // that the program does not know is there.
+        m_altScreen = m_st.alt_screen != 0;
+        emit altScreenChanged();
+        setScrollOffset(0);
+    }
+    // Leaving or entering the alternate screen changes which shape is
+    // drawn — see cursorShape().
+    if (styleChanged) emit cursorStyleChanged();
+    if (m_scrollOffset > m_st.history) setScrollOffset(m_st.history);
 }
 
 void Term::markDamaged() {
@@ -112,16 +127,14 @@ void Term::markDamaged() {
 void Term::setSize(int rows, int cols) {
     if (rows <= 0 || cols <= 0) return;
     if (rows == m_rows && cols == m_cols) return;
-    m_rows = rows;
-    m_cols = cols;
-    vterm_set_size(m_vt, rows, cols);
+    ht_resize(m_core, rows, cols, m_cellW, m_cellH);
     if (m_pty) m_pty->resize(rows, cols);
-    emit sizeChanged();
+    refresh();
     markDamaged();
 }
 
 void Term::setScrollOffset(int off) {
-    const int max = static_cast<int>(m_scrollback.size());
+    const int max = m_st.history;
     const int clamped = qBound(0, off, max);
     if (clamped == m_scrollOffset) return;
     m_scrollOffset = clamped;
@@ -129,14 +142,17 @@ void Term::setScrollOffset(int off) {
     markDamaged();
 }
 
+static int32_t htMods(int mods) {
+    int32_t m = 0;
+    if (mods & Qt::ShiftModifier)   m |= HT_MOD_SHIFT;
+    if (mods & Qt::AltModifier)     m |= HT_MOD_ALT;
+    if (mods & Qt::ControlModifier) m |= HT_MOD_CTRL;
+    return m;
+}
+
 void Term::sendMouse(int row, int col, int button, bool pressed, int mods) {
     if (!m_pty) return;
-    VTermModifier vmod = VTERM_MOD_NONE;
-    if (mods & Qt::ShiftModifier)   vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_SHIFT);
-    if (mods & Qt::AltModifier)     vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_ALT);
-    if (mods & Qt::ControlModifier) vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_CTRL);
-    vterm_mouse_move(m_vt, row, col, vmod);
-    if (button > 0) vterm_mouse_button(m_vt, button, pressed, vmod);
+    ht_mouse(m_core, row, col, button, pressed, htMods(mods));
 }
 
 // Clicking into the line being edited.
@@ -156,7 +172,7 @@ void Term::placeCursor(int row, int col) {
     if (!m_pty || m_altScreen || m_scrollOffset != 0) return;
     if (m_cols <= 0) return;
 
-    const int delta = (row - m_cursorPos.row) * m_cols + (col - m_cursorPos.col);
+    const int delta = (row - m_st.cursor_row) * m_cols + (col - m_st.cursor_col);
     if (delta == 0) return;
     if (qAbs(delta) > m_cols * 6) return;
 
@@ -172,36 +188,13 @@ void Term::scrollBy(int lines) { setScrollOffset(m_scrollOffset + lines); }
 void Term::scrollToBottom() { setScrollOffset(0); }
 
 // ── what the view reads ──────────────────────────────────────────────────
-bool Term::cellAt(int row, int col, VTermScreenCell *out) const {
+bool Term::cellAt(int row, int col, HtCell *out) const {
     if (col < 0 || col >= m_cols) return false;
-    // Above the live screen by however far the view is scrolled up.
-    const int fromScreen = row - m_scrollOffset;
-    if (fromScreen >= 0) {
-        if (fromScreen >= m_rows) return false;
-        VTermPos pos { fromScreen, col };
-        return vterm_screen_get_cell(m_screen, pos, out) != 0;
-    }
-    const int idx = static_cast<int>(m_scrollback.size()) + fromScreen;
-    if (idx < 0 || idx >= static_cast<int>(m_scrollback.size())) return false;
-    const QVector<VTermScreenCell> &line = m_scrollback[idx];
-    if (col >= line.size()) {
-        std::memset(out, 0, sizeof(*out));
-        out->width = 1;
-        return true;
-    }
-    *out = line.at(col);
-    return true;
-}
-
-QColor Term::toColor(const VTermColor &c, bool background) const {
-    VTermColor copy = c;
-    if (VTERM_COLOR_IS_DEFAULT_FG(&copy)) return m_defaultFg;
-    if (VTERM_COLOR_IS_DEFAULT_BG(&copy)) return m_defaultBg;
-    if (VTERM_COLOR_IS_INDEXED(&copy))
-        vterm_screen_convert_color_to_rgb(m_screen, &copy);
-    if (VTERM_COLOR_IS_RGB(&copy))
-        return QColor(copy.rgb.red, copy.rgb.green, copy.rgb.blue);
-    return background ? m_defaultBg : m_defaultFg;
+    // Above the live screen by however far the view is scrolled up; the
+    // core numbers scrollback upwards from -1.
+    const int line = row - m_scrollOffset;
+    if (line >= m_rows || line < -m_st.history) return false;
+    return ht_cell(m_core, line, col, out);
 }
 
 // The same as textOfRange, addressed by line id rather than by where a
@@ -225,11 +218,11 @@ QString Term::textOfRange(int row0, int col0, int row1, int col1) const {
         const int to = (r == row1) ? col1 : m_cols - 1;
         QString line;
         for (int c = from; c <= to && c < m_cols; ++c) {
-            VTermScreenCell cell;
+            HtCell cell;
             if (!cellAt(r, c, &cell)) continue;
             if (cell.width == 0) continue;
             if (cell.chars[0] == 0) { line.append(QChar(' ')); continue; }
-            for (int i = 0; i < VTERM_MAX_CHARS_PER_CELL && cell.chars[i]; ++i)
+            for (int i = 0; i < HT_MAX_CHARS && cell.chars[i]; ++i)
                 line.append(QChar::fromUcs4(cell.chars[i]));
         }
         // Trailing blanks are padding, not content: a copied line should
@@ -241,151 +234,37 @@ QString Term::textOfRange(int row0, int col0, int row1, int col1) const {
     return out;
 }
 
-// ── libvterm callbacks ───────────────────────────────────────────────────
-int Term::onDamage(VTermRect, void *user) {
-    static_cast<Term *>(user)->markDamaged();
-    return 1;
-}
-
-int Term::onMoveRect(VTermRect, VTermRect, void *user) {
-    static_cast<Term *>(user)->markDamaged();
-    return 1;
-}
-
-int Term::onMoveCursor(VTermPos pos, VTermPos, int visible, void *user) {
+// ── what the core says ───────────────────────────────────────────────────
+void Term::onCore(void *user, int32_t kind, const uint8_t *data, size_t len) {
     Term *t = static_cast<Term *>(user);
-    t->m_cursorPos = pos;
-    t->m_cursorVisible = visible != 0;
-    emit t->cursorChanged();
-    t->markDamaged();
-    return 1;
-}
-
-int Term::onSetTermProp(VTermProp prop, VTermValue *val, void *user) {
-    Term *t = static_cast<Term *>(user);
-    switch (prop) {
-    case VTERM_PROP_TITLE:
-        // Arrives in fragments, and `initial` says which one starts a new
-        // title. Appending everything would grow the title for the life
-        // of the window.
-        if (val->string.initial) t->m_title.clear();
-        t->m_title.append(QString::fromUtf8(val->string.str, val->string.len));
-        if (val->string.final) emit t->titleChanged();
-        return 1;
-    case VTERM_PROP_CURSORVISIBLE:
-        t->m_cursorVisible = val->boolean;
-        emit t->cursorChanged();
-        t->markDamaged();
-        return 1;
-    case VTERM_PROP_ALTSCREEN:
-        // Nothing scrolls back out of the alternate screen, and a view
-        // still scrolled up when `less` starts would be showing history
-        // that the program does not know is there.
-        t->m_altScreen = val->boolean;
-        emit t->altScreenChanged();
-        // Leaving or entering it changes which shape is drawn — see
-        // cursorShape().
-        emit t->cursorStyleChanged();
-        t->setScrollOffset(0);
-        t->markDamaged();
-        return 1;
-    case VTERM_PROP_CURSORSHAPE:
-        t->m_appCursorShape = val->number;
-        emit t->cursorStyleChanged();
-        t->markDamaged();
-        return 1;
-    case VTERM_PROP_CURSORBLINK:
-        t->m_cursorBlink = val->boolean;
-        emit t->cursorStyleChanged();
-        t->markDamaged();
-        return 1;
-    case VTERM_PROP_MOUSE:
-        t->m_mouse = val->number;
-        emit t->mouseEnabledChanged();
-        return 1;
+    const QByteArray bytes(reinterpret_cast<const char *>(data), static_cast<int>(len));
+    switch (kind) {
+    case HT_EV_WRITE:
+        // Answers to the program's questions, and the keys and clicks
+        // encoded for it.
+        if (t->m_pty) t->m_pty->write(bytes);
+        break;
+    case HT_EV_TITLE: {
+        const QString title = QString::fromUtf8(bytes);
+        if (title != t->m_title) { t->m_title = title; emit t->titleChanged(); }
+        break;
+    }
+    case HT_EV_BELL:
+        emit t->bell();
+        break;
+    case HT_EV_CWD: {
+        const QString path = QString::fromUtf8(bytes);
+        if (!path.isEmpty() && path != t->m_cwd) { t->m_cwd = path; emit t->cwdChanged(); }
+        break;
+    }
+    case HT_EV_CLIPBOARD:
+        // OSC 52: a program copying, the way vim and tmux do over ssh.
+        // Copy only; nothing on the far side may read the clipboard.
+        QGuiApplication::clipboard()->setText(QString::fromUtf8(bytes));
+        break;
     default:
-        return 0;
+        break;
     }
-}
-
-int Term::onBell(void *user) {
-    emit static_cast<Term *>(user)->bell();
-    return 1;
-}
-
-int Term::onResize(int rows, int cols, void *user) {
-    Term *t = static_cast<Term *>(user);
-    t->m_rows = rows;
-    t->m_cols = cols;
-    emit t->sizeChanged();
-    t->markDamaged();
-    return 1;
-}
-
-int Term::onPushLine(int cols, const VTermScreenCell *cells, void *user) {
-    Term *t = static_cast<Term *>(user);
-    QVector<VTermScreenCell> line(cols);
-    std::memcpy(line.data(), cells, sizeof(VTermScreenCell) * cols);
-    t->m_scrollback.push_back(std::move(line));
-    while (static_cast<int>(t->m_scrollback.size()) > kScrollbackMax) {
-        t->m_scrollback.pop_front();
-        // The oldest line is gone, so scrollback[0] is now the line
-        // after it. Without this every id below would shift by one and
-        // a selection made an hour ago would quietly move.
-        t->m_firstLineId++;
-    }
-    // Looking at history while the live screen scrolls should keep the
-    // same lines in view, so the offset follows the line that was added.
-    if (t->m_scrollOffset > 0
-        && t->m_scrollOffset < static_cast<int>(t->m_scrollback.size()))
-        t->m_scrollOffset++;
-    emit t->scrollbackChanged();
-    return 1;
-}
-
-int Term::onPopLine(int cols, VTermScreenCell *cells, void *user) {
-    // The screen grew: libvterm asks for the line that fell off last, so
-    // that growing a window brings back what shrinking it took away.
-    Term *t = static_cast<Term *>(user);
-    if (t->m_scrollback.empty()) return 0;
-    const QVector<VTermScreenCell> line = t->m_scrollback.back();
-    t->m_scrollback.pop_back();
-    const int n = qMin(cols, static_cast<int>(line.size()));
-    std::memcpy(cells, line.constData(), sizeof(VTermScreenCell) * n);
-    for (int i = n; i < cols; ++i) {
-        std::memset(&cells[i], 0, sizeof(VTermScreenCell));
-        cells[i].width = 1;
-    }
-    emit t->scrollbackChanged();
-    return 1;
-}
-
-int Term::onOsc(int command, VTermStringFragment frag, void *user) {
-    Term *t = static_cast<Term *>(user);
-    if (frag.initial) { t->m_oscPending.clear(); t->m_oscCommand = command; }
-    t->m_oscPending.append(QString::fromUtf8(frag.str, frag.len));
-    if (!frag.final) return 1;
-
-    // 7 is the working directory, as a file:// URL with a hostname.
-    if (t->m_oscCommand == 7) {
-        // file://hostname/path — and the hostname is the *machine's*, so
-        // toLocalFile() keeps it and hands back //vm/home/you. The path
-        // is the part that means anything here.
-        const QUrl url(t->m_oscPending);
-        const QString path = QUrl::fromPercentEncoding(url.path().toUtf8());
-        if (!path.isEmpty() && path != t->m_cwd) {
-            t->m_cwd = path;
-            emit t->cwdChanged();
-        }
-    }
-    t->m_oscPending.clear();
-    t->m_oscCommand = -1;
-    return 1;
-}
-
-void Term::onOutput(const char *s, size_t len, void *user) {
-    Term *t = static_cast<Term *>(user);
-    if (t->m_pty) t->m_pty->write(QByteArray(s, static_cast<int>(len)));
 }
 
 // ── input ────────────────────────────────────────────────────────────────
@@ -395,28 +274,32 @@ void Term::sendText(const QString &text) {
     scrollToBottom();
 }
 
+void Term::paste(const QString &text) {
+    if (!m_pty || text.isEmpty()) return;
+    const QByteArray b = text.toUtf8();
+    ht_paste(m_core, reinterpret_cast<const uint8_t *>(b.constData()), static_cast<size_t>(b.size()));
+    scrollToBottom();
+}
+
+void Term::setFocused(bool focused) {
+    if (m_pty) ht_focus(m_core, focused);
+}
+
 void Term::sendKey(int key, int mods, const QString &text) {
     if (!m_pty) return;
-
-    VTermModifier vmod = VTERM_MOD_NONE;
-    if (mods & Qt::ShiftModifier)   vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_SHIFT);
-    if (mods & Qt::AltModifier)     vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_ALT);
-    if (mods & Qt::ControlModifier) vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_CTRL);
 
     // ── the word-wise editing keys ────────────────────────────────────
     //
     // These are the ones people expect to behave the way they do in a text
     // box: ctrl and an arrow moves a word, ctrl and a delete key removes
-    // one. The arrows are fine as libvterm sends them — CSI 1;5D and its
+    // one. The arrows are fine as xterm sends them — CSI 1;5D and its
     // friends are what every shell already binds — but the delete keys are
-    // not: ctrl-backspace comes out as CSI 127;5u, which is the newer
-    // kitty keyboard protocol, and readline, fish and zsh bind none of it.
-    // The key looked swallowed.
+    // not: ctrl-backspace has no sequence shells agree on (libvterm sent
+    // the kitty protocol's CSI 127;5u, which readline, fish and zsh bind
+    // none of), and the key looked swallowed.
     //
     // So those two are sent as the sequences shells have bound for
-    // decades. Nothing else here is special-cased, because nothing else
-    // needed to be — checked by reading the bytes back off a pty rather
-    // than by assuming.
+    // decades.
     if (mods & Qt::ControlModifier) {
         if (key == Qt::Key_Backspace) {
             // Alt-backspace: backward-kill-word. Bound in bash, zsh and
@@ -439,48 +322,46 @@ void Term::sendKey(int key, int mods, const QString &text) {
         }
     }
 
-    VTermKey vkey = VTERM_KEY_NONE;
+    int32_t hkey = 0;
     switch (key) {
     case Qt::Key_Return:
-    case Qt::Key_Enter:     vkey = VTERM_KEY_ENTER; break;
-    case Qt::Key_Tab:       vkey = VTERM_KEY_TAB; break;
-    case Qt::Key_Backtab:   vkey = VTERM_KEY_TAB;
-                            vmod = static_cast<VTermModifier>(vmod | VTERM_MOD_SHIFT); break;
-    case Qt::Key_Backspace: vkey = VTERM_KEY_BACKSPACE; break;
-    case Qt::Key_Escape:    vkey = VTERM_KEY_ESCAPE; break;
-    case Qt::Key_Up:        vkey = VTERM_KEY_UP; break;
-    case Qt::Key_Down:      vkey = VTERM_KEY_DOWN; break;
-    case Qt::Key_Left:      vkey = VTERM_KEY_LEFT; break;
-    case Qt::Key_Right:     vkey = VTERM_KEY_RIGHT; break;
-    case Qt::Key_Insert:    vkey = VTERM_KEY_INS; break;
-    case Qt::Key_Delete:    vkey = VTERM_KEY_DEL; break;
-    case Qt::Key_Home:      vkey = VTERM_KEY_HOME; break;
-    case Qt::Key_End:       vkey = VTERM_KEY_END; break;
-    case Qt::Key_PageUp:    vkey = VTERM_KEY_PAGEUP; break;
-    case Qt::Key_PageDown:  vkey = VTERM_KEY_PAGEDOWN; break;
+    case Qt::Key_Enter:     hkey = HT_KEY_ENTER; break;
+    case Qt::Key_Tab:       hkey = HT_KEY_TAB; break;
+    case Qt::Key_Backtab:   hkey = HT_KEY_BACKTAB; break;
+    case Qt::Key_Backspace: hkey = HT_KEY_BACKSPACE; break;
+    case Qt::Key_Escape:    hkey = HT_KEY_ESCAPE; break;
+    case Qt::Key_Up:        hkey = HT_KEY_UP; break;
+    case Qt::Key_Down:      hkey = HT_KEY_DOWN; break;
+    case Qt::Key_Left:      hkey = HT_KEY_LEFT; break;
+    case Qt::Key_Right:     hkey = HT_KEY_RIGHT; break;
+    case Qt::Key_Insert:    hkey = HT_KEY_INSERT; break;
+    case Qt::Key_Delete:    hkey = HT_KEY_DELETE; break;
+    case Qt::Key_Home:      hkey = HT_KEY_HOME; break;
+    case Qt::Key_End:       hkey = HT_KEY_END; break;
+    case Qt::Key_PageUp:    hkey = HT_KEY_PAGE_UP; break;
+    case Qt::Key_PageDown:  hkey = HT_KEY_PAGE_DOWN; break;
     default: break;
     }
-    if (key >= Qt::Key_F1 && key <= Qt::Key_F35)
-        vkey = static_cast<VTermKey>(VTERM_KEY_FUNCTION_0 + 1 + (key - Qt::Key_F1));
+    if (key >= Qt::Key_F1 && key <= Qt::Key_F20)
+        hkey = HT_KEY_F0 + 1 + (key - Qt::Key_F1);
 
-    if (vkey != VTERM_KEY_NONE) {
-        vterm_keyboard_key(m_vt, vkey, vmod);
+    if (hkey != 0) {
+        ht_key(m_core, hkey, htMods(mods), nullptr, 0);
         scrollToBottom();
         return;
     }
 
     // Control combinations are the character with the modifier, not the
-    // control code: libvterm produces the code. Sending the text as well
-    // would type a stray letter alongside every ^C.
-    if ((mods & Qt::ControlModifier) && key >= 0x20 && key < 0x7f) {
-        vterm_keyboard_unichar(m_vt, static_cast<uint32_t>(QChar(key).toLower().unicode()), vmod);
-        scrollToBottom();
-        return;
-    }
-
-    if (text.isEmpty()) return;
-    for (const uint ucs : text.toUcs4())
-        vterm_keyboard_unichar(m_vt, ucs,
-                               static_cast<VTermModifier>(vmod & ~VTERM_MOD_SHIFT));
+    // control code Qt already made of it: the core makes the code, the
+    // same way for every layout. Sending the text as well would type a
+    // stray letter alongside every ^C.
+    QString t = text;
+    if ((mods & Qt::ControlModifier) && key >= 0x20 && key < 0x7f)
+        t = QString(QChar(key).toLower());
+    if (t.isEmpty()) return;
+    const QByteArray b = t.toUtf8();
+    // Shift has already made the text what it is.
+    ht_key(m_core, 0, htMods(mods) & ~HT_MOD_SHIFT,
+           reinterpret_cast<const uint8_t *>(b.constData()), static_cast<size_t>(b.size()));
     scrollToBottom();
 }

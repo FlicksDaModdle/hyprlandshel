@@ -40,24 +40,25 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MISSING=0
 
 head1 "To build"
-for t in cmake make g++ pkg-config; do
+for t in cmake make g++; do
     if command -v "$t" >/dev/null 2>&1; then ok "$t"
     else bad "$t" "required"; MISSING=$((MISSING + 1)); fi
 done
 
-# libvterm is the terminal emulation itself. Without it there is nothing
-# to build: this program is a window around it.
-if pkg-config --exists vterm 2>/dev/null; then
-    ok "libvterm" "$(pkg-config --modversion vterm)"
+# The terminal emulation is Rust (core/: alacritty_terminal), built with
+# cargo as part of the build. Without it there is nothing to build: this
+# program is a window around it.
+if command -v cargo >/dev/null 2>&1; then
+    ok "cargo" "$(cargo --version 2>/dev/null | cut -d' ' -f2)"
 else
-    bad "libvterm" "required — the terminal emulation"
+    bad "cargo" "required — builds the terminal emulation (core/)"
     MISSING=$((MISSING + 1))
     if [ -r /etc/os-release ]; then
         case "$( . /etc/os-release 2>/dev/null; echo "${ID:-}${ID_LIKE:-}" )" in
-            *arch*)            printf '      sudo pacman -S libvterm\n' ;;
-            *debian*|*ubuntu*) printf '      sudo apt install libvterm-dev\n' ;;
-            *fedora*|*rhel*)   printf '      sudo dnf install libvterm-devel\n' ;;
-            *suse*)            printf '      sudo zypper install libvterm-devel\n' ;;
+            *arch*)            printf '      sudo pacman -S rust\n' ;;
+            *debian*|*ubuntu*) printf '      sudo apt install cargo\n' ;;
+            *fedora*|*rhel*)   printf '      sudo dnf install cargo\n' ;;
+            *suse*)            printf '      sudo zypper install cargo\n' ;;
         esac
     fi
 fi

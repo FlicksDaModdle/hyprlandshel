@@ -8,21 +8,19 @@
 #include <QVector>
 #include <QtQml/qqmlregistration.h>
 
-#include <deque>
 
-extern "C" {
-#include <vterm.h>
-}
+#include "htcore.h"
 
 class Pty;
 
 // What the bytes mean.
 //
-// libvterm is the VT220/xterm state machine — it parses the stream and
-// keeps a grid of cells, and knows nothing about drawing. This wraps it:
-// it owns the pty, feeds it what the child writes, keeps the scrollback
-// libvterm hands back when lines fall off the top, and turns keystrokes
-// into the sequences a program on the far side expects.
+// The emulation is alacritty_terminal — the parser and grid Alacritty runs
+// on — built from core/ in Rust and reached through htcore.h. It parses
+// the stream, keeps the screen and the scrollback, and turns keys, clicks
+// and pastes into what the program on the far side expects for the modes
+// it has set. This owns the pty, feeds it what the child writes, and
+// answers for the view and QML.
 //
 // The view reads cells from here directly rather than through QML: a
 // screenful is a few thousand cells and a repaint asks for all of them.
@@ -42,8 +40,7 @@ class Term : public QObject {
     Q_PROPERTY(int scrollOffset READ scrollOffset WRITE setScrollOffset
                NOTIFY scrollOffsetChanged)
     Q_PROPERTY(bool cursorVisible READ cursorVisible NOTIFY cursorChanged)
-    // 1 block, 2 underline, 3 bar — libvterm's numbering, which is
-    // DECSCUSR's. A bar unless the program says otherwise; vim asks for a
+    // 1 block, 2 underline, 3 bar — DECSCUSR's numbering. A bar unless the program says otherwise; vim asks for a
     // block in normal mode and a bar in insert, and being told is better
     // than having an opinion.
     Q_PROPERTY(int cursorShape READ cursorShape NOTIFY cursorStyleChanged)
@@ -70,6 +67,14 @@ public:
     Q_INVOKABLE void start(const QStringList &argv = QStringList());
     Q_INVOKABLE void setSize(int rows, int cols);
     Q_INVOKABLE void sendText(const QString &text);
+    // Text from the clipboard: bracketed for a program that asked, so a
+    // pasted line is not run as if typed.
+    Q_INVOKABLE void paste(const QString &text);
+    // Whether the window has the keyboard, for programs that asked to be
+    // told (vim and tmux redraw on it).
+    Q_INVOKABLE void setFocused(bool focused);
+    // The size of a cell in pixels, for programs that ask for it.
+    void setCellPixels(int w, int h) { m_cellW = w; m_cellH = h; }
     // key is a Qt::Key, mods a Qt::KeyboardModifiers. `text` is what the
     // keyboard produced, which is what ordinary typing sends.
     Q_INVOKABLE void sendKey(int key, int mods, const QString &text);
@@ -89,7 +94,7 @@ public:
     int cols() const { return m_cols; }
     QString title() const { return m_title; }
     QString cwd() const { return m_cwd; }
-    int scrollbackLines() const { return static_cast<int>(m_scrollback.size()); }
+    int scrollbackLines() const { return m_st.history; }
 
     // ── line identity ─────────────────────────────────────────────────
     //
@@ -102,7 +107,9 @@ public:
     // oldest line the scrollback has ever held, including the ones it
     // has since dropped — m_firstLineId is the id of scrollback[0] and
     // grows as lines fall off the far end, so an id stays attached to
-    // its own line even when the buffer overflows.
+    // its own line even when the buffer overflows. The core says how many
+    // lines went up off the screen in each feed (ht_take_scrolled), which
+    // is what keeps the arithmetic true.
     //
     //   scrollback[i]   -> m_firstLineId + i
     //   screen row s    -> m_firstLineId + scrollbackLines() + s
@@ -142,20 +149,26 @@ public:
     int cursorShape() const {
         static const bool obey = qEnvironmentVariableIsSet("HYPRSHELL_TERM_APP_CURSOR");
         if (obey || m_altScreen) return m_appCursorShape;
-        return 3;   // VTERM_PROP_CURSORSHAPE_BAR_LEFT
+        return 3;   // a bar
     }
     bool cursorBlink() const { return m_cursorBlink; }
-    int cursorRow() const { return m_cursorPos.row; }
-    int cursorCol() const { return m_cursorPos.col; }
+    int cursorRow() const { return m_st.cursor_row; }
+    int cursorCol() const { return m_st.cursor_col; }
     bool running() const;
     bool mouseEnabled() const { return m_mouse != 0; }
     bool altScreen() const { return m_altScreen; }
 
     // For the view. `row` is in view coordinates: 0 is the top visible
     // line, which is a scrollback line when the view is scrolled up.
-    bool cellAt(int row, int col, VTermScreenCell *out) const;
-    // Both sides of a default colour, resolved.
-    QColor toColor(const VTermColor &c, bool background) const;
+    bool cellAt(int row, int col, HtCell *out) const;
+    // A cell's colours, with the theme's own resolved now rather than
+    // when the cell was written, so a theme change repaints everything.
+    QColor fgOf(const HtCell &c) const {
+        return c.fg_default ? m_defaultFg : QColor::fromRgb(c.fg);
+    }
+    QColor bgOf(const HtCell &c) const {
+        return c.bg_default ? m_defaultBg : QColor::fromRgb(c.bg);
+    }
     QColor defaultFg() const { return m_defaultFg; }
     QColor defaultBg() const { return m_defaultBg; }
 
@@ -177,34 +190,25 @@ signals:
     void exited(int code);
 
 private:
-    static int onDamage(VTermRect rect, void *user);
-    static int onMoveRect(VTermRect dest, VTermRect src, void *user);
-    static int onMoveCursor(VTermPos pos, VTermPos oldpos, int visible, void *user);
-    static int onSetTermProp(VTermProp prop, VTermValue *val, void *user);
-    static int onBell(void *user);
-    static int onResize(int rows, int cols, void *user);
-    static int onPushLine(int cols, const VTermScreenCell *cells, void *user);
-    static int onPopLine(int cols, VTermScreenCell *cells, void *user);
-    static int onOsc(int command, VTermStringFragment frag, void *user);
-    static void onOutput(const char *s, size_t len, void *user);
+    static void onCore(void *user, int32_t kind, const uint8_t *data, size_t len);
 
     void feed(const QByteArray &data);
+    // After anything that may have changed the screen: read the core's
+    // state and say what changed.
+    void refresh();
     void markDamaged();
 
-    VTerm *m_vt = nullptr;
-    VTermScreen *m_screen = nullptr;
+    HtCore *m_core = nullptr;
+    HtState m_st {};
     Pty *m_pty = nullptr;
 
     int m_rows = 24;
     int m_cols = 80;
+    int m_cellW = 0;
+    int m_cellH = 0;
     QString m_title;
     QString m_cwd;
-    QString m_oscPending;
-    int m_oscCommand = -1;
 
-    std::deque<QVector<VTermScreenCell>> m_scrollback;
-    // Bounded, or a build log is a memory leak with a cursor in it.
-    static constexpr int kScrollbackMax = 10000;
     int m_scrollOffset = 0;
     // The id of scrollback[0]; see lineIdFor(). Grows when the oldest
     // lines are dropped, so ids never repeat and never shift.
@@ -213,10 +217,13 @@ private:
     int m_mouse = 0;
     bool m_altScreen = false;
 
-    VTermPos m_cursorPos { 0, 0 };
     bool m_cursorVisible = true;
     int m_appCursorShape = 3;       // what the program last asked for
     bool m_cursorBlink = true;
+
+    // A synchronized update (mode 2026) the program has not finished is
+    // shown anyway after a moment.
+    QTimer m_sync;
 
     QColor m_defaultFg { "#e8e6e3" };
     QColor m_defaultBg { "#1a1a18" };

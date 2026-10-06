@@ -10,7 +10,7 @@
 // found before the system's, which is where forkpty is declared.)
 //
 // A terminal emulator is two halves: something that knows what the bytes
-// mean (libvterm, next door) and something that produces them. This is
+// mean (the core: alacritty_terminal, through term.cpp) and something that produces them. This is
 // the second half — a child process on the far side of a pty, whatever
 // it writes arriving here as bytes and whatever is typed going back the
 // same way.

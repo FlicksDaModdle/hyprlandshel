@@ -7,12 +7,25 @@ set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Qml Quick)
 
-# libvterm is the terminal emulation itself — MIT, C99, and no opinion
-# about toolkits: it parses the stream and keeps the grid, and calls back
-# for everything it cannot do itself. Found with pkg-config because that
-# is all it ships; there is no CMake package.
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(VTERM REQUIRED IMPORTED_TARGET vterm)
+# The terminal emulation is alacritty_terminal — the parser and grid
+# Alacritty runs on — in core/, built with cargo into the build tree and
+# linked in statically. The C++ side keeps the pty, the drawing and the
+# window; src/htcore.h is the line between them.
+find_program(CARGO cargo REQUIRED)
+set(HTCORE_DIR ${CMAKE_CURRENT_BINARY_DIR}/core)
+set(HTCORE_LIB ${HTCORE_DIR}/release/libhyprterm_core.a)
+add_custom_command(
+    OUTPUT ${HTCORE_LIB}
+    COMMAND ${CARGO} build --release --locked
+            --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/core/Cargo.toml
+            --target-dir ${HTCORE_DIR}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/core/src/lib.rs
+            ${CMAKE_CURRENT_SOURCE_DIR}/core/Cargo.toml
+            ${CMAKE_CURRENT_SOURCE_DIR}/core/Cargo.lock
+    COMMENT "Building the terminal core (cargo)"
+    USES_TERMINAL
+    VERBATIM)
+add_custom_target(hyprterm-core DEPENDS ${HTCORE_LIB})
 
 qt_standard_project_setup(REQUIRES 6.2)
 
@@ -40,6 +53,7 @@ qt_add_executable(hyprshell-term
     src/term.cpp src/term.h
     src/termview.cpp src/termview.h
     src/boxdraw.cpp src/boxdraw.h
+    src/htcore.h
 )
 
 set_source_files_properties(qml/Appearance.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
@@ -60,9 +74,11 @@ qt_add_qml_module(hyprshell-term
 )
 
 target_include_directories(hyprshell-term PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_dependencies(hyprshell-term hyprterm-core)
 target_link_libraries(hyprshell-term
-    PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick PkgConfig::VTERM util
-            hyprterm-backendplugin)
+    PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick util
+            hyprterm-backendplugin
+            ${HTCORE_LIB} ${CMAKE_DL_LIBS} pthread m)
 
 include(GNUInstallDirs)
 configure_file(hyprshell-term.desktop.in

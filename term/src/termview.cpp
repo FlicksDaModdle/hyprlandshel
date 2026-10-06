@@ -133,6 +133,7 @@ void TermView::setLineHeight(qreal h) {
 void TermView::setFocused(bool f) {
     if (f == m_focused) return;
     m_focused = f;
+    if (m_term) m_term->setFocused(f);
     emit focusedChanged();
     wake();
 }
@@ -171,7 +172,10 @@ void TermView::relayout() {
         m_rows = rows;
         emit gridChanged();
     }
-    if (m_term) m_term->setSize(rows, cols);
+    if (m_term) {
+        m_term->setCellPixels(qRound(m_cellW), qRound(m_cellH));
+        m_term->setSize(rows, cols);
+    }
 }
 
 void TermView::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) {
@@ -205,14 +209,14 @@ void TermView::paint(QPainter *painter) {
 
         int col = 0;
         while (col < cols) {
-            VTermScreenCell cell;
+            HtCell cell;
             if (!m_term->cellAt(row, col, &cell)) { col++; continue; }
 
             const bool selected = inSelection(row, col);
-            QColor fg = m_term->toColor(cell.fg, false);
-            QColor bg = m_term->toColor(cell.bg, true);
-            if (cell.attrs.reverse) std::swap(fg, bg);
-            if (cell.attrs.conceal) fg = bg;
+            QColor fg = m_term->fgOf(cell);
+            QColor bg = m_term->bgOf(cell);
+            if (cell.reverse) std::swap(fg, bg);
+            if (cell.conceal) fg = bg;
 
             QString run;
             QVector<int> widths;    // cells per entry in the run
@@ -220,24 +224,24 @@ void TermView::paint(QPainter *painter) {
             int width = 0;
             // Collect while everything that affects how it is drawn holds.
             while (col < cols) {
-                VTermScreenCell next;
+                HtCell next;
                 if (!m_term->cellAt(row, col, &next)) break;
-                QColor nfg = m_term->toColor(next.fg, false);
-                QColor nbg = m_term->toColor(next.bg, true);
-                if (next.attrs.reverse) std::swap(nfg, nbg);
-                if (next.attrs.conceal) nfg = nbg;
+                QColor nfg = m_term->fgOf(next);
+                QColor nbg = m_term->bgOf(next);
+                if (next.reverse) std::swap(nfg, nbg);
+                if (next.conceal) nfg = nbg;
                 if (nfg != fg || nbg != bg
-                    || next.attrs.bold != cell.attrs.bold
-                    || next.attrs.italic != cell.attrs.italic
-                    || next.attrs.underline != cell.attrs.underline
-                    || next.attrs.strike != cell.attrs.strike
+                    || next.bold != cell.bold
+                    || next.italic != cell.italic
+                    || next.underline != cell.underline
+                    || next.strike != cell.strike
                     || inSelection(row, col) != selected)
                     break;
 
                 const int w = next.width > 0 ? next.width : 1;
                 QString glyph;
                 if (next.chars[0] == 0) glyph = QStringLiteral(" ");
-                else for (int i = 0; i < VTERM_MAX_CHARS_PER_CELL && next.chars[i]; ++i)
+                else for (int i = 0; i < HT_MAX_CHARS && next.chars[i]; ++i)
                     glyph.append(QChar::fromUcs4(next.chars[i]));
                 run.append(glyph);
                 // What each entry in the run is worth, in cells. A CJK
@@ -259,10 +263,10 @@ void TermView::paint(QPainter *painter) {
 
             if (!run.trimmed().isEmpty()) {
                 QFont f = m_font;
-                if (cell.attrs.bold) f.setBold(true);
-                if (cell.attrs.italic) f.setItalic(true);
-                if (cell.attrs.underline != VTERM_UNDERLINE_OFF) f.setUnderline(true);
-                if (cell.attrs.strike) f.setStrikeOut(true);
+                if (cell.bold) f.setBold(true);
+                if (cell.italic) f.setItalic(true);
+                if (cell.underline) f.setUnderline(true);
+                if (cell.strike) f.setStrikeOut(true);
                 painter->setFont(f);
                 painter->setPen(fg);
                 // Drawn glyph by glyph at exact cell positions rather than
@@ -458,7 +462,7 @@ void TermView::mousePressEvent(QMouseEvent *event) {
         // desktop and the one people miss most when it is absent.
         const QString text =
             QGuiApplication::clipboard()->text(QClipboard::Selection);
-        if (m_term && !text.isEmpty()) m_term->sendText(text);
+        if (m_term && !text.isEmpty()) m_term->paste(text);
         event->accept();
         return;
     }
@@ -527,7 +531,7 @@ void TermView::copy() {
 void TermView::paste() {
     if (!m_term) return;
     const QString text = QGuiApplication::clipboard()->text();
-    if (!text.isEmpty()) m_term->sendText(text);
+    if (!text.isEmpty()) m_term->paste(text);
 }
 
 QString TermView::clipboardText() const {
