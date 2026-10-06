@@ -667,6 +667,21 @@ kept as the text it reads as.
 readable by you alone, for 1, 7 or 30 days (Settings → Notifications), at
 most 1000. Turning it off forgets everything.
 
+## Timers, pomodoro and alarms
+
+The bar shows a countdown while a timer or the pomodoro runs; click it for
+the panel (or "Timers" in the launcher). Start a timer from a preset, any
+length (`45`, `1h30`, `90s`, `2:30`, with `, a name` after), or straight
+from the launcher by typing `timer 10m` or `timer 1h, laundry`. The pomodoro
+runs focus and breaks on repeat with the lengths you choose and counts
+today's sessions. Alarms ring at a time, once or on chosen days, with
+Snooze; they ring through Do not disturb.
+
+Everything is kept in `~/.local/state/hyprshell/timers.json` with absolute
+end times, so a running timer survives the shell restarting, and one that
+ran out meanwhile rings when the shell is back. `hyprshellctl timer 5m`
+and `hyprshellctl pomodoro` work from scripts and keybinds.
+
 ## Night light
 
 Settings → Display → Night light: **Off**, **On**, **Sunset to sunrise** or

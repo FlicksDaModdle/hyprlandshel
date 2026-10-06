@@ -83,6 +83,17 @@ Singleton {
         "toggleKeyboard":      () => Config.UiState.toggleOsk(),
         // Clipboard history: what was copied, to put back.
         "toggleClipboard":     () => Config.UiState.toggleClipboard(),
+        "toggleTimers":        () => Config.UiState.toggleTimers(),
+        // "timer 10m", "timer 1h30, tea"
+        "timer":               arg => {
+            const s = String(arg || "");
+            const comma = s.indexOf(",");
+            const secs = Services.Timers.parseDuration(comma >= 0 ? s.slice(0, comma) : s);
+            if (secs > 0) Services.Timers.addTimer(secs, comma >= 0 ? s.slice(comma + 1).trim() : "");
+        },
+        "pomodoro":            () => Services.Timers.pomoActive
+                                     ? (Services.Timers.pomo.running ? Services.Timers.pomoPause() : Services.Timers.pomoResume())
+                                     : Services.Timers.pomoStart(),
         "openTerminal":        arg => Config.Apps.launchTerm(
                                    arg ? ["--working-directory", arg] : []),
         "openMusic":           () => Config.Apps.launchTerm(["-e", "ncmpcpp"]),

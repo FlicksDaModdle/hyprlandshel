@@ -356,6 +356,36 @@ Variants {
                     barWindow: bar
                 }
 
+                // A countdown, while a timer or the pomodoro runs: the one
+                // that ends first. Paused, it stays, greyed.
+                BarButton {
+                    id: timerPill
+                    readonly property var tm: Services.Timers
+                    readonly property var s: tm.soonest
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: tm.anyActive || tm.anyPaused
+                    open: Config.UiState.timersOpen
+                    spacing: 6
+                    onActivated: Config.UiState.toggleTimers()
+
+                    MonoIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: timerPill.s && timerPill.s.kind === "pomodoro" ? "pomodoro" : "timer"
+                        size: bar.u(Config.Appearance.barIconSize)
+                        inkColor: Config.Appearance.ink
+                        accentColor: Config.Appearance.accent
+                    }
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: timerPill.s ? timerPill.tm.clock((timerPill.tm.now, (timerPill.s.endsAt - timerPill.tm.now) / 1000))
+                                          : "paused"
+                        font.pixelSize: Config.Appearance.barFs(0)
+                        font.weight: Font.DemiBold
+                        font.features: { "tnum": 1 }
+                        color: timerPill.s ? Config.Appearance.ink : Config.Appearance.ink3
+                    }
+                }
+
                 // Removable drives, while one is connected.
                 BarButton {
                     anchors.verticalCenter: parent.verticalCenter

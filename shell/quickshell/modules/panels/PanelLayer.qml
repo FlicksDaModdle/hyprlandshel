@@ -142,6 +142,13 @@ Variants {
         }
 
         Entrance {
+            shown: Config.UiState.timersOpen
+            x: layer.panelRight - width
+            y: layer.panelTop
+            TimersPanel {}
+        }
+
+        Entrance {
             shown: Config.UiState.powerOpen
             x: layer.panelRight - width
             y: layer.panelTop

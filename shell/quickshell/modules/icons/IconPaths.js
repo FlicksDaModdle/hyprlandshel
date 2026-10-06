@@ -171,6 +171,26 @@ var icons = {
         ink: join(rrect(5, 3, 14, 18, 2.5), "M9 12H9.01 M12 12H12.01 M15 12H15.01 M9 15.5H9.01 M12 15.5H12.01 M9 19H12"),
         acc: "M8.5 7H15.5 M15 15.5V19"
     },
+    // A stopwatch: timers and the bar's countdown pill.
+    timer: {
+        ink: join(circle(12, 13.5, 7.5), "M10 2.5H14 M12 2.5V6 M18.5 6.5L17 8"),
+        acc: "M12 13.5V9.5"
+    },
+    // An alarm clock: alarms.
+    alarm: {
+        ink: join(circle(12, 13, 7), "M4 5L6.5 2.8 M20 5L17.5 2.8 M7 19.5L5.5 21 M17 19.5L18.5 21"),
+        acc: "M12 9.5V13L14.5 14.5"
+    },
+    // A tomato-ish ring with a leaf: the pomodoro.
+    pomodoro: {
+        ink: circle(12, 13.5, 7.5),
+        acc: "M12 6V3.5 M12 6C10 4.5 8 4.8 7 5.8 M12 6C14 4.5 16 4.8 17 5.8"
+    },
+    // Focus: a target.
+    focus: {
+        ink: join(circle(12, 12, 8.5), circle(12, 12, 4.5)),
+        dots: [{ cx: 12, cy: 12, r: 1.6, c: "acc" }]
+    },
     // Clipboard history.
     clipboard: {
         ink: join(rrect(5, 4.5, 14, 16, 2), "M9 12H15 M9 15.5H13"),

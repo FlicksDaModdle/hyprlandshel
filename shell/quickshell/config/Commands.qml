@@ -20,6 +20,7 @@ Singleton {
         // tasks/install.sh has run and the shell has seen it, and this
         // works either way — it says how to install it when it isn't.
         { key: "tasks",      label: "Task Manager", icon: "cpu",           cat: "System · processes, performance, services, startup apps" },
+        { key: "timers",     label: "Timers",       icon: "timer",         cat: "Command · timer, pomodoro, alarms" },
         { key: "clipboard",  label: "Clipboard history", icon: "clipboard",    cat: "System · what you copied, to paste again" },
         { key: "sound",      label: "Sound",        icon: "volume",        cat: "System · output and input" },
         { key: "network",    label: "Network",      icon: "wifi",          cat: "System · wireless" },

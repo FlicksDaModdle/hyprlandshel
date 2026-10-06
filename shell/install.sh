@@ -239,7 +239,7 @@ need brightnessctl optional "brightness slider and keys" brightnessctl brightnes
 need grim          optional "screenshots"                grim grim grim grim
 need slurp         optional "screenshot region picker"   slurp slurp slurp slurp
 need wl-copy       optional "screenshot to clipboard"    wl-clipboard wl-clipboard wl-clipboard wl-clipboard
-need notify-send   optional "screenshot confirmations"   libnotify libnotify-bin libnotify libnotify-tools
+need notify-send   optional "timers, alarms and screenshot confirmations"   libnotify libnotify-bin libnotify libnotify-tools
 need playerctl     optional "media transport keys"       playerctl playerctl playerctl playerctl
 need kitty         optional "the themed terminal"        kitty kitty kitty kitty
 # The style plugin is what actually draws; kvantummanager only comes with it

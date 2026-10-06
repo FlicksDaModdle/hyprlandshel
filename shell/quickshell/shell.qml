@@ -81,6 +81,10 @@ ShellRoot {
     // And notification history, whose days' limit applies from the start.
     readonly property bool notifHistoryStarted: Services.NotifHistory.on || true
 
+    // And timers and alarms, which ring whether or not their panel was
+    // ever opened.
+    readonly property bool timersStarted: Services.Timers.ready || true
+
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
 
@@ -183,6 +187,9 @@ ShellRoot {
         function toggleCalendar(): void { Services.Commands.run("toggleCalendar"); }
         function togglePower(): void { Services.Commands.run("togglePower"); }
         function toggleClipboard(): void { Services.Commands.run("toggleClipboard"); }
+        function toggleTimers(): void { Services.Commands.run("toggleTimers"); }
+        function timer(length: string): void { Services.Commands.run("timer " + length); }
+        function pomodoro(): void { Services.Commands.run("pomodoro"); }
         function closePanels(): void { Services.Commands.run("closePanels"); }
         function openSettings(pane: string): void { Services.Commands.run("openSettings " + pane); }
         function openFiles(path: string): void { Services.Commands.run("openFiles " + path); }

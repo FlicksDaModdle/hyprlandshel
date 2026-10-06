@@ -358,7 +358,20 @@ Variants {
                      cat: query.trim() + " · Enter copies " + Services.Calc.plain(Services.Calc.result),
                      value: Services.Calc.result }]
                 : [];
-            return calc.concat(scored.map(s => s.item)).concat(settingsResults).concat(files);
+            // "timer 10m", "timer 1h30, tea": start one from here.
+            const tm = /^timer\s+(.+)$/.exec(query.trim());
+            let quick = [];
+            if (tm && Config.UiState.appPickerFor === "") {
+                const s = tm[1];
+                const comma = s.indexOf(",");
+                const secs = Services.Timers.parseDuration(comma >= 0 ? s.slice(0, comma) : s);
+                const name = comma >= 0 ? s.slice(comma + 1).trim() : "";
+                if (secs > 0)
+                    quick = [{ kind: "timerquick", label: "Start " + (name || Services.Timers.defaultLabel(secs)),
+                               icon: "timer", appIcon: "", cat: Services.Timers.clock(secs) + " · Enter starts it",
+                               secs: secs, name: name }];
+            }
+            return quick.concat(calc).concat(scored.map(s => s.item)).concat(settingsResults).concat(files);
         }
 
         readonly property string listTitle: Config.UiState.appPickerFor !== ""
@@ -436,6 +449,7 @@ Variants {
             if (item.kind === "command") runCommand(item.key);
             else if (item.kind === "file") Services.FileSearch.open(item.file);
             else if (item.kind === "calc") Services.Calc.copy(item.value);
+            else if (item.kind === "timerquick") Services.Timers.addTimer(item.secs, item.name);
             else if (item.kind === "setting") { close(); Config.UiState.openSettingsAt(item.pane, item.row); return; }
             else if (item.kind === "desktop" && item.entry) Config.Apps.launchEntry(item.entry);
             else if (item.exec && item.exec.length > 0) Config.Apps.launch(item.exec);
@@ -481,6 +495,7 @@ Variants {
             case "displays":  Config.UiState.openSettings("Display"); return;
             case "tasks":     Config.Apps.launchTasks(); break;
             case "clipboard": Config.UiState.toggleClipboard(); return;
+            case "timers": Config.UiState.toggleTimers(); return;
             case "sound":     Config.UiState.openSettings("Sound"); return;
             case "network":   Config.UiState.openSettings("Network"); return;
             case "bluetooth": Config.UiState.openSettings("Bluetooth"); return;
