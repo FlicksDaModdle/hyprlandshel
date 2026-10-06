@@ -28,10 +28,18 @@ layout(std140, binding = 0) uniform buf {
     vec4 c3;
 };
 
-float hash1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+// Hashes without sine (Dave Hoskins): sin() of a large number is evaluated
+// differently by every GPU, and on some it repeats in visible patterns —
+// stars in diagonal pairs.
+float hash1(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
 vec2 hash2(vec2 p) {
-    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
-    return fract(sin(p) * 43758.5453123);
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
 }
 float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
@@ -49,6 +57,20 @@ float fbm(vec2 p) {
 // A whisper of noise, so slow gradients do not band.
 vec3 dither(vec3 c, vec2 px) { return c + (hash1(px + fract(time)) - 0.5) / 255.0; }
 
+// Small round stars that twinkle, a few to every 22 px cell; px logical.
+float sparkle(vec2 px, float chance, float t) {
+    const float cell = 22.0;
+    vec2 g = px / cell;
+    vec2 id = floor(g);
+    vec2 h = hash2(id + seedOffset);
+    if (h.x > chance) return 0.0;
+    vec2 pos = id + 0.15 + 0.7 * hash2(id + seedOffset + 17.0);
+    float d = length(g - pos) * cell;
+    float r = 0.6 + 0.9 * h.y;
+    float tw = 0.6 + 0.4 * sin(t * (0.8 + 1.6 * h.y) + h.y * 50.0);
+    return tw * (0.45 + 0.55 * h.y) * ((1.0 - smoothstep(0.0, r, d)) + 0.25 * exp(-d / (r * 1.8)));
+}
+
 void main() {
     vec2 uv = qt_TexCoord0;
     vec2 px = origin + uv * size;
@@ -56,23 +78,32 @@ void main() {
     float hz = 0.62;
     vec3 col;
 
+    // The sun's measures, outside any branch: fwidth() is only defined
+    // where every pixel around it takes the same path.
+    vec2 sp = vec2((uv.x - 0.5) * aspect, uv.y - (hz - 0.17));
+    float r = 0.24;
+    float d = length(sp);
+    float dw = fwidth(d);
+    float s = (sp.y + r) * 16.0 - time * 0.35;
+    float w = fwidth(s);
+
     if (uv.y < hz) {
         col = mix(bg1.rgb, bg2.rgb, pow(uv.y / hz, 1.6));
         // The sun.
-        vec2 sp = vec2((uv.x - 0.5) * aspect, uv.y - (hz - 0.17));
-        float r = 0.24;
-        float d = length(sp);
         float k = clamp((sp.y + r) / (2.0 * r), 0.0, 1.0);
         vec3 sun = mix(c2.rgb, c3.rgb, k);
-        // Bands cut across its lower half, drifting down.
-        float band = fract((sp.y + r) * 16.0 - time * 0.35);
-        float cut = step(0.45, k) * step(band, (k - 0.45) * 1.2);
-        float inside = (1.0 - smoothstep(r - 0.002, r + 0.002, d)) * (1.0 - cut);
+        // Bands cut across its lower half, drifting down; both their edges
+        // smoothed over a pixel.
+        float f = fract(s);
+        float thr = max((k - 0.45) * 1.2, 0.0);
+        float cut = max(smoothstep(-w, w, f) * (1.0 - smoothstep(thr - w, thr + w, f)),
+                        smoothstep(1.0 - w, 1.0 + w, f)) * step(0.001, thr);
+        float inside = (1.0 - smoothstep(r - dw, r + dw, d)) * (1.0 - cut);
         col = mix(col, sun, inside);
         col = mix(col, c2.rgb, exp(-max(d - r, 0.0) * 9.0) * glow * 0.45 * (1.0 - inside));
         // Stars, a few.
-        vec2 sc = floor(px / 3.0);
-        col = mix(col, vec3(1.0), step(0.998, hash1(sc + seedOffset)) * (1.0 - uv.y / hz) * 0.6 * (1.0 - inside));
+        col = mix(col, vec3(1.0), clamp(sparkle(px, 0.22, time * 2.0), 0.0, 1.0)
+                  * (1.0 - uv.y / hz) * 0.8 * (1.0 - inside));
     } else {
         float y = uv.y - hz;
         float z = 0.12 / max(y, 1e-4);

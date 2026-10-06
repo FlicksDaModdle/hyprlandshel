@@ -28,10 +28,18 @@ layout(std140, binding = 0) uniform buf {
     vec4 c3;
 };
 
-float hash1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+// Hashes without sine (Dave Hoskins): sin() of a large number is evaluated
+// differently by every GPU, and on some it repeats in visible patterns —
+// stars in diagonal pairs.
+float hash1(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
 vec2 hash2(vec2 p) {
-    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
-    return fract(sin(p) * 43758.5453123);
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
 }
 float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
