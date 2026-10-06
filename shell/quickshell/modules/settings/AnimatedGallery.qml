@@ -47,6 +47,7 @@ Column {
                         onTapped: {
                             root.ap.wallpaperStyle = tile.modelData.key;
                             root.ap.animLastStyle = tile.modelData.key;
+                            if (tile.modelData.key === "topo") root.ap.topoDrift = true;
                         }
                     }
                 }

@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Services.UPower
 import "../../config" as Config
 import "../../services" as Services
 import "Palettes.js" as Palettes
@@ -78,13 +77,9 @@ ShaderEffect {
     fragmentShader: Qt.resolvedUrl("shaders/" + style + ".frag.qsb")
 
     // ── moving ────────────────────────────────────────────────────────────
-    readonly property bool covered: {
-        if (preview || screenName === "") return false;
-        return Services.Compositor.clientsShownOn(screenName)
-            .some(c => !c.floating || c.fullscreenMode > 0);
-    }
-    readonly property bool animating: visible && (preview || (!covered
-        && (!UPower.onBattery || prefs.animOnBattery) && !Services.PowerSaver.active))
+    // Held still on battery, under Battery saver and behind windows, as
+    // Settings says (Services.WallMotion, which also tells Settings why).
+    readonly property bool animating: visible && (preview || Services.WallMotion.moving(screenName))
 
     Timer {
         readonly property int fps: fx.preview ? 24 : Math.max(10, Math.min(60, fx.prefs.animFps))

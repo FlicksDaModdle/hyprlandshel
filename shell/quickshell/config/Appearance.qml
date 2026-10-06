@@ -123,7 +123,7 @@ Singleton {
             property string topoGround: "theme"       // theme | custom
             property string topoLow: "#1d2022"        // custom ground, low and high
             property string topoHigh: "#3a4146"
-            property bool topoDrift: false            // the terrain slowly moving
+            property bool topoDrift: true             // the map moving at all
             property int topoSpeed: 30                // 5-100 %
             property string topoMotion: "both"        // drift | flow | both
             property int topoGlow: 0                  // 0-100 %, light around the lines
@@ -145,6 +145,10 @@ Singleton {
             property int animSeed: 1
             property int animFps: 30
             property bool animOnBattery: false
+            property bool animPauseCovered: true     // still behind windows that fill the screen
+            // The map's "Animate" was off by default once, so a map chosen
+            // for its motion sat still; set on once, the first time round.
+            property bool animMigrated: false
             property string animLastStyle: "topo"
             // A video playing on the desktop, drawn over the ground by
             // mpvpaper (services/LiveWallpaper.qml): its path. Empty = none.
@@ -553,6 +557,8 @@ Singleton {
     property alias animSeed: prefs.animSeed
     property alias animFps: prefs.animFps
     property alias animOnBattery: prefs.animOnBattery
+    property alias animPauseCovered: prefs.animPauseCovered
+    property alias animMigrated: prefs.animMigrated
     property alias animLastStyle: prefs.animLastStyle
     property alias topoScale: prefs.topoScale
     property alias topoDetail: prefs.topoDetail

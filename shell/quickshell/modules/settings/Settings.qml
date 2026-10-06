@@ -105,6 +105,7 @@ Scope {
         if (!showingWallpaper) return;
         root.wallpaperMode = "";
         Services.LiveWallpaper.scan();
+        Services.WallMotion.check();
     }
 
     // Settings → Laptop's charge slider shows where it was dragged to until
@@ -2149,14 +2150,33 @@ Scope {
     }
     // Shared by every animated style, the map included.
     function motionRows() {
-        const A = Config.Appearance;
-        return [
-            { n: "Frame rate", s: "Smoother costs more power", type: "seg",
+        const A = Config.Appearance, M = Services.WallMotion;
+        const rows = [];
+        // Why the desktop is still while the previews above it move.
+        const why = M.anyReason;
+        if (M.foreign.length > 0)
+            rows.push({ n: "Hidden by " + M.foreignNames,
+                s: "Another wallpaper program is drawing over this one. Stop it here, and take it out of "
+                   + "whatever starts it at login (an exec-once, or a systemd user service).",
+                type: "buttons", buttons: [{ label: "Stop it", set: () => M.stopForeign() }] });
+        else if (why === "battery")
+            rows.push({ n: "Paused on battery", s: "It moves again on the charger",
+                type: "buttons", buttons: [{ label: "Keep moving", set: () => A.animOnBattery = true }] });
+        else if (why === "saver")
+            rows.push({ n: "Paused by Battery saver", s: "Settings → Power decides when that is on",
+                type: "buttons", buttons: [{ label: "Power…", quiet: true,
+                                             set: () => Config.UiState.settingsPane = "Power" }] });
+        else if (why === "covered")
+            rows.push({ n: "Paused behind windows", s: "A window fills the screen; it moves again when you can see it",
+                type: "buttons", buttons: [{ label: "Keep moving", set: () => A.animPauseCovered = false }] });
+        rows.push({ n: "Frame rate", s: "Smoother costs more power", type: "seg",
               options: [{ label: "15", value: "15" }, { label: "30", value: "30" }, { label: "60", value: "60" }],
-              value: String(A.animFps), set: v => A.animFps = parseInt(v, 10) },
-            { n: "Keep moving on battery", s: "Otherwise it holds still until the charger is in",
-              type: "toggle", value: A.animOnBattery, set: v => A.animOnBattery = v }
-        ];
+              value: String(A.animFps), set: v => A.animFps = parseInt(v, 10) });
+        rows.push({ n: "Hold still behind windows", s: "While a tiled, maximised or fullscreen window fills the screen",
+              type: "toggle", value: A.animPauseCovered, set: v => A.animPauseCovered = v });
+        rows.push({ n: "Keep moving on battery", s: "Otherwise it holds still until the charger is in",
+              type: "toggle", value: A.animOnBattery, set: v => A.animOnBattery = v });
+        return rows;
     }
 
     function topoRows() {
@@ -2215,7 +2235,7 @@ Scope {
         }
 
         rows.push({ type: "header", n: "Motion", s: "" });
-        rows.push({ n: "Animate", s: "Held still behind windows, and on battery unless allowed below",
+        rows.push({ n: "Animate", s: "Off, the map is a still picture",
             type: "toggle", value: A.topoDrift, set: v => A.topoDrift = v });
         if (A.topoDrift) {
             rows.push({ n: "What moves", s: A.topoMotion === "drift" ? "The terrain wanders"

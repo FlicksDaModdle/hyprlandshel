@@ -925,8 +925,16 @@ shading in flat, smooth or bands). Monitors side by side show one
 continuous picture.
 
 They move at 15, 30 or 60 frames a second and hold still while a window
-covers the screen, under Battery saver, and on battery unless "Keep moving
-on battery" is on. Still, they cost nothing.
+covers the screen (unless "Hold still behind windows" is off — the shell's
+own Settings window never counts), under Battery saver, and on battery
+unless "Keep moving on battery" is on. Still, they cost nothing. The
+previews in Settings always move, so when the desktop does not, Settings
+says why under Motion, with a button to keep it moving.
+
+Another wallpaper program — hyprpaper, swww, swaybg, wpaperd,
+linux-wallpaperengine, or a stray mpvpaper — draws over the shell's own
+wallpaper and hides it. Settings → Wallpaper names one it finds running and
+can stop it; take it out of whatever starts it at login as well.
 
 The shaders are compiled with Qt's `qsb`; after changing one:
 

@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Services.UPower
 import "../../config" as Config
 import "../../services" as Services
 
@@ -69,14 +68,10 @@ ShaderEffect {
     fragmentShader: Qt.resolvedUrl("shaders/topo.frag.qsb")
 
     // ── drifting ──────────────────────────────────────────────────────────
-    // Covered: a tiled, maximised or fullscreen window on this screen.
-    readonly property bool covered: {
-        if (topo.preview || topo.screenName === "") return false;
-        return Services.Compositor.clientsShownOn(topo.screenName)
-            .some(c => !c.floating || c.fullscreenMode > 0);
-    }
-    readonly property bool drifting: topo.preview ? topo.visible : prefs.topoDrift && topo.visible && !topo.covered
-        && (!UPower.onBattery || prefs.animOnBattery) && !Services.PowerSaver.active
+    // Held still on battery, under Battery saver and behind windows, as
+    // Settings says (Services.WallMotion, which also tells Settings why).
+    readonly property bool drifting: topo.preview ? topo.visible
+        : prefs.topoDrift && topo.visible && Services.WallMotion.moving(topo.screenName)
     // What moves: the terrain drifting, the contours flowing, or both.
     readonly property bool moveTerrain: prefs.topoMotion !== "flow"
     readonly property bool moveLines: prefs.topoMotion !== "drift"
