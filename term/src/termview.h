@@ -128,6 +128,14 @@ private:
     // The pointer says what it does: an I-beam over text, an arrow when
     // a program has asked for the mouse and the pointer is its to use.
     void refreshCursor();
+    // The far end of a drag follows whatever is under the pointer now.
+    void extendSelection();
+    // A drag held past the top or bottom edge scrolls, faster the further
+    // out the pointer is, so a selection can run past what fits.
+    void autoScrollTick();
+    // Double-click: the word under the pointer; triple: the whole line.
+    void selectWordAt(qint64 line, int col);
+    void selectLineAt(qint64 line);
 
     Term *m_term = nullptr;
     QFont m_font;
@@ -161,4 +169,9 @@ private:
     // drag can extend the selection to whatever is now under it without
     // waiting for the mouse to move.
     QPointF m_lastPointer;
+    QTimer m_autoScroll;
+    // Clicks in quick succession on the same spot: 1, 2 (word), 3 (line).
+    int m_clicks = 0;
+    QElapsedTimer m_lastClick;
+    QPointF m_lastClickPos;
 };

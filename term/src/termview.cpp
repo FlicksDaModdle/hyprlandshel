@@ -8,9 +8,14 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QPainter>
+#include <QLineF>
+#include <QStyleHints>
 #include <QWheelEvent>
 
 TermView::TermView(QQuickItem *parent) : QQuickPaintedItem(parent) {
+    m_autoScroll.setInterval(40);
+    connect(&m_autoScroll, &QTimer::timeout, this, &TermView::autoScrollTick);
+
     setFlag(ItemHasContents, true);
     // The right button too, for the context menu. A QQuickItem is only
     // sent the buttons it names here — the menu's press handler was
@@ -430,7 +435,10 @@ void TermView::mousePressEvent(QMouseEvent *event) {
     // A program that asked for the mouse gets the mouse. vim, less and
     // htop all do, and inventing arrow keys for them would be answering a
     // question they did not ask.
-    if (m_term && m_term->mouseEnabled() && event->button() == Qt::LeftButton) {
+    // Shift is the way past that: a program can have the mouse and you
+    // can still select its text, as in every other terminal.
+    if (m_term && m_term->mouseEnabled() && event->button() == Qt::LeftButton
+        && !(event->modifiers() & Qt::ShiftModifier)) {
         int row, col;
         viewCellFor(event->position(), &row, &col);
         m_term->sendMouse(row, col, 1, true, static_cast<int>(event->modifiers()));
@@ -466,13 +474,103 @@ void TermView::mousePressEvent(QMouseEvent *event) {
         event->accept();
         return;
     }
-    m_lastPointer = event->position();
-    cellFor(event->position(), &m_selRow0, &m_selCol0);
-    m_selRow1 = m_selRow0;
-    m_selCol1 = m_selCol0;
+    if (event->button() != Qt::LeftButton) { event->ignore(); return; }
+
+    // Counting clicks here rather than trusting double-click events: a
+    // triple click has no event of its own.
+    const QPointF pos = event->position();
+    const bool quick = m_lastClick.isValid()
+        && m_lastClick.elapsed() < QGuiApplication::styleHints()->mouseDoubleClickInterval()
+        && QLineF(pos, m_lastClickPos).length() < 6;
+    m_clicks = quick ? (m_clicks % 3) + 1 : 1;
+    m_lastClick.start();
+    m_lastClickPos = pos;
+
+    m_lastPointer = pos;
+    qint64 line; int col;
+    cellFor(pos, &line, &col);
+    if (m_clicks == 2) { selectWordAt(line, col); event->accept(); return; }
+    if (m_clicks == 3) { selectLineAt(line); event->accept(); return; }
+
+    m_selRow0 = m_selRow1 = line;
+    m_selCol0 = m_selCol1 = col;
     m_selecting = true;
     if (m_hasSelection) { m_hasSelection = false; emit selectionChanged(); update(); }
     event->accept();
+}
+
+// ── selecting by word and line, and past the edges ──────────────────────
+void TermView::extendSelection() {
+    // Kept inside the grid: the pointer may be well above or below it
+    // during an auto-scroll, and the end of the selection is then the
+    // first or last visible line.
+    const QPointF p(m_lastPointer.x(), qBound(0.0, m_lastPointer.y(), height() - 1));
+    cellFor(p, &m_selRow1, &m_selCol1);
+    const bool had = m_hasSelection;
+    m_hasSelection = (m_selRow1 != m_selRow0 || m_selCol1 != m_selCol0);
+    if (had != m_hasSelection) emit selectionChanged();
+    update();
+}
+
+void TermView::autoScrollTick() {
+    if (!m_selecting || !m_term) { m_autoScroll.stop(); return; }
+    const qreal y = m_lastPointer.y();
+    const qreal over = y < 0 ? -y : y - height();
+    if (over <= 0) { m_autoScroll.stop(); return; }
+    // A line a tick just past the edge, up to a screenful a second and
+    // more the further out the hand goes.
+    const int lines = qBound(1, 1 + static_cast<int>(over / qMax<qreal>(m_cellH, 1)), 12);
+    m_term->scrollBy(y < 0 ? lines : -lines);
+    extendSelection();
+}
+
+// What a double-click takes as one word: anything but spaces and the
+// brackets and quotes around things. Paths, URLs, flags and addresses
+// come out whole — they are what people double-click in a terminal.
+static bool isWordChar(uint c) {
+    if (c == 0 || c == ' ' || c == '\t') return false;
+    static const QString breaks = QStringLiteral("()[]{}<>\"'`|,;");
+    return c > 0xffff || !breaks.contains(QChar(static_cast<char16_t>(c)));
+}
+
+void TermView::selectWordAt(qint64 line, int col) {
+    if (!m_term) return;
+    const int row = m_term->viewRowFor(line);
+    const int cols = m_term->cols();
+    auto charAt = [&](int c) -> uint {
+        HtCell cell;
+        if (!m_term->cellAt(row, c, &cell)) return 0;
+        // The second half of a wide character belongs to the first.
+        if (cell.width == 0 && c > 0 && m_term->cellAt(row, c - 1, &cell)) return cell.chars[0];
+        return cell.chars[0];
+    };
+    if (!isWordChar(charAt(col))) { selectLineAt(-1); return; }
+    int a = col, b = col;
+    while (a > 0 && isWordChar(charAt(a - 1))) --a;
+    while (b < cols - 1 && isWordChar(charAt(b + 1))) ++b;
+    m_selRow0 = m_selRow1 = line;
+    m_selCol0 = a;
+    m_selCol1 = b;
+    m_selecting = false;
+    m_hasSelection = true;
+    emit selectionChanged();
+    QGuiApplication::clipboard()->setText(selectedText(), QClipboard::Selection);
+    update();
+}
+
+void TermView::selectLineAt(qint64 line) {
+    if (!m_term || line < 0) {
+        if (m_hasSelection) { m_hasSelection = false; emit selectionChanged(); update(); }
+        return;
+    }
+    m_selRow0 = m_selRow1 = line;
+    m_selCol0 = 0;
+    m_selCol1 = m_term->cols() - 1;
+    m_selecting = false;
+    m_hasSelection = true;
+    emit selectionChanged();
+    QGuiApplication::clipboard()->setText(selectedText(), QClipboard::Selection);
+    update();
 }
 
 void TermView::mouseMoveEvent(QMouseEvent *event) {
@@ -486,11 +584,13 @@ void TermView::mouseMoveEvent(QMouseEvent *event) {
     }
     if (!m_selecting) return;
     m_lastPointer = event->position();
-    cellFor(event->position(), &m_selRow1, &m_selCol1);
-    const bool had = m_hasSelection;
-    m_hasSelection = (m_selRow1 != m_selRow0 || m_selCol1 != m_selCol0);
-    if (had != m_hasSelection) emit selectionChanged();
-    update();
+    extendSelection();
+    // Past the top or bottom: keep going without the mouse having to.
+    const qreal y = m_lastPointer.y();
+    if ((y < 0 || y > height()) && !m_autoScroll.isActive()) {
+        autoScrollTick();
+        m_autoScroll.start();
+    }
     event->accept();
 }
 
@@ -506,6 +606,9 @@ void TermView::mouseReleaseEvent(QMouseEvent *event) {
         return;
     }
 
+    m_autoScroll.stop();
+    // A double or triple click has already chosen what it selects.
+    if (!m_selecting) { event->accept(); return; }
     const bool dragged = m_hasSelection;
     m_selecting = false;
     if (dragged) {
@@ -547,13 +650,7 @@ void TermView::wheelEvent(QWheelEvent *event) {
         // end follows whatever has arrived under the pointer. Without
         // this it waits for the mouse to move, which it is not doing —
         // the hand is on the wheel.
-        if (m_selecting) {
-            cellFor(m_lastPointer, &m_selRow1, &m_selCol1);
-            const bool had = m_hasSelection;
-            m_hasSelection = (m_selRow1 != m_selRow0 || m_selCol1 != m_selCol0);
-            if (had != m_hasSelection) emit selectionChanged();
-            update();
-        }
+        if (m_selecting) extendSelection();
     }
     event->accept();
 }

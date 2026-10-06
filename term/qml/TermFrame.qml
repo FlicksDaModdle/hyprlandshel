@@ -373,6 +373,71 @@ Rectangle {
         }
     }
 
+    // ── the scrollbar ────────────────────────────────────────────────────
+    // In the margin to the right of the grid, so it never covers text.
+    // Faint while nothing is happening, there in full while scrolling,
+    // scrolled up, hovered or dragged. Gone in the alternate screen, which
+    // has no scrollback (vim, less and htop scroll themselves).
+    Item {
+        id: scrollbar
+        readonly property int lines: frame.term ? frame.term.scrollbackLines : 0
+        readonly property int offset: frame.term ? frame.term.scrollOffset : 0
+        readonly property int rows: Math.max(1, view.rows)
+        readonly property bool active: hover.hovered || drag.pressed || recent.running || offset > 0
+        // The thumb is the screen's share of everything there is to see.
+        readonly property real thumbH: Math.max(28, height * rows / (rows + lines))
+        readonly property real travel: Math.max(1, height - thumbH)
+
+        visible: frame.term !== null && lines > 0 && !frame.term.altScreen
+        anchors.left: view.right
+        anchors.leftMargin: 4
+        anchors.top: view.top
+        anchors.bottom: view.bottom
+        width: 12
+        z: 5
+        opacity: active ? 1 : 0.35
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+
+        // Shown for a moment after any scroll, however it happened.
+        onOffsetChanged: recent.restart()
+        Timer { id: recent; interval: 1200 }
+
+        HoverHandler { id: hover; cursorShape: Qt.ArrowCursor }
+
+        Rectangle {
+            id: thumb
+            anchors.right: parent.right
+            anchors.rightMargin: 2
+            width: hover.hovered || drag.pressed ? 8 : 4
+            Behavior on width { NumberAnimation { duration: 120 } }
+            radius: width / 2
+            height: scrollbar.thumbH
+            // Offset 0 is the live screen, at the bottom.
+            y: scrollbar.lines > 0 ? scrollbar.travel * (1 - scrollbar.offset / scrollbar.lines) : 0
+            color: drag.pressed ? Appearance.accent
+                 : Qt.rgba(Appearance.ink.r, Appearance.ink.g, Appearance.ink.b, hover.hovered ? 0.55 : 0.40)
+        }
+
+        MouseArea {
+            id: drag
+            anchors.fill: parent
+            property real grab: -1
+            function offsetAt(y) {
+                const top = Math.max(0, Math.min(scrollbar.travel, y - grab));
+                return Math.round(scrollbar.lines * (1 - top / scrollbar.travel));
+            }
+            onPressed: mouse => {
+                // On the thumb: drag from where it was caught. On the
+                // track: jump so the thumb is centred on the pointer.
+                if (mouse.y >= thumb.y && mouse.y <= thumb.y + thumb.height) grab = mouse.y - thumb.y;
+                else grab = scrollbar.thumbH / 2;
+                frame.term.scrollOffset = offsetAt(mouse.y);
+            }
+            onPositionChanged: mouse => { if (pressed) frame.term.scrollOffset = offsetAt(mouse.y); }
+            onReleased: view.forceActiveFocus()
+        }
+    }
+
     // Switching tabs moves the keyboard back to the grid, and the newly
     // shown session gets the window's current size in case it was made
     // before the window settled.
