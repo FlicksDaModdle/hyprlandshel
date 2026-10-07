@@ -113,6 +113,8 @@ ok "app" "$PREFIX/bin/hyprshell-mail"
 ok "service" "$PREFIX/bin/hyprshell-maild"
 ok "desktop entry" "$PREFIX/share/applications/hyprshell-mail.desktop"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$PREFIX/share/applications" 2>/dev/null
+ok "icon" "$PREFIX/share/icons/hicolor/scalable/apps/hyprshell-mail.svg"
+command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t "$PREFIX/share/icons/hicolor" 2>/dev/null
 
 # mailto: links (in the browser, anywhere) open a new message here.
 if command -v xdg-mime >/dev/null 2>&1; then

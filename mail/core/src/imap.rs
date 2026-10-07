@@ -725,6 +725,21 @@ async fn idle_loop(state: Arc<State>, rt: Arc<AccountRt>) {
     }
 }
 
+/// Mail's icon for notifications: the PNG installed beside this program
+/// (…/bin → …/share/icons), by path, so it shows whatever the notification
+/// server can or can't draw; else the icon's name.
+pub fn notify_icon() -> String {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(prefix) = exe.parent().and_then(|b| b.parent()) {
+            let p = prefix.join("share/icons/hicolor/256x256/apps/hyprshell-mail.png");
+            if p.exists() {
+                return p.to_string_lossy().to_string();
+            }
+        }
+    }
+    "hyprshell-mail".to_string()
+}
+
 /// New mail: a notification per message, or one for several.
 fn announce(state: &State, account: &str, fresh: &[(i64, parse::Summary)]) {
     let recent: Vec<&(i64, parse::Summary)> = fresh.iter().filter(|(_, s)| s.date > now() - 86400).collect();
@@ -754,7 +769,8 @@ fn announce(state: &State, account: &str, fresh: &[(i64, parse::Summary)]) {
     };
     tokio::spawn(async move {
         let mut cmd = tokio::process::Command::new("notify-send");
-        cmd.args(["-a", "Mail", "-i", "mail-unread", "-A", "open=Open", "--wait", &title, &body]);
+        let icon = notify_icon();
+        cmd.args(["-a", "Mail", "-i", &icon, "-h", "string:desktop-entry:hyprshell-mail", "-A", "open=Open", "--wait", &title, &body]);
         cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
         if let Ok(out) = cmd.output().await {
             if String::from_utf8_lossy(&out.stdout).trim() == "open" {

@@ -104,3 +104,11 @@ install(TARGETS hyprshell-mail RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(PROGRAMS ${MAILD_BIN} DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/hyprshell-mail.desktop
         DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
+# Its own icon, so notifications and the launcher never ask the theme for a
+# name it may not have.
+install(FILES hyprshell-mail.svg
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps)
+# And as a PNG: a notification is given this one by path, which shows
+# whether or not the notification server can draw SVG.
+install(FILES hyprshell-mail.png
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/256x256/apps)

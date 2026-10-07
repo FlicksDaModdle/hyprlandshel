@@ -218,9 +218,10 @@ async fn scheduler(state: Arc<State>) {
             if notify {
                 for (id, subject, from) in due {
                     let title = format!("Back from snooze: {}", from);
+                    let icon = imap::notify_icon();
                     tokio::spawn(async move {
                         let out = tokio::process::Command::new("notify-send")
-                            .args(["-a", "Mail", "-i", "mail-unread", "-A", "open=Open", "--wait", &title, &subject])
+                            .args(["-a", "Mail", "-i", &icon, "-h", "string:desktop-entry:hyprshell-mail", "-A", "open=Open", "--wait", &title, &subject])
                             .stderr(std::process::Stdio::null())
                             .output()
                             .await;

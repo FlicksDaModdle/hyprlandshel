@@ -400,9 +400,11 @@ Singleton {
     // bespoke pack rather than showing a broken image.
     function themeIcon(name) {
         if (!name) return "";
-        // Already a usable source: absolute path, or a URL scheme Quickshell
+        // Already a usable source: a URL scheme Quickshell
         // hands out (tray items come through as image:// providers).
-        if (name.charAt(0) === "/" || name.indexOf("file:") === 0
+        // A bare path would be read relative to the shell's own files.
+        if (name.charAt(0) === "/") return "file://" + name;
+        if (name.indexOf("file:") === 0
             || name.indexOf("image:") === 0 || name.indexOf("qrc:") === 0
             || name.indexOf("http") === 0) return name;
         return Quickshell.iconPath(name, true);

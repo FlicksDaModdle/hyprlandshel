@@ -18,7 +18,8 @@ Rectangle {
 
     readonly property var actions: notification ? Services.Notifications.buttonActions(notification) : []
     readonly property bool urgent: notification && notification.urgency === NotificationUrgency.Critical
-    readonly property bool hasImage: notification && notification.image !== ""
+    readonly property string imageSource: Services.Notifications.imageOf(notification)
+    readonly property bool hasImage: imageSource !== ""
     // The spec's app_icon is an icon-theme name, not a path.
     readonly property string appIconSource:
         notification ? Config.Apps.themeIcon(notification.appIcon) : ""
@@ -62,7 +63,7 @@ Rectangle {
             IconImage {
                 anchors.fill: parent
                 visible: root.hasImage
-                source: root.hasImage ? root.notification.image : ""
+                source: root.imageSource
             }
 
             IconImage {

@@ -41,6 +41,10 @@ public:
     // the message showing. Called once by the reader with its profile.
     Q_INVOKABLE void secure(QObject *profile);
     Q_INVOKABLE void setAllowRemote(QObject *profile, bool on);
+    // A message's page, kept for the reader to load as hsmail:<key> — and
+    // let go of when it is closed.
+    Q_INVOKABLE QString publish(const QString &html);
+    Q_INVOKABLE void release(const QString &url);
 
     // HTML reduced to what Qt's rich text shows, for builds without
     // WebEngine: no scripts, no styles, no remote images (unless allowed).

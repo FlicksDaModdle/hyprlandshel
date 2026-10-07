@@ -7,6 +7,7 @@
 #include <QUrl>
 
 #ifdef HAVE_WEBENGINE
+#include <QWebEngineUrlScheme>
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 #endif
 
@@ -25,6 +26,16 @@ static QString instanceName() {
 }
 
 int main(int argc, char *argv[]) {
+#ifdef HAVE_WEBENGINE
+    // Where the reader loads messages from (MailApp::publish). Declared before
+    // anything else, as WebEngine requires. Not "secure": a secure page
+    // refuses plain-http pictures, and plenty of mail still has them.
+    {
+        QWebEngineUrlScheme scheme("hsmail");
+        scheme.setSyntax(QWebEngineUrlScheme::Syntax::Path);
+        QWebEngineUrlScheme::registerScheme(scheme);
+    }
+#endif
     // A second launch: pass the arguments on and go.
     {
         QCoreApplication probe(argc, argv);

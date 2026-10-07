@@ -8,12 +8,43 @@
 #include <QStandardPaths>
 #include <QUrl>
 
+#include <QBuffer>
+#include <QHash>
+#include <QUuid>
+
 #ifdef HAVE_WEBENGINE
 #include <QWebEngineUrlRequestInterceptor>
+#include <QWebEngineUrlRequestJob>
+#include <QWebEngineUrlSchemeHandler>
 #include <QtWebEngineQuick/QQuickWebEngineProfile>
 
-// The reader's gatekeeper. A message is loaded as a data: URL, and its own
-// inline images are data: URLs too (the daemon turns cid: references into
+// The messages on screen, by key: hsmail:<key> is how the reader loads one.
+// Not a data: URL — those stop at 2 MB, and a message with its pictures
+// inside is often more.
+static QHash<QString, QByteArray> s_pages;
+
+class PageScheme : public QWebEngineUrlSchemeHandler {
+public:
+    void requestStarted(QWebEngineUrlRequestJob *job) override {
+        const QString key = job->requestUrl().path();
+        auto it = s_pages.constFind(key);
+        if (it == s_pages.constEnd()) {
+            job->fail(QWebEngineUrlRequestJob::UrlNotFound);
+            return;
+        }
+        auto *buf = new QBuffer(job);
+        buf->setData(*it);
+        buf->open(QIODevice::ReadOnly);
+        job->reply("text/html;charset=utf-8", buf);
+    }
+};
+static PageScheme *pageScheme() {
+    static PageScheme *h = new PageScheme;
+    return h;
+}
+
+// The reader's gatekeeper. A message comes from hsmail:, and its own
+// inline images are data: URLs (the daemon turns cid: references into
 // them), so the message itself needs nothing from anywhere. Everything
 // remote — tracking pixels, web fonts, stylesheets, images — is refused
 // unless the person reading has said that sender may show images.
@@ -24,7 +55,8 @@ public:
     bool allowRemote = false;
     void interceptRequest(QWebEngineUrlRequestInfo &info) override {
         const QString scheme = info.requestUrl().scheme();
-        if (scheme == QLatin1String("data") || scheme == QLatin1String("about") || scheme == QLatin1String("blob"))
+        if (scheme == QLatin1String("data") || scheme == QLatin1String("about") || scheme == QLatin1String("blob")
+            || scheme == QLatin1String("hsmail"))
             return;
         const auto type = info.resourceType();
         const bool remote = scheme == QLatin1String("http") || scheme == QLatin1String("https");
@@ -80,6 +112,7 @@ void MailApp::secure(QObject *profile) {
     if (!p || p->property("hsGate").isValid()) return;
     auto *g = new RemoteGate;
     p->setUrlRequestInterceptor(g);
+    p->installUrlSchemeHandler("hsmail", pageScheme());
     p->setProperty("hsGate", QVariant::fromValue(static_cast<void *>(g)));
     QObject::connect(p, &QObject::destroyed, p, [g] { delete g; });
 #else
@@ -97,8 +130,27 @@ void MailApp::setAllowRemote(QObject *profile, bool on) {
 #endif
 }
 
+QString MailApp::publish(const QString &html) {
+#ifdef HAVE_WEBENGINE
+    const QString key = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    s_pages.insert(key, html.toUtf8());
+    return QStringLiteral("hsmail:") + key;
+#else
+    Q_UNUSED(html);
+    return QString();
+#endif
+}
+
+void MailApp::release(const QString &url) {
+#ifdef HAVE_WEBENGINE
+    if (url.startsWith(QLatin1String("hsmail:"))) s_pages.remove(url.mid(7));
+#else
+    Q_UNUSED(url);
+#endif
+}
+
 bool MailApp::hasRemote(const QString &html) const {
-    static const QRegularExpression re(QStringLiteral(R"((src|background)\s*=\s*["']?\s*https?:|url\(\s*["']?\s*https?:)"),
+    static const QRegularExpression re(QStringLiteral(R"((src|srcset|background)\s*=\s*["']?\s*(https?:)?//|url\(\s*["']?\s*(https?:)?//)"),
                                        QRegularExpression::CaseInsensitiveOption);
     return re.match(html).hasMatch();
 }

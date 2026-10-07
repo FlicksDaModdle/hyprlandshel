@@ -168,6 +168,23 @@ Singleton {
 
     // Best-fit glyph from the bespoke pack, so the center doesn't fall back
     // to a generic bell for every common source.
+    // The notification's picture, when there is one that can be shown.
+    // notify-send -i NAME sends a theme icon's name as the picture, which
+    // arrives as image://icon/NAME; when the theme has no such icon,
+    // Quickshell draws its magenta-and-black "missing" texture rather than
+    // nothing. Those are no picture at all, and the row falls back to the
+    // app's icon or a glyph.
+    function imageOf(n) {
+        const img = n ? (n.image || "") : "";
+        if (img === "") return "";
+        if (img.indexOf("image://icon/") === 0) {
+            const name = decodeURIComponent(img.slice(13).split("?")[0]);
+            if (name.charAt(0) === "/") return "file://" + name;
+            return Quickshell.iconPath(name, true) !== "" ? img : "";
+        }
+        return img;
+    }
+
     function iconFor(n) {
         const name = appNameOf(n).toLowerCase();
         if (name.indexOf("update") >= 0 || name.indexOf("pacman") >= 0 || name.indexOf("apt") >= 0
@@ -179,7 +196,8 @@ Singleton {
         if (name.indexOf("network") >= 0 || name.indexOf("wifi") >= 0) return "wifi";
         if (name.indexOf("bluetooth") >= 0) return "bluetooth";
         if (name.indexOf("file") >= 0 || name.indexOf("download") >= 0 || name.indexOf("transfer") >= 0) return "download";
-        if (name.indexOf("mail") >= 0 || name.indexOf("chat") >= 0 || name.indexOf("message") >= 0
+        if (name.indexOf("mail") >= 0 || name.indexOf("thunderbird") >= 0 || name.indexOf("evolution") >= 0) return "mail";
+        if (name.indexOf("chat") >= 0 || name.indexOf("message") >= 0
             || name.indexOf("telegram") >= 0 || name.indexOf("signal") >= 0) return "stickyNote";
         if (name.indexOf("firefox") >= 0 || name.indexOf("chrom") >= 0 || name.indexOf("browser") >= 0) return "globe";
         return "bell";
