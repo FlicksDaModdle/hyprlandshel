@@ -422,6 +422,69 @@ var icons = {
     book: {
         ink: join(rrect(5, 3.5, 14, 17, 1.75), "M12 8.5H16"),
         acc: "M9 3.5V20.5"
+    },
+
+    // Added for Mail: the envelope and the inbox, sending and answering,
+    // attachments, snoozing, writing, invitations, people, flags and junk.
+    mail: {
+        ink: rrect(3.5, 5.5, 17, 13, 2),
+        acc: "M4.5 7.5L12 13L19.5 7.5"
+    },
+    mailOpen: {
+        ink: "M3.5 10L12 4.5L20.5 10V19.5H3.5Z",
+        acc: "M4 10.5L12 15.5L20 10.5"
+    },
+    inbox: {
+        ink: "M3.5 13.5L6.5 5.5H17.5L20.5 13.5V18.5H3.5Z",
+        acc: "M3.5 13.5H8.5L10 16H14L15.5 13.5H20.5"
+    },
+    send: {
+        ink: "M20.5 3.5L3.5 10.5L10.5 13.5L13.5 20.5Z",
+        acc: "M20.5 3.5L10.5 13.5"
+    },
+    reply: {
+        ink: "M9.5 6L4 11.5L9.5 17",
+        acc: "M4.5 11.5H13.5A6 6 0 0 1 19.5 17.5V19"
+    },
+    replyAll: {
+        ink: "M7.5 7L2.5 12L7.5 17",
+        acc: "M12.5 7L7.5 12L12.5 17 M8 12H15A6 6 0 0 1 21 18V19"
+    },
+    forward: {
+        ink: "M14.5 6L20 11.5L14.5 17",
+        acc: "M19.5 11.5H10.5A6 6 0 0 0 4.5 17.5V19"
+    },
+    paperclip: {
+        ink: "M16 7.5L9 14.5A2 2 0 0 0 11.8 17.3L18.6 10.5A4 4 0 0 0 13 4.9L6.1 11.8A6 6 0 0 0 14.6 20.3L20 14.9"
+    },
+    clock: {
+        ink: circle(12, 12, 8.5),
+        acc: "M12 7.5V12L15 14"
+    },
+    pencil: {
+        ink: "M15.5 4.5L19.5 8.5L8.5 19.5H4.5V15.5Z",
+        acc: "M13 7L17 11"
+    },
+    calendar: {
+        ink: join(rrect(4, 5.5, 16, 14.5, 2), "M8 3.5V7 M16 3.5V7"),
+        acc: "M4 10H20"
+    },
+    users: {
+        ink: join(circle(9, 8.5, 3.5), "M3 19.5A6 6 0 0 1 15 19.5"),
+        acc: "M15.5 5.2A3.5 3.5 0 0 1 15.5 11.8 M17.5 14.2A6 6 0 0 1 21 19.5"
+    },
+    flag: {
+        ink: "M5.5 20.5V4",
+        acc: "M5.5 4.5H18L15.5 9L18 13.5H5.5"
+    },
+    alert: {
+        ink: "M12 3.5L21 19.5H3Z",
+        acc: "M12 9.5V13.5",
+        dots: [{ cx: 12, cy: 16.5, r: 1.2, c: "acc" }]
+    },
+    tag: {
+        ink: "M3.5 4.5V11.5L12.5 20.5L20.5 12.5L11.5 3.5H4.5Z",
+        dots: [{ cx: 8, cy: 8, r: 1.5, c: "acc" }]
     }
 };
 

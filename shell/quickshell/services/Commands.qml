@@ -85,6 +85,9 @@ Singleton {
         "toggleClipboard":     () => Config.UiState.toggleClipboard(),
         "toggleTimers":        () => Config.UiState.toggleTimers(),
         "toggleUpdates":       () => Config.UiState.toggleUpdates(),
+        // Mail (mail/): its window, or a new message (an address optional).
+        "openMail":            () => Services.Mail.open(),
+        "composeMail":         arg => Services.Mail.compose(arg || ""),
         "checkUpdates":        () => Services.Updates.check(),
         "toggleCapture":       () => Config.UiState.toggleCapture(),
         // region (default) | window | screen | all

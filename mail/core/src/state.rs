@@ -59,6 +59,8 @@ pub struct State {
     /// Access tokens: account → (token, expires at).
     pub tokens: tokio::sync::Mutex<HashMap<String, (String, i64)>>,
     pub cache_dir: PathBuf,
+    /// Wakes the scheduler: something was queued or snoozed.
+    pub sched: Notify,
 }
 
 impl State {

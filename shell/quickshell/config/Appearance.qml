@@ -261,6 +261,7 @@ Singleton {
             property int updatesEvery: 3
             property bool updatesNotify: true
             property bool updatesInBar: true
+            property bool mailInBar: true             // Mail's unread count, while Mail runs
             // Capture (services/Capture.qml): seconds before a shot, the
             // pointer in it, the editor after every shot ("always") or
             // only from the notification ("ask"), a recording's sound
@@ -653,6 +654,7 @@ Singleton {
     property alias updatesEvery: prefs.updatesEvery
     property alias updatesNotify: prefs.updatesNotify
     property alias updatesInBar: prefs.updatesInBar
+    property alias mailInBar: prefs.mailInBar
     property alias captureDelay: prefs.captureDelay
     property alias capturePointer: prefs.capturePointer
     property alias captureEdit: prefs.captureEdit

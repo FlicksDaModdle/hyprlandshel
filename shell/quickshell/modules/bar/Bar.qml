@@ -469,6 +469,29 @@ Variants {
                     }
                 }
 
+                // Mail: unread in every inbox, while Mail's service runs.
+                BarButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: Config.Appearance.mailInBar && Services.Mail.available
+                    spacing: 5
+                    onActivated: Services.Mail.open()
+
+                    MonoIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "mail"
+                        size: bar.u(Config.Appearance.barIconSize)
+                        inkColor: Config.Appearance.ink
+                        accentColor: Services.Mail.unread > 0 ? Config.Appearance.accent : Config.Appearance.ink
+                    }
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: Services.Mail.unread > 0
+                        text: Services.Mail.unread > 99 ? "99+" : Services.Mail.unread
+                        font.pixelSize: Config.Appearance.barFs(0)
+                        font.weight: Font.DemiBold
+                    }
+                }
+
                 // Removable drives, while one is connected.
                 BarButton {
                     anchors.verticalCenter: parent.verticalCenter

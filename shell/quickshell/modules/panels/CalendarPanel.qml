@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import "../../config" as Config
+import "../../services" as Services
 import "../common"
 import "../icons"
 
@@ -44,8 +45,12 @@ PanelSurface {
         return out;
     }
 
+    // Invitations accepted in Mail (mail/), when it runs.
+    readonly property var upcoming: Services.Mail.available ? Services.Mail.upcoming(4) : []
+
     implicitWidth: 320
     implicitHeight: 14 + 34 + 10 + 24 + Math.ceil(cells.length / 7) * 36 + 14
+                    + (upcoming.length > 0 ? 30 + upcoming.length * 44 : 0)
 
     // ── header ────────────────────────────────────────────────────────────
     Item {
@@ -108,6 +113,7 @@ PanelSurface {
 
     // ── grid ──────────────────────────────────────────────────────────────
     Grid {
+        id: grid
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: header.bottom
@@ -160,8 +166,86 @@ PanelSurface {
                     font.pixelSize: Config.Appearance.fs(12)
                     color: cell.modelData.today ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                 }
+                // Something on: a dot under the date.
+                Rectangle {
+                    visible: cell.modelData.day > 0 && Services.Mail.events.length > 0
+                             && Services.Mail.eventsOn(root.shownYear, root.shownMonth, cell.modelData.day).length > 0
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 4
+                    width: 4; height: 4; radius: 2
+                    color: cell.modelData.today ? Config.Appearance.inkOnAccent : Config.Appearance.accent
+                }
 
                 HoverHandler { id: cellHover; enabled: cell.modelData.day > 0 }
+            }
+        }
+    }
+
+    // ── coming up ─────────────────────────────────────────────────────────
+    Column {
+        visible: root.upcoming.length > 0
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: grid.bottom
+        anchors.topMargin: 10
+        anchors.leftMargin: 14
+        anchors.rightMargin: 14
+        spacing: 2
+        StyledText {
+            text: "UPCOMING"
+            font.pixelSize: Config.Appearance.fs(10.5)
+            font.weight: Font.DemiBold
+            font.letterSpacing: 1
+            color: Config.Appearance.ink3
+            bottomPadding: 6
+        }
+        Repeater {
+            model: root.upcoming
+            Rectangle {
+                id: ev
+                required property var modelData
+                width: parent.width
+                height: 42
+                radius: 9
+                color: evHover.hovered ? Config.Appearance.hover : "transparent"
+                readonly property date start: new Date(modelData.start * 1000)
+                MonoIcon {
+                    x: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "calendar"
+                    size: 18
+                    inkColor: Config.Appearance.ink2
+                    accentColor: Config.Appearance.accent
+                }
+                Column {
+                    x: 34
+                    width: parent.width - 40
+                    anchors.verticalCenter: parent.verticalCenter
+                    StyledText {
+                        width: parent.width
+                        elide: Text.ElideRight
+                        text: ev.modelData.summary || "Event"
+                        font.pixelSize: Config.Appearance.fs(12.5)
+                        font.weight: Font.Medium
+                    }
+                    StyledText {
+                        width: parent.width
+                        elide: Text.ElideRight
+                        text: Qt.formatDateTime(ev.start, ev.modelData.allDay ? "ddd d MMM" : "ddd d MMM, hh:mm")
+                              + (ev.modelData.location ? " · " + ev.modelData.location : "")
+                              + (ev.modelData.response === "TENTATIVE" ? " · maybe" : "")
+                        font.pixelSize: Config.Appearance.fs(11)
+                        color: Config.Appearance.ink3
+                    }
+                }
+                HoverHandler { id: evHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    onTapped: {
+                        Config.UiState.closeAll();
+                        if (ev.modelData.message) Services.Mail.openMessage(ev.modelData.message);
+                    }
+                }
             }
         }
     }

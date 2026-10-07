@@ -233,6 +233,11 @@ hl.on("hyprland.start", function()
     -- hyprshell-daemon. hypridle only runs where its file still has
     -- listeners: your own, or the shell's on a machine without the daemon.
     hl.exec_cmd([[pgrep -x hypridle >/dev/null 2>&1 || { grep -qs listener "$HOME/.config/hypr/hypridle.conf" && exec hypridle; }]])
+    -- The keyring, where Mail (and the browser, and anything else that
+    -- asks the Secret Service) keeps passwords: started if it is installed
+    -- and nothing else is answering for it — KeePassXC, a PAM-started
+    -- gnome-keyring, KWallet's bridge.
+    hl.exec_cmd([[busctl --user status org.freedesktop.secrets >/dev/null 2>&1 || { command -v gnome-keyring-daemon >/dev/null 2>&1 && exec gnome-keyring-daemon --start --components=secrets; }]])
     -- The programs set to start at login (~/.config/autostart and
     -- /etc/xdg/autostart — the list the task manager's Startup apps view
     -- edits). Desktops like GNOME and KDE run these themselves; Hyprland

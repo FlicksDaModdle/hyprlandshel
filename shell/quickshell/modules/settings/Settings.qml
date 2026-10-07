@@ -520,6 +520,8 @@ Scope {
               value: A.showTray, set: v => A.showTray = v },
             { n: "Tray expanded", s: "Start with the tray group revealed", type: "toggle",
               value: A.trayOpen, set: v => A.trayOpen = v },
+            { n: "Mail", s: "Unread mail in every inbox, while Mail is set up", type: "toggle",
+              value: A.mailInBar, set: v => A.mailInBar = v },
             { n: "Task buttons", s: "Window list beside the app name", type: "toggle",
               value: A.showTasks, set: v => A.showTasks = v }
         ];

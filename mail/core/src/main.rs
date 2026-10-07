@@ -77,6 +77,7 @@ async fn main() {
         events: tx,
         tokens: tokio::sync::Mutex::new(HashMap::new()),
         cache_dir: cache,
+        sched: tokio::sync::Notify::new(),
     });
 
     // The accounts, and their sync.
@@ -172,7 +173,28 @@ async fn client(state: Arc<State>, stream: UnixStream) {
 /// scheduled to send.
 async fn scheduler(state: Arc<State>) {
     loop {
-        tokio::time::sleep(Duration::from_secs(20)).await;
+        // Until the next thing is due (a send with seconds of undo, say),
+        // or twenty seconds, or something new is queued.
+        let next: i64 = {
+            let db = state.db.lock().unwrap();
+            db.conn
+                .query_row(
+                    "SELECT MIN(t) FROM (SELECT MIN(send_at) AS t FROM outbox WHERE error = '' \
+                     UNION ALL SELECT MIN(until) FROM snoozed)",
+                    [],
+                    |r| r.get::<_, Option<i64>>(0),
+                )
+                .ok()
+                .flatten()
+                .unwrap_or(i64::MAX)
+        };
+        let wait = (next - db::now()).clamp(0, 20) as u64;
+        if wait > 0 {
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(wait)) => {}
+                _ = state.sched.notified() => { continue; }
+            }
+        }
         let t = db::now();
 
         // Snoozes.

@@ -38,6 +38,38 @@ fn ids(v: &Value) -> Vec<i64> {
     }
 }
 
+/// With "thread": true, each message stands for its whole conversation:
+/// every message of it in the same folder (for moves), or anywhere in the
+/// account (for flags — a conversation is read when all of it is).
+fn expand(state: &Arc<State>, req: &Value, same_folder: bool) -> Vec<i64> {
+    let base = ids(req);
+    if !req.get("thread").and_then(|x| x.as_bool()).unwrap_or(false) {
+        return base;
+    }
+    let db = state.db.lock().unwrap();
+    let mut out: Vec<i64> = vec![];
+    for id in base {
+        let row: Option<(String, String, String)> = db.conn
+            .query_row("SELECT account, thread, folder FROM messages WHERE id = ?", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .ok();
+        let Some((a, t, f)) = row else { continue };
+        let sql = if same_folder {
+            "SELECT id FROM messages WHERE account = ?1 AND thread = ?2 AND folder = ?3"
+        } else {
+            "SELECT m.id FROM messages m JOIN folders fo ON fo.account = m.account AND fo.path = m.folder \
+             WHERE m.account = ?1 AND m.thread = ?2 AND (fo.role NOT IN ('trash', 'junk') OR m.folder = ?3)"
+        };
+        if let Ok(mut st) = db.conn.prepare(sql) {
+            if let Ok(rows) = st.query_map(params![a, t, f], |r| r.get::<_, i64>(0)) {
+                out.extend(rows.flatten());
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 pub async fn handle(state: &Arc<State>, req: &Value) -> R {
     match s(req, "cmd") {
         "ping" => Ok(json!("pong")),
@@ -60,7 +92,10 @@ pub async fn handle(state: &Arc<State>, req: &Value) -> R {
             let p = s(req, "provider");
             let db = state.db.lock().unwrap();
             db.set_setting(&format!("oauth.{}.clientId", p), s(req, "clientId").trim());
-            db.set_setting(&format!("oauth.{}.clientSecret", p), s(req, "clientSecret").trim());
+            // An empty secret leaves the one saved alone ("Unchanged").
+            if !s(req, "clientSecret").trim().is_empty() || req.get("clearSecret").and_then(|x| x.as_bool()).unwrap_or(false) {
+                db.set_setting(&format!("oauth.{}.clientSecret", p), s(req, "clientSecret").trim());
+            }
             Ok(json!(true))
         }
 
@@ -88,14 +123,14 @@ pub async fn handle(state: &Arc<State>, req: &Value) -> R {
         "flag" => {
             let what = s(req, "flag");
             let on = req.get("value").and_then(|x| x.as_bool()).unwrap_or(true);
-            act(state, &ids(req), Action::Flag(what.to_string(), on)).await
+            act(state, &expand(state, req, false), Action::Flag(what.to_string(), on)).await
         }
-        "move" => act(state, &ids(req), Action::Move(s(req, "to").to_string())).await,
-        "archive" => act(state, &ids(req), Action::Move("archive".into())).await,
-        "trash" => act(state, &ids(req), Action::Move("trash".into())).await,
-        "spam" => act(state, &ids(req), Action::Move("junk".into())).await,
-        "notSpam" => act(state, &ids(req), Action::Move("inbox".into())).await,
-        "deleteForever" => act(state, &ids(req), Action::DeleteForever).await,
+        "move" => act(state, &expand(state, req, true), Action::Move(s(req, "to").to_string())).await,
+        "archive" => act(state, &expand(state, req, true), Action::Move("archive".into())).await,
+        "trash" => act(state, &expand(state, req, true), Action::Move("trash".into())).await,
+        "spam" => act(state, &expand(state, req, true), Action::Move("junk".into())).await,
+        "notSpam" => act(state, &expand(state, req, true), Action::Move("inbox".into())).await,
+        "deleteForever" => act(state, &expand(state, req, true), Action::DeleteForever).await,
 
         // ── writing ──
         "send" => send(state, req).await,
@@ -112,6 +147,7 @@ pub async fn handle(state: &Arc<State>, req: &Value) -> R {
             let id = i(req, "id").unwrap_or(0);
             state.db.lock().unwrap().conn
                 .execute("UPDATE outbox SET send_at = 0, error = '' WHERE id = ?", [id]).map_err(|e| e.to_string())?;
+            state.sched.notify_one();
             Ok(json!(true))
         }
         "drafts.save" => drafts_save(state, req),
@@ -126,8 +162,9 @@ pub async fn handle(state: &Arc<State>, req: &Value) -> R {
         "snooze" => {
             let until = i(req, "until").ok_or("When should it come back?")?;
             {
+                let list = expand(state, req, true);
                 let db = state.db.lock().unwrap();
-                for id in ids(req) {
+                for id in list {
                     let _ = db.conn.execute(
                         "INSERT INTO snoozed (message, until) VALUES (?, ?) ON CONFLICT(message) DO UPDATE SET until = excluded.until",
                         params![id, until],
@@ -136,6 +173,7 @@ pub async fn handle(state: &Arc<State>, req: &Value) -> R {
             }
             state.emit("changed", json!({}));
             state.emit_unread();
+            state.sched.notify_one();
             Ok(json!(true))
         }
         "unsnooze" => {
@@ -739,6 +777,16 @@ async fn get(state: &Arc<State>, req: &Value) -> R {
         (allowed, role)
     };
     v["id"] = json!(id);
+    // How this invitation was answered, if it was.
+    if let Some(uid) = v["invite"]["uid"].as_str() {
+        let resp: Option<String> = state.db.lock().unwrap().conn
+            .query_row("SELECT data FROM events WHERE uid = ?", [uid], |r| r.get::<_, String>(0)).ok()
+            .and_then(|d| serde_json::from_str::<Value>(&d).ok())
+            .and_then(|e| e["response"].as_str().map(|x| x.to_string()));
+        if let Some(r) = resp {
+            v["inviteResponse"] = json!(r);
+        }
+    }
     v["summary"] = summary.clone();
     v["role"] = json!(role);
     v["remoteAllowed"] = json!(allowed);
@@ -952,6 +1000,7 @@ async fn send(state: &Arc<State>, req: &Value) -> R {
             state.emit("drafts", json!({}));
         }
         state.emit("outbox", json!({}));
+        state.sched.notify_one();
         return Ok(json!({ "queued": id, "sendAt": at }));
     }
     deliver(state, &rt, req).await?;
@@ -962,6 +1011,7 @@ async fn send(state: &Arc<State>, req: &Value) -> R {
 /// people written to remembered.
 pub async fn deliver(state: &Arc<State>, rt: &Arc<AccountRt>, req: &Value) -> Result<(), String> {
     let a = rt.account();
+    let req = &with_forwarded(state, req).await?;
     let msg = smtp::build(&a, req)?;
     let auth = imap::credentials(state, &a).await?;
     smtp::send(&a, &auth, &msg).await?;
@@ -997,6 +1047,37 @@ pub async fn deliver(state: &Arc<State>, rt: &Arc<AccountRt>, req: &Value) -> Re
     });
     state.emit("sent", json!({ "account": rt.id(), "subject": s(req, "subject") }));
     Ok(())
+}
+
+/// A forward's attachments from the original message: saved out of it into
+/// the cache, and added to the request's attachments.
+async fn with_forwarded(state: &Arc<State>, req: &Value) -> Result<Value, String> {
+    let Some(orig) = i(req, "forwardOf") else { return Ok(req.clone()) };
+    let parts: Vec<usize> = match req.get("forwardParts") {
+        Some(Value::Array(a)) => a.iter().filter_map(|x| x.as_u64().map(|n| n as usize)).collect(),
+        _ => vec![],
+    };
+    if parts.is_empty() {
+        return Ok(req.clone());
+    }
+    let raw = raw_of(state, orig).await?;
+    let dir = state.cache_dir.join("forward").join(format!("{}-{}", orig, now()));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut out = req.clone();
+    let mut list: Vec<Value> = match req.get("attachments") {
+        Some(Value::Array(a)) => a.clone(),
+        _ => vec![],
+    };
+    for idx in parts {
+        if let Some((name, _mime, bytes)) = parse::part(&raw, idx) {
+            let safe: String = name.rsplit(['/', '\\']).next().unwrap_or("attachment").to_string();
+            let path = dir.join(if safe.is_empty() { "attachment".to_string() } else { safe });
+            std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+            list.push(json!(path.to_string_lossy()));
+        }
+    }
+    out["attachments"] = json!(list);
+    Ok(out)
 }
 
 fn outbox_list(state: &Arc<State>) -> R {

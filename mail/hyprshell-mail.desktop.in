@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Mail
+GenericName=Email
+Comment=Read and write email
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/hyprshell-mail %u
+Icon=mail-client
+Terminal=false
+Categories=Network;Email;
+MimeType=x-scheme-handler/mailto;
+Keywords=email;mail;inbox;gmail;outlook;
+StartupWMClass=hyprshell-mail
+Actions=compose;
+
+[Desktop Action compose]
+Name=Write a message
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/hyprshell-mail --compose

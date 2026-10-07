@@ -203,6 +203,8 @@ ShellRoot {
         function toggleClipboard(): void { Services.Commands.run("toggleClipboard"); }
         function toggleTimers(): void { Services.Commands.run("toggleTimers"); }
         function toggleUpdates(): void { Services.Commands.run("toggleUpdates"); }
+        function openMail(): void { Services.Commands.run("openMail"); }
+        function composeMail(to: string): void { Services.Commands.run("composeMail " + to); }
         function checkUpdates(): void { Services.Commands.run("checkUpdates"); }
         function toggleCapture(): void { Services.Commands.run("toggleCapture"); }
         function screenshot(mode: string): void { Services.Commands.run("screenshot " + mode); }
