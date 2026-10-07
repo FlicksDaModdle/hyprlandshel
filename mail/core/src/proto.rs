@@ -820,10 +820,36 @@ async fn part_save(state: &Arc<State>, req: &Value) -> R {
         dir.join(&safe)
     } else {
         let d = std::path::PathBuf::from(dest.strip_prefix("file://").unwrap_or(dest));
-        if d.is_dir() { d.join(&safe) } else { d }
+        // Into a folder: beside whatever is there already, never over it
+        // ("report.pdf", then "report (1).pdf"). A path that names the file
+        // was chosen in a dialog that asked about replacing it.
+        if d.is_dir() { free_name(&d, &safe) } else { d }
     };
     std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    if !dest.is_empty() {
+        // Saved for you, not cached: an ordinary file, not a private one.
+        use std::os::unix::fs::PermissionsExt;
+        let mode = 0o666 & !crate::USER_UMASK.load(std::sync::atomic::Ordering::Relaxed);
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode));
+    }
     Ok(json!({ "path": path.to_string_lossy(), "name": safe, "mime": mime, "size": bytes.len() }))
+}
+
+/// `name` in `dir`, or "stem (n).ext" for the first n not taken.
+fn free_name(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    // ".bashrc" is all stem; "archive.tar.gz" keeps ".gz" — good enough.
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    };
+    (1..)
+        .map(|n| dir.join(format!("{} ({}){}", stem, n, ext)))
+        .find(|p| !p.exists())
+        .unwrap()
 }
 
 // ── actions ───────────────────────────────────────────────────────────────

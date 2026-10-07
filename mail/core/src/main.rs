@@ -56,8 +56,10 @@ async fn main() {
         }
         i += 1;
     }
-    // Only you can read the cache.
-    unsafe { libc_umask(0o077) };
+    // Only you can read the cache. What you save elsewhere gets the
+    // permissions you would otherwise have given it (proto::part_save).
+    let prev = unsafe { libc_umask(0o077) };
+    USER_UMASK.store(prev, std::sync::atomic::Ordering::Relaxed);
     std::fs::create_dir_all(&data).expect("cannot create the data directory");
     std::fs::create_dir_all(&cache).ok();
 
@@ -115,6 +117,9 @@ async fn main() {
     }
     let _ = std::fs::remove_file(&sock);
 }
+
+/// The umask this was started with, before the cache's own.
+pub static USER_UMASK: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0o022);
 
 extern "C" {
     #[link_name = "umask"]

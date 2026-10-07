@@ -21,6 +21,12 @@
 // applications goes through the normal Wayland data-device rather than a
 // layer-shell surface that is not a drag source.
 int main(int argc, char *argv[]) {
+    // The command line as given, read before QGuiApplication takes out the
+    // options it treats as its own: "--name", for one, is Qt's (the window
+    // class) and would never reach --pick, whose suggested file name it is.
+    QStringList rawArgs;
+    for (int i = 0; i < argc; ++i) rawArgs << QString::fromLocal8Bit(argv[i]);
+
     QGuiApplication app(argc, argv);
 
     app.setOrganizationName(QStringLiteral("hyprshell"));
@@ -54,7 +60,7 @@ int main(int argc, char *argv[]) {
     // how something that cannot make a portal call — the shell's own
     // surfaces, a script — gets the same dialog as everything else.
     Picker picker;
-    if (!picker.parse(args) && !picker.error().isEmpty()) {
+    if (!picker.parse(rawArgs) && !picker.error().isEmpty()) {
         qWarning("%s", qUtf8Printable(picker.error()));
         return 2;
     }

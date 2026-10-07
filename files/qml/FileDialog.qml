@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import Hyprshell
+import Hyprshell.Backend
 
 // The window a "Save as…" or "Open…" puts up.
 //
@@ -66,6 +67,11 @@ Window {
 
     signal chosen(string token, var paths)
 
+    // A name that is taken asks first: the first Save turns the button into
+    // Replace, the second goes ahead. Any edit to the name, or another
+    // folder, asks again.
+    property string replacing: ""
+
     function accept() {
         const out = [];
         if (dlg.pickingFolder) {
@@ -73,7 +79,9 @@ Window {
         } else if (dlg.saving) {
             const n = nameField.text.trim();
             if (n === "") return;
-            out.push(FilesService.join(files.cwd, n));
+            const path = FilesService.join(files.cwd, n);
+            if (dlg.replacing !== path && Sys.exists(path)) { dlg.replacing = path; return; }
+            out.push(path);
         } else {
             for (const n of files.selection) out.push(FilesService.join(files.cwd, n));
             if (out.length === 0) return;
@@ -101,6 +109,7 @@ Window {
     // finishes one, and a dialog that launched it instead would be a trap.
     Connections {
         target: files
+        function onCwdChanged() { dlg.replacing = ""; }
         function onActivateRequested(entry) {
             if (entry.dir) { files.go(FilesService.join(files.cwd, entry.name)); return; }
             if (dlg.saving) { nameField.text = entry.name; return; }
@@ -237,7 +246,7 @@ Window {
                     id: nameField
                     anchors.fill: parent
                     anchors.leftMargin: 10
-                    anchors.rightMargin: 10
+                    anchors.rightMargin: 10 + (taken.visible ? taken.width + 8 : 0)
                     verticalAlignment: TextInput.AlignVCenter
                     text: dlg.suggestedName
                     color: Appearance.ink
@@ -247,6 +256,7 @@ Window {
                     selectionColor: Appearance.accent
                     selectedTextColor: Appearance.inkOnAccent
                     onAccepted: dlg.accept()
+                    onTextChanged: dlg.replacing = ""
                     Component.onCompleted: {
                         forceActiveFocus();
                         // The stem, not the suffix: changing "report" to
@@ -254,6 +264,17 @@ Window {
                         const dot = text.lastIndexOf(".");
                         if (dot > 0) select(0, dot); else selectAll();
                     }
+                }
+                StyledText {
+                    id: taken
+                    visible: dlg.replacing !== ""
+                    anchors.right: parent.right
+                    anchors.rightMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Already here — replace it?"
+                    font.pixelSize: Appearance.fs(11.5)
+                    font.weight: Font.Medium
+                    color: Appearance.accent
                 }
             }
 
@@ -289,7 +310,8 @@ Window {
                     onTriggered: dlg.cancel()
                 }
                 DialogButton {
-                    text: dlg.saving ? "Save" : (dlg.pickingFolder ? "Choose" : "Open")
+                    text: dlg.saving ? (dlg.replacing !== "" ? "Replace" : "Save")
+                                     : (dlg.pickingFolder ? "Choose" : "Open")
                     primary: true
                     enabled: dlg.saving ? nameField.text.trim() !== ""
                            : (dlg.pickingFolder || files.selection.length > 0)

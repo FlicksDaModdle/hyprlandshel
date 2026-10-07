@@ -3,8 +3,9 @@ import QtQuick.Dialogs
 import Hyprshell
 import Hyprshell.Backend
 
-// An attachment: its kind, name and size. Click to open it; the menu saves
-// it to Downloads, or somewhere chosen, or shows where it went.
+// An attachment: its kind, name and size. Click to open it; the download
+// button saves it where you choose, with the Files app's dialog; the menu
+// also saves straight to Downloads.
 Rectangle {
     id: chip
     property var att
@@ -25,7 +26,7 @@ Rectangle {
         if (m === "text/calendar") return "calendar";
         return "file";
     }
-    width: Math.min(280, row.implicitWidth + 24)
+    width: Math.min(320, row.implicitWidth + 24 + saveBtn.width + 4)
     height: 44
     radius: Appearance.rSm
     color: area.containsMouse ? Appearance.sel : Appearance.hover
@@ -37,6 +38,15 @@ Rectangle {
             if (!ok) return;
             chip.savedTo = r.path;
             if (then) then(r.path);
+        });
+    }
+    function saved(f) { Mail.toast("Saved to " + MailApp.prettyPath(f), false, "Show", () => MailApp.showInFolder(f)); }
+    // Where to keep it: the Files app's own save dialog, opening in
+    // Downloads with the attachment's name; Qt's when Files isn't here.
+    function saveAs() {
+        if (!MailApp.hasFiles) { saveDialog.open(); return; }
+        MailApp.pick({ save: true, name: chip.att.name, start: MailApp.downloadsDir() }, paths => {
+            if (paths && paths.length > 0) chip.save(paths[0], chip.saved);
         });
     }
 
@@ -73,15 +83,36 @@ Rectangle {
             const p = mapToItem(null, m.x, m.y);
             chip.frame.menu.openAt(p.x, p.y, [
                 { n: "Open", icon: "folderOpen", run: () => chip.save("", f => MailApp.openFile(f)) },
-                { n: "Save to Downloads", icon: "download", run: () => chip.save(MailApp.downloadsDir(), f => Mail.toast("Saved to " + f, false, "Show", () => MailApp.showInFolder(f))) },
-                { n: "Save as…", icon: "download", run: () => saveDialog.open() },
-            ]);
+                { n: "Save as…", icon: "download", run: () => chip.saveAs() },
+                { n: "Save to Downloads", icon: "download", run: () => chip.save(MailApp.downloadsDir(), chip.saved) },
+            ].concat(chip.savedTo !== "" && chip.savedTo.indexOf("/parts/") < 0
+                     ? [{ n: "Show in Files", icon: "folderOpen", rule: true, run: () => MailApp.showInFolder(chip.savedTo) }] : []));
         }
+    }
+    // Download: save it somewhere of your choosing.
+    Rectangle {
+        id: saveBtn
+        anchors.right: parent.right
+        anchors.rightMargin: 6
+        anchors.verticalCenter: parent.verticalCenter
+        width: 30
+        height: 30
+        radius: Appearance.rSm
+        color: saveArea.containsMouse ? Appearance.hover : "transparent"
+        MonoIcon { anchors.centerIn: parent; name: "download"; size: 18; inkColor: Appearance.ink2; accentColor: Appearance.accent }
+        MouseArea {
+            id: saveArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: chip.saveAs()
+        }
+        ToolTipLite { text: "Save…"; shown: saveArea.containsMouse }
     }
     FileDialog {
         id: saveDialog
         fileMode: FileDialog.SaveFile
         currentFile: "file://" + MailApp.downloadsDir() + "/" + chip.att.name
-        onAccepted: chip.save(MailApp.urlToPath(selectedFile.toString()), f => Mail.toast("Saved to " + f, false, "Show", () => MailApp.showInFolder(f)))
+        onAccepted: chip.save(MailApp.urlToPath(selectedFile.toString()), chip.saved)
     }
 }

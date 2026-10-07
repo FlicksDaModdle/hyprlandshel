@@ -4,6 +4,9 @@
 #include <QString>
 #include <QVariantMap>
 #include <QJSEngine>
+#include <QJSValue>
+#include <QList>
+#include <QPointer>
 #include <QtQml/qqmlregistration.h>
 
 class QQmlEngine;
@@ -19,6 +22,8 @@ class MailApp : public QObject {
     Q_PROPERTY(bool hasWebEngine READ hasWebEngine CONSTANT)
     Q_PROPERTY(QString startMessage READ startMessage NOTIFY startChanged)
     Q_PROPERTY(QString startCompose READ startCompose NOTIFY startChanged)
+    // Whether the Files app is installed, whose dialog is used for saving.
+    Q_PROPERTY(bool hasFiles READ hasFiles CONSTANT)
 
 public:
     explicit MailApp(QObject *parent = nullptr);
@@ -54,10 +59,18 @@ public:
     Q_INVOKABLE bool hasRemote(const QString &html) const;
 
     Q_INVOKABLE QString downloadsDir() const;
+    // A path to show someone: the home folder as "~".
+    Q_INVOKABLE QString prettyPath(const QString &path) const;
     Q_INVOKABLE QVariantMap fileInfo(const QString &path) const;
     Q_INVOKABLE QString urlToPath(const QString &url) const;
     Q_INVOKABLE void openFile(const QString &path) const;
     Q_INVOKABLE void showInFolder(const QString &path) const;
+
+    // The Files app's own dialog (`hyprshell-files --pick`), for saving.
+    // opts: save (bool), directory (bool), name, start. Calls back with the
+    // paths chosen — none if it was cancelled.
+    bool hasFiles() const { return !filesApp().isEmpty(); }
+    Q_INVOKABLE void pick(const QVariantMap &opts, const QJSValue &callback);
 
 signals:
     void startChanged();
@@ -65,6 +78,10 @@ signals:
     void raiseRequested();
 
 private:
+    // hyprshell-files: on PATH, else where its installer puts it — the
+    // session's PATH often lacks ~/.local/bin.
+    QString filesApp() const;
+    QList<QPointer<class QProcess>> m_picks;
     QString m_message;
     QString m_compose;
 };

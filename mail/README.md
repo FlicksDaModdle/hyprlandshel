@@ -36,6 +36,10 @@ It is two programs:
   attachments, a signature per account, templates, drafts saved as you type.
 - **Undo send** (5 seconds by default) and **send later** (tomorrow morning,
   next week, or a time of your choosing).
+- **Attachments**: click one to open it; its download button saves it with
+  the Files app's dialog (starting in Downloads), and *Save all* puts every
+  attachment of a message in a folder you choose — beside anything of the
+  same name there, never over it.
 - **Snooze**: a conversation leaves the inbox and comes back, with a
   notification, when you said.
 - **Calendar invitations**: what, when, where and who, with Yes / Maybe / No.

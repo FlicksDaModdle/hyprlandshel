@@ -1,5 +1,6 @@
 #include "mailapp.h"
 
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
@@ -176,6 +177,13 @@ QString MailApp::downloadsDir() const {
     return d.isEmpty() ? QDir::homePath() : d;
 }
 
+QString MailApp::prettyPath(const QString &path) const {
+    const QString home = QDir::homePath();
+    if (path == home) return QStringLiteral("~");
+    if (path.startsWith(home + QLatin1Char('/'))) return QStringLiteral("~") + path.mid(home.size());
+    return path;
+}
+
 QVariantMap MailApp::fileInfo(const QString &path) const {
     const QFileInfo fi(urlToPath(path));
     return {{QStringLiteral("exists"), fi.exists()},
@@ -197,7 +205,71 @@ void MailApp::openFile(const QString &path) const {
 // Files' own "show me where it is", when the file manager is installed.
 void MailApp::showInFolder(const QString &path) const {
     const QFileInfo fi(urlToPath(path));
-    const QString files = QStandardPaths::findExecutable(QStringLiteral("hyprshell-files"));
+    const QString files = filesApp();
     if (!files.isEmpty()) QProcess::startDetached(files, {fi.absolutePath()});
     else QDesktopServices::openUrl(QUrl::fromLocalFile(fi.absolutePath()));
+}
+
+QString MailApp::filesApp() const {
+    const QString name = QStringLiteral("hyprshell-files");
+    QString p = QStandardPaths::findExecutable(name);
+    if (!p.isEmpty()) return p;
+    // Beside this program first: both install to the same prefix.
+    const QStringList dirs = {QCoreApplication::applicationDirPath(),
+                              QDir::homePath() + QStringLiteral("/.local/bin"),
+                              QStringLiteral("/usr/local/bin"), QStringLiteral("/usr/bin")};
+    p = QStandardPaths::findExecutable(name, dirs);
+    return p;
+}
+
+void MailApp::pick(const QVariantMap &opts, const QJSValue &callback) {
+    const QString files = filesApp();
+    QJSValue cb = callback;
+    if (files.isEmpty()) {
+        if (cb.isCallable()) cb.call({QJSValue(QJSValue::NullValue)});
+        return;
+    }
+    QStringList args = {QStringLiteral("--pick")};
+    if (opts.value(QStringLiteral("save")).toBool()) args << QStringLiteral("--save");
+    if (opts.value(QStringLiteral("directory")).toBool()) args << QStringLiteral("--directory");
+    const QString start = opts.value(QStringLiteral("start")).toString();
+    if (!start.isEmpty()) args << QStringLiteral("--start") << urlToPath(start);
+    const QString name = opts.value(QStringLiteral("name")).toString();
+    if (!name.isEmpty()) args << QStringLiteral("--name") << name;
+
+    auto *proc = new QProcess(this);
+    proc->setProcessChannelMode(QProcess::SeparateChannels);
+    m_picks.append(proc);
+    // A dialog still open when Mail closes goes with it: its answer has
+    // nobody to go to.
+    static bool hooked = false;
+    if (!hooked) {
+        hooked = true;
+        connect(qApp, &QCoreApplication::aboutToQuit, this, [this] {
+            for (const auto &p : std::as_const(m_picks)) {
+                if (!p) continue;
+                p->disconnect();
+                p->kill();
+                p->waitForFinished(500);
+            }
+            m_picks.clear();
+        });
+    }
+    connect(proc, &QProcess::finished, this, [this, proc, cb](int code, QProcess::ExitStatus status) mutable {
+        m_picks.removeAll(proc);
+        QStringList paths;
+        if (status == QProcess::NormalExit && code == 0) {
+            for (const QString &l : QString::fromUtf8(proc->readAllStandardOutput()).split(QLatin1Char('\n'))) {
+                if (!l.isEmpty()) paths << l;
+            }
+        }
+        proc->deleteLater();
+        QJSEngine *engine = qjsEngine(this);
+        if (cb.isCallable()) cb.call({engine ? engine->toScriptValue(paths) : QJSValue()});
+    });
+    connect(proc, &QProcess::errorOccurred, this, [proc](QProcess::ProcessError e) {
+        // Never started: finished() will not come.
+        if (e == QProcess::FailedToStart) emit proc->finished(127, QProcess::CrashExit);
+    });
+    proc->start(files, args);
 }

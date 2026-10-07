@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Dialogs
 import Hyprshell
 import Hyprshell.Backend
 
@@ -16,6 +17,34 @@ PanelSurface {
     // Images from elsewhere: off until asked, per message or per sender.
     property bool remoteNow: false
     readonly property bool remoteOk: card.remoteNow || (card.body && card.body.remoteAllowed) || Mail.setting("remoteImages", []).indexOf("*") >= 0
+
+    // Every attachment into one folder: the Files app's folder dialog, or
+    // Qt's when Files isn't installed. Beside what is there, never over it.
+    function saveAll() {
+        if (!MailApp.hasFiles) { folderDialog.open(); return; }
+        MailApp.pick({ directory: true, start: MailApp.downloadsDir() }, paths => {
+            if (paths && paths.length > 0) card.saveAllTo(paths[0]);
+        });
+    }
+    function saveAllTo(dir) {
+        const atts = card.body.attachments;
+        let left = atts.length, saved = 0, last = "";
+        const where = MailApp.prettyPath(dir);
+        for (const a of atts) {
+            Mail.call("part.save", { id: card.summary.id, index: a.index, dest: dir }, (ok, r) => {
+                if (ok) { saved++; last = r.path; }
+                if (--left > 0) return;
+                const msg = saved === atts.length ? "Saved " + saved + " files to " + where
+                                                  : "Saved " + saved + " of " + atts.length + " files to " + where;
+                Mail.toast(msg, saved < atts.length, last ? "Show" : "", last ? () => MailApp.showInFolder(last) : null);
+            });
+        }
+    }
+    FolderDialog {
+        id: folderDialog
+        currentFolder: "file://" + MailApp.downloadsDir()
+        onAccepted: card.saveAllTo(MailApp.urlToPath(selectedFolder.toString()))
+    }
 
     showSeam: false
     color: Appearance.dialog
@@ -213,6 +242,35 @@ PanelSurface {
                     att: modelData
                     messageId: card.summary.id
                     frame: card.frame
+                }
+            }
+            // Several: all of them into one folder, chosen with Files.
+            Rectangle {
+                visible: !!card.body && card.body.attachments.length > 1
+                width: allRow.implicitWidth + 24
+                height: 44
+                radius: Appearance.rSm
+                color: allArea.containsMouse ? Appearance.sel : "transparent"
+                border.width: 1
+                border.color: Appearance.rule
+                Row {
+                    id: allRow
+                    anchors.centerIn: parent
+                    spacing: 8
+                    MonoIcon { anchors.verticalCenter: parent.verticalCenter; name: "download"; size: 18; inkColor: Appearance.ink2; accentColor: Appearance.accent }
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Save all " + (card.body ? card.body.attachments.length : 0)
+                        font.pixelSize: Appearance.fs(12)
+                        font.weight: Font.Medium
+                    }
+                }
+                MouseArea {
+                    id: allArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: card.saveAll()
                 }
             }
         }
