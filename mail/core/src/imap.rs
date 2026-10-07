@@ -126,6 +126,7 @@ pub async fn credentials(state: &State, a: &Account) -> Result<Auth, String> {
             }
         }
         let (cid, secret) = oauth_client(state, &a.oauth_provider);
+        state.step(&a.id, "renewing the sign-in (keyring, then the provider)").await;
         let t = oauth::refresh(&a.id, &a.oauth_provider, &cid, &secret).await?;
         // How long it lasts, from now — `expires` was worked out from the
         // wall clock a moment ago, so the difference is sound even if the
@@ -135,6 +136,7 @@ pub async fn credentials(state: &State, a: &Account) -> Result<Auth, String> {
         state.tokens.lock().await.insert(a.id.clone(), (t.access.clone(), until));
         Ok(Auth::OAuth(t.access))
     } else {
+        state.step(&a.id, "reading the password from the keyring").await;
         let p = secrets::load(&a.id, "password").await?.ok_or("No password saved for this account")?;
         Ok(Auth::Password(p))
     }
@@ -153,12 +155,22 @@ pub fn refused(e: &str) -> bool {
 /// wasn't — is thrown away and a fresh one tried before giving up; only if
 /// that is refused too has the sign-in really lapsed.
 pub async fn connect(state: &State, a: &Account) -> Result<Imap, String> {
+    // Reaching the server, TLS and signing in, all in a minute or not at all.
+    let open = |a: &Account, auth: Auth| {
+        let a = a.clone();
+        async move {
+            tokio::time::timeout(Duration::from_secs(60), open(&a, &auth))
+                .await
+                .unwrap_or_else(|_| Err(format!("{} didn't finish signing in within a minute", a.imap_host)))
+        }
+    };
     let auth = credentials(state, a).await?;
-    match open(a, &auth).await {
+    state.step(&a.id, &format!("connecting to {}", a.imap_host)).await;
+    match open(a, auth).await {
         Err(e) if a.auth == "oauth" && refused(&e) => {
             state.tokens.lock().await.remove(&a.id);
             let auth = credentials(state, a).await?;
-            open(a, &auth).await.map_err(|e| {
+            open(a, auth).await.map_err(|e| {
                 if refused(&e) {
                     format!("Signed out — the server refused the sign-in ({}). Sign in again from the account's settings.", e)
                 } else {
@@ -801,12 +813,14 @@ pub fn start(state: Arc<State>, rt: Arc<AccountRt>) {
 }
 
 async fn sync_once(state: &State, rt: &AccountRt, inbox_only: bool) -> Result<(), String> {
-    let folders = list_folders(state, rt).await?;
     let id = rt.id();
+    state.step(&id, "listing folders").await;
+    let folders = list_folders(state, rt).await?;
     for (path, role) in folders {
         if inbox_only && role != "inbox" {
             continue;
         }
+        state.step(&id, &format!("looking at {}", path)).await;
         let fresh = sync_folder(state, rt, &path).await?;
         if role == "inbox" {
             let primed = *rt.primed.lock().unwrap();
@@ -821,6 +835,7 @@ async fn sync_once(state: &State, rt: &AccountRt, inbox_only: bool) -> Result<()
         }
     }
     state.emit("folders", json!({ "account": id }));
+    state.step(&id, "done").await;
     Ok(())
 }
 

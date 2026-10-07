@@ -60,7 +60,11 @@ async fn main() {
         i += 1;
     }
     if status_mode {
+        // Piped into `head` and the like: stop quietly when the reader goes,
+        // rather than panic on the closed pipe.
+        unsafe { libc_signal(13, 0) };
         print_status(&sock);
+        keyring_status().await;
         return;
     }
     // Only you can read the cache. What you save elsewhere gets the
@@ -132,6 +136,8 @@ pub static USER_UMASK: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU
 extern "C" {
     #[link_name = "umask"]
     fn libc_umask(mask: u32) -> u32;
+    #[link_name = "signal"]
+    fn libc_signal(sig: i32, handler: usize) -> usize;
 }
 
 /// One connection: requests in, answers and events out.
@@ -242,6 +248,11 @@ fn print_status(sock: &std::path::Path) {
             println!("  error         {}", e);
         }
         println!("  loops running {} of 2", a["running"]);
+        if let Some(st) = d["step"]["what"].as_str() {
+            if st != "done" {
+                println!("  busy with     {} — since {}", st, when(&d["step"]["at"]));
+            }
+        }
         println!("  last look     {}", when(&d["lastTry"]));
         println!("  last good one {}", when(&d["lastOk"]));
         if d["lastError"].is_string() {
@@ -266,6 +277,57 @@ fn print_status(sock: &std::path::Path) {
             println!("  new-mail push not started");
         }
         println!();
+    }
+}
+
+/// `--status`, the keyring: whether it is unlocked, and if it isn't, how
+/// to have your login unlock it — the usual reason Mail can't sign in after
+/// a restart on a desktop without GNOME's own login screen.
+async fn keyring_status() {
+    if std::env::var("HYPRSHELL_MAIL_INSECURE_SECRETS").map(|s| !s.is_empty()).unwrap_or(false) {
+        return;
+    }
+    let locked = match tokio::time::timeout(Duration::from_secs(10), oo7::Keyring::new()).await {
+        Err(_) => { println!("Keyring: didn't answer within 10 seconds."); return; }
+        Ok(Err(e)) if { let l = e.to_string().to_ascii_lowercase(); l.contains("dismissed") || l.contains("locked") || l.contains("prompt") } => {
+            println!("Keyring: locked — its unlock window didn't appear or was closed ({}).", e);
+            Ok(Ok(true))
+        }
+        Ok(Err(e)) => { println!("Keyring: not available ({}). Install gnome-keyring and log in again.", e); return; }
+        Ok(Ok(k)) => tokio::time::timeout(Duration::from_secs(10), k.is_locked()).await,
+    };
+    match locked {
+        Ok(Ok(false)) => { println!("Keyring: unlocked."); return; }
+        Ok(Ok(true)) => {}
+        _ => { println!("Keyring: couldn't tell whether it's locked."); return; }
+    }
+    // Which login program PAM runs for: the display manager's, or the
+    // console's.
+    let dm = std::fs::read_link("/etc/systemd/system/display-manager.service")
+        .ok()
+        .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()));
+    let service = match dm.as_deref() {
+        Some(d) if std::path::Path::new(&format!("/etc/pam.d/{}", d)).exists() => d.to_string(),
+        Some("plasmalogin") => "plasmalogin".into(),
+        _ => "login".into(),
+    };
+    let pam = format!("/etc/pam.d/{}", service);
+    let has = std::fs::read_to_string(&pam).map(|t| t.contains("pam_gnome_keyring")).unwrap_or(false);
+    println!("Mail can't read your sign-ins until it's unlocked.");
+    println!();
+    println!("Unlock it now: open Passwords and Keys (seahorse), right-click \"Login\", Unlock.");
+    println!();
+    if has {
+        println!("{} already unlocks the keyring at login, so the keyring's password", pam);
+        println!("probably isn't your login password any more. In Passwords and Keys, right-click");
+        println!("\"Login\" → Change Password, and set it to your login password.");
+    } else {
+        println!("To have it unlock when you log in ({}), add these two lines to {}:", dm.as_deref().unwrap_or("console login"), pam);
+        println!("  auth     optional  pam_gnome_keyring.so");
+        println!("  session  optional  pam_gnome_keyring.so auto_start");
+        println!("(the auth line after the other auth lines, the session line at the end) — e.g.");
+        println!("  sudoedit {}", pam);
+        println!("The keyring's password has to be the same as your login password.");
     }
 }
 

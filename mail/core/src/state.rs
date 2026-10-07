@@ -100,6 +100,14 @@ impl State {
         }
     }
 
+    /// What an account is busy with right now, for `--status`: a look that
+    /// hangs shows where.
+    pub async fn step(&self, account: &str, what: &str) {
+        if let Some(rt) = self.accounts.read().await.get(account) {
+            rt.diag.lock().unwrap()["step"] = json!({ "what": what, "at": crate::db::now() });
+        }
+    }
+
     /// Unread counts changed: tell everyone listening (the bar's badge).
     pub fn emit_unread(&self) {
         let (total, by) = {
