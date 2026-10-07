@@ -61,8 +61,11 @@ pub struct State {
     pub db: Mutex<Db>,
     pub accounts: RwLock<HashMap<String, Arc<AccountRt>>>,
     pub events: broadcast::Sender<String>,
-    /// Access tokens: account → (token, expires at).
-    pub tokens: tokio::sync::Mutex<HashMap<String, (String, i64)>>,
+    /// Access tokens: account → (token, good until). Timed by the monotonic
+    /// clock, not the wall clock: a wall clock put right by hours (a dual
+    /// boot with Windows keeps the hardware clock in local time) would have
+    /// an expired token look good for hours, or a good one expired.
+    pub tokens: tokio::sync::Mutex<HashMap<String, (String, std::time::Instant)>>,
     pub cache_dir: PathBuf,
     /// Wakes the scheduler: something was queued or snoozed.
     pub sched: Notify,

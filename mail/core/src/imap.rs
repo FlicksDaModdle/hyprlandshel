@@ -119,19 +119,54 @@ pub async fn credentials(state: &State, a: &Account) -> Result<Auth, String> {
     if a.auth == "oauth" {
         {
             let tokens = state.tokens.lock().await;
-            if let Some((t, exp)) = tokens.get(&a.id) {
-                if *exp > now() {
+            if let Some((t, until)) = tokens.get(&a.id) {
+                if *until > std::time::Instant::now() {
                     return Ok(Auth::OAuth(t.clone()));
                 }
             }
         }
         let (cid, secret) = oauth_client(state, &a.oauth_provider);
         let t = oauth::refresh(&a.id, &a.oauth_provider, &cid, &secret).await?;
-        state.tokens.lock().await.insert(a.id.clone(), (t.access.clone(), t.expires));
+        // How long it lasts, from now — `expires` was worked out from the
+        // wall clock a moment ago, so the difference is sound even if the
+        // wall clock isn't.
+        let lasts = (t.expires - now()).clamp(60, 24 * 3600) as u64;
+        let until = std::time::Instant::now() + Duration::from_secs(lasts);
+        state.tokens.lock().await.insert(a.id.clone(), (t.access.clone(), until));
         Ok(Auth::OAuth(t.access))
     } else {
         let p = secrets::load(&a.id, "password").await?.ok_or("No password saved for this account")?;
         Ok(Auth::Password(p))
+    }
+}
+
+/// Whether a sign-in failure was the server refusing the credentials, as
+/// opposed to not being reachable.
+pub fn refused(e: &str) -> bool {
+    let l = e.to_ascii_lowercase();
+    l.contains("authenticat") || l.contains("refused the password") || l.contains("invalid credentials")
+        || l.contains("login failed") || l.contains("535")
+}
+
+/// A connection, signed in. An access token the server turns away — it
+/// expired early, was revoked, or the clock said it was good when it
+/// wasn't — is thrown away and a fresh one tried before giving up; only if
+/// that is refused too has the sign-in really lapsed.
+pub async fn connect(state: &State, a: &Account) -> Result<Imap, String> {
+    let auth = credentials(state, a).await?;
+    match open(a, &auth).await {
+        Err(e) if a.auth == "oauth" && refused(&e) => {
+            state.tokens.lock().await.remove(&a.id);
+            let auth = credentials(state, a).await?;
+            open(a, &auth).await.map_err(|e| {
+                if refused(&e) {
+                    format!("Signed out — the server refused the sign-in ({}). Sign in again from the account's settings.", e)
+                } else {
+                    e
+                }
+            })
+        }
+        r => r,
     }
 }
 
@@ -309,8 +344,7 @@ pub async fn session<'a>(state: &'a State, rt: &'a AccountRt) -> Result<tokio::s
         *g = None;
     }
     let a = rt.account();
-    let auth = credentials(state, &a).await?;
-    *g = Some(open(&a, &auth).await?);
+    *g = Some(connect(state, &a).await?);
     Ok(g)
 }
 
@@ -487,8 +521,7 @@ async fn fetch(imap: &mut Imap, uids: &[u32], query: &str) -> Result<Vec<Fetch>,
 async fn reopen(state: &State, rt: &AccountRt, g: &mut tokio::sync::MutexGuard<'_, Option<Imap>>, folder: &str) -> Result<(), String> {
     **g = None;
     let a = rt.account();
-    let auth = credentials(state, &a).await?;
-    let mut i = open(&a, &auth).await?;
+    let mut i = connect(state, &a).await?;
     i.select(folder).await?;
     **g = Some(i);
     Ok(())
@@ -820,8 +853,7 @@ async fn idle_loop(state: Arc<State>, rt: Arc<AccountRt>) {
     loop {
         let a = rt.account();
         let result: Result<(), String> = async {
-            let auth = credentials(&state, &a).await?;
-            let mut imap = open(&a, &auth).await?;
+            let mut imap = connect(&state, &a).await?;
             if !imap.can_idle {
                 // No IDLE: look at the inbox every minute instead.
                 loop {

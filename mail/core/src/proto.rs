@@ -502,7 +502,7 @@ async fn oauth_begin(state: &Arc<State>, req: &Value) -> R {
                 };
                 match stored {
                     Ok(()) => {
-                        st.tokens.lock().await.insert(acct.clone(), (t.access.clone(), t.expires));
+                        st.tokens.lock().await.insert(acct.clone(), (t.access.clone(), std::time::Instant::now() + std::time::Duration::from_secs((t.expires - crate::db::now()).clamp(60, 24 * 3600) as u64)));
                         st.emit("oauth", json!({ "account": acct, "ok": true, "email": oauth::describe(&t)["email"] }));
                         if let Some(rt) = st.rt(&acct).await {
                             rt.wake.notify_one();
@@ -1040,7 +1040,15 @@ pub async fn deliver(state: &Arc<State>, rt: &Arc<AccountRt>, req: &Value) -> Re
     let req = &with_forwarded(state, req).await?;
     let msg = smtp::build(&a, req)?;
     let auth = imap::credentials(state, &a).await?;
-    smtp::send(&a, &auth, &msg).await?;
+    match smtp::send(&a, &auth, &msg).await {
+        // The token turned away: once more with a fresh one.
+        Err(e) if a.auth == "oauth" && imap::refused(&e) => {
+            state.tokens.lock().await.remove(&a.id);
+            let auth = imap::credentials(state, &a).await?;
+            smtp::send(&a, &auth, &msg).await?;
+        }
+        r => r?,
+    }
     {
         let db = state.db.lock().unwrap();
         for (n, e) in smtp::recipients(req) {
