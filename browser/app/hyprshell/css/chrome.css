@@ -83,6 +83,8 @@
 
   --panel-background-color: var(--hs-menu);
   --panel-text-color: var(--hs-ink);
+  --panel-color: var(--hs-ink);
+  --panel-description-color: var(--hs-ink3);
   --panel-border-color: var(--hs-edge);
   --panel-border-radius: var(--hs-r);
   --panel-separator-color: var(--hs-rule);
@@ -330,8 +332,12 @@
   box-shadow: inset 0 0 0 1px var(--hs-rule) !important;
   outline: none !important;
 }
-/* Focused: the accent ring, 2px, inside the pill. */
-:root[hyprshell] #urlbar[focused] > .urlbar-background {
+/* Focused: the accent ring, 2px, inside the pill — drawn on the row you
+ * type in, which stays the pill's size. On the background it would follow
+ * it when Firefox enlarges it behind the suggestions, and trace a second,
+ * larger outline round the top of the open panel. */
+:root[hyprshell] #urlbar[focused] .urlbar-input-container {
+  border-radius: var(--hs-r) !important;
   box-shadow: inset 0 0 0 2px var(--hs-accent) !important;
 }
 /* With suggestions open the pill grows into a panel — an opaque one, or the
@@ -343,7 +349,7 @@
   background: var(--hs-menu) !important;
   background-color: var(--hs-menu) !important;
   opacity: 1 !important;
-  box-shadow: inset 0 0 0 2px var(--hs-accent), 0 22px 52px -18px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 0 0 1px var(--hs-edge), 0 22px 52px -18px rgba(0, 0, 0, 0.5) !important;
 }
 /* The suggestions themselves. Newer Firefox no longer grows the pill into
  * the panel: the list is a box of its own under it, painted from a variable
@@ -353,8 +359,8 @@
   background: var(--hs-menu) !important;
   background-color: var(--hs-menu) !important;
   opacity: 1 !important;
-  border-radius: var(--hs-r) !important;
-  box-shadow: 0 0 0 1px var(--hs-edge), 0 22px 52px -18px rgba(0, 0, 0, 0.5) !important;
+  border-radius: 0 0 var(--hs-r) var(--hs-r) !important;
+  box-shadow: none !important;
 }
 :root[hyprshell] #urlbar .urlbar-input-container {
   padding-inline: 10px 6px !important;
@@ -502,6 +508,8 @@
 :root[hyprshell] menupopup {
   --panel-background-color: var(--hs-menu) !important;
   --panel-text-color: var(--hs-ink) !important;
+  --panel-color: var(--hs-ink) !important;
+  --panel-description-color: var(--hs-ink3) !important;
   --panel-border-color: var(--hs-edge) !important;
   --panel-border-radius: var(--hs-r) !important;
   --panel-padding: 8px 6px 6px !important;
@@ -565,12 +573,53 @@
 :root[hyprshell] #context-bookmarkpage { --menuitem-icon: url("resource://hyprshell/icons/star.svg") !important; list-style-image: url("resource://hyprshell/icons/star.svg") !important; }
 :root[hyprshell] #context-bookmarkpage[starred] { --menuitem-icon: url("resource://hyprshell/icons/star-filled.svg") !important; list-style-image: url("resource://hyprshell/icons/star-filled.svg") !important; color: var(--hs-accent) !important; }
 
+/* ══ form autofill ════════════════════════════════════════════════════════ */
+/* The list under a login or address field — "Use a Securely Generated
+ * Password", saved logins, "Manage Passwords". Its rows set their own
+ * colours, which were Firefox's light-theme ink on the shell's dark sheet. */
+
+:root[hyprshell] :is(#PopupAutoComplete, panel[type="autocomplete-richlistbox"]) {
+  color: var(--hs-ink) !important;
+}
+:root[hyprshell] :is(#PopupAutoComplete, panel[type="autocomplete-richlistbox"]) richlistitem {
+  color: var(--hs-ink) !important;
+  background-color: transparent !important;
+  border-radius: var(--hs-r-sm) !important;
+}
+:root[hyprshell] :is(#PopupAutoComplete, panel[type="autocomplete-richlistbox"])
+    :is(.ac-title, .ac-title-text, .line1-label, .ac-label) {
+  color: var(--hs-ink) !important;
+}
+:root[hyprshell] :is(#PopupAutoComplete, panel[type="autocomplete-richlistbox"])
+    :is(.ac-comment, .ac-secondary-text, .ac-url, .line2-label, .ac-status) {
+  color: var(--hs-ink3) !important;
+}
+:root[hyprshell] :is(#PopupAutoComplete, panel[type="autocomplete-richlistbox"])
+    richlistitem:is([selected], :hover) {
+  background-color: var(--hs-hover) !important;
+  color: var(--hs-ink) !important;
+}
+:root[hyprshell] :is(#PopupAutoComplete, panel[type="autocomplete-richlistbox"])
+    :is(.ac-site-icon, .ac-type-icon, image) {
+  -moz-context-properties: fill, fill-opacity;
+  fill: var(--hs-ink2) !important;
+}
+:root[hyprshell] :is(#PopupAutoComplete, panel[type="autocomplete-richlistbox"])
+    richlistitem[type="loginsFooter"],
+:root[hyprshell] :is(#PopupAutoComplete, panel[type="autocomplete-richlistbox"])
+    .autocomplete-richlistitem-footer {
+  color: var(--hs-ink2) !important;
+  border-top-color: var(--hs-rule) !important;
+}
+
 /* ══ panels ═══════════════════════════════════════════════════════════════ */
 /* The main menu, downloads, extensions, site information: the same sheet. */
 
 :root[hyprshell] panel {
   --panel-background-color: var(--hs-menu) !important;
   --panel-text-color: var(--hs-ink) !important;
+  --panel-color: var(--hs-ink) !important;
+  --panel-description-color: var(--hs-ink3) !important;
   --panel-border-color: var(--hs-edge) !important;
   --panel-border-radius: var(--hs-r) !important;
 }
