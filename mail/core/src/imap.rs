@@ -703,6 +703,10 @@ async fn idle_loop(state: Arc<State>, rt: Arc<AccountRt>) {
                 }
             }
             imap.select("INBOX").await?;
+            // Whatever arrived since the last look and before this
+            // connection was listening: IDLE only reports what comes next.
+            *rt.inbox_only.lock().unwrap() = true;
+            rt.wake.notify_one();
             let mut sess = imap.sess;
             loop {
                 let mut h = sess.idle();

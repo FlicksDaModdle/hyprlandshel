@@ -35,7 +35,37 @@ Item {
         const html = web.body.html
             .replace(/(\s(?:src|href|background|srcset)\s*=\s*["']?\s*)\/\//gi, "$1https://")
             .replace(/(url\(\s*["']?\s*)\/\//gi, "$1https://");
-        return web.withHead(html, extra);
+        return web.withHead(web.withFallbackFonts(html), extra);
+    }
+
+    // Mail names fonts this computer mostly hasn't got ("Open Sans",
+    // "Helvetica Neue", often Arial) and rarely a generic family after
+    // them, so WebEngine falls back to its standard font, which is a serif.
+    // Each font list without a generic family gets sans-serif added — in
+    // <style> blocks (not @font-face, where it would void the font), style
+    // attributes and <font face>.
+    readonly property var genericFont: /(^|,)\s*(serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-[a-z-]+|emoji|math|inherit|initial|unset|revert|revert-layer)\s*(,|$)|var\(/i
+    function fontsCss(css) {
+        return css.replace(/(^|[;{\s])(font-family|font)(\s*:\s*)((?:&#?[a-z0-9]+;|[^;}!<>])+)/gi, (m, pre, prop, colon, value) => {
+            const v = value.replace(/\s+$/, "");
+            if (v === "" || web.genericFont.test(v)) return m;
+            // The shorthand's one-word forms are keywords (caption, menu…).
+            if (prop.toLowerCase() === "font" && !/\s/.test(v)) return m;
+            return pre + prop + colon + v + ", sans-serif" + value.slice(v.length);
+        });
+    }
+    function withFallbackFonts(html) {
+        return html
+            .replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style\s*>)/gi, (m, open, css, close) =>
+                open + css.split(/(@font-face\s*\{[^}]*\})/i).map((part, i) => i % 2 ? part : web.fontsCss(part)).join("") + close)
+            .replace(/(\sstyle\s*=\s*)(?:"([^"]*)"|'([^']*)')/gi, (m, attr, dq, sq) =>
+                dq !== undefined ? attr + '"' + web.fontsCss(dq) + '"' : attr + "'" + web.fontsCss(sq) + "'")
+            .replace(/(<font\b[^>]*?\sface\s*=\s*)(?:"([^"]*)"|'([^']*)')/gi, (m, attr, dq, sq) => {
+                const v = dq !== undefined ? dq : sq;
+                if (web.genericFont.test(v)) return m;
+                const q = dq !== undefined ? '"' : "'";
+                return attr + q + v + ",sans-serif" + q;
+            });
     }
     function withHead(html, extra) {
         const head = /<head(\s[^>]*)?>/i.exec(html);
