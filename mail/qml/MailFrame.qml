@@ -258,6 +258,20 @@ PanelSurface {
             if (id > 0) Mail.open(id);
         }
         if (MailApp.startCompose !== "") frame.composeMailto(MailApp.startCompose);
+        if (MailApp.startAccount !== "") { frame.pendingSetup = MailApp.startAccount; frame.setupPending(); }
+    }
+    // An account's settings, asked for before the accounts have arrived.
+    property string pendingSetup: ""
+    function setupPending() {
+        if (frame.pendingSetup === "") return;
+        const a = Mail.accounts.find(x => x.id === frame.pendingSetup);
+        if (!a) return;
+        frame.pendingSetup = "";
+        frame.openSetup(a);
+    }
+    Connections {
+        target: Mail
+        function onAccountsChanged() { frame.setupPending(); }
     }
     function composeMailto(url) {
         // mailto:a@b?subject=…&cc=…&body=…

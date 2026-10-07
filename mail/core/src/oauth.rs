@@ -246,12 +246,21 @@ async fn token_request(url: &str, form: &[(&str, String)]) -> Result<Tokens, Str
     let status = resp.status();
     let v: Value = resp.json().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
-        return Err(v
+        let code = v.get("error").and_then(|e| e.as_str()).unwrap_or("");
+        let said = v
             .get("error_description")
             .or_else(|| v.get("error"))
             .and_then(|e| e.as_str())
-            .unwrap_or("The token request was refused")
-            .to_string());
+            .unwrap_or("The token request was refused");
+        // The sign-in itself is over — expired, revoked, a password change,
+        // or an organisation that asks for a fresh sign-in every so often
+        // (a school's "sign in again every 12 hours"). Retrying can't help;
+        // signing in again does. Microsoft's own words follow, first line.
+        if matches!(code, "invalid_grant" | "interaction_required" | "consent_required" | "login_required") {
+            let first = said.lines().next().unwrap_or(said);
+            return Err(format!("Signed out — sign in again from the account's settings. ({})", first));
+        }
+        return Err(said.to_string());
     }
     let access = v.get("access_token").and_then(|t| t.as_str()).ok_or("No access token in the answer")?;
     let expires_in = v.get("expires_in").and_then(|t| t.as_i64()).unwrap_or(3600);

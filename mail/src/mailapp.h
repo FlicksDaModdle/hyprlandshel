@@ -22,6 +22,7 @@ class MailApp : public QObject {
     Q_PROPERTY(bool hasWebEngine READ hasWebEngine CONSTANT)
     Q_PROPERTY(QString startMessage READ startMessage NOTIFY startChanged)
     Q_PROPERTY(QString startCompose READ startCompose NOTIFY startChanged)
+    Q_PROPERTY(QString startAccount READ startAccount NOTIFY startChanged)
     // Whether the Files app is installed, whose dialog is used for saving.
     Q_PROPERTY(bool hasFiles READ hasFiles CONSTANT)
 
@@ -38,6 +39,7 @@ public:
     bool hasWebEngine() const;
     QString startMessage() const { return m_message; }
     QString startCompose() const { return m_compose; }
+    QString startAccount() const { return m_account; }
     // Arguments from the command line, or from a second launch.
     void takeArguments(const QStringList &args);
 
@@ -84,4 +86,5 @@ private:
     QList<QPointer<class QProcess>> m_picks;
     QString m_message;
     QString m_compose;
+    QString m_account;
 };

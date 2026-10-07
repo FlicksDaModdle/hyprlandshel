@@ -93,12 +93,14 @@ bool MailApp::hasWebEngine() const {
 }
 
 // --message=ID opens a message; mailto:… (as given by a browser or by
-// xdg-open) or --compose opens a new one.
+// xdg-open) or --compose opens a new one; --account=ID that account's
+// settings (the daemon's "signed out" notification).
 void MailApp::takeArguments(const QStringList &args) {
     for (const QString &a : args.mid(1)) {
         if (a.startsWith(QLatin1String("--message="))) m_message = a.mid(10);
         else if (a.startsWith(QLatin1String("mailto:"))) m_compose = a;
         else if (a == QLatin1String("--compose")) m_compose = QStringLiteral("mailto:");
+        else if (a.startsWith(QLatin1String("--account="))) m_account = a.mid(10);
     }
     emit startChanged();
     emit raiseRequested();

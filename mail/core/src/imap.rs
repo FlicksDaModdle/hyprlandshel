@@ -471,6 +471,99 @@ const PER_FOLDER: usize = 2000;
 
 /// Brings one folder's cache up to date. Returns the new unread messages,
 /// for notifications.
+/// One UID FETCH, read to the end.
+async fn fetch(imap: &mut Imap, uids: &[u32], query: &str) -> Result<Vec<Fetch>, String> {
+    imap.sess
+        .uid_fetch(set(uids), query)
+        .await
+        .map_err(|e| e.to_string())?
+        .try_collect()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// A fresh connection in place of one a failed command may have left
+/// half-way through a response, on the same folder.
+async fn reopen(state: &State, rt: &AccountRt, g: &mut tokio::sync::MutexGuard<'_, Option<Imap>>, folder: &str) -> Result<(), String> {
+    **g = None;
+    let a = rt.account();
+    let auth = credentials(state, &a).await?;
+    let mut i = open(&a, &auth).await?;
+    i.select(folder).await?;
+    **g = Some(i);
+    Ok(())
+}
+
+/// FETCH `query` for `uids` all at once; failing that, one at a time, each
+/// on a connection that is sound; failing that for one, `fallback` (the
+/// headers) for it; failing that, it is passed over — remembered as
+/// unreadable and said in the journal — and the rest go on.
+async fn fetch_each(
+    state: &State,
+    rt: &AccountRt,
+    g: &mut tokio::sync::MutexGuard<'_, Option<Imap>>,
+    folder: &str,
+    uids: &[u32],
+    query: &str,
+    fallback: Option<&str>,
+) -> Result<Vec<Fetch>, String> {
+    if uids.is_empty() {
+        return Ok(vec![]);
+    }
+    // What came back is checked against what was asked for: a connection
+    // that drops part-way through a FETCH ends the answer early without an
+    // error, and the messages it never got to looked like no new mail at all
+    // — on every look, with nothing said.
+    let got_all = |v: &[Fetch], want: &[u32]| {
+        let have: HashSet<u32> = v.iter().filter_map(|f| f.uid).collect();
+        want.iter().filter(|u| !have.contains(u)).copied().collect::<Vec<u32>>()
+    };
+    let first = match g.as_mut() {
+        Some(i) => fetch(i, uids, query).await,
+        None => Err("Not connected".into()),
+    };
+    let id = rt.id();
+    let (mut out, rest) = match first {
+        Ok(v) => {
+            let missing = got_all(&v, uids);
+            if missing.is_empty() {
+                return Ok(v);
+            }
+            eprintln!("hyprshell-maild: {} {}: {} of {} messages did not come; one at a time", id, folder, missing.len(), uids.len());
+            (v, missing)
+        }
+        Err(e) => {
+            eprintln!("hyprshell-maild: {} {}: fetching {} messages failed ({}); one at a time", id, folder, uids.len(), e);
+            (vec![], uids.to_vec())
+        }
+    };
+    for u in rest {
+        reopen(state, rt, g, folder).await?;
+        match fetch(g.as_mut().unwrap(), &[u], query).await {
+            Ok(mut v) if got_all(&v, &[u]).is_empty() => {
+                out.append(&mut v);
+                continue;
+            }
+            Ok(_) => eprintln!("hyprshell-maild: {} {}: message {} did not come", id, folder, u),
+            Err(e) => eprintln!("hyprshell-maild: {} {}: message {} failed: {}", id, folder, u, e),
+        }
+        if let Some(fb) = fallback {
+            reopen(state, rt, g, folder).await?;
+            if let Ok(mut v) = fetch(g.as_mut().unwrap(), &[u], fb).await {
+                if got_all(&v, &[u]).is_empty() {
+                    out.append(&mut v);
+                    continue;
+                }
+            }
+        }
+        eprintln!("hyprshell-maild: {} {}: message {} passed over", id, folder, u);
+        rt.unreadable.lock().unwrap().insert((folder.to_string(), u));
+    }
+    // Leave a sound connection behind for whatever comes next.
+    reopen(state, rt, g, folder).await?;
+    Ok(out)
+}
+
 pub async fn sync_folder(state: &State, rt: &AccountRt, folder: &str) -> Result<Vec<(i64, parse::Summary)>, String> {
     let a = rt.account();
     let id = a.id.clone();
@@ -532,18 +625,21 @@ pub async fn sync_folder(state: &State, rt: &AccountRt, folder: &str) -> Result<
     // What has fallen out of the window keeps, until it is deleted: the
     // cache only grows by the window, it never forgets what it has.
 
-    // New mail.
-    let wanted: Vec<u32> = window.iter().copied().filter(|u| !known.contains_key(u)).collect();
+    // New mail. One message the server won't hand over, or hands over in a
+    // form the IMAP library can't read, used to fail the whole folder — on
+    // every look from then on, so nothing that came after it ever arrived.
+    // A batch that fails is taken again one message at a time on a fresh
+    // connection; a message that fails on its own is tried for its headers
+    // alone, and passed over if even those won't come.
+    let skip = rt.unreadable.lock().unwrap().clone();
+    let wanted: Vec<u32> = window
+        .iter()
+        .copied()
+        .filter(|u| !known.contains_key(u) && !skip.contains(&(folder.to_string(), *u)))
+        .collect();
     let mut fresh = vec![];
     for chunk in wanted.chunks(100) {
-        let sizes: Vec<Fetch> = imap
-            .sess
-            .uid_fetch(set(chunk), "(UID RFC822.SIZE)")
-            .await
-            .map_err(|e| e.to_string())?
-            .try_collect()
-            .await
-            .map_err(|e| e.to_string())?;
+        let sizes = fetch_each(state, rt, &mut g, folder, chunk, "(UID RFC822.SIZE)", None).await?;
         let mut small = vec![];
         let mut big = vec![];
         for f in &sizes {
@@ -555,20 +651,20 @@ pub async fn sync_folder(state: &State, rt: &AccountRt, folder: &str) -> Result<
                 }
             }
         }
-        for (uids, query, full) in [(small, "(UID FLAGS RFC822.SIZE BODY.PEEK[])", true), (big, "(UID FLAGS RFC822.SIZE BODY.PEEK[HEADER])", false)] {
+        const WHOLE: &str = "(UID FLAGS RFC822.SIZE BODY.PEEK[])";
+        const HEADER: &str = "(UID FLAGS RFC822.SIZE BODY.PEEK[HEADER])";
+        for (uids, query) in [(small, WHOLE), (big, HEADER)] {
             for part in uids.chunks(25) {
-                let got: Vec<Fetch> = imap
-                    .sess
-                    .uid_fetch(set(part), query)
-                    .await
-                    .map_err(|e| e.to_string())?
-                    .try_collect()
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let got = fetch_each(state, rt, &mut g, folder, part, query, Some(HEADER)).await?;
                 for f in got {
                     let Some(uid) = f.uid else { continue };
-                    let raw = if full { f.body() } else { f.header() };
-                    let Some(raw) = raw else { continue };
+                    // Whole if the whole came, else the headers (the rest
+                    // is fetched when the message is opened).
+                    let (raw, full) = match (f.body(), f.header()) {
+                        (Some(b), _) => (b, true),
+                        (None, Some(h)) => (h, false),
+                        _ => continue,
+                    };
                     let flags: Vec<Flag> = f.flags().map(|x| match x {
                         Flag::Seen => Flag::Seen,
                         Flag::Flagged => Flag::Flagged,
@@ -587,18 +683,19 @@ pub async fn sync_folder(state: &State, rt: &AccountRt, folder: &str) -> Result<
         state.emit("changed", json!({ "account": id, "folder": folder }));
     }
 
-    // Flags of what is already here.
+    // Flags of what is already here. Not worth the new mail: a failure
+    // here is said in the journal and left for the next look.
     let keep: Vec<u32> = known.keys().copied().filter(|u| present.contains(u)).collect();
     let mut flag_changes = 0;
     for chunk in keep.chunks(500) {
-        let got: Vec<Fetch> = imap
-            .sess
-            .uid_fetch(set(chunk), "(UID FLAGS)")
-            .await
-            .map_err(|e| e.to_string())?
-            .try_collect()
-            .await
-            .map_err(|e| e.to_string())?;
+        let got = match fetch(g.as_mut().ok_or("Not connected")?, chunk, "(UID FLAGS)").await {
+            Ok(got) => got,
+            Err(e) => {
+                eprintln!("hyprshell-maild: {} {}: reading flags: {}", id, folder, e);
+                *g = None;
+                break;
+            }
+        };
         let db = state.db.lock().unwrap();
         for f in got {
             let Some(uid) = f.uid else { continue };
@@ -688,6 +785,13 @@ async fn sync_loop(state: Arc<State>, rt: Arc<AccountRt>) {
             }
             Err(e) => {
                 let signin = e.contains("Signed out") || e.contains("refused the password") || e.contains("No password");
+                eprintln!("hyprshell-maild: {}: {}", rt.id(), e);
+                // Signed out: said once, as a notification too — the error
+                // in Mail's sidebar is no use with Mail closed, and mail
+                // stops until it is seen to.
+                if signin && rt.status.lock().unwrap().as_str() != "signin" {
+                    tell_signed_out(&rt.account());
+                }
                 state.set_status(&rt, if signin { "signin" } else { "error" }, &e);
                 *rt.imap.lock().await = None;
                 let wait = if signin { 3600 } else { backoff };
@@ -766,6 +870,26 @@ pub fn notify_icon() -> String {
         }
     }
     "hyprshell-mail".to_string()
+}
+
+/// "Sign in again", as a notification that opens the account's settings.
+fn tell_signed_out(a: &Account) {
+    let who = if a.name.is_empty() { a.email.clone() } else { a.name.clone() };
+    let id = a.id.clone();
+    tokio::spawn(async move {
+        let mut cmd = tokio::process::Command::new("notify-send");
+        let icon = notify_icon();
+        cmd.args(["-a", "Mail", "-i", &icon, "-h", "string:desktop-entry:hyprshell-mail", "-u", "critical",
+                  "-A", "open=Sign in", "--wait",
+                  &format!("{} is signed out", who),
+                  "No new mail will arrive for it until you sign in again."]);
+        cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+        if let Ok(out) = cmd.output().await {
+            if String::from_utf8_lossy(&out.stdout).trim() == "open" {
+                let _ = tokio::process::Command::new("hyprshell-mail").arg(format!("--account={}", id)).spawn();
+            }
+        }
+    });
 }
 
 /// New mail: a notification per message, or one for several.

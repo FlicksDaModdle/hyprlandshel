@@ -24,6 +24,10 @@ pub struct AccountRt {
     pub tasks: Mutex<Vec<JoinHandle<()>>>,
     /// The inbox has been through one sync: new mail after that is news.
     pub primed: Mutex<bool>,
+    /// Messages the server would not give us, or gave in a form that could
+    /// not be read: (folder, uid). Passed over for as long as this runs, so
+    /// one bad message can't stop everything after it arriving.
+    pub unreadable: Mutex<std::collections::HashSet<(String, u32)>>,
 }
 
 impl AccountRt {
@@ -37,6 +41,7 @@ impl AccountRt {
             error: Mutex::new(String::new()),
             tasks: Mutex::new(vec![]),
             primed: Mutex::new(false),
+            unreadable: Mutex::new(Default::default()),
         }
     }
     pub fn account(&self) -> Account {
