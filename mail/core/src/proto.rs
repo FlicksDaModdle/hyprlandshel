@@ -77,6 +77,7 @@ pub async fn handle(state: &Arc<State>, req: &Value) -> R {
 
         // ── accounts ──
         "accounts.list" => accounts_list(state).await,
+        "diag" => diag(state).await,
         "accounts.autoconfig" => Ok(account::autoconfig(s(req, "email")).await),
         "accounts.preset" => Ok(account::preset(s(req, "provider")).unwrap_or(Value::Null)),
         "accounts.test" => accounts_test(state, req).await,
@@ -306,6 +307,35 @@ async fn accounts_list(state: &Arc<State>) -> R {
         out.push(v);
     }
     Ok(json!(out))
+}
+
+/// For `hyprshell-maild --status`: each account's state, what the server
+/// last said about its inbox, and what is kept of it here.
+async fn diag(state: &Arc<State>) -> R {
+    let accts: Vec<Arc<AccountRt>> = state.accounts.read().await.values().cloned().collect();
+    let mut out = vec![];
+    for rt in accts {
+        let a = rt.account();
+        let (kept, newest): (i64, Option<i64>) = {
+            let db = state.db.lock().unwrap();
+            db.conn
+                .query_row(
+                    "SELECT COUNT(*), MAX(sort_date) FROM messages WHERE account = ? AND folder = 'INBOX'",
+                    [&a.id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap_or((0, None))
+        };
+        out.push(json!({
+            "id": a.id, "name": a.name, "email": a.email, "host": a.imap_host, "auth": a.auth,
+            "enabled": a.enabled,
+            "status": *rt.status.lock().unwrap(), "error": *rt.error.lock().unwrap(),
+            "running": rt.tasks.lock().unwrap().iter().filter(|t| !t.is_finished()).count(),
+            "inboxKept": kept, "inboxNewestDate": newest,
+            "diag": rt.diag.lock().unwrap().clone(),
+        }));
+    }
+    Ok(json!({ "now": crate::db::now(), "accounts": out }))
 }
 
 fn account_from(req: &Value) -> Result<Account, String> {

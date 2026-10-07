@@ -671,6 +671,21 @@ pub async fn sync_folder(state: &State, rt: &AccountRt, folder: &str) -> Result<
         .filter(|u| !known.contains_key(u) && !skip.contains(&(folder.to_string(), *u)))
         .collect();
     let mut fresh = vec![];
+    let inbox = folder.eq_ignore_ascii_case("INBOX");
+    if inbox {
+        rt.diag.lock().unwrap()["inbox"] = json!({
+            "at": now(),
+            "serverCount": mb.exists,
+            "serverNextUid": mb.uid_next,
+            "inWindow": window.len(),
+            "newestOnServer": window.first(),
+            "keptHere": known.len(),
+            "newestKept": known.keys().max(),
+            "toFetch": wanted.len(),
+            "passedOver": skip.iter().filter(|(f, _)| f == folder).count(),
+        });
+    }
+    let mut stored = 0usize;
     for chunk in wanted.chunks(100) {
         let sizes = fetch_each(state, rt, &mut g, folder, chunk, "(UID RFC822.SIZE)", None).await?;
         let mut small = vec![];
@@ -705,6 +720,7 @@ pub async fn sync_folder(state: &State, rt: &AccountRt, folder: &str) -> Result<
                         _ => Flag::Recent,
                     }).collect();
                     if let Some((mid, s)) = insert_message(state, &id, folder, uid, &flags, raw, full, f.size.unwrap_or(0)) {
+                        stored += 1;
                         let seen = flags.iter().any(|x| matches!(x, Flag::Seen));
                         if !seen {
                             fresh.push((mid, s));
@@ -714,6 +730,13 @@ pub async fn sync_folder(state: &State, rt: &AccountRt, folder: &str) -> Result<
             }
         }
         state.emit("changed", json!({ "account": id, "folder": folder }));
+    }
+
+    if inbox {
+        rt.diag.lock().unwrap()["inbox"]["stored"] = json!(stored);
+        if stored > 0 {
+            eprintln!("hyprshell-maild: {} INBOX: {} new", id, stored);
+        }
     }
 
     // Flags of what is already here. Not worth the new mail: a failure
@@ -806,6 +829,7 @@ async fn sync_loop(state: Arc<State>, rt: Arc<AccountRt>) {
     let mut inbox_only = false;
     loop {
         state.set_status(&rt, "syncing", "");
+        rt.diag.lock().unwrap()["lastTry"] = json!(now());
         // However long a first sync of a big mailbox takes, not forever: a
         // look that stalls is given up and the next one starts afresh.
         let looked = tokio::time::timeout(Duration::from_secs(15 * 60), sync_once(&state, &rt, inbox_only))
@@ -814,11 +838,17 @@ async fn sync_loop(state: Arc<State>, rt: Arc<AccountRt>) {
         match looked {
             Ok(()) => {
                 backoff = 15;
+                rt.diag.lock().unwrap()["lastOk"] = json!(now());
                 state.set_status(&rt, "idle", "");
             }
             Err(e) => {
                 let signin = e.contains("Signed out") || e.contains("refused the password") || e.contains("No password");
                 eprintln!("hyprshell-maild: {}: {}", rt.id(), e);
+                {
+                    let mut d = rt.diag.lock().unwrap();
+                    d["lastError"] = json!(e);
+                    d["lastErrorAt"] = json!(now());
+                }
                 // Signed out: said once, as a notification too — the error
                 // in Mail's sidebar is no use with Mail closed, and mail
                 // stops until it is seen to.
@@ -863,6 +893,7 @@ async fn idle_loop(state: Arc<State>, rt: Arc<AccountRt>) {
                 }
             }
             imap.select("INBOX").await?;
+            rt.diag.lock().unwrap()["idle"] = json!({ "listeningSince": now() });
             // Whatever arrived since the last look and before this
             // connection was listening: IDLE only reports what comes next.
             *rt.inbox_only.lock().unwrap() = true;
@@ -883,7 +914,11 @@ async fn idle_loop(state: Arc<State>, rt: Arc<AccountRt>) {
             }
         }
         .await;
-        if let Err(_e) = result {
+        if let Err(e) = result {
+            // Said, not swallowed: without IDLE, new mail waits for the
+            // five-minute look.
+            eprintln!("hyprshell-maild: {} IDLE: {}", rt.id(), e);
+            rt.diag.lock().unwrap()["idle"] = json!({ "error": e, "at": now() });
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
     }

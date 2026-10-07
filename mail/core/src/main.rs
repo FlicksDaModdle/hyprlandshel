@@ -43,6 +43,7 @@ async fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let (mut data, cache, mut sock) = dirs();
     let args: Vec<String> = std::env::args().collect();
+    let mut status_mode = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -50,11 +51,17 @@ async fn main() {
             "--data" if i + 1 < args.len() => { data = PathBuf::from(&args[i + 1]); i += 1; }
             "--help" | "-h" => {
                 println!("hyprshell-maild [--socket PATH] [--data DIR]");
+                println!("hyprshell-maild --status     what each account is doing, from the running service");
                 return;
             }
+            "--status" => status_mode = true,
             _ => {}
         }
         i += 1;
+    }
+    if status_mode {
+        print_status(&sock);
+        return;
     }
     // Only you can read the cache. What you save elsewhere gets the
     // permissions you would otherwise have given it (proto::part_save).
@@ -177,6 +184,91 @@ async fn client(state: Arc<State>, stream: UnixStream) {
 
 /// Every twenty seconds: snoozed mail whose time has come, and mail
 /// scheduled to send.
+/// `--status`: asks the running service, and says it in words.
+fn print_status(sock: &std::path::Path) {
+    use std::io::{BufRead, Write};
+    let mut c = match std::os::unix::net::UnixStream::connect(sock) {
+        Ok(c) => c,
+        Err(e) => {
+            println!("The mail service isn't running ({}: {}).", sock.display(), e);
+            println!("Start it with: systemctl --user start hyprshell-maild");
+            return;
+        }
+    };
+    let _ = c.set_read_timeout(Some(Duration::from_secs(10)));
+    let _ = c.write_all(b"{\"rid\":1,\"cmd\":\"diag\"}\n");
+    let mut line = String::new();
+    let mut r = std::io::BufReader::new(c);
+    // Events may come first; the answer is the line with our rid.
+    let v: Value = loop {
+        line.clear();
+        if r.read_line(&mut line).unwrap_or(0) == 0 {
+            println!("The mail service didn't answer (it may be an older version: reinstall with mail/install.sh).");
+            return;
+        }
+        let v: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
+        if v.get("rid").and_then(|x| x.as_i64()) == Some(1) {
+            break v;
+        }
+    };
+    if v["ok"] != json!(true) {
+        println!("The mail service is an older version without --status: reinstall with mail/install.sh.");
+        return;
+    }
+    let res = &v["result"];
+    let now = res["now"].as_i64().unwrap_or(0);
+    let when = |t: &Value| -> String {
+        match t.as_i64() {
+            Some(t) if t > 0 => {
+                let ago = now - t;
+                let at = chrono::DateTime::from_timestamp(t, 0)
+                    .map(|d| d.with_timezone(&chrono::Local).format("%a %H:%M").to_string())
+                    .unwrap_or_default();
+                if ago < 60 { format!("{} (just now)", at) }
+                else if ago < 3600 { format!("{} ({} min ago)", at, ago / 60) }
+                else if ago < 86400 { format!("{} ({} h ago)", at, ago / 3600) }
+                else { format!("{} ({} days ago)", at, ago / 86400) }
+            }
+            _ => "never".into(),
+        }
+    };
+    for a in res["accounts"].as_array().cloned().unwrap_or_default() {
+        let d = &a["diag"];
+        println!("{} <{}>  [{}]", a["name"].as_str().unwrap_or(""), a["email"].as_str().unwrap_or(""), a["id"].as_str().unwrap_or(""));
+        println!("  server        {} ({})", a["host"].as_str().unwrap_or(""), a["auth"].as_str().unwrap_or(""));
+        println!("  state         {}{}", a["status"].as_str().unwrap_or(""),
+                 if a["enabled"] == json!(false) { " — turned off" } else { "" });
+        if let Some(e) = a["error"].as_str().filter(|e| !e.is_empty()) {
+            println!("  error         {}", e);
+        }
+        println!("  loops running {} of 2", a["running"]);
+        println!("  last look     {}", when(&d["lastTry"]));
+        println!("  last good one {}", when(&d["lastOk"]));
+        if d["lastError"].is_string() {
+            println!("  last failure  {} — {}", when(&d["lastErrorAt"]), d["lastError"].as_str().unwrap_or(""));
+        }
+        let i = &d["inbox"];
+        if i.is_object() {
+            println!("  inbox, server {} messages; {} in the last 60 days, newest uid {}; next uid {}",
+                     i["serverCount"], i["inWindow"], i["newestOnServer"], i["serverNextUid"]);
+            println!("  inbox, here   {} kept, newest uid {}; {} to fetch, {} stored, {} passed over (looked {})",
+                     i["keptHere"], i["newestKept"], i["toFetch"], i["stored"], i["passedOver"], when(&i["at"]));
+        } else {
+            println!("  inbox         not looked at yet");
+        }
+        println!("  newest kept   {}", when(&a["inboxNewestDate"]));
+        let idle = &d["idle"];
+        if let Some(e) = idle["error"].as_str() {
+            println!("  new-mail push failing ({}): {}", when(&idle["at"]), e);
+        } else if idle["listeningSince"].is_i64() {
+            println!("  new-mail push listening since {}", when(&idle["listeningSince"]));
+        } else {
+            println!("  new-mail push not started");
+        }
+        println!();
+    }
+}
+
 /// Back from sleep: every connection made before it is as good as gone,
 /// and mail has very likely arrived. Rather than wait for each to be found
 /// dead, start every account afresh — new connections, a look at once.

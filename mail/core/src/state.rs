@@ -28,6 +28,10 @@ pub struct AccountRt {
     /// not be read: (folder, uid). Passed over for as long as this runs, so
     /// one bad message can't stop everything after it arriving.
     pub unreadable: Mutex<std::collections::HashSet<(String, u32)>>,
+    /// What the last looks found, for `hyprshell-maild --status`: when it
+    /// last looked and last succeeded, the inbox as the server described it
+    /// against what is kept here, and how IDLE is doing.
+    pub diag: Mutex<Value>,
 }
 
 impl AccountRt {
@@ -42,6 +46,7 @@ impl AccountRt {
             tasks: Mutex::new(vec![]),
             primed: Mutex::new(false),
             unreadable: Mutex::new(Default::default()),
+            diag: Mutex::new(json!({})),
         }
     }
     pub fn account(&self) -> Account {
