@@ -329,10 +329,22 @@
 :root[hyprshell] #urlbar[focused] > .urlbar-background {
   box-shadow: inset 0 0 0 2px var(--hs-accent) !important;
 }
-/* With suggestions open the pill grows into a panel. */
-:root[hyprshell] #urlbar[open] > .urlbar-background {
+/* With suggestions open the pill grows into a panel — an opaque one, or the
+ * page shows through the suggestions. Firefox has said "open" in more than
+ * one way ([open], [breakout-extend], the view as a popover), and the
+ * background has not always been a direct child: every one of them, so a
+ * Firefox update can't quietly make it see-through again. */
+:root[hyprshell] #urlbar:is([open], [breakout-extend], :has(.urlbarView:popover-open)) .urlbar-background {
   background: var(--hs-menu) !important;
+  background-color: var(--hs-menu) !important;
+  opacity: 1 !important;
   box-shadow: inset 0 0 0 2px var(--hs-accent), 0 22px 52px -18px rgba(0, 0, 0, 0.5) !important;
+}
+/* And the variables Firefox paints the open field from itself — both
+ * spellings it has used — so nothing it draws there is see-through either. */
+:root[hyprshell] #urlbar:is([open], [breakout-extend]) {
+  --toolbar-field-focus-background-color: var(--hs-menu) !important;
+  --toolbar-field-background-color-focus: var(--hs-menu) !important;
 }
 :root[hyprshell] #urlbar .urlbar-input-container {
   padding-inline: 10px 6px !important;
