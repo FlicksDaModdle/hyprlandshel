@@ -26,6 +26,7 @@ Item {
     property bool busy: false
     property bool showServers: false
     property bool appPassword: false
+    property string hostedNote: ""
 
     readonly property bool useOAuth: (setup.kind === "google" && !setup.appPassword) || setup.kind === "microsoft"
     readonly property string provider: setup.kind === "google" ? "google" : "microsoft"
@@ -37,6 +38,7 @@ Item {
         setup.busy = false;
         setup.appPassword = false;
         setup.pendingId = "";
+        setup.hostedNote = "";
         if (setup.editing) {
             const a = setup.account;
             setup.kind = a.provider === "gmail" ? "google" : a.provider === "outlook" ? "microsoft" : "other";
@@ -69,8 +71,12 @@ Item {
             setup.busy = false;
             if (!ok) return;
             // A school on Google Workspace or Microsoft 365 is either of those.
-            if (r.hosted === "google") { setup.kind = "google"; setup.cfg = r; return; }
-            if (r.hosted === "microsoft") { setup.kind = "microsoft"; setup.cfg = r; return; }
+            if (r.hosted === "google") { setup.kind = "google"; setup.cfg = r; setup.hostedNote = "This address's mail is on Google Workspace, so it signs in with Google."; return; }
+            if (r.hosted === "microsoft") {
+                setup.kind = "microsoft"; setup.cfg = r;
+                setup.hostedNote = (r.organisation ? r.organisation + "'s" : "This address's") + " mail is on Microsoft 365, so it signs in with Microsoft — passwords alone aren't accepted there.";
+                return;
+            }
             setup.cfg = r;
             if (!r.found) setup.showServers = true;
         });
@@ -218,6 +224,15 @@ Item {
                     Field { id: email; width: parent.width; label: "Email"; placeholder: "you@example.com"; onAccepted: setup.lookup(); onFocusLost: setup.lookup(); readOnly: setup.editing }
                     Field { id: display; width: parent.width; label: "Your name"; placeholder: "As people see it" }
                     Field { id: name; width: parent.width; label: "Call it"; placeholder: setup.kind === "other" ? "School" : "Personal" }
+
+                    StyledText {
+                        visible: setup.hostedNote !== ""
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: setup.hostedNote
+                        font.pixelSize: Appearance.fs(12)
+                        color: Appearance.accent
+                    }
 
                     // Google: browser sign-in, or an app password.
                     Row {

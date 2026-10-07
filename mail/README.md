@@ -102,8 +102,15 @@ Once, free, about five minutes:
 
 ### Making a Microsoft client ID
 
-1. Go to <https://entra.microsoft.com> (or portal.azure.com) → *App
-   registrations → New registration*.
+1. Go to <https://entra.microsoft.com> → *App registrations → New
+   registration*. Which account you sign in to the portal with matters:
+   - a **school or work account** usually can (unless your organisation has
+     turned app registration off), and the app works for personal accounts
+     too if you pick the account type below;
+   - a **personal** account (Hotmail, Outlook.com) can't on its own — it
+     needs a directory first, which signing up for the free Azure account at
+     <https://azure.microsoft.com/free> makes (it asks for a phone and a card
+     to check you are a person).
 2. Name: anything. Supported account types: **Accounts in any organizational
    directory and personal Microsoft accounts**.
 3. Redirect URI: platform **Public client/native (mobile & desktop)**,

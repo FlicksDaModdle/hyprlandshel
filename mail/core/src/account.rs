@@ -147,6 +147,33 @@ pub async fn autoconfig(email: &str) -> Value {
         return v;
     }
 
+    // Microsoft's own answer: is this domain a Microsoft 365 organisation?
+    // Catches the schools and companies whose mail passes through a filter
+    // (Proofpoint, Mimecast, the university's own relay) first, which hides
+    // Microsoft from the MX record.
+    if let Ok(r) = client
+        .get(format!(
+            "https://login.microsoftonline.com/getuserrealm.srf?login={}&json=1",
+            email.replace('+', "%2B")
+        ))
+        .send()
+        .await
+    {
+        if let Ok(v) = r.json::<Value>().await {
+            let kind = v.get("NameSpaceType").and_then(|x| x.as_str()).unwrap_or("");
+            if kind == "Managed" || kind == "Federated" {
+                let mut out = preset("outlook").unwrap();
+                out["found"] = json!(true);
+                out["hosted"] = json!("microsoft");
+                out["smtpHost"] = json!("smtp.office365.com");
+                if let Some(org) = v.get("FederationBrandName").and_then(|x| x.as_str()) {
+                    out["organisation"] = json!(org);
+                }
+                return out;
+            }
+        }
+    }
+
     // Thunderbird's provider database.
     for url in [
         format!("https://autoconfig.thunderbird.net/v1.1/{}", domain),

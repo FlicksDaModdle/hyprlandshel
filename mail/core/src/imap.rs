@@ -158,7 +158,14 @@ pub async fn open(a: &Account, auth: &Auth) -> Result<Imap, String> {
     let tcp = tokio::time::timeout(Duration::from_secs(20), TcpStream::connect((host, a.imap_port)))
         .await
         .map_err(|_| format!("{} did not answer", host))?
-        .map_err(|e| format!("Could not reach {}: {}", host, e))?;
+        .map_err(|e| {
+            let s = e.to_string();
+            if s.contains("lookup address") || s.contains("not known") || s.contains("No address") {
+                format!("There is no server called {}. If this address's mail is on Microsoft 365 (Outlook) or Google, go Back and pick Microsoft or Google instead.", host)
+            } else {
+                format!("Could not reach {}: {}", host, s)
+            }
+        })?;
     let _ = tcp.set_nodelay(true);
     let client = match a.imap_security.as_str() {
         "starttls" => {
