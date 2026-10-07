@@ -167,6 +167,7 @@ pub async fn open(a: &Account, auth: &Auth) -> Result<Imap, String> {
             }
         })?;
     let _ = tcp.set_nodelay(true);
+    keep_alive(&tcp);
     let client = match a.imap_security.as_str() {
         "starttls" => {
             let mut c = async_imap::Client::new(Conn::Plain(tcp));
@@ -280,11 +281,29 @@ pub fn set(uids: &[u32]) -> String {
     out.join(",")
 }
 
+/// A connection that has gone dead without a word — the laptop slept, the
+/// Wi-Fi changed, a router forgot it — is noticed in about a minute and a
+/// half instead of whenever TCP gives up (a quarter of an hour). Until then
+/// a command on it, or IDLE waiting on it, would simply hang, and with it
+/// every check for mail on that account.
+fn keep_alive(tcp: &TcpStream) {
+    let sock = socket2::SockRef::from(tcp);
+    let ka = socket2::TcpKeepalive::new()
+        .with_time(Duration::from_secs(60))
+        .with_interval(Duration::from_secs(10))
+        .with_retries(3);
+    let _ = sock.set_tcp_keepalive(&ka);
+    // Data sent and never acknowledged: give up after 45 seconds.
+    let _ = sock.set_tcp_user_timeout(Some(Duration::from_secs(45)));
+}
+
 // ── connecting, for the sync loop and for actions ─────────────────────────
 pub async fn session<'a>(state: &'a State, rt: &'a AccountRt) -> Result<tokio::sync::MutexGuard<'a, Option<Imap>>, String> {
     let mut g = rt.imap.lock().await;
     if let Some(i) = g.as_mut() {
-        if i.sess.noop().await.is_ok() {
+        // Still there? Asked with a time limit: a dead connection doesn't
+        // say no, it says nothing.
+        if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(15), i.sess.noop()).await {
             return Ok(g);
         }
         *g = None;
@@ -657,7 +676,12 @@ async fn sync_loop(state: Arc<State>, rt: Arc<AccountRt>) {
     let mut inbox_only = false;
     loop {
         state.set_status(&rt, "syncing", "");
-        match sync_once(&state, &rt, inbox_only).await {
+        // However long a first sync of a big mailbox takes, not forever: a
+        // look that stalls is given up and the next one starts afresh.
+        let looked = tokio::time::timeout(Duration::from_secs(15 * 60), sync_once(&state, &rt, inbox_only))
+            .await
+            .unwrap_or_else(|_| Err("The server stopped answering".to_string()));
+        match looked {
             Ok(()) => {
                 backoff = 15;
                 state.set_status(&rt, "idle", "");

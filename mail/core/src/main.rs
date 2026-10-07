@@ -98,6 +98,7 @@ async fn main() {
     }
 
     tokio::spawn(scheduler(state.clone()));
+    tokio::spawn(wake_watch(state.clone()));
 
     eprintln!("hyprshell-maild: listening on {}", sock.display());
     let stop = async {
@@ -176,6 +177,37 @@ async fn client(state: Arc<State>, stream: UnixStream) {
 
 /// Every twenty seconds: snoozed mail whose time has come, and mail
 /// scheduled to send.
+/// Back from sleep: every connection made before it is as good as gone,
+/// and mail has very likely arrived. Rather than wait for each to be found
+/// dead, start every account afresh — new connections, a look at once.
+///
+/// Sleep is noticed by the clocks: the wall clock goes on through it, the
+/// one tokio keeps time with does not, so a check meant to come 20 seconds
+/// after the last that finds much more than 20 seconds on the wall clock
+/// slept in between.
+async fn wake_watch(state: Arc<State>) {
+    let step = Duration::from_secs(20);
+    let mut wall = std::time::SystemTime::now();
+    loop {
+        tokio::time::sleep(step).await;
+        let now = std::time::SystemTime::now();
+        let gone = now.duration_since(wall).unwrap_or_default();
+        wall = now;
+        if gone < step + Duration::from_secs(30) {
+            continue;
+        }
+        eprintln!("hyprshell-maild: awake after {}s; reconnecting", gone.as_secs());
+        let accts: Vec<Arc<AccountRt>> = state.accounts.read().await.values().cloned().collect();
+        for rt in accts {
+            // The loops first (aborting them lets go of the connection they
+            // hold), then the connection, then the loops again.
+            rt.stop();
+            *rt.imap.lock().await = None;
+            imap::start(state.clone(), rt);
+        }
+    }
+}
+
 async fn scheduler(state: Arc<State>) {
     loop {
         // Until the next thing is due (a send with seconds of undo, say),
