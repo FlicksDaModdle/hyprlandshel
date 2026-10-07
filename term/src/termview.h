@@ -137,6 +137,33 @@ private:
     void selectWordAt(qint64 line, int col);
     void selectLineAt(qint64 line);
 
+    // ── smooth scrolling ──
+    // How far the text is drawn below where the grid's rows put it: the
+    // part of a line the view is between two scroll positions, in pixels.
+    qreal scrollShift() const;
+    // Puts the view at `lines` up from the live screen, fractions and all;
+    // the whole part is the terminal's own scroll offset.
+    void scrollTo(qreal lines);
+    // Glides there instead, as a wheel notch or Shift+PageUp does.
+    void glideBy(qreal lines);
+    void glideTick();
+
+    // ── selecting from the keyboard ──
+    // Shift with the arrows, Home and End; Ctrl with them goes by words or
+    // to either end. Returns whether the key was taken.
+    bool keySelect(int key, Qt::KeyboardModifiers mods);
+    // A caret position — between characters, not on one — on a line.
+    struct Caret { qint64 line; int col; };
+    // The selection as an anchor and a moving caret (an editor's model),
+    // and back to the cells it covers.
+    void caretsFromSelection(Caret *anchor, Caret *caret) const;
+    void selectBetween(Caret anchor, Caret caret);
+    // Where the text on a line ends (trailing blanks are not text).
+    int lineEnd(qint64 line) const;
+    uint charOn(qint64 line, int col) const;
+    // Scroll so that a line is on screen.
+    void reveal(qint64 line);
+
     Term *m_term = nullptr;
     QFont m_font;
     qreal m_lineHeight = 1.35;
@@ -170,6 +197,19 @@ private:
     // waiting for the mouse to move.
     QPointF m_lastPointer;
     QTimer m_autoScroll;
+    // Smooth scrolling: where the view is (lines up from the live screen,
+    // fractional), where it is gliding to, and the glide's clock.
+    qreal m_pos = 0;
+    qreal m_target = 0;
+    QTimer m_glide;
+    QElapsedTimer m_glideClock;
+    bool m_movingOffset = false;
+    // Where a keyboard selection was started: its fixed end.
+    // and its moving end — kept, not worked out again from the cells,
+    // which can't say which side of a one-character selection it is on.
+    Caret m_kbAnchor { 0, 0 };
+    Caret m_kbCaret { 0, 0 };
+    bool m_kbActive = false;
     // Clicks in quick succession on the same spot: 1, 2 (word), 3 (line).
     int m_clicks = 0;
     QElapsedTimer m_lastClick;

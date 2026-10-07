@@ -12,9 +12,15 @@
 #include <QStyleHints>
 #include <QWheelEvent>
 
+#include <cmath>
+
 TermView::TermView(QQuickItem *parent) : QQuickPaintedItem(parent) {
     m_autoScroll.setInterval(40);
     connect(&m_autoScroll, &QTimer::timeout, this, &TermView::autoScrollTick);
+    // A glide steps about as often as the screen refreshes.
+    m_glide.setInterval(8);
+    m_glide.setTimerType(Qt::PreciseTimer);
+    connect(&m_glide, &QTimer::timeout, this, &TermView::glideTick);
 
     setFlag(ItemHasContents, true);
     // The right button too, for the context menu. A QQuickItem is only
@@ -100,13 +106,24 @@ void TermView::setTerm(Term *t) {
     if (m_term == t) return;
     if (m_term) m_term->disconnect(this);
     m_term = t;
+    m_glide.stop();
+    m_pos = m_target = m_term ? m_term->scrollOffset() : 0;
     if (m_term) {
         connect(m_term, &Term::damaged, this, [this] { update(); });
         // A cursor that moved is a cursor you are looking at: the blink
         // starts again from solid, the way a caret does when you type.
         connect(m_term, &Term::cursorChanged, this, [this] { wake(); });
         connect(m_term, &Term::cursorStyleChanged, this, [this] { wake(); });
-        connect(m_term, &Term::scrollOffsetChanged, this, [this] { update(); });
+        connect(m_term, &Term::scrollOffsetChanged, this, [this] {
+            // Moved by something else — output arriving, the scroll bar, a
+            // drag past the edge: the view is where that put it, whole
+            // lines and no glide.
+            if (!m_movingOffset) {
+                m_glide.stop();
+                m_pos = m_target = m_term->scrollOffset();
+            }
+            update();
+        });
         connect(m_term, &Term::mouseEnabledChanged, this,
                 &TermView::refreshCursor);
         refreshCursor();
@@ -201,6 +218,10 @@ void TermView::paint(QPainter *painter) {
     const int rows = qMin(m_term->rows() + m_term->scrollOffset(),
                           static_cast<int>(height() / m_cellH) + 1);
     const int cols = m_term->cols();
+    // Between two lines while scrolling smoothly: everything drawn lower by
+    // the part of a line, and the line above the grid's first row showing
+    // in the gap at the top.
+    const qreal shift = scrollShift();
 
     // Runs, not cells.
     //
@@ -208,8 +229,8 @@ void TermView::paint(QPainter *painter) {
     // and as many fills, for a line that is usually one colour. A run is
     // extended while the colours and the weight hold, and drawn when they
     // change — which for ordinary output is once or twice a line.
-    for (int row = 0; row < rows; ++row) {
-        const qreal y = row * m_cellH;
+    for (int row = shift > 0 ? -1 : 0; row < rows; ++row) {
+        const qreal y = row * m_cellH + shift;
         if (y > height()) break;
 
         int col = 0;
@@ -327,7 +348,7 @@ void TermView::paint(QPainter *painter) {
     // tell at a glance whether typing will go here.
     if (m_term->cursorVisible() && m_term->scrollOffset() == 0 && m_blinkOn) {
         const QRectF cell(m_term->cursorCol() * m_cellW,
-                          m_term->cursorRow() * m_cellH, m_cellW, m_cellH);
+                          m_term->cursorRow() * m_cellH + shift, m_cellW, m_cellH);
         const int shape = m_term->cursorShape();
 
         if (!m_focused) {
@@ -368,14 +389,16 @@ void TermView::paint(QPainter *painter) {
 // ── selection ────────────────────────────────────────────────────────────
 void TermView::viewCellFor(const QPointF &p, int *row, int *col) const {
     if (!m_term) { *row = 0; *col = 0; return; }
-    *row = qBound(0, static_cast<int>(p.y() / m_cellH),
+    *row = qBound(0, static_cast<int>(std::floor((p.y() - scrollShift()) / m_cellH)),
                   m_term->rows() + m_term->scrollOffset() - 1);
     *col = qBound(0, static_cast<int>(p.x() / m_cellW), m_term->cols() - 1);
 }
 
 void TermView::cellFor(const QPointF &p, qint64 *line, int *col) const {
     if (!m_term) { *line = 0; *col = 0; return; }
-    const int viewRow = qBound(0, static_cast<int>(p.y() / m_cellH),
+    // -1 is the part-line showing above the first row mid-scroll.
+    const int viewRow = qBound(scrollShift() > 0 ? -1 : 0,
+                               static_cast<int>(std::floor((p.y() - scrollShift()) / m_cellH)),
                                m_term->rows() + m_term->scrollOffset() - 1);
     *line = qBound(m_term->firstLineId(), m_term->lineIdFor(viewRow),
                    m_term->lastLineId());
@@ -413,6 +436,7 @@ QString TermView::selectedText() const {
 }
 
 void TermView::clearSelection() {
+    m_kbActive = false;
     if (!m_hasSelection) return;
     m_hasSelection = false;
     emit selectionChanged();
@@ -421,6 +445,7 @@ void TermView::clearSelection() {
 
 void TermView::selectAll() {
     if (!m_term) return;
+    m_kbActive = false;
     m_selRow0 = m_term->firstLineId(); m_selCol0 = 0;
     m_selRow1 = m_term->lastLineId();
     m_selCol1 = m_term->cols() - 1;
@@ -489,6 +514,32 @@ void TermView::mousePressEvent(QMouseEvent *event) {
     m_lastPointer = pos;
     qint64 line; int col;
     cellFor(pos, &line, &col);
+    m_kbActive = false;
+
+    // Shift-click: from the end that stays to here. What stays is the
+    // selection's start if there is one; with none, at a prompt, it is the
+    // cursor — "from what I'm typing to there". (Where a program has the
+    // mouse, Shift is already how you select at all, and starts afresh.)
+    if (event->modifiers() & Qt::ShiftModifier) {
+        const bool atPrompt = m_term && !m_term->altScreen() && !m_term->mouseEnabled();
+        if (m_hasSelection || atPrompt) {
+            if (!m_hasSelection) {
+                m_selRow0 = m_term->lineIdFor(m_term->cursorRow() + m_term->scrollOffset());
+                m_selCol0 = m_term->cursorCol();
+            }
+            m_selRow1 = line;
+            m_selCol1 = col;
+            m_selecting = true;
+            m_clicks = 0;
+            const bool had = m_hasSelection;
+            m_hasSelection = (m_selRow1 != m_selRow0 || m_selCol1 != m_selCol0);
+            if (had != m_hasSelection) emit selectionChanged();
+            update();
+            event->accept();
+            return;
+        }
+    }
+
     if (m_clicks == 2) { selectWordAt(line, col); event->accept(); return; }
     if (m_clicks == 3) { selectLineAt(line); event->accept(); return; }
 
@@ -548,6 +599,7 @@ void TermView::selectWordAt(qint64 line, int col) {
     int a = col, b = col;
     while (a > 0 && isWordChar(charAt(a - 1))) --a;
     while (b < cols - 1 && isWordChar(charAt(b + 1))) ++b;
+    m_kbActive = false;
     m_selRow0 = m_selRow1 = line;
     m_selCol0 = a;
     m_selCol1 = b;
@@ -563,6 +615,7 @@ void TermView::selectLineAt(qint64 line) {
         if (m_hasSelection) { m_hasSelection = false; emit selectionChanged(); update(); }
         return;
     }
+    m_kbActive = false;
     m_selRow0 = m_selRow1 = line;
     m_selCol0 = 0;
     m_selCol1 = m_term->cols() - 1;
@@ -626,6 +679,161 @@ void TermView::mouseReleaseEvent(QMouseEvent *event) {
     event->accept();
 }
 
+// ── selecting from the keyboard ──────────────────────────────────────────
+uint TermView::charOn(qint64 line, int col) const {
+    HtCell cell;
+    if (!m_term || !m_term->cellAt(m_term->viewRowFor(line), col, &cell)) return 0;
+    return cell.chars[0];
+}
+
+int TermView::lineEnd(qint64 line) const {
+    if (!m_term) return 0;
+    int end = 0;
+    for (int c = 0; c < m_term->cols(); ++c) {
+        const uint ch = charOn(line, c);
+        if (ch != 0 && ch != ' ') end = c + 1;
+    }
+    return end;
+}
+
+void TermView::caretsFromSelection(Caret *anchor, Caret *caret) const {
+    // The cells are inclusive at both ends; an editor's carets sit either
+    // side of them.
+    const bool forward = m_selRow1 > m_selRow0 || (m_selRow1 == m_selRow0 && m_selCol1 >= m_selCol0);
+    if (forward) {
+        *anchor = { m_selRow0, m_selCol0 };
+        *caret = { m_selRow1, m_selCol1 + 1 };
+    } else {
+        *anchor = { m_selRow0, m_selCol0 + 1 };
+        *caret = { m_selRow1, m_selCol1 };
+    }
+}
+
+void TermView::selectBetween(Caret anchor, Caret caret) {
+    m_kbAnchor = anchor;
+    m_kbCaret = caret;
+    m_kbActive = true;
+    const bool forward = caret.line > anchor.line || (caret.line == anchor.line && caret.col >= anchor.col);
+    // Back to inclusive cells: from the earlier caret up to the cell just
+    // before the later one.
+    if (forward) {
+        m_selRow0 = anchor.line; m_selCol0 = anchor.col;
+        m_selRow1 = caret.line;  m_selCol1 = caret.col - 1;
+    } else {
+        m_selRow0 = anchor.line; m_selCol0 = anchor.col - 1;
+        m_selRow1 = caret.line;  m_selCol1 = caret.col;
+    }
+    // A line's end caret, past its last cell, would leave nothing in it.
+    if (m_selCol1 < 0 && m_selRow1 > m_selRow0) { m_selRow1 -= 1; m_selCol1 = m_term->cols() - 1; }
+    if (m_selCol0 < 0 && m_selRow0 > m_selRow1) { m_selRow0 -= 1; m_selCol0 = m_term->cols() - 1; }
+    const bool had = m_hasSelection;
+    m_hasSelection = !(anchor.line == caret.line && anchor.col == caret.col);
+    if (had != m_hasSelection || m_hasSelection) emit selectionChanged();
+    if (m_hasSelection)
+        QGuiApplication::clipboard()->setText(selectedText(), QClipboard::Selection);
+    reveal(caret.line);
+    update();
+}
+
+void TermView::reveal(qint64 line) {
+    if (!m_term) return;
+    const int row = m_term->viewRowFor(line);
+    if (row < 0) glideBy(-row);
+    else if (row >= m_term->rows()) glideBy(-(row - m_term->rows() + 1));
+}
+
+bool TermView::keySelect(int key, Qt::KeyboardModifiers mods) {
+    if (!m_term) return false;
+    if (!(mods & Qt::ShiftModifier) || (mods & (Qt::AltModifier | Qt::MetaModifier))) return false;
+    switch (key) {
+    case Qt::Key_Left: case Qt::Key_Right: case Qt::Key_Up: case Qt::Key_Down:
+    case Qt::Key_Home: case Qt::Key_End:
+        break;
+    default:
+        return false;
+    }
+    // A full-screen program (vim, less, htop) or one that has the mouse
+    // keeps its own Shift-arrows — unless there is already a selection,
+    // which says you are selecting.
+    const bool atPrompt = !m_term->altScreen() && !m_term->mouseEnabled();
+    if (!m_hasSelection && !atPrompt) return false;
+
+    const bool word = mods & Qt::ControlModifier;
+    Caret anchor, caret;
+    if (m_hasSelection && m_kbActive) {
+        // Carrying on a keyboard selection: its own two ends.
+        anchor = m_kbAnchor;
+        caret = m_kbCaret;
+    } else if (m_hasSelection) {
+        // A selection made with the mouse, taken over: its start stays.
+        caretsFromSelection(&anchor, &caret);
+    } else {
+        // From the cursor, which is where you are typing.
+        anchor = caret = { m_term->lineIdFor(m_term->cursorRow() + m_term->scrollOffset()),
+                           m_term->cursorCol() };
+    }
+    const qint64 first = m_term->firstLineId();
+    const qint64 last = m_term->lastLineId();
+    const int cols = m_term->cols();
+    auto isWord = [&](qint64 l, int c) {
+        const uint ch = charOn(l, c);
+        if (ch == 0 || ch == ' ' || ch == '\t') return false;
+        static const QString breaks = QStringLiteral("()[]{}<>\"'`|,;");
+        return ch > 0xffff || !breaks.contains(QChar(static_cast<char16_t>(ch)));
+    };
+
+    switch (key) {
+    case Qt::Key_Left:
+        if (word) {
+            // Back over spaces, then over the word, to its start — across
+            // the line break when the caret is at a line's start.
+            if (caret.col == 0 && caret.line > first) { caret.line--; caret.col = lineEnd(caret.line); }
+            while (caret.col > 0 && !isWord(caret.line, caret.col - 1)) caret.col--;
+            while (caret.col > 0 && isWord(caret.line, caret.col - 1)) caret.col--;
+        } else if (caret.col > 0) {
+            caret.col--;
+        } else if (caret.line > first) {
+            caret.line--;
+            caret.col = lineEnd(caret.line);
+        }
+        break;
+    case Qt::Key_Right: {
+        const int end = lineEnd(caret.line);
+        if (word) {
+            if (caret.col >= end && caret.line < last) { caret.line++; caret.col = 0; }
+            const int e = lineEnd(caret.line);
+            while (caret.col < e && !isWord(caret.line, caret.col)) caret.col++;
+            while (caret.col < e && isWord(caret.line, caret.col)) caret.col++;
+        } else if (caret.col < end) {
+            caret.col++;
+        } else if (caret.line < last) {
+            caret.line++;
+            caret.col = 0;
+        }
+        break;
+    }
+    case Qt::Key_Up:
+        if (caret.line > first) { caret.line--; caret.col = qMin(caret.col, qMax(lineEnd(caret.line), 0)); }
+        else caret.col = 0;
+        break;
+    case Qt::Key_Down:
+        if (caret.line < last) { caret.line++; caret.col = qMin(caret.col, lineEnd(caret.line)); }
+        else caret.col = lineEnd(caret.line);
+        break;
+    case Qt::Key_Home:
+        if (word) caret = { first, 0 };
+        else caret.col = 0;
+        break;
+    case Qt::Key_End:
+        if (word) caret = { last, lineEnd(last) };
+        else caret.col = lineEnd(caret.line);
+        break;
+    }
+    caret.col = qBound(0, caret.col, cols);
+    selectBetween(anchor, caret);
+    return true;
+}
+
 void TermView::copy() {
     if (!m_hasSelection) return;
     QGuiApplication::clipboard()->setText(selectedText());
@@ -643,16 +851,71 @@ QString TermView::clipboardText() const {
 
 void TermView::wheelEvent(QWheelEvent *event) {
     if (!m_term) return;
-    const int steps = event->angleDelta().y() / 40;
-    if (steps != 0) {
-        m_term->scrollBy(steps);
-        // Scrolling in the middle of a drag is "select more", so the far
-        // end follows whatever has arrived under the pointer. Without
-        // this it waits for the mouse to move, which it is not doing —
-        // the hand is on the wheel.
-        if (m_selecting) extendSelection();
+    const QPoint px = event->pixelDelta();
+    if (!px.isNull()) {
+        // A touchpad (or a high-resolution wheel that says how far in
+        // pixels): the text follows the fingers exactly, pixel for pixel.
+        // It sends many small movements, which whole-line scrolling threw
+        // away below a third of a line — the stutter and the dead zone.
+        m_glide.stop();
+        scrollTo(m_pos + px.y() / m_cellH);
+        m_target = m_pos;
+    } else if (event->angleDelta().y() != 0) {
+        // A wheel: three lines a notch, as before, but glided there rather
+        // than jumped. Finer wheels send fractions of a notch, kept too.
+        glideBy(event->angleDelta().y() / 120.0 * 3.0);
     }
+    // Scrolling in the middle of a drag is "select more", so the far end
+    // follows whatever has arrived under the pointer. Without this it
+    // waits for the mouse to move, which it is not doing — the hand is on
+    // the wheel.
+    if (m_selecting) extendSelection();
     event->accept();
+}
+
+// ── smooth scrolling ─────────────────────────────────────────────────────
+qreal TermView::scrollShift() const {
+    if (!m_term) return 0;
+    const qreal frac = m_pos - m_term->scrollOffset();
+    return frac > 0.0005 && frac < 1 ? frac * m_cellH : 0;
+}
+
+void TermView::scrollTo(qreal lines) {
+    if (!m_term) return;
+    const qreal max = m_term->scrollbackLines();
+    m_pos = qBound<qreal>(0, lines, max);
+    // Nearly whole is whole: no half-pixel shimmer when a glide settles.
+    if (std::abs(m_pos - std::round(m_pos)) < 0.002) m_pos = std::round(m_pos);
+    m_movingOffset = true;
+    m_term->setScrollOffset(static_cast<int>(std::floor(m_pos)));
+    m_movingOffset = false;
+    if (m_selecting) extendSelection();
+    update();
+}
+
+void TermView::glideBy(qreal lines) {
+    if (!m_term) return;
+    // From where the last glide was going, so quick notches add up rather
+    // than each restarting from wherever the text has got to.
+    const qreal from = m_glide.isActive() ? m_target : m_pos;
+    m_target = qBound<qreal>(0, from + lines, m_term->scrollbackLines());
+    if (!m_glide.isActive()) { m_glideClock.start(); m_glide.start(); }
+}
+
+void TermView::glideTick() {
+    if (!m_term) { m_glide.stop(); return; }
+    // Eases out: each tick covers a share of what is left, scaled by the
+    // time since the last so a late tick doesn't make it stutter. Settles
+    // in about a fifth of a second.
+    const qreal dt = qMax<qreal>(1, m_glideClock.restart());
+    const qreal k = 1 - std::exp(-dt / 45.0);
+    const qreal next = m_pos + (m_target - m_pos) * k;
+    if (std::abs(m_target - next) < 0.01) {
+        scrollTo(m_target);
+        m_glide.stop();
+        return;
+    }
+    scrollTo(next);
 }
 
 void TermView::keyPressEvent(QKeyEvent *event) {
@@ -762,13 +1025,16 @@ void TermView::keyPressEvent(QKeyEvent *event) {
     // Shift+PageUp/Down is scrollback everywhere else; it should be here.
     if ((mods & Qt::ShiftModifier)
         && (event->key() == Qt::Key_PageUp || event->key() == Qt::Key_PageDown)) {
-        m_term->scrollBy(event->key() == Qt::Key_PageUp ? m_term->rows() / 2
-                                                        : -m_term->rows() / 2);
+        glideBy(event->key() == Qt::Key_PageUp ? m_term->rows() / 2
+                                               : -m_term->rows() / 2);
         event->accept();
         return;
     }
 
+    if (keySelect(event->key(), mods)) { event->accept(); return; }
+
     if (m_hasSelection) clearSelection();
+    m_kbActive = false;
     m_term->sendKey(event->key(), static_cast<int>(mods), event->text());
     wake();
     event->accept();
