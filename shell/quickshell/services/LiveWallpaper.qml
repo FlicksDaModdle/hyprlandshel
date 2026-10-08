@@ -306,6 +306,13 @@ Singleton {
             Connections {
                 target: root
                 function onMpvOptionsChanged() { settle.restart(); }
+                // After a reload or a mode change: started afresh, and given
+                // its two tries again — it may have died twice while the
+                // output was being set up.
+                function onRestartAll() {
+                    launch.quickFailures = 0;
+                    settle.restart();
+                }
             }
 
             Component.onCompleted: root.fadeRule()
@@ -322,6 +329,51 @@ Singleton {
     function fadeRule() {
         Services.Compositor.evalLua('hl.layer_rule({ name = "wallpaper-live-fade", '
             + 'match = { namespace = "^mpvpaper$" }, animation = "fade" })');
+    }
+
+    // ── when the compositor changes under it ─────────────────────────────
+    // `hyprctl reload` re-applies hyprland.lua's monitor rules, and the shell
+    // then puts your display settings back — two mode changes in a second.
+    // mpvpaper does not survive that well: it either keeps its old surface
+    // and stops drawing (the video frozen) or exits while the output is
+    // half set up, twice, and is given up on as a file it cannot play.
+    // So once things settle after a reload, or after an output changes mode,
+    // size, scale or rotation, every player is started again.
+    signal restartAll()
+    readonly property string outputShape: (Services.Compositor.monitors || []).map(m => {
+        if (!m) return "";
+        const o = m.lastIpcObject || ({});
+        return [m.name, m.width, m.height, m.scale, o.refreshRate, o.transform, o.disabled].join(":");
+    }).join(",")
+    // What the outputs were when the players last started; changes while
+    // the shell is still starting up (the first reports filling in) are not
+    // a reason to restart anything.
+    property string knownShape: ""
+    property bool settledIn: false
+    Timer {
+        interval: 8000
+        running: true
+        onTriggered: { root.knownShape = root.outputShape; root.settledIn = true; }
+    }
+    onOutputShapeChanged: if (root.settledIn && root.outputShape !== root.knownShape) outputSettle.restart()
+    Connections {
+        target: Services.Compositor
+        function onConfigReloaded() { if (root.settledIn) outputSettle.restart(); }
+        function onOutputsChanged() { if (root.settledIn) outputSettle.restart(); }
+    }
+    // Long enough for Devices' two-step mode set to finish; each change
+    // pushes it back.
+    Timer {
+        id: outputSettle
+        interval: 2500
+        onTriggered: {
+            root.knownShape = root.outputShape;
+            if (root.launches.length === 0) return;
+            console.log("LiveWallpaper: outputs changed, starting the video again");
+            root.error = "";
+            root.fadeRule();
+            root.restartAll();
+        }
     }
 
     // ── pausing ───────────────────────────────────────────────────────────

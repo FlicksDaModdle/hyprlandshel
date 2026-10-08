@@ -171,7 +171,25 @@ Variants {
             onTriggered: dock.afterLauncher = false
         }
 
-        readonly property bool revealed: !Config.Appearance.dockAutoHide
+        // A fullscreen window — a video, a game, a browser — is drawn above
+        // the dock's layer, so the dock was simply gone under one, auto-hide
+        // or not. While there is one on this screen the dock moves above it
+        // and behaves as auto-hide does: out of the way, and out when the
+        // pointer reaches the edge or the launcher opens.
+        //
+        // It moves up as soon as the fullscreen window is there rather than
+        // when the launcher opens, so that the launcher, mapped after it,
+        // is the one on top. Settings → Dock → "Over fullscreen apps" off
+        // takes away the edge strip — nothing then reacts to the pointer at
+        // the edge of a fullscreen app — and the dock only comes out with
+        // the launcher.
+        readonly property bool fullscreenHere: hasScreen
+            && Services.Compositor.clientsShownOn(String(modelData.name))
+                   .some(c => c.fullscreenMode === 2)
+        readonly property bool hidesAway: Config.Appearance.dockAutoHide || fullscreenHere
+        readonly property bool edgeStrip: !fullscreenHere || Config.Appearance.dockOverFullscreen
+
+        readonly property bool revealed: !hidesAway
                                          || hoverLatch
                                          || launcherHere
                                          || afterLauncher
@@ -232,7 +250,7 @@ Variants {
         implicitHeight: isLeft ? 0 : windowBreadth
 
         WlrLayershell.namespace: "quickshell:dock"
-        WlrLayershell.layer: WlrLayer.Top
+        WlrLayershell.layer: fullscreenHere ? WlrLayer.Overlay : WlrLayer.Top
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
         // What takes clicks.
@@ -273,10 +291,10 @@ Variants {
             : (isLeft ? 0 : height - 3)
         readonly property real maskW: revealed
             ? (isLeft ? maskNearEdge : Math.ceil(pill.width + maskPad * 2))
-            : (isLeft ? 3 : width)
+            : (!edgeStrip ? 0 : isLeft ? 3 : width)
         readonly property real maskH: revealed
             ? (isLeft ? Math.ceil(pill.height + maskPad * 2) : height - maskNearEdge)
-            : (isLeft ? height : 3)
+            : (!edgeStrip ? 0 : isLeft ? height : 3)
 
         mask: Region {
             x: dock.maskX

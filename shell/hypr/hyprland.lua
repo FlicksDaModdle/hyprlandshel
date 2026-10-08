@@ -336,23 +336,25 @@ hl.animation({ leaf = "layers",     enabled = true, speed = 3.5, bezier = "easeO
 -- Without these rules the panel/sheet tints still read correctly — just
 -- flatter, since there's nothing blurred behind them.
 --
--- xray: they blur the wallpaper, which Hyprland blurs once and keeps,
--- rather than whatever is behind them, blurred again on every frame. The
--- menus, the launcher and floating Settings are full-screen surfaces that
--- Qt redraws whole on every frame of an animation, so live blur meant
--- re-blurring the entire screen each frame — the dropped frames in the
--- shell's menus. Settings → Hyprland → "Blur behind the shell" switches it
--- back to live (the shell sends these rules again itself).
+-- xray: blur the wallpaper, which Hyprland blurs once and keeps, rather
+-- than whatever is behind, blurred again whenever that changes. The menus,
+-- the launcher and floating Settings are full-screen surfaces that Qt
+-- redraws whole on every frame of an animation, so live blur on them means
+-- re-blurring the entire screen each frame; but xray over a window shows the
+-- desktop through a menu instead of the window under it. The bar and dock
+-- are thin strips, cheap to blur live. These are the starting point: the
+-- shell sends its own (Settings → Hyprland → "Blur behind the shell"),
+-- switching the menus to live while there are windows on screen.
 local shell_layers = {
-    "bar", "dock", "panel", "overview",
+    bar = false, dock = false, panel = true, overview = true,
 }
-for _, name in ipairs(shell_layers) do
+for name, xray in pairs(shell_layers) do
     hl.layer_rule({
         name         = "blur-quickshell-" .. name,
         match        = { namespace = "^quickshell:" .. name .. "$" },
         blur         = true,
         ignore_alpha = 0.15,
-        xray         = true,
+        xray         = xray,
     })
 end
 

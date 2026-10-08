@@ -353,6 +353,8 @@ Singleton {
             property int altTabSize: 100              // % of the default picture size
             property bool altTabWorkspaceTags: true   // workspace number on each entry
             property bool dockHide: false
+            // Over a fullscreen app: out when the pointer reaches the edge.
+            property bool dockOverFullscreen: true
             // The pinned apps, as a JSON array of
             // { key, label, icon, exec[], match } — empty means "use the
             // defaults in config/Apps.qml". Carried as text because a
@@ -513,10 +515,18 @@ Singleton {
             property int inactiveBorderPct: 100
             property int hyprRounding: 14
             property bool hyprBlur: true
-            // What the shell's own surfaces blur: "wallpaper", blurred once
-            // and kept (cheap), or "live", whatever is behind them, every
-            // frame (costly on full-screen menus).
-            property string shellBlur: "wallpaper"
+            // What the shell's own surfaces blur:
+            //   auto       the bar and dock blur what is behind them; menus
+            //              blur the windows under them when there are any,
+            //              and the wallpaper (blurred once, kept) when the
+            //              desktop is bare
+            //   wallpaper  everything blurs the wallpaper, even over a
+            //              window (cheapest, but a menu over an app shows
+            //              the desktop instead of the app)
+            //   live       everything blurs what is behind it, every frame
+            // (A new name: "shellBlur" was wallpaper/live, and wallpaper was
+            // the default, so everyone starts again from auto.)
+            property string shellBlurMode: "auto"
             property int hyprBlurSize: 4
             property int hyprBlurPasses: 2
             property bool hyprShadow: true
@@ -636,6 +646,7 @@ Singleton {
     property alias altTabSize: prefs.altTabSize
     property alias altTabWorkspaceTags: prefs.altTabWorkspaceTags
     property alias dockAutoHide: prefs.dockHide
+    property alias dockOverFullscreen: prefs.dockOverFullscreen
     property alias barAutoHide: prefs.barHide
     property alias barRevealDelay: prefs.barRevealDelay
     property alias volumeStep: prefs.volumeStep
@@ -816,7 +827,7 @@ Singleton {
     property alias hyprBlur: prefs.hyprBlur
     property alias hyprBlurSize: prefs.hyprBlurSize
     property alias hyprBlurPasses: prefs.hyprBlurPasses
-    property alias shellBlur: prefs.shellBlur
+    property alias shellBlurMode: prefs.shellBlurMode
     property alias hyprShadow: prefs.hyprShadow
     property alias hyprAnimSpeed: prefs.hyprAnimSpeed
     property alias hyprAnimEnabled: prefs.hyprAnimEnabled

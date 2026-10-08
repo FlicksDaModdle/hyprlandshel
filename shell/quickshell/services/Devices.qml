@@ -168,13 +168,39 @@ Singleton {
     }
 
     // The blur rules for the shell's own surfaces (hyprland.lua has them
-    // too): xray — the wallpaper, blurred once — unless set to live.
+    // too). xray blurs the wallpaper, which Hyprland blurs once and keeps;
+    // without it a surface blurs whatever is behind it, again whenever that
+    // changes. The menus are full-screen surfaces that Qt redraws whole on
+    // every frame of an animation, so live blur there re-blurs the entire
+    // screen each frame; but xray over a window shows the desktop through
+    // the menu instead of the window under it.
+    //
+    // So in auto the bar and dock — thin strips, cheap to blur — always
+    // blur what is behind them, and the menus blur live only while there
+    // are windows on the screen they open on. A rule is read when a surface
+    // maps, and the menus map when they open, so switching it as windows
+    // come and go is in time for the next one.
+    readonly property bool windowsUnderMenus: {
+        const n = Services.Compositor.focusedMonitorName;
+        return n !== "" && Services.Compositor.clientsShownOn(n).length > 0;
+    }
+    function blurLive(name) {
+        if (prefs.shellBlurMode === "live") return true;
+        if (prefs.shellBlurMode === "wallpaper") return false;
+        return name === "bar" || name === "dock" || root.windowsUnderMenus;
+    }
+    readonly property string shellBlurRules: ["bar", "dock", "panel", "overview"]
+        .map(n => n + "=" + (root.blurLive(n) ? "false" : "true")).join(",")
+    onShellBlurRulesChanged: if (root.applied) root.applyShellBlur()
+
     function applyShellBlur() {
-        const xray = prefs.shellBlur === "live" ? "false" : "true";
-        Services.Compositor.evalLua(
-            'for _, n in ipairs({ "bar", "dock", "panel", "overview" }) do '
-          + 'hl.layer_rule({ name = "blur-quickshell-" .. n, match = { namespace = "^quickshell:" .. n .. "$" }, '
-          + 'blur = true, ignore_alpha = 0.15, xray = ' + xray + ' }) end');
+        let lua = "";
+        for (const pair of root.shellBlurRules.split(",")) {
+            const [n, xray] = pair.split("=");
+            lua += 'hl.layer_rule({ name = "blur-quickshell-' + n + '", match = { namespace = "^quickshell:' + n + '$" }, '
+                 + 'blur = true, ignore_alpha = 0.15, xray = ' + xray + ' }) ';
+        }
+        Services.Compositor.evalLua(lua);
     }
 
     // The borders should follow a theme flip, a new accent or either

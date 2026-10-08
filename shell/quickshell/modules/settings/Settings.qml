@@ -651,6 +651,13 @@ Scope {
               value: A.dockScope, set: v => A.dockScope = v },
             { n: "Auto-hide", s: "Slide off the screen edge until the pointer reaches it", type: "toggle",
               value: A.dockAutoHide, set: v => A.dockAutoHide = v },
+            { n: "Over fullscreen apps",
+              s: A.dockOverFullscreen
+                 ? "Reach the screen edge to bring the dock out over a fullscreen video, game "
+                   + "or browser — it hides again as auto-hide does"
+                 : "Stays under fullscreen apps, coming out only with the launcher",
+              type: "toggle",
+              value: A.dockOverFullscreen, set: v => A.dockOverFullscreen = v },
             { n: "Pinned apps",
               s: "Right-click any dock tile to re-point it at a different "
                  + "application, unpin it, or pin one that's only running",
@@ -1557,15 +1564,19 @@ Scope {
               type: "slider", min: 1, max: 5, unit: "", value: A.hyprBlurPasses,
               set: v => { A.hyprBlurPasses = v; Services.Devices.applyFrame(); } },
             { n: "Blur behind the shell",
-              s: A.shellBlur === "live"
-                 ? "Bar, dock and menus blur whatever is behind them, re-blurred on every frame — "
-                   + "costly, and what makes menus drop frames on a high refresh rate"
-                 : "Bar, dock and menus blur the wallpaper, blurred once and kept — smooth, like "
-                   + "Windows 11's Mica",
+              s: A.shellBlurMode === "live"
+                 ? "Bar, dock and menus blur whatever is behind them, always — "
+                   + "menus may drop frames opening on a high refresh rate"
+                 : A.shellBlurMode === "wallpaper"
+                 ? "Everything blurs the wallpaper, even over a window — the smoothest, "
+                   + "but a menu over an app shows the desktop, not the app"
+                 : "Bar and dock blur what is behind them; menus blur the windows "
+                   + "under them, or the wallpaper on a bare desktop",
               type: "seg",
-              options: [{ label: "Wallpaper", value: "wallpaper" }, { label: "Live", value: "live" }],
-              value: A.shellBlur,
-              set: v => { A.shellBlur = v; Services.Devices.applyShellBlur(); } },
+              options: [{ label: "Auto", value: "auto" }, { label: "Wallpaper", value: "wallpaper" },
+                        { label: "Live", value: "live" }],
+              value: A.shellBlurMode,
+              set: v => { A.shellBlurMode = v; Services.Devices.applyShellBlur(); } },
             { n: "Window shadows", s: "A drop shadow under floating windows",
               type: "toggle", value: A.hyprShadow,
               set: v => { A.hyprShadow = v; Services.Devices.applyFrame(); } },
