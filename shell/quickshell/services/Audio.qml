@@ -106,9 +106,19 @@ Singleton {
     // Monitor streams are someone measuring a level — pavucontrol's meters,
     // Quickshell's own peak monitor in Settings — and not something anyone
     // is listening to, so they are left out of the app lists.
+    //
+    // Told apart by name first: that is known before a node is bound, its
+    // properties only after. A level meter's stream that looked like an app
+    // until it was bound got bound (the Sound pane tracks every app), turned
+    // out to be a meter, and was let go again at once — and an update from
+    // PipeWire still on its way to it crashed Quickshell
+    // (PwNodeBoundAudio::onInfo on an unbound node). Switching the
+    // equalizer on or off is when meters are made, so that is when it did.
     function isMonitor(n) {
+        if ((n.name || "") === "quickshell-peak-monitor") return true;
         const p = n.properties || {};
-        return p["stream.monitor"] === "true" || p["media.category"] === "Monitor";
+        return p["stream.monitor"] === "true" || p["media.category"] === "Monitor"
+            || p["application.name"] === "Quickshell Peak Detect";
     }
     readonly property var nodes: Pipewire.nodes.values.filter(n => !!n && !!n.audio)
     // Real devices, outputs and inputs.

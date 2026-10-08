@@ -49,9 +49,12 @@ Column {
     Component.onCompleted: au.watch(true)
     Component.onDestruction: au.watch(false)
 
-    PwObjectTracker {
-        objects: panel.au.sinks.concat(panel.au.sources, panel.au.streams, panel.au.recorders,
-                                       [panel.au.rawSink, panel.au.rawSource].filter(n => !!n))
+    // Everything the pane shows, bound — steadily (SteadyTracker.qml): the
+    // lists change as apps start and stop and as the equalizer comes and
+    // goes, and binding and unbinding at that pace crashed Quickshell.
+    SteadyTracker {
+        nodes: panel.au.sinks.concat(panel.au.sources, panel.au.streams, panel.au.recorders,
+                                     [panel.au.rawSink, panel.au.rawSource].filter(n => !!n))
     }
 
     component Caption: StyledText {
