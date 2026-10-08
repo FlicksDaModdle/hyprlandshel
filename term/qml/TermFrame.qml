@@ -24,7 +24,11 @@ Rectangle {
     // Square and edgeless: it is always a real window, and Hyprland rounds
     // its corners and draws its border. A rounded edge of its own inside
     // that put two outlines on two different curves at every corner.
-    color: Appearance.bg
+    // The sheet, as Files, Mail and Settings are: one layer at the
+    // Translucency slider's alpha, with Hyprland's blur behind it. The text
+    // is drawn straight onto it (TermView leaves the default background
+    // unpainted).
+    color: Appearance.sheet
     clip: true
 
     // ── title bar ─────────────────────────────────────────────────────────

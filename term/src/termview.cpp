@@ -38,9 +38,9 @@ TermView::TermView(QQuickItem *parent) : QQuickPaintedItem(parent) {
     setAcceptHoverEvents(true);
     setCursor(QCursor(Qt::IBeamCursor));
     setFocus(true);
-    // The grid is opaque and painted edge to edge, so the item does not
-    // need the alpha channel it would otherwise composite through.
-    setOpaquePainting(true);
+    // Not opaque: the default background is left unpainted, so the window's
+    // see-through sheet shows behind the text, as in every other app.
+    setOpaquePainting(false);
     setRenderTarget(QQuickPaintedItem::FramebufferObject);
 
     m_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
@@ -212,7 +212,12 @@ void TermView::paint(QPainter *painter) {
     }
 
     const QColor defaultBg = m_term->defaultBg();
-    painter->fillRect(QRectF(0, 0, width(), height()), defaultBg);
+    // A translucent default is the window's sheet, already behind this item:
+    // painting it again would double it. An opaque one is painted, as before.
+    if (defaultBg.alpha() == 255) painter->fillRect(QRectF(0, 0, width(), height()), defaultBg);
+    // Where the default background becomes a text colour (reverse video,
+    // concealed text) it is used solid, or the text would be see-through.
+    auto solid = [](QColor c) { c.setAlpha(255); return c; };
     painter->setFont(m_font);
 
     const int rows = qMin(m_term->rows() + m_term->scrollOffset(),
@@ -243,6 +248,7 @@ void TermView::paint(QPainter *painter) {
             QColor bg = m_term->bgOf(cell);
             if (cell.reverse) std::swap(fg, bg);
             if (cell.conceal) fg = bg;
+            fg = solid(fg);
 
             QString run;
             QVector<int> widths;    // cells per entry in the run
@@ -256,6 +262,7 @@ void TermView::paint(QPainter *painter) {
                 QColor nbg = m_term->bgOf(next);
                 if (next.reverse) std::swap(nfg, nbg);
                 if (next.conceal) nfg = nbg;
+                nfg = solid(nfg);
                 if (nfg != fg || nbg != bg
                     || next.bold != cell.bold
                     || next.italic != cell.italic

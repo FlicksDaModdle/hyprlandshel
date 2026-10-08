@@ -41,6 +41,12 @@ Window {
     }
     function minimise() { win.visibility = Window.Minimized; }
 
+    // The page behind the text is the window's sheet — the same colour, and
+    // the same see-through, as every other app's — so a change of theme,
+    // accent or translucency reaches the sessions already open.
+    readonly property string paletteKey: String(Appearance.ink) + String(Appearance.sheet) + String(Appearance.ansi)
+    onPaletteKeyChanged: { for (const t of win.sessions) t.setPalette(Appearance.ink, Appearance.sheet, Appearance.ansi); }
+
     Component {
         id: termComponent
         Term {}
@@ -52,7 +58,7 @@ Window {
         if (!t) return;
         // The palette before the shell: a cell records "the default
         // colour", and what that resolves to is decided here.
-        t.setPalette(Appearance.ink, Appearance.bg, Appearance.ansi);
+        t.setPalette(Appearance.ink, Appearance.sheet, Appearance.ansi);
         // At the size the window already is, rather than the 80x24 a new
         // Term starts at — otherwise the first thing a new tab does is
         // redraw itself.

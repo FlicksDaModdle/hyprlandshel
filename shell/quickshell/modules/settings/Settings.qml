@@ -270,7 +270,10 @@ Scope {
         onVisibleChanged: if (!visible && Config.UiState.settingsOpen)
                               Config.UiState.closeSettings()
         title: "Settings"
-        color: Config.Appearance.sheet
+        // Clear: the frame inside is the sheet. Painting it here as well
+        // laid it twice, so tiled Settings let through much less of the
+        // desktop than Files, Mail or the terminal.
+        color: "transparent"
 
         implicitWidth: 900
         implicitHeight: 620
