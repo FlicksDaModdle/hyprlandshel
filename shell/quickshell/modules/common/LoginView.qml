@@ -208,7 +208,8 @@ Item {
         anchors.verticalCenterOffset: view.height * 0.1 + (1 - view.shown) * 26
         opacity: view.shown
 
-        readonly property real radius: Math.round(26 * view.ap.rf)
+        // The shell's panel radius, as the card is one of its panels.
+        readonly property real radius: view.ap.rPanel
 
         // A refused password nudges the card, the standard cue.
         transform: Translate { id: shakeShift }
@@ -220,37 +221,34 @@ Item {
             NumberAnimation { target: shakeShift; property: "x"; to: 0;   duration: Config.Appearance.anim(50) }
         }
 
-        // Frosted: the wallpaper behind the card, blurred, under a wash of
-        // the theme's panel colour. Through a Loader, so a Qt without
-        // QtQuick.Effects shows the wash alone.
+        // Frosted the way the shell's panels are: the wallpaper behind it
+        // blurred about as strongly as Hyprland blurs behind them
+        // (Settings → Hyprland → blur size and passes, and none with blur
+        // off), under the same panel colour the Translucency slider sets,
+        // with the same hairline edge and accent seam (PanelSurface). The
+        // blur goes through a Loader, so a Qt without QtQuick.Effects
+        // shows the panel colour alone.
+        //
+        // Hyprland's blur is passes of a kernel `size` wide, each pass
+        // reaching twice as far as the last; about size × (2^passes − 1)
+        // pixels in all, which is what MultiEffect is asked for.
+        readonly property real blurRadius: !view.ap.hyprBlur ? 0
+            : Math.max(1, view.ap.hyprBlurSize) * (Math.pow(2, Math.max(1, view.ap.hyprBlurPasses)) - 1) * 1.6
         Loader {
             anchors.fill: parent
+            active: card.blurRadius > 0
             source: "BlurBackdrop.qml"
             onLoaded: {
                 item.sourceItem = ground;
                 item.radius = Qt.binding(() => card.radius);
-                item.amount = 1.0;
+                item.blurMax = 64;
+                item.amount = Qt.binding(() => Math.min(1, card.blurRadius / 64));
                 item.sampleRect = Qt.binding(() => Qt.rect(card.x + shakeShift.x, card.y, card.width, card.height));
             }
         }
-        Rectangle {
+        PanelSurface {
             anchors.fill: parent
             radius: card.radius
-            color: Qt.rgba(view.ap.panel.r, view.ap.panel.g, view.ap.panel.b, view.ap.dark ? 0.62 : 0.70)
-            border.width: 1
-            border.color: view.ap.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.55)
-        }
-        // The accent, as a short stroke along the top, where every one of the
-        // shell's panels carries it.
-        Rectangle {
-            anchors.top: parent.top
-            anchors.topMargin: 1
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: 44
-            height: 3
-            radius: 1.5
-            color: view.ap.accent
-            opacity: 0.9
         }
 
         Column {

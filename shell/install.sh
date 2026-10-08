@@ -714,6 +714,16 @@ if [ "$MODE" = shell-only ]; then
 EOF
 fi
 
+# The login screen is drawn with this same code, but from its own copy in
+# /usr/share, which only greeter/install.sh (with sudo) can replace.
+GREETER_SHARE=/usr/share/hyprshell-greeter
+if [ -d "$GREETER_SHARE" ] && [ -f "$SRC/../greeter/source-sum.sh" ]; then
+    if [ "$(cat "$GREETER_SHARE/.source" 2>/dev/null)" != "$(sh "$SRC/../greeter/source-sum.sh")" ]; then
+        printf '\n  %s•%s The login screen is older than this shell. To update it:\n' "$YEL" "$RST"
+        printf '      %ssudo %s/greeter/install.sh%s\n' "$BOLD" "$(cd "$SRC/.." && pwd)" "$RST"
+    fi
+fi
+
 cat <<EOF
 
   If the lock screen ever traps you: Ctrl+Alt+F2, log in, ${BOLD}pkill qs${RST}.

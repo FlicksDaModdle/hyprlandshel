@@ -101,6 +101,32 @@ if [ "$status" = 1 ]; then
     for dm in sddm gdm lightdm ly lemurs; do
         systemctl is-enabled "$dm.service" >/dev/null 2>&1 && note "$dm is enabled too — only one display manager should be"
     done
+    # The greeter's own files, against this checkout.
+    if [ ! -d "$SHARE" ]; then
+        note "the greeter is not installed in ${SHARE#$ROOT} — run: sudo ./install.sh"
+    elif [ "$(cat "$SHARE/.source" 2>/dev/null)" = "$(sh "$HERE/source-sum.sh")" ]; then
+        did "the installed greeter is this checkout's"
+    else
+        note "the installed greeter is older than this checkout — run: sudo ./install.sh"
+    fi
+    # Your shell's copy of your theme, which the greeter dresses itself in.
+    me="${SUDO_USER:-$(id -un)}"
+    dir="$STATE/users/$me"
+    if [ ! -d "$dir" ]; then
+        note "no ${dir#$ROOT} — the greeter cannot follow your theme; run: sudo ./install.sh --theme"
+    elif [ "$(stat -c %U "$dir" 2>/dev/null)" != "$me" ]; then
+        note "${dir#$ROOT} is not yours, so your shell cannot write to it — run: sudo ./install.sh --theme"
+    elif [ ! -f "$dir/theme.json" ]; then
+        note "${dir#$ROOT} is empty — your shell fills it within a minute of starting (restart it if it has been longer)"
+    else
+        did "your theme was last copied for the greeter $(date -d "@$(stat -c %Y "$dir/theme.json")" '+%a %H:%M' 2>/dev/null)"
+        mine=$(getent passwd "$me" | cut -d: -f6)/.config/quickshell/hyprshell/theme.json
+        a=$(sed -n 's/^[[:space:]]*"accent":[[:space:]]*\(-\{0,1\}[0-9]*\).*/\1/p' "$dir/theme.json" | head -n1)
+        b=$(sed -n 's/^[[:space:]]*"accent":[[:space:]]*\(-\{0,1\}[0-9]*\).*/\1/p' "$mine" 2>/dev/null | head -n1)
+        if [ -n "$b" ] && [ "$a" != "$b" ]; then
+            note "but its accent ($a) is not yours ($b) — your shell has not copied it since; restart the shell"
+        fi
+    fi
     found=$(grep -rl -i noctalia "$GREETD" 2>/dev/null | grep -v before-hyprshell || true)
     [ -n "$found" ] && note "greetd's folder still mentions Noctalia: $(printf '%s' "$found" | tr '\n' ' ')"
     # Noctalia's shell starting in your own session, after you log in —
@@ -268,6 +294,7 @@ cp -R "$REPO/shell/quickshell/modules/icons" "$SHARE.new/shell/modules/icons"
 # The wallpaper's animations and contour map, which the login screen draws
 # under the card exactly as the desktop does.
 cp -R "$REPO/shell/quickshell/modules/background" "$SHARE.new/shell/modules/background"
+sh "$HERE/source-sum.sh" > "$SHARE.new/.source" 2>/dev/null || true
 rm -rf "$SHARE"
 mv "$SHARE.new" "$SHARE"
 chmod -R a+rX "$SHARE"

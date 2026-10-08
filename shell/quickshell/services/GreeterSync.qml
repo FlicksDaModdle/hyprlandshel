@@ -24,7 +24,14 @@ import "../config" as Config
 Singleton {
     id: root
 
-    readonly property string user: Quickshell.env("USER") || ""
+    // $USER, or who `id` says this is when the session was started without
+    // it.
+    property string user: Quickshell.env("USER") || ""
+    Process {
+        running: root.user === ""
+        command: ["id", "-un"]
+        stdout: StdioCollector { onStreamFinished: root.user = text.trim() }
+    }
     readonly property string dir: "/var/lib/hyprshell-greeter/users/" + root.user
     readonly property string home: Quickshell.env("HOME") || ""
 
@@ -60,6 +67,19 @@ Singleton {
         onLoaded: if (root.active) syncSoon.restart()
     }
 
+    // The watch can be lost — the shell replaces theme.json rather than
+    // writing into it, and a watched file that is replaced is no longer the
+    // one being watched — so it is also read again every minute, and copied
+    // only if it changed.
+    Timer {
+        running: root.active
+        interval: 60000
+        repeat: true
+        onTriggered: theme.reload()
+    }
+    property string lastSource: ""
+    property bool fresh: true
+
     // Changes made together (a theme import, dragging a slider) go as one.
     Timer {
         id: syncSoon
@@ -83,8 +103,9 @@ Singleton {
 
     function sync() {
         if (!root.active || copy.running) { if (copy.running) syncSoon.restart(); return; }
+        const source = theme.text();
         let t;
-        try { t = JSON.parse(theme.text()); } catch (e) { return; }
+        try { t = JSON.parse(source); } catch (e) { return; }
         if (!t || typeof t !== "object") return;
 
         const media = [];       // [from, to]
@@ -119,6 +140,11 @@ Singleton {
         t.liveLast = "";
         media.push([root.home + "/.face", root.dir + "/face"]);
 
+        // Written only when it is new, or the copy there has gone (the
+        // greeter reinstalled); the files it names are checked every time,
+        // and copied only when they changed.
+        root.fresh = source !== root.lastSource;
+        root.lastSource = source;
         root.pending = JSON.stringify(t, null, 2);
         const args = [];
         for (const [a, b] of media) args.push(a, b);
@@ -151,11 +177,15 @@ Singleton {
                 case "$keep" in *" $n "*) ;; *) rm -f "$f" "$dir/.$n.from" ;; esac
             done
             chmod 755 "$dir" 2>/dev/null
+            [ -f "$dir/theme.json" ] && echo have
             exit 0`
+        stdout: StdioCollector { id: copyOut }
         onExited: {
             if (root.pending === "") return;
+            if (!root.fresh && copyOut.text.trim() === "have") { root.pending = ""; return; }
             out.setText(root.pending);
             root.lastSynced = new Date().toISOString();
+            console.log("GreeterSync: login screen updated in", root.dir);
             root.pending = "";
         }
     }

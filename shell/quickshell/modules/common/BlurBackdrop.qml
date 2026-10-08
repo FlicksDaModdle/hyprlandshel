@@ -24,6 +24,8 @@ Item {
     property rect sampleRect: Qt.rect(0, 0, 0, 0)
     property real radius: 0
     property real amount: 1.0
+    // The widest the blur reaches, in pixels, at amount 1.
+    property int blurMax: 40
 
     visible: sourceItem !== null && sampleRect.width > 0
 
@@ -45,7 +47,7 @@ Item {
         source: grab
         blurEnabled: true
         blur: root.amount
-        blurMax: 40
+        blurMax: root.blurMax
         // Exactly the popup's size: padding would let the blur spill out
         // past its edges as a faint smear.
         autoPaddingEnabled: false
