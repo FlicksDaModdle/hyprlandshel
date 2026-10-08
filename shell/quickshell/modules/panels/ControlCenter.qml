@@ -340,7 +340,6 @@ PanelSurface {
         anchors.top: parent.top
         active: root.mixerPane
         visible: active
-        implicitHeight: item ? item.implicitHeight : 0
         sourceComponent: AppMixer {}
     }
 
