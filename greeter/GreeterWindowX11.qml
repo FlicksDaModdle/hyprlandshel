@@ -19,5 +19,6 @@ PanelWindow {
         anchors.fill: parent
         greeter: win.greeter
         primary: win.primary
+        screen: win.screen
     }
 }

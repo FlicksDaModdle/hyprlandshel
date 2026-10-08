@@ -1,7 +1,6 @@
 import QtQuick
 import Quickshell
 import "../../config" as Config
-import "../../services" as Services
 
 // Settings → Wallpaper → Topographic: contour lines over a made-up terrain,
 // drawn by a fragment shader (shaders/topo.frag).
@@ -22,6 +21,13 @@ ShaderEffect {
 
     // The screen this is on, for its place in the layout and its pixels.
     property var screen: null
+    // As AnimatedWallpaper: the desktop's Services.WallMotion when given,
+    // else `running`.
+    property var motion: null
+    property bool running: true
+    // Where to start the animation: the lock screen's, carrying on from the
+    // desktop's ({ time, rise }, as Services.WallMotion.phaseFor gives).
+    property var startPhase: null
     // The small live version in Settings' gallery: always moving, and its
     // sizes shrunk with it.
     property bool preview: false
@@ -71,7 +77,7 @@ ShaderEffect {
     // Held still on battery, under Battery saver and behind windows, as
     // Settings says (Services.WallMotion, which also tells Settings why).
     readonly property bool drifting: topo.preview ? topo.visible
-        : prefs.topoDrift && topo.visible && Services.WallMotion.moving(topo.screenName)
+        : prefs.topoDrift && topo.visible && (topo.motion ? topo.motion.moving(topo.screenName) : topo.running)
     // What moves: the terrain drifting, the contours flowing, or both.
     readonly property bool moveTerrain: prefs.topoMotion !== "flow"
     readonly property bool moveLines: prefs.topoMotion !== "drift"
@@ -93,7 +99,10 @@ ShaderEffect {
     readonly property string styleName: "topo"
     readonly property int gfxApi: GraphicsInfo.api
     readonly property bool moving: drifting
-    Component.onCompleted: if (!preview) Services.WallMotion.add(topo)
-    Component.onDestruction: if (!preview) Services.WallMotion.remove(topo)
-    onDriftingChanged: if (!preview) console.log("Topography:", drifting ? "moving" : "still", "on", screenName)
+    Component.onCompleted: {
+        if (startPhase) { time = startPhase.time || 0; rise = startPhase.rise || 0; }
+        if (motion) motion.add(topo);
+    }
+    Component.onDestruction: if (motion) motion.remove(topo)
+    onDriftingChanged: if (motion) console.log("Topography:", drifting ? "moving" : "still", "on", screenName)
 }

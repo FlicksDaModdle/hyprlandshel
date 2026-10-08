@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Wayland
 import "../../config" as Config
 import "../../services" as Services
+import "../common"
 
 // The desktop ground. A real image (Settings → Wallpaper → Image), a
 // contour map (Topographic, Topography.qml) or, by default, the mockup's
@@ -70,96 +71,24 @@ Variants {
         readonly property bool useAnimated: !useImage && !useTopo && Config.Appearance.wallpaperStyle !== "gradient"
         readonly property bool useGradient: !useImage && !useTopo && !useAnimated
 
-        // String tints promoted to color values, so the radial washes can
-        // fade their own hue out to alpha 0 instead of to grey.
-        readonly property color baseA: tint.a
-        readonly property color baseB: tint.b
-        readonly property color pool1: tint.g1 !== "" ? tint.g1 : tint.a
-        readonly property color pool2: tint.g2 !== "" ? tint.g2 : tint.a
 
-        function fade(c) { return Qt.rgba(c.r, c.g, c.b, 0); }
-
-        // ── base wash ─────────────────────────────────────────────────────
-        Shape {
+        // ── the theme's gradient ──────────────────────────────────────────
+        GradientGround {
             anchors.fill: parent
             visible: win.useGradient
-            preferredRendererType: Shape.CurveRenderer
-            ShapePath {
-                strokeWidth: 0
-                strokeColor: "transparent"
-                fillGradient: LinearGradient {
-                    // CSS `linear-gradient(168deg, a, b)`: near-vertical,
-                    // leaning right as it descends.
-                    x1: 0; y1: 0
-                    x2: win.width * 0.21; y2: win.height
-                    GradientStop { position: 0; color: win.baseA }
-                    GradientStop { position: 1; color: win.baseB }
-                }
-                startX: 0; startY: 0
-                PathLine { x: win.width; y: 0 }
-                PathLine { x: win.width; y: win.height }
-                PathLine { x: 0; y: win.height }
-                PathLine { x: 0; y: 0 }
-            }
-        }
-
-        // ── upper-right pool ──────────────────────────────────────────────
-        Shape {
-            anchors.fill: parent
-            visible: win.useGradient && win.tint.g1 !== ""
-            preferredRendererType: Shape.CurveRenderer
-            ShapePath {
-                strokeWidth: 0
-                strokeColor: "transparent"
-                fillGradient: RadialGradient {
-                    centerX: win.width * 0.78; centerY: win.height * 0.04
-                    centerRadius: win.width * 0.62
-                    focalX: centerX; focalY: centerY
-                    GradientStop { position: 0; color: win.pool1 }
-                    GradientStop { position: 0.58; color: win.fade(win.pool1) }
-                }
-                startX: 0; startY: 0
-                PathLine { x: win.width; y: 0 }
-                PathLine { x: win.width; y: win.height }
-                PathLine { x: 0; y: win.height }
-                PathLine { x: 0; y: 0 }
-            }
-        }
-
-        // ── lower-left pool ───────────────────────────────────────────────
-        Shape {
-            anchors.fill: parent
-            visible: win.useGradient && win.tint.g2 !== ""
-            preferredRendererType: Shape.CurveRenderer
-            ShapePath {
-                strokeWidth: 0
-                strokeColor: "transparent"
-                fillGradient: RadialGradient {
-                    centerX: win.width * 0.04; centerY: win.height * 0.96
-                    centerRadius: win.width * 0.55
-                    focalX: centerX; focalY: centerY
-                    GradientStop { position: 0; color: win.pool2 }
-                    GradientStop { position: 0.62; color: win.fade(win.pool2) }
-                }
-                startX: 0; startY: 0
-                PathLine { x: win.width; y: 0 }
-                PathLine { x: win.width; y: win.height }
-                PathLine { x: 0; y: win.height }
-                PathLine { x: 0; y: 0 }
-            }
         }
 
         // Only loaded while it is the one shown.
         Loader {
             anchors.fill: parent
             active: win.useTopo
-            sourceComponent: Topography { screen: win.modelData }
+            sourceComponent: Topography { screen: win.modelData; motion: Services.WallMotion }
         }
 
         Loader {
             anchors.fill: parent
             active: win.useAnimated
-            sourceComponent: AnimatedWallpaper { screen: win.modelData }
+            sourceComponent: AnimatedWallpaper { screen: win.modelData; motion: Services.WallMotion }
         }
 
         Image {

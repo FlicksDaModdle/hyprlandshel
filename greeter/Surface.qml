@@ -15,7 +15,8 @@ LoginView {
 
     auth: g
     userName: g.user ? g.user.display : (g.users.length === 0 ? "No users found" : "")
-    pictures: g.user ? [g.user.icon] : []
+    // Their picture as their shell keeps it, then the system's.
+    pictures: g.user ? [g.userDir + "/face", g.user.icon] : []
     canStepUser: g.users.length > 1
     onStepUser: delta => g.pickUser((g.userIndex + delta + g.users.length) % g.users.length)
 

@@ -25,6 +25,11 @@ Scope {
         || "/usr/share/wayland-sessions:/usr/local/share/wayland-sessions"
     readonly property string iconDir:
         Quickshell.env("HYPRSHELL_GREETER_ICONS") || "/var/lib/AccountsService/icons"
+    // Each person's copy of their theme, wallpaper and picture, kept by
+    // their own shell (shell/quickshell/services/GreeterSync.qml).
+    readonly property string usersDir:
+        Quickshell.env("HYPRSHELL_GREETER_USERS") || "/var/lib/hyprshell-greeter/users"
+    readonly property string userDir: user ? usersDir + "/" + user.name : ""
     // Written by the greeter, so it has to be somewhere greetd's user owns;
     // install.sh makes it.
     readonly property string stateFile:

@@ -107,7 +107,12 @@ WlSessionLock {
             anchors.fill: parent
 
             auth: surface
+            screen: surface.screen
+            // The desktop's wallpaper, carried on from where it is now — the
+            // same settings are read from the theme; this is the moment.
+            wallPhase: Services.WallMotion.phaseFor(surface.screen ? String(surface.screen.name) : "")
             userName: lock.displayName
+            subtitle: "Locked"
             // Your ~/.face, then the picture the greeter shows.
             pictures: [Quickshell.env("HOME") + "/.face",
                        "/var/lib/AccountsService/icons/" + Services.SysInfo.user]
@@ -132,7 +137,7 @@ WlSessionLock {
                             name: surface.battery && surface.battery.state === UPowerDeviceState.Charging
                                   ? "batteryCharging" : "battery"
                             size: 15
-                            inkColor: Config.Appearance.ink3
+                            inkColor: view.fg3
                             monochrome: true
                         }
                         StyledText {
@@ -140,7 +145,7 @@ WlSessionLock {
                             text: surface.hasBattery
                                   ? Math.round(surface.battery.percentage * 100) + "%" : ""
                             font.pixelSize: Config.Appearance.fs(12)
-                            color: Config.Appearance.ink3
+                            color: view.fg3
                         }
                     }
 
@@ -150,14 +155,14 @@ WlSessionLock {
                             anchors.verticalCenter: parent.verticalCenter
                             name: Services.Network.icon
                             size: 15
-                            inkColor: Config.Appearance.ink3
+                            inkColor: view.fg3
                             monochrome: true
                         }
                         StyledText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: Services.Network.label
                             font.pixelSize: Config.Appearance.fs(12)
-                            color: Config.Appearance.ink3
+                            color: view.fg3
                         }
                     }
 
@@ -168,7 +173,7 @@ WlSessionLock {
                             anchors.verticalCenter: parent.verticalCenter
                             name: "bell"
                             size: 15
-                            inkColor: Config.Appearance.ink3
+                            inkColor: view.fg3
                             monochrome: true
                         }
                         StyledText {
@@ -177,7 +182,7 @@ WlSessionLock {
                                   + (Services.Notifications.count === 1
                                      ? " notification" : " notifications")
                             font.pixelSize: Config.Appearance.fs(12)
-                            color: Config.Appearance.ink3
+                            color: view.fg3
                         }
                     }
                 }

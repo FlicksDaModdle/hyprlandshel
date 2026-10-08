@@ -9,6 +9,8 @@
 #   ./install.sh --status          what greetd will start, and if it is this
 #   sudo ./install.sh --uninstall  put greetd's previous config back and
 #                                  remove the greeter
+#   sudo ./install.sh --no-keyring  install without having your login unlock
+#                                  the keyring
 #
 # How it fits together:
 #
@@ -29,13 +31,14 @@ REPO=$(cd "$HERE/.." && pwd)
 # Everything below is under $ROOT, which is / unless --root is given (for
 # trying the install out on a scratch directory).
 ROOT=""
-enable=0 uninstall=0 themeonly=0 status=0
+enable=0 uninstall=0 themeonly=0 status=0 keyring=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --enable)    enable=1 ;;
         --uninstall) uninstall=1 ;;
         --theme)     themeonly=1 ;;
         --status)    status=1 ;;
+        --no-keyring) keyring=0 ;;
         --root)      shift; ROOT="${1%/}" ;;
         -h|--help)   sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) printf 'unknown option %s\n' "$1" >&2; exit 2 ;;
@@ -147,8 +150,66 @@ copy_theme() {
         fi
     fi
     # The greeter writes to it (the theme code keeps the file up to date),
-    # so it is the greeter's.
-    chown -R "$gu" "$STATE"
+    # so it is the greeter's — that part only: users/ below is each
+    # person's own.
+    chown -R "$gu" "$STATE/config"
+}
+
+# Each person's folder, where their shell keeps the greeter's copy of their
+# theme, wallpaper and picture (services/GreeterSync.qml): theirs to write,
+# everyone's to read.
+user_folder() {
+    p=$1
+    mkdir -p "$STATE/users"
+    chmod 755 "$STATE" "$STATE/users"
+    mkdir -p "$STATE/users/$p"
+    chown "$p" "$STATE/users/$p"
+    chmod 755 "$STATE/users/$p"
+    did "a folder for your shell to keep the greeter dressed like your desktop: ${STATE#$ROOT}/users/$p"
+    note "your shell fills it within a minute, and again whenever the theme or wallpaper changes"
+}
+
+# Your login unlocking the keyring — the Secret Service, where Mail, the
+# browser and Wi-Fi keep passwords — with the password you just typed:
+# pam_gnome_keyring in greetd's PAM file, which a greetd login reads.
+PAM="$ROOT/etc/pam.d/greetd"
+pam_module() {
+    for d in /usr/lib/security /lib/security /usr/lib64/security /usr/lib/x86_64-linux-gnu/security; do
+        [ -f "$ROOT$d/pam_gnome_keyring.so" ] && return 0
+    done
+    return 1
+}
+setup_keyring() {
+    if [ ! -f "$PAM" ]; then
+        note "no $PAM — greetd's package normally installs it; the keyring will not unlock at login"
+        return
+    fi
+    if ! pam_module; then
+        note "gnome-keyring is not installed, so there is no keyring for the login to unlock (pacman -S gnome-keyring)"
+        return
+    fi
+    if grep -q pam_gnome_keyring "$PAM"; then
+        did "logging in unlocks the keyring (already set in ${PAM#$ROOT})"
+    else
+        [ -f "$PAM.before-hyprshell" ] || cp -p "$PAM" "$PAM.before-hyprshell"
+        # The auth line after every other auth line — it takes the password
+        # once it has been checked — and the session line at the end.
+        awk '
+            { lines[NR] = $0 }
+            /^[[:space:]]*-?auth[[:space:]]/ { last = NR }
+            END {
+                for (i = 1; i <= NR; i++) {
+                    print lines[i]
+                    if (i == last) print "auth       optional     pam_gnome_keyring.so"
+                }
+                if (!last) print "auth       optional     pam_gnome_keyring.so"
+                print "session    optional     pam_gnome_keyring.so auto_start"
+            }' "$PAM" > "$PAM.new" && mv -f "$PAM.new" "$PAM"
+        chmod 644 "$PAM"
+        did "logging in now unlocks the keyring (${PAM#$ROOT}; the old file is kept as greetd.before-hyprshell)"
+    fi
+    note "for that, the keyring's password has to be your login password — if it isn't, change it in"
+    note "Passwords and Keys (seahorse): right-click Login → Change Password"
 }
 
 # ── uninstall ─────────────────────────────────────────────────────────────
@@ -163,6 +224,10 @@ if [ "$uninstall" = 1 ]; then
     if [ -f "$CONF" ] && grep -q hyprshell-greeter "$CONF"; then
         note "no backup of greetd's previous config — $CONF still points at the greeter; edit it by hand"
     fi
+    if [ -f "$PAM.before-hyprshell" ]; then
+        mv -f "$PAM.before-hyprshell" "$PAM"
+        did "greetd's previous PAM file put back"
+    fi
     rm -rf "$SHARE" "$ETC" "$STATE" "$CACHE"
     did "greeter removed"
     exit 0
@@ -174,6 +239,7 @@ id -u "$GU" >/dev/null 2>&1 || die "greetd's user '$GU' does not exist — insta
 if [ "$themeonly" = 1 ]; then
     [ -d "$SHARE" ] || die "the greeter is not installed yet — run this without --theme"
     copy_theme "$GU"
+    [ -n "$PERSON" ] && user_folder "$PERSON"
     exit 0
 fi
 
@@ -199,12 +265,17 @@ cp "$HERE"/*.qml "$SHARE.new/"
 cp -R "$REPO/shell/quickshell/config" "$SHARE.new/shell/config"
 cp -R "$REPO/shell/quickshell/modules/common" "$SHARE.new/shell/modules/common"
 cp -R "$REPO/shell/quickshell/modules/icons" "$SHARE.new/shell/modules/icons"
+# The wallpaper's animations and contour map, which the login screen draws
+# under the card exactly as the desktop does.
+cp -R "$REPO/shell/quickshell/modules/background" "$SHARE.new/shell/modules/background"
 rm -rf "$SHARE"
 mv "$SHARE.new" "$SHARE"
 chmod -R a+rX "$SHARE"
 did "greeter in ${SHARE#$ROOT}"
 
 copy_theme "$GU"
+[ -n "$PERSON" ] && user_folder "$PERSON"
+[ "$keyring" = 1 ] && setup_keyring
 
 # Your picture, where every display manager looks for one — only if you
 # have a ~/.face and nothing is there already.

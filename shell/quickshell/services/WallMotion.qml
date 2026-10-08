@@ -63,6 +63,12 @@ Singleton {
     property var shown: []
     function add(w) { root.shown = root.shown.concat([w]); }
     function remove(w) { root.shown = root.shown.filter(x => x !== w); }
+    // Where a screen's animation has got to, so the lock screen can carry on
+    // from the same frame rather than jump back to the start.
+    function phaseFor(screenName) {
+        const w = root.shown.find(x => x && x.screenName === screenName) || root.shown[0];
+        return w ? { time: w.time || 0, rise: w.rise || 0 } : null;
+    }
     function status() {
         const api = ["unknown", "software", "openvg", "opengl", "direct3d11", "vulkan", "metal", "null", "direct3d12"];
         return JSON.stringify({

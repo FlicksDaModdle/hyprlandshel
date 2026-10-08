@@ -2,10 +2,26 @@
 
 The login screen, in the shell's own design — drawn by the same file as the
 lock screen (`shell/quickshell/modules/common/LoginView.qml`), so the two are
-one design: the big clock, the card with your picture and name, the field
-with its text cursor and show-password eye, over the desktop's tint, in your theme — accent, light or dark, fonts,
-corner rounding. Run by [greetd](https://sr.ht/~kennylevinsen/greetd/), the
-same way Noctalia's greeter is.
+one design: a light clock high up, a frosted card with your picture, name
+and the password field, sleep / restart / shut down in the corner — over
+your desktop's own wallpaper (the live video, picture, animation, contour
+map or gradient, `Ground.qml`), in your theme: accent, light or dark,
+fonts, corner rounding. Run by [greetd](https://sr.ht/~kennylevinsen/greetd/),
+the same way Noctalia's greeter is.
+
+**It follows your shell.** Change the accent, theme or wallpaper in
+Settings and the next login screen has it: your shell keeps a copy of your
+theme, wallpaper and picture in `/var/lib/hyprshell-greeter/users/<you>`
+(`services/GreeterSync.qml`), the one place both it and the greeter can
+reach, and the greeter shows whoever is picked in their own. Someone who has
+never run the shell gets the greeter's own look (`--theme`).
+
+**Your login unlocks the keyring** — where Mail, the browser and Wi-Fi keep
+passwords: the installer adds `pam_gnome_keyring` to `/etc/pam.d/greetd`
+(the old file is kept as `greetd.before-hyprshell`; `--no-keyring` skips
+it). For that the keyring's password has to be your login password; if it
+isn't, change it in Passwords and Keys (seahorse): right-click *Login* →
+*Change Password*.
 
 ```sh
 sudo ./install.sh              # install it and point greetd at it
@@ -61,7 +77,7 @@ GreeterWindow.qml  the window, as a layer holding the keyboard (Wayland)
 GreeterWindowX11.qml  the same without a layer shell, for tests
 hyprland.lua       the compositor greetd runs it in — no keybinds
 install.sh
-shell → ../shell/quickshell   the theme and components it is drawn with
+shell → ../shell/quickshell   the theme, components and wallpaper it is drawn with
 ```
 
 The greeter runs as greetd's own unprivileged user. It reads `/etc/passwd`

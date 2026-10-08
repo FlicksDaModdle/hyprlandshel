@@ -72,6 +72,10 @@ ShellRoot {
     // when chosen, Settings open or not.
     readonly property bool rogStarted: Services.Rog.available || true
 
+    // And the login screen's copy of your theme and wallpaper, which has to
+    // follow every change, Settings open or not.
+    readonly property bool greeterSyncStarted: Services.GreeterSync.active || true
+
     // And idle: the lock, screen off and sleep timers have to be set from
     // the start, Settings open or not.
     readonly property bool idleStarted: Services.Idle.available || true

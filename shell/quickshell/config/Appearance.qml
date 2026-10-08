@@ -39,6 +39,14 @@ Singleton {
     // timer is longer than any local read and does no harm when the
     // signal has already done the job.
     property bool settingsReady: false
+
+    // Another theme file to show, read only — the greeter's: the person
+    // picked at the login screen's own copy of their theme, kept up to date
+    // by their shell (services/GreeterSync.qml). Nothing is written while
+    // it is set; if it is not there, the usual file is read instead.
+    property string themeFile: ""
+    readonly property bool readOnly: themeFile !== ""
+
     Timer {
         running: !root.settingsReady
         interval: 3000
@@ -64,22 +72,27 @@ Singleton {
         }
     }
     // A change made just before a reload or quit still reaches the file.
-    Component.onDestruction: if (saveSoon.running) store.writeAdapter()
+    Component.onDestruction: if (saveSoon.running && !root.readOnly) store.writeAdapter()
 
     FileView {
         id: store
-        path: root.configDir + "/theme.json"
+        path: root.themeFile !== "" ? root.themeFile : root.configDir + "/theme.json"
         watchChanges: true
         printErrors: false
         onFileChanged: {
             if (saveSoon.running || Date.now() - root.lastWrite < 2000) return;
             reload();
         }
-        onAdapterUpdated: saveSoon.restart()
+        onAdapterUpdated: if (!root.readOnly) saveSoon.restart()
         onLoaded: root.settingsReady = true
         // A missing file is normal on first run: write defaults out so the
         // file exists and is editable by hand.
         onLoadFailed: error => {
+            if (root.readOnly) {
+                // Someone else's theme that isn't there: the usual one.
+                root.themeFile = "";
+                return;
+            }
             if (error === FileViewError.FileNotFound) writeAdapter();
             // Defaults are the answer either way, and they are already
             // here, so nothing is waiting on a file that is not coming.

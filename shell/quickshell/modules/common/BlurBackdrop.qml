@@ -46,6 +46,9 @@ Item {
         blurEnabled: true
         blur: root.amount
         blurMax: 40
+        // Exactly the popup's size: padding would let the blur spill out
+        // past its edges as a faint smear.
+        autoPaddingEnabled: false
         // Rounded to match the popup it sits inside, or the blur shows as a
         // square behind the corners.
         maskEnabled: true

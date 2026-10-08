@@ -1,7 +1,6 @@
 import QtQuick
 import Quickshell
 import "../../config" as Config
-import "../../services" as Services
 import "Palettes.js" as Palettes
 
 // Settings → Wallpaper → Animated: aurora, blobs, waves, starfield,
@@ -24,6 +23,14 @@ ShaderEffect {
     id: fx
 
     property var screen: null
+    // What decides when it moves: the desktop's Services.WallMotion
+    // (battery, saver, covered by windows), handed in by Wallpaper.qml.
+    // Without one — the lock screen, the greeter — `running` says.
+    property var motion: null
+    property bool running: true
+    // Where to start the animation: the lock screen's, carrying on from the
+    // desktop's ({ time, rise }, as Services.WallMotion.phaseFor gives).
+    property var startPhase: null
     property string style: Config.Appearance.wallpaperStyle
     property bool preview: false
     // The palette to show, for a preview of one that is not chosen.
@@ -79,7 +86,7 @@ ShaderEffect {
     // ── moving ────────────────────────────────────────────────────────────
     // Held still on battery, under Battery saver and behind windows, as
     // Settings says (Services.WallMotion, which also tells Settings why).
-    readonly property bool animating: visible && (preview || Services.WallMotion.moving(screenName))
+    readonly property bool animating: visible && (preview || (motion ? motion.moving(screenName) : running))
 
     Timer {
         readonly property int fps: fx.preview ? 24 : Math.max(10, Math.min(60, fx.prefs.animFps))
@@ -93,7 +100,10 @@ ShaderEffect {
     readonly property string styleName: style
     readonly property int gfxApi: GraphicsInfo.api
     readonly property bool moving: animating
-    Component.onCompleted: if (!preview) Services.WallMotion.add(fx)
-    Component.onDestruction: if (!preview) Services.WallMotion.remove(fx)
-    onAnimatingChanged: if (!preview) console.log("AnimatedWallpaper:", animating ? "moving" : "still", "on", screenName)
+    Component.onCompleted: {
+        if (startPhase) time = startPhase.time || 0;
+        if (motion) motion.add(fx);
+    }
+    Component.onDestruction: if (motion) motion.remove(fx)
+    onAnimatingChanged: if (motion) console.log("AnimatedWallpaper:", animating ? "moving" : "still", "on", screenName)
 }
