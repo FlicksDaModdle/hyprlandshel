@@ -124,7 +124,7 @@ Scope {
         "Laptop":        { icon: "zap",       group: "System", note: "This ASUS laptop's own controls, through asusd: performance, charge limit, keyboard light, graphics and panel." },
         "Hyprland":      { icon: "grid",      group: "System", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
         "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
-        "Appearance":    { icon: "palette",   group: "Shell",  note: "Theme, accent, translucency, corners and motion. Every change repaints the shell live." },
+        "Appearance":    { icon: "palette",   group: "Shell",  cards: true, note: "How the shell looks and moves. Every change shows at once — in the preview, and everywhere else." },
         "Wallpaper":     { icon: "image",     group: "Shell",  note: "The desktop's ground — a tint, an image, or a live wallpaper." },
         "Icons":         { icon: "package",   group: "Shell",  note: "Every place an app icon appears, sized in one list." },
         "App theming":   { icon: "sunMoon",   group: "Shell",  note: "Handing this theme to applications that are not part of the shell." },
@@ -334,61 +334,47 @@ Scope {
 
         // The shell's own look: colour, surfaces, shape and motion.
         case "Appearance": return [
-            { type: "header", n: "Colour",
-              s: "Light or dark, and the one colour everything picks up" },
-            { n: "Theme", s: "Light, dark, or follow the clock after sunset", type: "seg",
-              options: [{ label: "Light", value: "light" }, { label: "Dark", value: "dark" }, { label: "Auto", value: "auto" }],
-              value: A.theme, set: v => A.theme = v },
+            // The shell in miniature, drawn from everything below.
+            { type: "preview" },
+
+            { type: "header", n: "Colour" },
+            { n: "Theme", s: "Light, dark, or dark from sunset to sunrise",
+              type: "themes", value: A.theme, set: v => A.theme = v },
             { n: "Accent", s: A.wallAccentOn
-                ? "From the wallpaper · " + String(A.accent).toUpperCase() + " — pick a swatch to use your own"
-                : A.accentIndex === -1
-                ? "Custom · " + String(A.customAccent).toUpperCase()
-                : "Pick a preset, or cycle the custom swatch", type: "swatch" },
+                ? "From the wallpaper · " + String(A.accent).toUpperCase()
+                : A.accentIndex === -1 ? "Custom · " + String(A.customAccent).toUpperCase()
+                : "The one colour everything picks up", type: "swatch" },
             { n: "Accent from wallpaper",
               s: Services.WallpaperAccent.status !== "" ? Services.WallpaperAccent.status
-                 : "The most vivid colour in the picture on the desktop, in a shade for "
-                   + "each theme, following it when the wallpaper changes. Off puts your "
-                   + "own accent back.",
+                 : "Follow the most vivid colour in the wallpaper",
               type: "toggle", value: A.accentFromWallpaper, set: v => A.accentFromWallpaper = v },
-        ].concat(root.cursorRows()).concat([
-            { type: "header", n: "Surfaces",
-              s: "The bar, the dock, panels and menus" },
+
+            { type: "header", n: "Surfaces" },
             { n: "Translucency", s: "How much of the desktop shows through the bar, dock and panels",
               type: "slider", min: 0, max: 100, unit: "%",
               value: A.translucency, set: v => A.translucency = v },
-            { n: "Frosted menus", s: "Blur what's behind a dropdown or the colour "
-                 + "picker. They sit inside a window rather than on the desktop, so "
-                 + "what gets blurred is the rows underneath them.",
+            { n: "Frosted menus", s: "Blur what is behind a dropdown inside a window",
               type: "toggle", value: A.menuBlur, set: v => A.menuBlur = v },
-            { n: "Menu translucency", s: "How much shows through — with frosting on, "
-                 + "this is how strong the frost reads",
+            { n: "Menu translucency", s: A.menuBlur ? "How strong the frost reads" : "How much shows through a dropdown",
               type: "slider", min: 0, max: 60, unit: "%",
               value: A.menuTranslucency, set: v => A.menuTranslucency = v },
-            { type: "header", n: "Shape",
-              s: "How round everything is" },
-            { n: "Corner rounding", s: "Scales every radius — the shell, its apps, the browser and "
-                 + "the window corners. 0% is fully square", type: "slider",
-              min: 0, max: 160, unit: "%", value: A.roundingPct, set: v => A.roundingPct = v },
-        ]).concat(root.cornerRows()).concat([
 
-            { type: "header", n: "Motion",
-              s: "One control over every animation the shell draws" },
+            { type: "header", n: "Shape" },
+            { n: "Corner rounding", s: "Every radius at once — the shell, its apps, the browser and windows. 0% is square",
+              type: "slider", min: 0, max: 160, unit: "%", value: A.roundingPct, set: v => A.roundingPct = v },
+        ].concat(root.cornerRows(false)).concat([
+
+            { type: "header", n: "Motion" },
             { n: "Animation speed",
-              s: "Scales every duration in the shell — panels, the dock, "
-                 + "the start menu, toggles, the lot. 0% is genuinely "
-                 + "instant rather than merely fast, which is what turning "
-                 + "animations down is usually for.",
+              s: "Scales every animation in the shell. 0% is instant",
               type: "slider", min: 0, max: 250, unit: "%",
               value: A.animSpeed, set: v => A.animSpeed = v },
+        ]).concat(root.cursorRows()).concat([
 
-            { type: "header", n: "This window",
-              s: "How Settings itself is put on screen" },
+            { type: "header", n: "Settings window" },
             { n: "Window mode",
-              s: "Floating is the design's own window: it sits above the "
-                 + "desktop with the title bar you see here, and you can drag "
-                 + "it between monitors. Tiled makes it an ordinary "
-                 + "application window, so Hyprland gives it a slot in the "
-                 + "layout and your window binds work on it.",
+              s: A.settingsTiled ? "An ordinary window Hyprland tiles, so your window binds work on it"
+                                 : "Floats above the desktop; drag it by its title bar, even between monitors",
               type: "seg",
               options: [{ label: "Floating", value: "floating" },
                         { label: "Tiled",    value: "tiled" }],
@@ -2020,17 +2006,19 @@ Scope {
     // Settings → Appearance → Pointer: the accent cursor (services/Cursor.qml).
     // Black rounded corners over the screen's own, for a panel whose
     // corners are square. Pure black so they read as bezel, not as shell.
-    function cornerRows() {
+    // With a header of their own, or (false) as more rows of the section
+    // they are put in — Appearance's Shape card.
+    function cornerRows(withHeader) {
         const A = Config.Appearance;
-        const rows = [
+        const rows = (withHeader === false ? [] : [
             { type: "header", n: "Screen corners",
               s: "Round off a display whose corners are square, with black corners "
-                 + "that read as part of the bezel" },
+                 + "that read as part of the bezel" }
+        ]).concat([
             { n: "Round the screen's corners",
-              s: "Drawn over everything, fullscreen games and video included, and "
-                 + "never in the way of a click",
+              s: "Black corners drawn over everything, games and video included, never in the way of a click",
               type: "toggle", value: A.screenCorners, set: v => A.screenCorners = v }
-        ];
+        ]);
         if (!A.screenCorners) return rows;
         return rows.concat([
             { n: "Corner radius", s: "How far the black curve reaches into the screen",
@@ -2094,7 +2082,7 @@ Scope {
     function cursorRows() {
         const A = Config.Appearance, C = Services.Cursor;
         const rows = [
-            { type: "header", n: "Pointer", s: "" },
+            { type: "header", n: "Pointer" },
             { n: "Cursor",
               s: A.cursorTheme === "accent"
                  ? (C.toolMissing ? "Not built: hyprshell-cursors is missing — run shell/install.sh again (it needs qt6-svg)"

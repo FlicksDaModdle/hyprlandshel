@@ -335,6 +335,27 @@ PanelSurface {
         }
     }
 
+    // ── cards ─────────────────────────────────────────────────────────
+    // A pane whose meta says `cards` is drawn as cards: each run of rows
+    // between two headers is one, under its header. Each row is told where
+    // in its card it falls and draws that slice itself ("h" for a header).
+    readonly property var cardPositions: {
+        const meta = frame.app.paneMeta[frame.app.pane];
+        if (!meta || !meta.cards) return [];
+        const rows = frame.app.rows || [];
+        const out = [];
+        let i = 0;
+        while (i < rows.length) {
+            if (rows[i].type === "header") { out.push("h"); i++; continue; }
+            let j = i;
+            while (j < rows.length && rows[j].type !== "header") j++;
+            for (let k = i; k < j; k++)
+                out.push(j - i === 1 ? "only" : k === i ? "first" : k === j - 1 ? "last" : "middle");
+            i = j;
+        }
+        return out;
+    }
+
     // ── a row asked for by the launcher's search ──────────────────────
     // Once the pane's rows are built: scrolled into view, a little below
     // the top, and flashed.
@@ -402,8 +423,10 @@ PanelSurface {
                 model: frame.app.rows
                 SettingsRow {
                     required property var modelData
+                    required property int index
                     width: paneColumn.width
                     spec: modelData
+                    cardPos: frame.cardPositions[index] || ""
                     // Popups reparent themselves here so they are neither
                     // clipped by the scrolling pane nor painted over by
                     // the rows that come after them.

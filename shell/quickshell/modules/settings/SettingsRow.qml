@@ -33,6 +33,17 @@ Item {
     readonly property bool isHeader: root.spec.type === "header"
     // The control goes under the labels, across the whole row.
     readonly property bool isWide: root.spec.type === "gallery" || root.spec.type === "panel"
+                                   || root.spec.type === "preview" || root.spec.type === "themes"
+
+    // In a pane drawn as cards (SettingsFrame sets this): where this row
+    // falls in its card — "only", "first", "middle" or "last" — or "" for
+    // the plain list. A carded row draws its own slice of the card, so the
+    // rows stay a flat list that the settings search can find its way in.
+    property string cardPos: ""
+    readonly property bool carded: cardPos !== "" && !isHeader && spec.type !== "preview"
+    readonly property real inset: carded ? 16 : 0
+    readonly property bool cardTop: cardPos === "only" || cardPos === "first"
+    readonly property bool cardBottom: cardPos === "only" || cardPos === "last"
     readonly property bool hasLabels: !!(root.spec.n || root.spec.s)
 
     implicitWidth: parent ? parent.width : 560
@@ -56,17 +67,30 @@ Item {
     }
 
     implicitHeight: root.isHeader
-        ? labels.implicitHeight + 34
+        ? labels.implicitHeight + (root.cardPos !== "" ? 36 : 34)
         : root.isWide
-        ? (root.hasLabels ? labels.implicitHeight + 10 : 0) + control.implicitHeight + 26
-        : Math.max(labels.implicitHeight, control.implicitHeight) + 26
+        ? (root.hasLabels ? labels.implicitHeight + 10 : 0) + control.implicitHeight + (root.carded ? 32 : 26)
+        : Math.max(labels.implicitHeight, control.implicitHeight) + (root.carded ? 28 : 26)
+
+    // The card: its corners only where the card has them.
+    Rectangle {
+        visible: root.carded
+        anchors.fill: parent
+        color: Config.Appearance.hover
+        topLeftRadius: root.cardTop ? Config.Appearance.r : 0
+        topRightRadius: root.cardTop ? Config.Appearance.r : 0
+        bottomLeftRadius: root.cardBottom ? Config.Appearance.r : 0
+        bottomRightRadius: root.cardBottom ? Config.Appearance.r : 0
+    }
 
     Rectangle {
         // A header draws its own separator above itself and owns the space,
-        // so the row rule would double it.
-        visible: root.showRule && !root.isHeader
+        // so the row rule would double it. In a card, a hairline between
+        // rows, inset from the card's edges; none above the first.
+        visible: root.carded ? !root.cardTop : (root.showRule && !root.isHeader && root.cardPos === "")
         anchors.top: parent.top
-        width: parent.width
+        x: root.inset
+        width: parent.width - root.inset * 2
         height: 1
         color: Config.Appearance.rule
     }
@@ -75,11 +99,15 @@ Item {
         id: labels
         visible: !root.isWide || root.hasLabels
         anchors.left: parent.left
+        anchors.leftMargin: root.inset + (root.isHeader && root.cardPos !== "" ? 4 : 0)
         anchors.right: root.isHeader || root.isWide ? parent.right : control.left
-        anchors.rightMargin: root.isHeader || root.isWide ? 0 : 24
+        anchors.rightMargin: root.isHeader || root.isWide ? root.inset : 24
         anchors.top: root.isWide ? parent.top : undefined
-        anchors.topMargin: 13
-        anchors.verticalCenter: root.isWide ? undefined : parent.verticalCenter
+        anchors.topMargin: root.carded ? 15 : 13
+        // A section's title in a carded pane sits just above its card.
+        anchors.bottom: root.isHeader && root.cardPos !== "" ? parent.bottom : undefined
+        anchors.bottomMargin: 8
+        anchors.verticalCenter: root.isWide || (root.isHeader && root.cardPos !== "") ? undefined : parent.verticalCenter
         anchors.verticalCenterOffset: root.isHeader ? 6 : 0
         spacing: 3
 
@@ -94,6 +122,9 @@ Item {
             color: root.isHeader ? Config.Appearance.ink3 : Config.Appearance.ink
         }
         StyledText {
+            // An empty description takes no line: a row with only a title
+            // centres on it, and a section title sits on its card.
+            visible: text !== ""
             width: parent.width
             wrapMode: Text.WordWrap
             text: root.spec.s || ""
@@ -107,12 +138,13 @@ Item {
         id: control
         visible: !root.isHeader
         anchors.right: parent.right
+        anchors.rightMargin: root.inset
         anchors.verticalCenter: root.isWide ? undefined : parent.verticalCenter
         anchors.bottom: root.isWide ? parent.bottom : undefined
-        anchors.bottomMargin: 13
+        anchors.bottomMargin: root.carded ? 16 : 13
         implicitWidth: root.isHeader ? 0 : loader.implicitWidth
         implicitHeight: root.isHeader ? 0 : loader.implicitHeight
-        width: root.isWide ? root.width : implicitWidth
+        width: root.isWide ? root.width - root.inset * 2 : implicitWidth
         height: implicitHeight
 
         Loader {
@@ -131,6 +163,8 @@ Item {
                 case "keybind": return keybindComponent;
                 case "monitors": return monitorsComponent;
                 case "gallery": return galleryComponent;
+                case "preview": return previewComponent;
+                case "themes": return themesComponent;
                 case "panel":  return root.spec.panel === "bluetooth" ? bluetoothComponent
                                    : root.spec.panel === "sound" ? soundComponent
                                    : root.spec.panel === "focus" ? focusComponent
@@ -1036,6 +1070,19 @@ Item {
     Component {
         id: animatedComponent
         AnimatedGallery { width: control.width }
+    }
+
+    Component {
+        id: previewComponent
+        AppearancePreview { width: control.width }
+    }
+    Component {
+        id: themesComponent
+        ThemeTiles {
+            width: control.width
+            value: root.spec.value || ""
+            onPicked: v => { if (root.spec.set) root.spec.set(v); }
+        }
     }
 
     Component {
