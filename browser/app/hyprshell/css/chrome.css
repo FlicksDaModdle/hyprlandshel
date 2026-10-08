@@ -192,6 +192,13 @@
   border-radius: var(--hs-r-sm) !important;
   background: none !important;
 }
+/* On every tab, however many are open. Below browser.tabs.tabClipWidth
+ * Firefox keeps the cross on the current tab only (157 does so whatever
+ * the pref says), so a crowded strip had tabs that could not be closed
+ * where they were. The tab's 120px minimum leaves room for it. */
+:root[hyprshell] #tabbrowser-tabs[closebuttons="activetab"] .tabbrowser-tab:not([pinned]) .tab-close-button {
+  display: flex !important;
+}
 :root[hyprshell] .tab-close-button:hover {
   background: var(--hs-hover) !important;
   color: var(--hs-ink) !important;
@@ -209,15 +216,20 @@
   list-style-image: url("resource://hyprshell/icons/chevron.svg") !important;
 }
 
-/* Window buttons: the concept's three 28px squares with 13px glyphs, close
- * going accent under the pointer. appearance: none takes the painting back
- * from GTK, which would otherwise draw its own round buttons over these. */
-:root[hyprshell] .titlebar-buttonbox { gap: 2px; margin-inline-start: 6px; align-items: center; }
+/* Window buttons: the same three as every window of the shell's own (the
+ * terminal, Files, Settings) — 28px squares, 17px glyphs drawn from the
+ * shell's icon paths at its weight (2px lines), in ink2, close going accent
+ * under the pointer. One square for maximise in both states: the shell's
+ * windows have no separate restore glyph, and Firefox counts a tiled
+ * window as maximised, so it showed the restore one nearly always.
+ * appearance: none takes the painting back from GTK, which would otherwise
+ * draw its own round buttons over these. */
+:root[hyprshell] .titlebar-buttonbox { gap: 2px; margin-inline-start: 10px; align-items: center; }
 :root[hyprshell] .titlebar-button {
   appearance: none !important;
   width: 28px !important;
   height: 28px !important;
-  padding: 7.5px !important;
+  padding: 5.5px !important;
   border-radius: var(--hs-r-sm) !important;
   background: none !important;
   color: var(--hs-ink2) !important;
@@ -226,8 +238,8 @@
 }
 :root[hyprshell] .titlebar-button > .toolbarbutton-icon {
   appearance: none !important;
-  width: 13px !important;
-  height: 13px !important;
+  width: 17px !important;
+  height: 17px !important;
   padding: 0 !important;
   background: none !important;
   -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
@@ -238,10 +250,9 @@
   background: var(--hs-accent) !important;
   color: var(--hs-on-accent) !important;
 }
-:root[hyprshell] .titlebar-min { list-style-image: url("resource://hyprshell/icons/minimize.svg") !important; }
-:root[hyprshell] .titlebar-max { list-style-image: url("resource://hyprshell/icons/maximize.svg") !important; }
-:root[hyprshell] .titlebar-restore { list-style-image: url("resource://hyprshell/icons/restore.svg") !important; }
-:root[hyprshell] .titlebar-close { list-style-image: url("resource://hyprshell/icons/close.svg") !important; }
+:root[hyprshell] .titlebar-min { list-style-image: url("resource://hyprshell/icons/win-minimize.svg") !important; }
+:root[hyprshell] :is(.titlebar-max, .titlebar-restore) { list-style-image: url("resource://hyprshell/icons/win-maximize.svg") !important; }
+:root[hyprshell] .titlebar-close { list-style-image: url("resource://hyprshell/icons/win-close.svg") !important; }
 
 /* ══ toolbar ══════════════════════════════════════════════════════════════ */
 /* 44px between two rules, 8px in from each side. */
@@ -382,6 +393,66 @@
   box-shadow: none !important;
   margin-inline: 0 !important;
 }
+/* Firefox 157 and later: the suggestions are a popover of their own, in the
+ * top layer and anchored under the pill (CSS anchor positioning), while the
+ * pill stays a 32px row. Nothing can draw one ring round the two, so each
+ * draws its half of it: the pill its top and sides with the bottom corners
+ * square, the list its sides and bottom, meeting at the pill's lower edge.
+ * Firefox also grows the pill's background past it — 8px to either side
+ * and 24px down behind the list — which made the open panel wider than the
+ * pill and the list sit 3px up into it; both put back to the pill's own
+ * box. Before 157 the list is inside the pill, which grows to hold it, and
+ * the rules above already make that one panel; none of these match there. */
+:root[hyprshell] #urlbar > .urlbar-background {
+  inset: 0 !important;
+}
+:root[hyprshell] #urlbar:is([popover-open], :has(> .urlbarView:popover-open)) > .urlbar-background {
+  border-radius: var(--hs-r) var(--hs-r) 0 0 !important;
+}
+:root[hyprshell] #urlbar:is([popover-open], :has(> .urlbarView:popover-open))::after {
+  box-shadow: none !important;
+  box-sizing: border-box !important;
+  border: 2px solid var(--hs-accent) !important;
+  border-bottom: none !important;
+  border-radius: var(--hs-r) var(--hs-r) 0 0 !important;
+}
+/* 157 paints the list on an element of its own, with a lilac glow round
+ * it: the panel colour, the panel's corners, no glow. */
+:root[hyprshell] #urlbar .urlbarView-background {
+  background: var(--hs-menu) !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 0 var(--hs-r) var(--hs-r) !important;
+}
+:root[hyprshell] #urlbar > .urlbarView:popover-open {
+  margin: 0 !important;
+  padding-top: 4px !important;
+  padding-bottom: 6px !important;
+  border-radius: 0 0 var(--hs-r) var(--hs-r) !important;
+}
+/* Its half of the ring, over the rows, and a hairline under the field
+ * where the two halves meet — the one line inside the panel. */
+:root[hyprshell] #urlbar > .urlbarView:popover-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 2px solid var(--hs-accent);
+  border-top: none;
+  border-radius: 0 0 var(--hs-r) var(--hs-r);
+  pointer-events: none;
+  z-index: 10;
+}
+:root[hyprshell] #urlbar > .urlbarView:popover-open::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline: 12px;
+  height: 1px;
+  background: var(--hs-rule);
+  pointer-events: none;
+}
+
 /* The row you type in keeps the pill's height when the panel opens. */
 :root[hyprshell] #urlbar:is([breakout-extend], [open]) > .urlbar-input-container {
   height: var(--urlbar-height) !important;
@@ -389,6 +460,10 @@
 }
 :root[hyprshell] #urlbar .urlbar-input-container {
   padding-inline: 10px 6px !important;
+  /* Firefox 157 rings the field itself, focused, with an outline of its
+   * own — a second, fully rounded ring inside the panel's. The panel's
+   * border (#urlbar::after) is the only one. */
+  outline: none !important;
 }
 :root[hyprshell] #urlbar-input { color: var(--hs-ink) !important; }
 :root[hyprshell] #urlbar-input::placeholder { color: var(--hs-ink3) !important; opacity: 1; }
@@ -746,6 +821,35 @@
 :root[hyprshell] #appMenu-settings-button { list-style-image: url("resource://hyprshell/icons/settings.svg") !important; }
 :root[hyprshell] #appMenu-more-button2 { list-style-image: url("resource://hyprshell/icons/more.svg") !important; }
 :root[hyprshell] #appMenu-help-button2 { list-style-image: url("resource://hyprshell/icons/help.svg") !important; }
+
+/* ══ glass ═════════════════════════════════════════════════════════════════ */
+/* The title row and the toolbar see-through, by the shell's Translucency
+ * slider, with Hyprland's blur behind them — as the terminal's chrome is,
+ * and the shell's own panels. Hyprland blurs behind any window that has
+ * transparency in it; Firefox makes its window transparent when the root
+ * has no opaque background. So: the root clear, the window's own fill
+ * (body, in Firefox) the shell's sheet at the slider's alpha, the toolbars
+ * on it clear so it is one layer and not two, and everything under the
+ * toolbar — the page, the find bar, the sidebar — solid, as a page must be.
+ * At 0% the glass is opaque and this changes nothing. Only where the
+ * window can be see-through at all: a bare X server draws transparency as
+ * black. --hs-glass comes from the shell's palette; with a shell too old to
+ * write it, the sheet, solid. */
+@media (-moz-gtk-csd-transparency-available) {
+  :root[hyprshell] {
+    background: transparent !important;
+  }
+  :root[hyprshell] body,
+  :root[hyprshell] body:-moz-window-inactive {
+    background-color: var(--hs-glass, var(--hs-sheet)) !important;
+  }
+  :root[hyprshell] :is(#nav-bar, #PersonalToolbar, #TabsToolbar, #navigator-toolbox) {
+    background-color: transparent !important;
+  }
+  :root[hyprshell] :is(#browser, #tabbrowser-tabbox, #tabbrowser-tabpanels, .browserContainer > findbar, #sidebar-box) {
+    background-color: var(--hs-sheet) !important;
+  }
+}
 
 /* ══ where popups cannot be transparent ═══════════════════════════════════ */
 /* A rounded menu is a square window with its corners left see-through. When

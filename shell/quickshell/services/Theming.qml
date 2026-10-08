@@ -485,6 +485,10 @@ Singleton {
             + "  --hs-frame: " + css(A.ground) + ";\n"
             + "  --hs-chrome: " + css(chrome) + ";\n"
             + "  --hs-sheet: " + css(sheet) + ";\n"
+            // The same sheet left see-through, by the Translucency slider:
+            // the browser's title row and toolbar, with Hyprland's blur
+            // behind them, as the terminal's are. Opaque at 0%.
+            + "  --hs-glass: " + rgba(A.sheet) + ";\n"
             + "  --hs-field: " + css(A.surface) + ";\n"
             + "  --hs-menu: " + css(menu) + ";\n"
             + "  --hs-sel-tab: " + css(selTab) + ";\n"
