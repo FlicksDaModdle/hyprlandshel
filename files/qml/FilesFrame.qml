@@ -35,6 +35,29 @@ PanelSurface {
     // the focus happens to be — except while a name is being typed, which
     // takes focus itself and gets first refusal on every key.
     focus: true
+
+    // Focus left with nowhere to go comes back here. A name field (renaming,
+    // a new folder) or the address field takes the keyboard while it is up,
+    // and when it closes the focus went with it — to nothing — so every
+    // shortcut on this frame, Ctrl+A first among them, stopped working
+    // until the window was clicked in just so. That was the inconsistency.
+    readonly property Item focusNow: frame.Window.activeFocusItem
+    onFocusNowChanged: focusReturn.restart()
+    Timer {
+        id: focusReturn
+        interval: 0
+        onTriggered: {
+            const f = frame.Window.activeFocusItem;
+            if (frame.visible && frame.Window.active && (!f || f === frame.Window.contentItem))
+                frame.forceActiveFocus();
+        }
+    }
+    Window.onActiveChanged: focusReturn.restart()
+    Connections {
+        target: frame.app
+        function onFocusWanted() { frame.forceActiveFocus(); }
+    }
+
     Keys.onPressed: event => {
         const ctrl = (event.modifiers & Qt.ControlModifier) !== 0;
         if (ctrl && event.key === Qt.Key_A) { frame.app.selectAll(); event.accepted = true; return; }
@@ -661,8 +684,13 @@ PanelSurface {
         // choice, and it matches the breadcrumb beside it.
         Rectangle {
             id: viewRow
-            anchors.right: newButton.left
-            anchors.rightMargin: 8
+            // Left of whichever button ends the row: New in a folder,
+            // Empty Trash in a trash with something in it, nothing in an
+            // empty one. Anchored to New alone, the wider trash button was
+            // drawn over these.
+            anchors.right: !frame.app.inTrash ? newButton.left
+                         : emptyButton.visible ? emptyButton.left : parent.right
+            anchors.rightMargin: frame.app.inTrash && !emptyButton.visible ? 12 : 8
             anchors.verticalCenter: parent.verticalCenter
             width: viewButtons.implicitWidth + 6
             height: 30
@@ -719,7 +747,7 @@ PanelSurface {
         // Explorer do with the same gesture.
         Rectangle {
             id: searchPill
-            anchors.right: pinButton.left
+            anchors.right: pinButton.visible ? pinButton.left : viewRow.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             width: searchField.active || frame.app.filter !== "" ? 180 : 30
@@ -885,25 +913,28 @@ PanelSurface {
 
         // Emptying the trash is the one thing in here that cannot be undone,
         // so it asks, in place, rather than doing it and hoping.
+        // The same size and place as New, which it stands in for here.
         Rectangle {
+            id: emptyButton
             anchors.right: parent.right
-            anchors.rightMargin: 16
+            anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
-            width: emptyRow.implicitWidth + 30
-            height: 38
+            width: emptyRow.implicitWidth + 24
+            height: 30
             radius: Appearance.rSm
-            color: frame.app.confirmingEmpty ? Appearance.accent : Appearance.surface
+            color: frame.app.confirmingEmpty ? Appearance.accent
+                 : (emptyArea.containsMouse ? Appearance.sel : Appearance.hover)
             visible: frame.app.inTrash && frame.app.visibleEntries.length > 0
 
             Row {
                 id: emptyRow
                 anchors.centerIn: parent
-                spacing: 6
+                spacing: 7
 
                 MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "trash"
-                    size: 20
+                    size: 18
                     inkColor: frame.app.confirmingEmpty ? Appearance.inkOnAccent
                                                         : Appearance.ink2
                     monochrome: true
@@ -911,8 +942,8 @@ PanelSurface {
 
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: frame.app.confirmingEmpty ? "Delete them permanently?" : "Empty Trash"
-                    font.pixelSize: Appearance.fs(13)
+                    text: frame.app.confirmingEmpty ? "Delete permanently?" : "Empty Trash"
+                    font.pixelSize: Appearance.fs(11.5)
                     font.weight: Font.DemiBold
                     color: frame.app.confirmingEmpty ? Appearance.inkOnAccent
                                                      : Appearance.ink
@@ -920,6 +951,7 @@ PanelSurface {
             }
 
             MouseArea {
+                id: emptyArea
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
@@ -959,6 +991,8 @@ PanelSurface {
             property bool additive: false
 
             onPressed: mouse => {
+                // A click on the files is a click away from any field.
+                frame.forceActiveFocus();
                 if (mouse.button !== Qt.LeftButton) return;
                 originX = mouse.x;
                 originY = mouse.y;

@@ -318,6 +318,10 @@ QtObject {
     // when it builds; the tiles call them without knowing where the menu
     // lives.
     property var menuLayer: null
+    // The frame, given the keyboard — what a click on a file does, so the
+    // shortcuts work after typing in a field.
+    signal focusWanted()
+    function takeFocus() { root.focusWanted(); }
     property var menu: null
     // The picture a drag carries, produced by DragBadge and bound by the
     // delegates. Empty until the first selection.

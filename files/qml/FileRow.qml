@@ -186,6 +186,8 @@ Item {
 
         drag.target: dragProxy
         onPressed: mouse => {
+            // The keyboard back to the window's shortcuts, from any field.
+            row.app.takeFocus();
             if (mouse.button !== Qt.LeftButton) return;
 
             // Only claim the item when no modifier is held. Selecting it

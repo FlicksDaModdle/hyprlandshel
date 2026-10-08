@@ -25,7 +25,13 @@ Rectangle {
     border.width: 1
     border.color: Appearance.accent
 
-    onActiveChanged: if (active) begin()
+    onActiveChanged: if (active) begin(); else release()
+    // Closed — committed, cancelled, or the file it named gone — it lets go
+    // of the keyboard. Hidden, it kept it: Escape put the field away but
+    // left it holding the focus, and Ctrl+A went on selecting the text of
+    // a name nobody could see instead of the files.
+    onVisibleChanged: if (!visible) release()
+    function release() { if (input.activeFocus) input.focus = false; }
 
     function begin() {
         input.text = field.start;
