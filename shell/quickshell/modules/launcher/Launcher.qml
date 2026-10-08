@@ -98,7 +98,7 @@ Variants {
         // should not stretch the fade itself.
         Timer {
             id: fadeDelay
-            interval: launcher.grows ? 70 : 110
+            interval: launcher.grows || launcher.morphing ? 60 : 110
             onTriggered: launcher.morphFade = 1
         }
         Timer {
@@ -152,10 +152,13 @@ Variants {
         // has no reason to be measured against it. The floor is so that a
         // dock with two icons on it cannot squeeze the launcher into a
         // strip.
+        // As long as the dock, whenever there is a dock along the bottom to
+        // measure — morphing or not, auto-hidden or not — so the two read
+        // as one object. Down the left there is no width to match.
         readonly property real panelWidth: {
             const want = Config.Appearance.launcherWidth;
-            if (!launcher.morphing) return want;
-            return Math.max(340, Math.min(want, Config.UiState.dockPillWidth));
+            if (launcher.isLeft || Config.UiState.dockPillWidth <= 0) return want;
+            return Math.max(260, Math.min(launcher.width - 24, Config.UiState.dockPillWidth));
         }
         readonly property real panelHeight: Config.Appearance.launcherHeight
         readonly property int gridColumns: Math.max(3, Config.Appearance.launcherColumns)
@@ -226,8 +229,10 @@ Variants {
         // Opening, each lands a touch past and settles back — a spring
         // rather than a fade-in. Closing goes straight into the dock: an
         // overshoot below 0 would turn the shape inside out.
-        Behavior on morph { Spring { ms: launcher.wanted ? 460 : 300; bounce: launcher.wanted ? 0.7 : 0 } }
-        Behavior on morphY { Spring { ms: launcher.wanted ? 560 : 360; bounce: launcher.wanted ? 0.5 : 0 } }
+        // The same springs as the bar's panels: quick, a full swing past,
+        // and settled — the height a beat behind the width.
+        Behavior on morph { Spring { ms: launcher.wanted ? 380 : 220; bounce: launcher.wanted ? 1.1 : 0 } }
+        Behavior on morphY { Spring { ms: launcher.wanted ? 460 : 240; bounce: launcher.wanted ? 1.0 : 0 } }
         Behavior on morphFade {
             NumberAnimation { duration: Config.Appearance.anim(160); easing.type: Easing.OutCubic }
         }
@@ -671,9 +676,13 @@ Variants {
             x: launcher.morphing ? Math.round(launcher.lerp(launcher.pillX, targetX))
                                  : targetX
             transform: Scale {
-                origin.x: launcher.isLeft ? 0 : panel.width / 2
+                origin.x: launcher.isLeft ? 0 : (launcher.morphing ? startTile.x + startTile.width / 2 : panel.width / 2)
                 origin.y: launcher.isLeft ? panel.height / 2 : panel.height
-                xScale: launcher.grows ? 0.4 + 0.6 * launcher.morph : 1
+                // Growing out of the dock it is already the dock's width, so
+                // the stretch is a gel's: a little narrow, a little past,
+                // settled — from the Start tile.
+                xScale: launcher.grows ? 0.4 + 0.6 * launcher.morph
+                      : launcher.morphing && Config.Appearance.springy ? 0.9 + 0.1 * launcher.morph : 1
                 yScale: launcher.grows ? 0.1 + 0.9 * launcher.morphY : 1
             }
             // The exit slides it towards the edge it came from, so it
@@ -1357,7 +1366,11 @@ Variants {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: launcher.z(40)
+                // Growing out of the dock, it is the dock's own height, so
+                // the Start button below sits exactly where the dock's was.
+                readonly property bool overDock: launcher.morphing && !launcher.isLeft
+                                                 && Config.UiState.dockTileSize > 0
+                height: overDock ? Math.max(launcher.z(40), launcher.pillH) : launcher.z(40)
                 color: Config.Appearance.hover
 
                 Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
@@ -1381,26 +1394,32 @@ Variants {
                 // behaviour; only the call was wrong.
                 Rectangle {
                     id: startTile
+                    readonly property bool asDock: footer.overDock
                     anchors.left: parent.left
-                    anchors.leftMargin: launcher.z(7)
+                    anchors.leftMargin: asDock ? Config.UiState.dockPadH : launcher.z(7)
                     anchors.verticalCenter: parent.verticalCenter
-                    width: launcher.z(28)
-                    height: launcher.z(28)
-                    radius: Config.Appearance.rSm
-                    color: startHover.hovered ? Config.Appearance.accent
-                                              : Config.Appearance.sel
+                    // Over the dock, the dock's own Start tile: its size,
+                    // its corner and its accent fill, as it is while the
+                    // launcher is open.
+                    width: asDock ? Config.UiState.dockTileSize : launcher.z(28)
+                    height: width
+                    radius: asDock ? Config.Appearance.rTile : Config.Appearance.rSm
+                    color: asDock || startHover.hovered ? Config.Appearance.accent
+                                                        : Config.Appearance.sel
+                    scale: startTap.pressed ? 0.9 : 1
+                    Behavior on scale { Spring { ms: 300; bounce: 1.3 } }
 
                     MonoIcon {
                         anchors.centerIn: parent
                         name: "grid"
-                        size: launcher.z(15)
-                        inkColor: startHover.hovered ? Config.Appearance.inkOnAccent
-                                                     : Config.Appearance.ink2
+                        size: startTile.asDock ? Config.UiState.dockIconSize : launcher.z(15)
+                        inkColor: startTile.asDock || startHover.hovered ? Config.Appearance.inkOnAccent
+                                                                         : Config.Appearance.ink2
                         monochrome: true
                     }
 
                     HoverHandler { id: startHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: launcher.close(true) }
+                    TapHandler { id: startTap; onTapped: launcher.close(true) }
                 }
 
                 Rectangle {

@@ -20,6 +20,11 @@ Singleton {
     // keeps the two windows from having to agree about coordinates.
     property real dockPillWidth: 0
     property real dockPillHeight: 0
+    // The dock's Start tile, and its inset in the pill, so the launcher's
+    // own Start button lands exactly on it.
+    property real dockTileSize: 0
+    property real dockIconSize: 0
+    property real dockPadH: 0
     property bool overviewOpen: false
     property bool controlCenterOpen: false
     property bool notificationsOpen: false

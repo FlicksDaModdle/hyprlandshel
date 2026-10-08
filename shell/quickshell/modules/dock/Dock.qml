@@ -655,6 +655,9 @@ Variants {
                 when: dock.onFocusedScreen
                 restoreMode: Binding.RestoreNone
             }
+            Binding { target: Config.UiState; property: "dockTileSize"; value: dock.tileSize; when: dock.onFocusedScreen; restoreMode: Binding.RestoreNone }
+            Binding { target: Config.UiState; property: "dockIconSize"; value: dock.iconSize; when: dock.onFocusedScreen; restoreMode: Binding.RestoreNone }
+            Binding { target: Config.UiState; property: "dockPadH"; value: dock.padH; when: dock.onFocusedScreen; restoreMode: Binding.RestoreNone }
 
             // While the launcher is out, it *is* this pill — it starts at
             // exactly this rectangle and grows. Two of them on screen at
