@@ -34,7 +34,7 @@ ShaderEffect {
     property string style: Config.Appearance.wallpaperStyle
     property bool preview: false
     // The palette to show, for a preview of one that is not chosen.
-    property string palette: Config.Appearance.animPalette
+    property string paletteKey: Config.Appearance.animPalette
 
     readonly property var prefs: Config.Appearance
     readonly property string screenName: screen ? screen.name : ""
@@ -64,7 +64,7 @@ ShaderEffect {
         return Qt.hsla(((c.hslHue < 0 ? 0 : c.hslHue) + d + 1) % 1, Math.max(0.35, c.hslSaturation), c.hslLightness, 1);
     }
     readonly property var colours: {
-        const p = palette;
+        const p = paletteKey;
         if (p === "custom")
             return [prefs.animBg1, prefs.animBg2, prefs.animC1, prefs.animC2, prefs.animC3].map(c => opaque(Qt.color(c)));
         const preset = Palettes.find(p);
