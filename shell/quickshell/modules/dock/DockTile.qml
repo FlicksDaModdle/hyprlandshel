@@ -130,7 +130,7 @@ Item {
             // or the Row would reflow the glyph sideways halfway through.
             visible: root.showLabel || opacity > 0.01
             opacity: root.showLabel ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(140) } }
+            Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(90) } }
             text: root.label
             font.pixelSize: Config.Appearance.fs(Config.Appearance.dockLabelSize)
             font.weight: Font.DemiBold

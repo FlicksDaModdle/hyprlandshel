@@ -102,7 +102,18 @@ Singleton {
     // Left edge of the bar's Window button, so its menu can hang under it.
     property real windowMenuX: 0
 
-    // Control center drill-down: "", "Wi-Fi" or "Bluetooth".
+    // Until when a trackpad scroll is under way (ms since the epoch), set
+    // by KineticScroll: a control that takes the wheel lets the scroll go
+    // past it meanwhile, rather than catching the page mid-swipe.
+    property real scrollLatch: 0
+
+    // The bar control last clicked: where its centre is across the screen,
+    // and when. A panel it opens grows out of it (modules/common/Entrance).
+    property real panelOriginX: -1
+    property real panelOriginAt: 0
+    function scrollLatched() { return Date.now() < scrollLatch; }
+
+    // Control center drill-down: "", "Wi-Fi", "Bluetooth" or "Mixer".
     property string ccExpanded: ""
 
     // The on-screen keyboard. Not part of the exclusive group: it is

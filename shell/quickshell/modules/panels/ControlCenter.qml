@@ -429,6 +429,8 @@ PanelSurface {
             height: Math.min(268, Math.max(56, entryColumn.implicitHeight + 10))
 
             Flickable {
+                id: controlCenterScroll
+                KineticScroll { flick: controlCenterScroll }
                 anchors.fill: parent
                 anchors.topMargin: 6
                 anchors.bottomMargin: 4

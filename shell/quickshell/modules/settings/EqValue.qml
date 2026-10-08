@@ -102,6 +102,19 @@ Rectangle {
             field.forceActiveFocus();
             field.selectAll();
         }
-        onWheel: wheel => root.nudge(wheel.angleDelta.y > 0 ? 1 : -1, wheel.modifiers & Qt.ShiftModifier)
+        // A notch of a mouse wheel is a step; a trackpad gives one for every
+        // so far it travels. A page scroll already under way goes past.
+        property real swipe: 0
+        onWheel: wheel => {
+            if (Config.UiState.scrollLatched()) { wheel.accepted = false; return; }
+            const fine = wheel.modifiers & Qt.ShiftModifier;
+            if (wheel.pixelDelta.y === 0 && wheel.phase === Qt.NoScrollPhase) {
+                root.nudge(wheel.angleDelta.y > 0 ? 1 : -1, fine);
+                return;
+            }
+            swipe += wheel.pixelDelta.y;
+            const n = swipe > 0 ? Math.floor(swipe / 24) : Math.ceil(swipe / 24);
+            if (n !== 0) { swipe -= n * 24; root.nudge(n, fine); }
+        }
     }
 }

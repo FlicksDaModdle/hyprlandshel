@@ -160,6 +160,7 @@ Column {
                         }
                     }
                     FillSlider {
+                        takesWheel: false
                         id: gSlider
                         anchors.left: parent.left
                         anchors.right: gPct.left
@@ -329,6 +330,7 @@ Column {
                         color: Config.Appearance.ink2
                     }
                     FillSlider {
+                        takesWheel: false
                         anchors.left: thLabel.right
                         anchors.right: thValue.left
                         anchors.rightMargin: 10
@@ -494,6 +496,7 @@ Column {
                         }
                     }
                     FillSlider {
+                        takesWheel: false
                         width: parent.width
                         trough: 12
                         showRule: true

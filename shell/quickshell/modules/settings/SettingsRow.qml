@@ -338,6 +338,8 @@ Item {
             spacing: 12
 
             FillSlider {
+
+                takesWheel: false
                 id: slider
                 anchors.verticalCenter: parent.verticalCenter
                 width: 216

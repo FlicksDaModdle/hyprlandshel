@@ -222,7 +222,7 @@ Variants {
         Behavior on morph { Spring { ms: launcher.wanted ? 460 : 300; bounce: launcher.wanted ? 0.7 : 0 } }
         Behavior on morphY { Spring { ms: launcher.wanted ? 560 : 360; bounce: launcher.wanted ? 0.5 : 0 } }
         Behavior on morphFade {
-            NumberAnimation { duration: Config.Appearance.anim(260); easing.type: Easing.OutCubic }
+            NumberAnimation { duration: Config.Appearance.anim(160); easing.type: Easing.OutCubic }
         }
         Component.onCompleted: {
             morph = wanted ? 1 : 0;
@@ -1191,6 +1191,7 @@ Variants {
 
                     ListView {
                         id: results
+                        KineticScroll { flick: results }
                         x: 8
                         width: parent.width - 16
                         // Whatever room is left, and no more. The panel is

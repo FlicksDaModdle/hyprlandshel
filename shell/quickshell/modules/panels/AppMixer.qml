@@ -196,6 +196,8 @@ Column {
         Rectangle { width: parent.width; height: 1; color: root.ap.rule; visible: root.au.streams.length > 0 }
 
         Flickable {
+            id: appMixerScroll
+            KineticScroll { flick: appMixerScroll }
             width: parent.width
             height: Math.min(300, appCol.implicitHeight)
             contentHeight: appCol.implicitHeight

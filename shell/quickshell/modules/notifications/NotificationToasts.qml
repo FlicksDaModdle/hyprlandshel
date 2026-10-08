@@ -58,8 +58,10 @@ PanelWindow {
 
                 opacity: shown ? 1 : 0
                 x: shown ? 0 : 56
-                scale: shown ? 1 : 0.96
-                Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(180) } }
+                // Grows out of the screen's edge rather than fading in.
+                scale: shown ? 1 : 0.82
+                transformOrigin: Item.Right
+                Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(80) } }
                 Behavior on x { Spring { ms: 460; bounce: slot.shown ? 0.9 : 0 } }
                 Behavior on scale { Spring { ms: 420 } }
 

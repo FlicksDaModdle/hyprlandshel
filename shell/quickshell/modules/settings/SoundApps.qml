@@ -96,6 +96,7 @@ Column {
                     }
                 }
                 FillSlider {
+                    takesWheel: false
                     anchors.left: appText.right
                     anchors.leftMargin: 12
                     anchors.right: appPct.left

@@ -103,6 +103,8 @@ PanelSurface {
     }
 
     Flickable {
+        id: timersPanelScroll
+        KineticScroll { flick: timersPanelScroll }
         anchors.fill: parent
         contentHeight: col.implicitHeight + 24
         clip: true

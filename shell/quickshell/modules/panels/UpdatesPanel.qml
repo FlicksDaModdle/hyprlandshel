@@ -105,6 +105,8 @@ PanelSurface {
     }
 
     Flickable {
+        id: updatesPanelScroll
+        KineticScroll { flick: updatesPanelScroll }
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: head.bottom

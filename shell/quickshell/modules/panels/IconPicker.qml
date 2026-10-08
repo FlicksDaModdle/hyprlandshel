@@ -137,6 +137,7 @@ PanelSurface {
 
     Flickable {
         id: grid
+        KineticScroll { flick: grid }
         anchors.top: header.bottom
         anchors.topMargin: 12
         anchors.left: parent.left

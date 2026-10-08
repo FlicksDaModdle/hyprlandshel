@@ -165,6 +165,7 @@ PanelSurface {
 
         ListView {
             id: list
+            KineticScroll { flick: list }
             anchors.fill: parent
             clip: true
             model: root.shown

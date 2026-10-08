@@ -262,8 +262,17 @@ Item {
                 }
                 onDoubleClicked: mouse => { if (mouse.button === Qt.LeftButton && handle.gainy) root.fx.setBand(handle.b.id, { gain: 0 }); }
                 onClicked: mouse => { if (mouse.button === Qt.RightButton) root.fx.toggleBand(handle.b.id); }
+                property real swipe: 0
                 onWheel: wheel => {
-                    const step = wheel.angleDelta.y > 0 ? 1.12 : 1 / 1.12;
+                    if (Config.UiState.scrollLatched()) { wheel.accepted = false; return; }
+                    let notches = wheel.angleDelta.y > 0 ? 1 : -1;
+                    if (wheel.pixelDelta.y !== 0 || wheel.phase !== Qt.NoScrollPhase) {
+                        swipe += wheel.pixelDelta.y;
+                        notches = swipe > 0 ? Math.floor(swipe / 24) : Math.ceil(swipe / 24);
+                        swipe -= notches * 24;
+                        if (notches === 0) return;
+                    }
+                    const step = Math.pow(1.12, notches);
                     root.fx.setBand(handle.b.id, { q: Math.max(EqM.Q_MIN, Math.min(EqM.Q_MAX, handle.b.q * step)) });
                     root.picked(handle.b.id);
                 }

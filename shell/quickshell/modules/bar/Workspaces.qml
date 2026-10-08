@@ -82,7 +82,7 @@ Item {
                     font.letterSpacing: 0.2
                     color: pill.focused ? Config.Appearance.inkOnAccent
                          : (pill.urgent ? Config.Appearance.accent : Config.Appearance.ink2)
-                    Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(140) } }
+                    Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(80) } }
                 }
 
                 // Bead for the collapsed state: solid when the workspace has

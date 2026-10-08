@@ -58,7 +58,12 @@ Item {
             id: tap
             enabled: root.interactive
             acceptedButtons: Qt.LeftButton
-            onTapped: root.activated()
+            onTapped: {
+                // A panel this opens grows out of here.
+                Config.UiState.panelOriginX = root.mapToItem(null, root.width / 2, 0).x;
+                Config.UiState.panelOriginAt = Date.now();
+                root.activated();
+            }
         },
 
         TapHandler {

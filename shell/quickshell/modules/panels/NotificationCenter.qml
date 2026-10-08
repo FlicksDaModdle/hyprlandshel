@@ -167,6 +167,8 @@ PanelSurface {
 
     // ── list ──────────────────────────────────────────────────────────────
     Flickable {
+        id: notificationCenterScroll1
+        KineticScroll { flick: notificationCenterScroll1 }
         visible: !root.inHistory
         anchors.left: parent.left
         anchors.right: parent.right
@@ -290,6 +292,8 @@ PanelSurface {
     }
 
     Flickable {
+        id: notificationCenterScroll0
+        KineticScroll { flick: notificationCenterScroll0 }
         visible: root.inHistory
         anchors.left: parent.left
         anchors.right: parent.right

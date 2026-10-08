@@ -125,6 +125,7 @@ Column {
                     TapHandler { onTapped: root.au.setNodeMuted(row.n, !row.muted) }
                 }
                 FillSlider {
+                    takesWheel: false
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(170, root.width * 0.24)
                     trough: 10

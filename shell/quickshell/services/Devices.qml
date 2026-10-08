@@ -194,7 +194,7 @@ Singleton {
         let lua = 'pcall(hl.curve, "hsOvershot", { type = "bezier", points = { {0.05, 0.9}, {0.1, 1.08} } }) '
                 + 'pcall(hl.curve, "hsSmooth", { type = "bezier", points = { {0.23, 1}, {0.32, 1} } }) ';
         if (prefs.springy) {
-            lua += spring("windows", 4.5, "popin 85%")
+            lua += spring("windows", 4.5, "popin 78%")
                  + curve("windowsOut", 2.6, "hsSmooth", "popin 88%")
                  + spring("windowsMove", 4.5, "")
                  + curve("workspaces", 4, "hsOvershot", "slide")
@@ -206,9 +206,10 @@ Singleton {
                  + curve("workspaces", 3, "hsSmooth", "slide")
                  + curve("specialWorkspace", 3, "hsSmooth", "slidevert");
         }
-        lua += curve("fade", 3, "hsSmooth", "")
+        // Short fades: the movement says where things come from.
+        lua += curve("fade", prefs.springy ? 1.8 : 3, "hsSmooth", "")
              + curve("border", 5, "hsSmooth", "")
-             + curve("layers", 3.5, "hsSmooth", "fade");
+             + curve("layers", prefs.springy ? 2 : 3.5, "hsSmooth", "fade");
         return lua;
     }
     Connections {

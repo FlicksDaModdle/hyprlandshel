@@ -132,6 +132,7 @@ Rectangle {
                 TapHandler { onTapped: root.au.setNodeVolume(root.node, root.au.nodeVolume(root.node) - Config.Appearance.volumeStep / 100) }
             }
             FillSlider {
+                takesWheel: false
                 id: vol
                 anchors.left: minus.right
                 anchors.leftMargin: 6
@@ -299,6 +300,7 @@ Rectangle {
                         color: Config.Appearance.ink2
                     }
                     FillSlider {
+                        takesWheel: false
                         anchors.left: chName.right
                         anchors.leftMargin: 6
                         anchors.right: chPct.left

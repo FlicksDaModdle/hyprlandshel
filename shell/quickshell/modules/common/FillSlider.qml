@@ -18,6 +18,9 @@ Item {
     property color trackColor: Config.Appearance.hover
     property bool showRule: false   // inset hairline, used inside Settings rows
     property real radius: Config.Appearance.rSm
+    // A mouse wheel over it nudges it. Off inside a scrolling page, where
+    // the wheel is for the page.
+    property bool takesWheel: true
 
     signal moved(real value)
     signal released(real value)
@@ -89,6 +92,11 @@ Item {
         onPositionChanged: mouse => { if (pressed) apply(mouse); }
         onReleased: root.released(root.dragValue)
         onWheel: wheel => {
+            // A trackpad swipe is someone scrolling the page past it.
+            if (!root.takesWheel || wheel.pixelDelta.y !== 0 || wheel.phase !== Qt.NoScrollPhase) {
+                wheel.accepted = false;
+                return;
+            }
             const v = Math.max(0, Math.min(1, root.value + (wheel.angleDelta.y > 0 ? 0.05 : -0.05)));
             root.moved(v);
             root.released(v);

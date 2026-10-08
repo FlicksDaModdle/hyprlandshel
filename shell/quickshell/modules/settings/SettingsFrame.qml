@@ -230,12 +230,54 @@ PanelSurface {
         // clip the last entry with nothing to say so.
         Flickable {
             id: sidebarFlick
+            KineticScroll { flick: sidebarFlick }
             anchors.fill: parent
             anchors.rightMargin: 1
             contentHeight: sidebarColumn.implicitHeight + 16
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             flickableDirection: Flickable.VerticalFlick
+
+            // The selection: one pill that slides — stretching on the way,
+            // then settling — from the pane you were on to the one you
+            // picked, rather than one fading out as another fades in.
+            Rectangle {
+                id: selPill
+                // Its two edges, each on a spring: the leading one quick, the
+                // trailing one slower, so it stretches as it goes and gathers
+                // itself up when it lands.
+                property real edgeTop: 0
+                property real edgeBottom: 36
+                property bool down: true
+                property bool placed: false
+                x: 8
+                width: sidebarFlick.width - 16
+                y: edgeTop
+                height: Math.max(8, edgeBottom - edgeTop)
+                radius: Config.Appearance.rSm
+                color: Config.Appearance.sel
+                visible: placed
+                Behavior on edgeTop { enabled: selPill.placed; Spring { ms: selPill.down ? 560 : 340; bounce: selPill.down ? 0.5 : 1 } }
+                Behavior on edgeBottom { enabled: selPill.placed; Spring { ms: selPill.down ? 340 : 560; bounce: selPill.down ? 1 : 0.5 } }
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    anchors.bottomMargin: 3
+                    height: 2
+                    radius: 1
+                    color: Config.Appearance.accent
+                }
+            }
+            function placeSel(item) {
+                const p = item.mapToItem(sidebarColumn.parent, 0, 0);
+                selPill.down = p.y >= selPill.edgeTop;
+                selPill.edgeTop = p.y;
+                selPill.edgeBottom = p.y + item.height;
+                if (!selPill.placed) Qt.callLater(() => selPill.placed = true);
+            }
 
             Column {
                 id: sidebarColumn
@@ -277,26 +319,18 @@ PanelSurface {
                                 width: group.width
                                 height: 36
 
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: Config.Appearance.rSm
-                                    color: entry.active ? Config.Appearance.sel
-                                         : (entryArea.containsMouse ? Config.Appearance.hover : "transparent")
-                                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                                onActiveChanged: if (active) sidebarFlick.placeSel(entry)
+                                onYChanged: if (active) sidebarFlick.placeSel(entry)
+                                Component.onCompleted: if (active) Qt.callLater(() => sidebarFlick.placeSel(entry))
+                                Connections {
+                                    target: group
+                                    function onYChanged() { if (entry.active) sidebarFlick.placeSel(entry); }
                                 }
 
                                 Rectangle {
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.bottom: parent.bottom
-                                    anchors.leftMargin: 10
-                                    anchors.rightMargin: 10
-                                    anchors.bottomMargin: 3
-                                    height: 2
-                                    radius: 1
-                                    color: Config.Appearance.accent
-                                    opacity: entry.active ? 1 : 0
-                                    Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(180) } }
+                                    anchors.fill: parent
+                                    radius: Config.Appearance.rSm
+                                    color: !entry.active && entryArea.containsMouse ? Config.Appearance.hover : "transparent"
                                 }
 
                                 Row {
@@ -372,6 +406,7 @@ PanelSurface {
     // ── pane ──────────────────────────────────────────────────────────
     Flickable {
         id: paneFlick
+        KineticScroll { flick: paneFlick }
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.top: titleBar.bottom
@@ -401,12 +436,12 @@ PanelSurface {
                 target: frame.app
                 function onPaneChanged() {
                     if (!Config.Appearance.animated) return;
-                    paneColumn.rise = 18;
+                    paneColumn.rise = 28;
                     paneColumn.opacity = 0;
                     Qt.callLater(() => { paneColumn.rise = 0; paneColumn.opacity = 1; });
                 }
             }
-            Behavior on opacity { enabled: paneColumn.opacity < 1; NumberAnimation { duration: Config.Appearance.anim(200); easing.type: Easing.OutCubic } }
+            Behavior on opacity { enabled: paneColumn.opacity < 1; NumberAnimation { duration: Config.Appearance.anim(110); easing.type: Easing.OutCubic } }
 
             StyledText {
                 text: frame.app.pane
