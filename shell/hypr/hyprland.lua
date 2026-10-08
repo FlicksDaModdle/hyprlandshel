@@ -513,9 +513,11 @@ hl.bind(mainMod .. " + L",           hl.dsp.exec_cmd(shell("lock")))
 hl.bind(mainMod .. " + D",           hl.dsp.exec_cmd(shell("showDesktop")))
 
 -- Screenshots and recording, through the shell (services/Capture.qml):
--- Print opens the capture toolbar; Super+Shift+S grabs a region and
--- Shift+Print the screen, straight to ~/Pictures/Screenshots and the
--- clipboard; Super+Shift+Print starts or stops a screen recording.
+-- Print opens the capture toolbar. Super+Shift+S freezes the screen and
+-- lets you take a rectangle, a window or a whole screen of it, like the
+-- Windows Snipping Tool (modules/capture/Snipper.qml). Shift+Print takes
+-- the screen at once. Both save to ~/Pictures/Screenshots and copy to the
+-- clipboard. Super+Shift+Print starts or stops a screen recording.
 hl.bind("Print",                         hl.dsp.exec_cmd(shell("toggleCapture")))
 hl.bind(mainMod .. " + SHIFT + S",       hl.dsp.exec_cmd(shell("screenshot", "region")))
 hl.bind("SHIFT + Print",                 hl.dsp.exec_cmd(shell("screenshot", "screen")))

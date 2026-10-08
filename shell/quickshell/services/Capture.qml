@@ -8,10 +8,16 @@ import "." as Services
 
 // Screenshots, screen recordings and text from the screen.
 //
-//   shot(mode)     region | window | screen | all — grim, with slurp to
-//                  choose; saved to ~/Pictures/Screenshots and put on the
-//                  clipboard, then either opened in the editor
-//                  (ShotEditor) or announced with Edit and Show in Files.
+//   shot(mode)     region | window | screen | all — saved to
+//                  ~/Pictures/Screenshots and put on the clipboard, then
+//                  either opened in the editor (ShotEditor) or announced
+//                  with Edit and Show in Files. Region and window freeze the
+//                  screen first, the way Windows' Snipping Tool does: every
+//                  output is captured the moment the key goes down, and the
+//                  choosing happens over that still picture
+//                  (modules/capture/Snipper.qml), so a menu or a video holds
+//                  still while you frame it. With freezing off, slurp
+//                  chooses over the live screen as before.
 //   record(mode)   region | screen — wf-recorder to ~/Videos/Recordings,
 //                  with the desktop's sound, the microphone, or neither;
 //                  the bar shows a red timer that stops it.
@@ -36,6 +42,12 @@ Singleton {
     function shot(mode, opts) {
         if (busy) return;
         const o = opts || {};
+        const m = mode || "region";
+        if (prefs.captureFreeze && (m === "region" || m === "window")) {
+            freeze("shot", m, o.delay !== undefined ? o.delay : prefs.captureDelay,
+                   o.pointer !== undefined ? o.pointer : prefs.capturePointer);
+            return;
+        }
         busy = true;
         Config.UiState.closeAll();
         pending = { kind: "shot", mode: mode || "region", delay: o.delay !== undefined ? o.delay : prefs.captureDelay,
@@ -44,6 +56,7 @@ Singleton {
     }
     function ocr() {
         if (busy) return;
+        if (prefs.captureFreeze) { freeze("ocr", "region", 0, false); return; }
         busy = true;
         Config.UiState.closeAll();
         pending = { kind: "ocr" };
@@ -114,11 +127,134 @@ Singleton {
                 root.say("Screenshot failed", root.lastError, "", []);
                 return;
             }
-            root.lastShot = f;
-            if (root.prefs.captureEdit === "always") root.edit(f);
-            else root.say("Screenshot saved", "Copied to the clipboard · " + f.replace(/^.*\//, ""), f,
-                          [["edit", "Edit"], ["folder", "Show in Files"]]);
+            root.delivered(f);
         }
+    }
+
+    // ── the frozen screen ────────────────────────────────────────────────
+    // snip: null, or { kind: "shot" | "ocr", dir, files: { output: png } }
+    // once every output has been captured. The overlay is up while it is
+    // set; snipMode is what it is choosing (region | window | screen).
+    property var snip: null
+    property string snipMode: "region"
+    property var freezeWant: null
+
+    function freeze(kind, mode, delay, pointer) {
+        busy = true;
+        snipMode = mode;
+        freezeWant = { kind: kind, delay: delay || 0, pointer: !!pointer };
+        // A panel open over the screen would be frozen into the picture;
+        // the toolbar that asked for this certainly should not be. Pressed
+        // from the keyboard with nothing open, it freezes at once.
+        if (Config.UiState.anyPanelOpen || Config.UiState.launcherOpen) {
+            Config.UiState.closeAll();
+            freezeSoon.interval = 280;
+        } else freezeSoon.interval = 1;
+        freezeSoon.restart();
+    }
+    Timer { id: freezeSoon; onTriggered: root.runFreeze() }
+    function runFreeze() {
+        const w = freezeWant;
+        const dir = (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/hyprshell-snip-" + Date.now();
+        const outs = Quickshell.screens.map(s => s.name).filter(n => !!n);
+        freezeProc.command = ["sh", "-c",
+            'command -v grim >/dev/null 2>&1 || exit 4; '
+            + 'dir=$1; delay=$2; ptr=$3; pics=$4; shift 4; '
+            + 'mkdir -p "$dir" "$pics" || exit 3; '
+            + '[ "$delay" -gt 0 ] 2>/dev/null && sleep "$delay"; '
+            + 'c=""; [ "$ptr" = 1 ] && c="-c"; '
+            + 'for o in "$@"; do grim $c -o "$o" "$dir/$o.png" & done; wait; '
+            + 'for o in "$@"; do [ -s "$dir/$o.png" ] && printf "%s\t%s\n" "$o" "$dir/$o.png"; done',
+            "freeze", dir, String(w.delay), w.pointer ? "1" : "0", picturesDir].concat(outs);
+        freezeProc.dir = dir;
+        freezeProc.running = true;
+    }
+    Process {
+        id: freezeProc
+        property string dir: ""
+        stdout: StdioCollector { id: freezeOut }
+        stderr: StdioCollector { id: freezeErr }
+        onExited: code => {
+            const files = {};
+            for (const line of freezeOut.text.split("\n")) {
+                const t = line.split("\t");
+                if (t.length === 2 && t[1] !== "") files[t[0]] = t[1];
+            }
+            if (code !== 0 || Object.keys(files).length === 0) {
+                root.busy = false;
+                root.lastError = code === 4 ? "Needs grim — sudo pacman -S grim"
+                               : code === 3 ? "Could not create " + root.picturesDir
+                               : (freezeErr.text.trim() || "grim could not capture the screen");
+                root.say("Screenshot failed", root.lastError, "", []);
+                root.cleanSnip(freezeProc.dir);
+                return;
+            }
+            root.snip = { kind: root.freezeWant.kind, dir: freezeProc.dir, files: files };
+        }
+    }
+    // Where the overlay saves what was chosen.
+    function snipTarget() {
+        if (!snip) return "";
+        if (snip.kind === "ocr") return snip.dir + "/text.png";
+        return picturesDir + "/Screenshot_" + Qt.formatDateTime(new Date(), "yyyy-MM-dd_HH-mm-ss") + ".png";
+    }
+    function cancelSnip() {
+        if (!snip) return;
+        const dir = snip.dir;
+        snip = null;
+        busy = false;
+        cleanSnip(dir);
+    }
+    // The overlay has written the chosen part to `path`.
+    function snipSaved(path) {
+        if (!snip) return;
+        const s = snip;
+        snip = null;
+        if (s.kind === "ocr") {
+            ocrFileProc.command = ["sh", "-c",
+                'command -v tesseract >/dev/null 2>&1 || exit 4; '
+                // At twice the size: screen text is small, and tesseract
+                // reads it far better enlarged — grim -s did this before.
+                + 'f=$1; lang=$2; dir=$3; '
+                + 'if command -v magick >/dev/null 2>&1; then magick "$f" -resize 200% "$f.2x.png" && f="$f.2x.png"; fi; '
+                + 'tesseract "$f" stdout -l "$lang" 2>/dev/null; r=$?; rm -rf "$dir"; exit $r',
+                "ocr", path, prefs.captureOcrLang || "eng", s.dir];
+            ocrFileProc.running = true;
+            return;
+        }
+        copyProc.command = ["sh", "-c", 'wl-copy --type image/png < "$1" 2>/dev/null; rm -rf "$2"; true', "copy", path, s.dir];
+        copyProc.file = path;
+        copyProc.running = true;
+    }
+    function snipFailed(why) {
+        const dir = snip ? snip.dir : "";
+        snip = null;
+        busy = false;
+        cleanSnip(dir);
+        say("Screenshot failed", why || "The picture could not be saved", "", []);
+    }
+    Process {
+        id: copyProc
+        property string file: ""
+        onExited: { root.busy = false; root.delivered(copyProc.file); }
+    }
+    Process {
+        id: ocrFileProc
+        stdout: StdioCollector { id: ocrFileOut }
+        onExited: code => { root.busy = false; root.ocrResult(code, ocrFileOut.text); }
+    }
+    Process { id: cleanProc }
+    function cleanSnip(dir) {
+        if (!dir || dir.indexOf("hyprshell-snip-") < 0) return;
+        cleanProc.command = ["rm", "-rf", dir];
+        cleanProc.running = true;
+    }
+    // A finished screenshot: to the editor, or announced.
+    function delivered(f) {
+        lastShot = f;
+        if (prefs.captureEdit === "always") edit(f);
+        else say("Screenshot saved", "Copied to the clipboard · " + f.replace(/^.*\//, ""), f,
+                 [["edit", "Edit"], ["folder", "Show in Files"]]);
     }
 
     // ── the editor ───────────────────────────────────────────────────────
@@ -141,9 +277,14 @@ Singleton {
         onExited: code => {
             root.busy = false;
             root.pending = null;
+            root.ocrResult(code, ocrOut.text);
+        }
+    }
+    function ocrResult(code, out) {
+        {
             if (code === 1) return;
             if (code === 4) { root.say("Text from screen", "Needs tesseract — sudo pacman -S tesseract tesseract-data-eng", "", []); return; }
-            const text = ocrOut.text.replace(/\f/g, "").trim();
+            const text = out.replace(/\f/g, "").trim();
             if (text === "") { root.say("Text from screen", "No text found in that area.", "", []); return; }
             Quickshell.clipboardText = text;
             const first = text.split("\n")[0];

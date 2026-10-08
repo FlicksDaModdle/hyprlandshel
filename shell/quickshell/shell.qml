@@ -164,6 +164,8 @@ ShellRoot {
         active: Config.UiState.iconMakerOpen || (!!iconMaker.item && iconMaker.item.dirty)
         IconMaker {}
     }
+    // The frozen screen a screenshot is chosen over (Super+Shift+S).
+    Snipper {}
     // The screenshot editor, while a shot is open in it.
     LazyLoader {
         active: Config.UiState.shotEditorPath !== ""

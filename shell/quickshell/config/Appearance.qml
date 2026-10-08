@@ -296,6 +296,9 @@ Singleton {
             // ("none" | "desktop" | "mic"), what a bare record captures,
             // and the OCR language (tesseract's code).
             property int captureDelay: 0
+            // Region and window shots freeze the screen first, so what is
+            // chosen holds still (modules/capture/Snipper.qml).
+            property bool captureFreeze: true
             property bool capturePointer: false
             property string captureEdit: "ask"
             property string captureAudio: "none"
@@ -707,6 +710,7 @@ Singleton {
     property alias updatesInBar: prefs.updatesInBar
     property alias mailInBar: prefs.mailInBar
     property alias captureDelay: prefs.captureDelay
+    property alias captureFreeze: prefs.captureFreeze
     property alias capturePointer: prefs.capturePointer
     property alias captureEdit: prefs.captureEdit
     property alias captureAudio: prefs.captureAudio

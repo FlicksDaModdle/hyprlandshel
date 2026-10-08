@@ -187,6 +187,13 @@ PanelSurface {
             Tool {
                 visible: !root.video
                 small: true
+                label: "Freeze"
+                on: root.ap.captureFreeze
+                onClicked: root.ap.captureFreeze = !root.ap.captureFreeze
+            }
+            Tool {
+                visible: !root.video
+                small: true
                 label: "Edit after"
                 on: root.ap.captureEdit === "always"
                 onClicked: root.ap.captureEdit = root.ap.captureEdit === "always" ? "ask" : "always"

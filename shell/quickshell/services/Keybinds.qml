@@ -45,7 +45,7 @@ Singleton {
         { key: "osk",         n: "On-screen keyboard",   def: "",                  ipc: "toggleKeyboard" },
         { key: "clipboard",   n: "Clipboard history",    def: "SUPER + SHIFT + V", ipc: "toggleClipboard" },
         { key: "capture",     n: "Capture toolbar",      def: "Print",             ipc: "toggleCapture" },
-        { key: "screenshot",  n: "Screenshot a region",  def: "SUPER + SHIFT + S", ipc: "screenshot", arg: "region" },
+        { key: "screenshot",  n: "Snip — freeze the screen and choose",  def: "SUPER + SHIFT + S", ipc: "screenshot", arg: "region" },
         { key: "shotscreen",  n: "Screenshot the screen", def: "SHIFT + Print",    ipc: "screenshot", arg: "screen" },
         { key: "record",      n: "Start / stop recording", def: "SUPER + SHIFT + Print", ipc: "toggleRecording" },
         { key: "terminal",    n: "Terminal",             def: "SUPER + Return",    exec: "terminal" },
