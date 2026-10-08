@@ -14,6 +14,30 @@ browser and a login screen.
     browser/  Hyprshell Browser — Firefox's engine with the design's interface
     greeter/  the login screen, run by greetd, in your theme
 
+![The desktop: bar, dock and Settings → Appearance](docs/screenshots/settings.png)
+
+<table>
+<tr>
+<td><img src="docs/screenshots/control-center.png" alt="Control center"><br><sub>Control center</sub></td>
+<td><img src="docs/screenshots/launcher.png" alt="Launcher, grown out of the dock"><br><sub>Launcher, grown out of the dock</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/snip.png" alt="Super+Shift+S freezes the screen to choose a shot"><br><sub>Super+Shift+S: the screen frozen to choose a shot</sub></td>
+<td><img src="docs/screenshots/notifications.png" alt="Notifications"><br><sub>Notifications</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/files.png" alt="Files"><br><sub>Files</sub></td>
+<td><img src="docs/screenshots/images.png" alt="Images"><br><sub>Images</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/terminal.png" alt="Terminal"><br><sub>Terminal</sub></td>
+<td><img src="docs/screenshots/tasks.png" alt="Task manager"><br><sub>Task manager</sub></td>
+</tr>
+</table>
+
+<sub>Taken in a headless test compositor without a GPU, so without the blur
+behind the bar, dock and panels that Hyprland draws on a real machine.</sub>
+
 ## Installing
 
     ./install.sh
