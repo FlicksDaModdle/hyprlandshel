@@ -168,17 +168,22 @@ Column {
     }
 
     // ── apps ──────────────────────────────────────────────────────────────
-    Item { width: 1; height: 6 }
+    Item { width: 1; height: 10 }
+    // Titled like a section of the pane, over its card.
     StyledText {
+        leftPadding: 4
         text: "Apps"
-        font.pixelSize: Config.Appearance.fs(13)
+        font.pixelSize: 12
         font.weight: Font.DemiBold
+        font.capitalization: Font.AllUppercase
+        font.letterSpacing: 0.6
+        color: Config.Appearance.ink3
     }
     StyledText {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "Always: a banner even while quiet. Silent: no banner, kept in the center. "
-              + "Mute: neither — only the history keeps it."
+        leftPadding: 4
+        text: "Always: a banner even while quiet. Silent: kept in the center. Mute: history only."
         font.pixelSize: Config.Appearance.fs(11.5)
         color: Config.Appearance.ink3
     }
@@ -188,41 +193,62 @@ Column {
         font.pixelSize: Config.Appearance.fs(12)
         color: Config.Appearance.ink3
     }
-    Repeater {
-        model: root.fc.apps
-        Item {
-            id: appRow
-            required property string modelData
-            width: root.width
-            height: 38
-            HoverHandler { id: appHover }
-            StyledText {
-                anchors.left: parent.left
-                anchors.right: seg.left
-                anchors.rightMargin: 10
-                anchors.verticalCenter: parent.verticalCenter
-                elide: Text.ElideRight
-                text: appRow.modelData
-                font.pixelSize: Config.Appearance.fs(12.5)
-            }
-            Segmented {
-                id: seg
-                anchors.right: forget.left
-                anchors.rightMargin: 6
-                anchors.verticalCenter: parent.verticalCenter
-                segmentPadding: 10
-                options: [{ label: "Always", value: "always" }, { label: "Normal", value: "normal" },
-                          { label: "Silent", value: "silent" }, { label: "Mute", value: "mute" }]
-                value: root.fc.rule(appRow.modelData)
-                onSelected: v => root.fc.setRule(appRow.modelData, v)
-            }
-            Round {
-                id: forget
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                opacity: appHover.hovered ? 1 : 0
-                icon: "x"
-                onClicked: root.fc.forgetApp(appRow.modelData)
+    // In a card, like every other list in Settings.
+    Rectangle {
+        visible: root.fc.apps.length > 0
+        width: root.width
+        height: appCol.implicitHeight
+        radius: Config.Appearance.r
+        color: Config.Appearance.hover
+        Column {
+            id: appCol
+            width: parent.width
+            Repeater {
+                model: root.fc.apps
+                Item {
+                    id: appRow
+                    required property string modelData
+                    required property int index
+                    width: appCol.width
+                    height: 48
+                    HoverHandler { id: appHover }
+                    Rectangle {
+                        visible: appRow.index > 0
+                        x: 16; width: parent.width - 32; height: 1
+                        color: Config.Appearance.rule
+                    }
+                    StyledText {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 16
+                        anchors.right: seg.left
+                        anchors.rightMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        elide: Text.ElideRight
+                        text: appRow.modelData
+                        font.pixelSize: Config.Appearance.fs(12.5)
+                        font.weight: Font.Medium
+                    }
+                    Segmented {
+                        id: seg
+                        anchors.right: forget.left
+                        anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        segmentPadding: 10
+                        options: [{ label: "Always", value: "always" }, { label: "Normal", value: "normal" },
+                                  { label: "Silent", value: "silent" }, { label: "Mute", value: "mute" }]
+                        value: root.fc.rule(appRow.modelData)
+                        onSelected: v => root.fc.setRule(appRow.modelData, v)
+                    }
+                    Round {
+                        id: forget
+                        anchors.right: parent.right
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        opacity: appHover.hovered ? 1 : 0
+                        icon: "x"
+                        onClicked: root.fc.forgetApp(appRow.modelData)
+                    }
+                }
             }
         }
     }

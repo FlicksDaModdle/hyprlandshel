@@ -124,7 +124,7 @@ Scope {
         "Laptop":        { icon: "zap",       group: "System", note: "This ASUS laptop's own controls, through asusd: performance, charge limit, keyboard light, graphics and panel." },
         "Hyprland":      { icon: "grid",      group: "System", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
         "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
-        "Appearance":    { icon: "palette",   group: "Shell",  cards: true, note: "How the shell looks and moves. Every change shows at once — in the preview, and everywhere else." },
+        "Appearance":    { icon: "palette",   group: "Shell",  note: "How the shell looks and moves. Every change shows at once — in the preview, and everywhere else." },
         "Wallpaper":     { icon: "image",     group: "Shell",  note: "The desktop's ground — a tint, an image, or a live wallpaper." },
         "Icons":         { icon: "package",   group: "Shell",  note: "Every place an app icon appears, sized in one list." },
         "App theming":   { icon: "sunMoon",   group: "Shell",  note: "Handing this theme to applications that are not part of the shell." },
@@ -331,6 +331,32 @@ Scope {
 
     // Any pane's rows, open or not — the launcher's settings search reads
     // every pane through this (searchIndex below).
+    // ── cards ─────────────────────────────────────────────────────────────
+    // Every pane is drawn as cards: each run of rows between two headers
+    // is one rounded card, its rows divided by inset hairlines, with the
+    // header as the card's title above it. A position per row: "h" for a
+    // header, "only", "first", "middle" or "last" within its card, and "free"
+    // for the rows that are a card of their own already — the preview, the
+    // Wi-Fi, Bluetooth and Sound panels, the monitor map and the gallery —
+    // which also end the card before them. A pane's meta can say
+    // `cards: false` to be drawn as the plain list instead.
+    readonly property var uncarded: ["preview", "panel", "gallery", "monitors"]
+    function cardPositions(rows) {
+        const out = [];
+        let i = 0;
+        while (i < rows.length) {
+            const t = rows[i].type;
+            if (t === "header") { out.push("h"); i++; continue; }
+            if (uncarded.indexOf(t) >= 0) { out.push("free"); i++; continue; }
+            let j = i;
+            while (j < rows.length && rows[j].type !== "header" && uncarded.indexOf(rows[j].type) < 0) j++;
+            for (let k = i; k < j; k++)
+                out.push(j - i === 1 ? "only" : k === i ? "first" : k === j - 1 ? "last" : "middle");
+            i = j;
+        }
+        return out;
+    }
+
     function rowsFor(pane) {
         const A = Config.Appearance;
         switch (pane) {
@@ -395,9 +421,7 @@ Scope {
 
         case "Icons": return [
             { type: "header", n: "Icon sizes",
-              s: "Every place an app icon appears, in one list. Each of "
-                 + "these is the same setting as the one in that part's own "
-                 + "pane, so moving it here moves it there" },
+              s: "Every app icon size in one list — the same settings as in each part's own pane" },
             { n: "Dock icons",
               s: "The glyph inside a dock tile, as a share of the tile. The "
                  + "tile itself is sized under Dock.",
@@ -409,26 +433,18 @@ Scope {
               type: "slider", min: 50, max: 200, unit: "%",
               value: A.launcherIconScale, set: v => A.launcherIconScale = v },
             { n: "Bar and tray icons",
-              s: "The top bar's own glyphs and the system tray's, together "
-                 + "so they stay in proportion. 100% is the design's 16px "
-                 + "and 14px.",
+              s: "The bar's own glyphs and the tray's, kept in proportion. 100% is 16 and 14 px",
               type: "slider", min: 60, max: 180, unit: "%",
               value: A.barIconPct, set: v => A.barIconPct = v },
             { n: "Icon edge smoothing",
-              s: "How the shell's glyphs are antialiased. Multisampled is "
-                 + "the safe default. Analytic gives the cleanest curves but "
-                 + "is a newer code path that drops glyphs entirely on some "
-                 + "drivers — a dock tile with nothing on it is what that "
-                 + "looks like. Off is the raw triangulated edge.",
+              s: "Multisampled is the safe default. Analytic draws the cleanest curves but drops glyphs on some drivers. Off is the raw edge",
               type: "seg",
               options: [{ label: "Off",          value: "off" },
                         { label: "Multisampled", value: "layer" },
                         { label: "Analytic",     value: "curve" }],
               value: A.iconSmoothing, set: v => A.iconSmoothing = v },
             { n: "File manager icons",
-              s: "Set inside the file manager itself — Ctrl + and Ctrl - in "
-                 + "its window, or Ctrl 0 to go back to normal. It is a "
-                 + "separate application and keeps its own settings.",
+              s: "Set in the file manager itself: Ctrl + and Ctrl −, or Ctrl 0 to reset",
               type: "info", value: "Ctrl +  /  Ctrl -" },
         ];
 
@@ -437,21 +453,12 @@ Scope {
               s: "Colours the shell can hand to things that are not part of "
                  + "it" },
             { n: "Theme KDE applications",
-              s: "Writes this theme's palette into kdeglobals, so Dolphin, "
-                 + "Ark and Okular use the same charcoal and the same accent "
-                 + "on selection. Colours only — it cannot change their "
-                 + "layout, icons or rounded corners. Your other kdeglobals "
-                 + "settings are kept.",
+              s: "Gives Dolphin, Ark and Okular this palette and accent. Colours only; the rest of kdeglobals is kept",
               type: "toggle", value: A.themeQtApps,
               set: v => { A.themeQtApps = v; if (v) Services.Theming.applyKde(); } },
 
             { n: "Kvantum widget theme",
-              s: "Generates a Kvantum theme from this one and selects it. "
-                 + "Kvantum draws Qt widgets from an SVG, so this changes how "
-                 + "KDE applications are drawn — flat surfaces, hairline "
-                 + "borders, the shell's radii and accent — not only their "
-                 + "colours. Needs the kvantum package; applications pick it "
-                 + "up when they next start.",
+              s: "Makes and selects a Kvantum theme from this one, so KDE apps get the flat surfaces, radii and accent too. Needs kvantum; apps pick it up on restart",
               type: "toggle", value: A.kvantumTheme,
               set: v => { A.kvantumTheme = v;
                           if (v) Services.Kvantum.apply();
@@ -464,25 +471,17 @@ Scope {
 
         case "Bar": return [
             { n: "Workspace switcher size",
-              s: "The pills on the left of the bar, on their own. They are "
-                 + "the widest thing there and usually the first to feel "
-                 + "oversized.",
+              s: "The pills at the bar's left — usually the first thing to feel too big",
               type: "slider", min: 60, max: 160, unit: "%",
               value: A.workspaceScale, set: v => A.workspaceScale = v },
             { n: "Bar height", s: "Top bar thickness", type: "slider",
               min: 32, max: 56, unit: "px", value: A.barHeight, set: v => A.barHeight = v },
             { n: "Auto-hide",
-              s: "Slide up off the top edge until the pointer reaches it. "
-                 + "A panel opened from the bar holds it out while it is "
-                 + "open, and windows get the space back.",
+              s: "Slides away until the pointer reaches the top edge; windows get the space back",
               type: "toggle",
               value: A.barAutoHide, set: v => A.barAutoHide = v },
             { n: "Reveal delay",
-              s: "With auto-hide on, how long the pointer rests on the top "
-                 + "edge before the bar comes out, so passing over it on the "
-                 + "way to a tab or a menu does not bring it down. 0 is at once. "
-                 + "With the dock hidden too, opening the launcher brings the "
-                 + "bar out for as long as the launcher is open.",
+              s: "How long the pointer rests on the top edge before the bar comes out. 0 is at once",
               type: "slider", min: 0, max: 1000, step: 50, unit: "ms",
               value: A.barRevealDelay, set: v => A.barRevealDelay = v },
             { type: "header", n: "Text",
@@ -568,8 +567,7 @@ Scope {
             { n: "Size", s: "Of the pictures, icons or rows", type: "slider",
               min: 60, max: 160, unit: "%", value: A.altTabSize, set: v => A.altTabSize = v },
             { n: "One entry per app",
-              s: "Collapse an app's windows into its most recent one, with a "
-                 + "count. Off lists every window on its own",
+              s: "One entry per app, with a count. Off lists every window",
               type: "toggle", value: A.altTabGroup, set: v => A.altTabGroup = v },
             { n: "Scratchpad windows",
               s: "Include windows on a special workspace that is open over "
@@ -617,9 +615,7 @@ Scope {
             { n: "Icon size", s: "Glyph scale inside the tile — does not resize the dock", type: "slider",
               min: 30, max: 72, unit: "%", value: A.dockIconPct, set: v => A.dockIconPct = v },
             { n: "Spacing",
-              s: "The gap around the dock — the same above it, between it "
-                 + "and your windows, as below it, between it and the screen "
-                 + "edge. 0 puts it flush against the edge.",
+              s: "Space between the dock, your windows and the screen edge. 0 is flush",
               type: "slider", min: 0, max: 40, unit: " px",
               value: A.dockGapPx, set: v => A.dockGapPx = v },
             { n: "Label for active app", s: "Expand the focused app into a labelled pill", type: "toggle",
@@ -653,8 +649,7 @@ Scope {
               type: "toggle",
               value: A.dockOverFullscreen, set: v => A.dockOverFullscreen = v },
             { n: "Pinned apps",
-              s: "Right-click any dock tile to re-point it at a different "
-                 + "application, unpin it, or pin one that's only running",
+              s: "Right-click a tile to change its app, unpin it, or pin a running one",
               type: "info",
               value: Config.Apps.pinned.length + " pinned" },
             { n: "Reset pinned apps", s: "Back to the set this shell ships with",
@@ -663,9 +658,7 @@ Scope {
 
         case "Launcher": return [
             { type: "header", n: "Size",
-              s: "One control for the whole panel. Everything — the panel, "
-                 + "the tiles, the icons — scales together, so it keeps its "
-                 + "proportions instead of being stretched." },
+              s: "Panel, tiles and icons scale together" },
             { n: "Overall size", s: "Everything at once — the panel, the "
                  + "tiles, the icons and the type, in proportion",
               type: "slider", min: 70, max: 220, unit: "%",
@@ -675,22 +668,13 @@ Scope {
               s: "Optional, on top of the size above. These change one "
                  + "dimension and leave the content alone." },
             { n: "Grow out of the dock",
-              s: "The start menu opens as the dock's own pill stretching "
-                 + "into it, rather than a separate panel appearing above "
-                 + "it, and shrinks back into it on the way out. With "
-                 + "auto-hide on, the dock slides out first and the menu "
-                 + "grows from it.",
+              s: "The dock's pill stretches into the start menu, and shrinks back into it",
               type: "toggle", value: A.launcherMorph,
               set: v => A.launcherMorph = v },
-            { n: "Width", s: "Spent on more columns rather than on more space "
-                 + "between the same tiles. Below 100% the menu is narrower "
-                 + "and holds fewer. While it grows out of the dock it is "
-                 + "never wider than the dock itself.",
+            { n: "Width", s: "More columns, not more space between them",
               type: "slider", min: 50, max: 200, unit: "%",
               value: A.launcherWide, set: v => A.launcherWide = v },
-            { n: "Height", s: "Spent on more rows of apps, so the menu is "
-                 + "taller because there is more in it rather than because "
-                 + "there is more empty panel. Below 100% it shows fewer.",
+            { n: "Height", s: "More rows of apps, not more empty panel",
               type: "slider", min: 50, max: 200, unit: "%",
               value: A.launcherTall, set: v => A.launcherTall = v },
             { n: "Icon size", s: "The glyph inside each tile, without "
@@ -729,11 +713,7 @@ Scope {
                 s: "Every shortcut below is written with this in place of SUPER" });
             rows.push({
                 n: "Windows key sends",
-                s: "SUPER (Mod4) is what a standard PC keyboard sends. If none of "
-                   + "your Super shortcuts fire, it is probably not what yours "
-                   + "sends — a remapped layout, a Mac keyboard or an "
-                   + "altwin: kb_option will put it somewhere else, and then "
-                   + "every SUPER bind matches nothing.",
+                s: "SUPER (Mod4) is what a standard PC keyboard sends. If no Super shortcut fires, a remapped layout, a Mac keyboard or an altwin: option has put it elsewhere",
                 type: "seg",
                 options: [{ label: "Super", value: "SUPER" },
                           { label: "Alt",   value: "ALT" },
@@ -771,8 +751,7 @@ Scope {
             rows.push({ type: "header", n: "The generated file", s: "" });
             rows.push({
                 n: "Where these are written",
-                s: "hyprland.lua reads it last, so these replace the defaults "
-                   + "without the shell ever rewriting your own config",
+                s: "Read last by hyprland.lua, so they replace the defaults without touching your config",
                 type: "info", value: "hypr/binds.lua" });
             rows.push({ n: "Reset all shortcuts", s: "Back to the defaults this shell ships",
                 type: "action", label: "Reset",
@@ -783,15 +762,13 @@ Scope {
         case "Fonts": return [
             { type: "header", n: "Scale",
               s: "One multiplier over every text size in the shell" },
-            { n: "Interface scale", s: "Applies to the bar, dock, launcher, "
-                 + "panels and this window — 100% is the size the design specifies",
+            { n: "Interface scale", s: "The bar, dock, launcher, panels and this window. 100% is the design's size",
               type: "slider", min: 75, max: 150, unit: "%",
               value: A.fontScale, set: v => A.fontScale = v },
 
             { type: "header", n: "Typefaces",
               s: "Edit theme.json to change these — the shell reloads them live" },
-            { n: "Interface", s: "Everything except the readouts below. The design "
-                 + "specifies Inter; without it installed, the system sans is used.",
+            { n: "Interface", s: "Everything but the readouts below. Inter, or the system sans without it",
               type: "info", value: A.fontFamily },
             { n: "Monospaced", s: "Clock digits, the hex field in the colour "
                  + "picker, and the terminal's own config",
@@ -800,20 +777,13 @@ Scope {
             { type: "header", n: "Text rendering",
               s: "How glyphs are drawn onto pixels, which is most of what "
                  + "makes text look sharp or soft" },
-            { n: "Rasteriser", s: "Sharp hints each stem onto the pixel grid. "
-                 + "Smooth is Qt's default and survives fractional scaling, "
-                 + "which Sharp does not — on a display at 125% or 150%, "
-                 + "Smooth is the better-looking of the two.",
+            { n: "Rasteriser", s: "Sharp snaps stems to pixels. Smooth looks better at 125% or 150% scaling",
               type: "seg",
               options: [{ label: "Sharp",  value: "sharp" },
                         { label: "Smooth", value: "smooth" }],
               value: A.textNative ? "sharp" : "smooth",
               set: v => A.textNative = (v === "sharp") },
-            { n: "Subpixel order", s: "Your panel's stripe order. Grayscale is "
-                 + "right for most OLEDs: their subpixels are not in a "
-                 + "straight RGB row, so colour antialiasing fringes every "
-                 + "edge. Written to fontconfig for every app, and picked up "
-                 + "when each one next starts.",
+            { n: "Subpixel order", s: "Your panel's stripe order — Grayscale for most OLEDs. Every app picks it up on restart",
               type: "seg",
               options: [{ label: "Leave alone", value: "" },
                         { label: "Grayscale",   value: "none" },
@@ -830,8 +800,7 @@ Scope {
               set: v => { if (v !== "") A.subpixel = v;
                           else if (A.subpixel === "vrgb" || A.subpixel === "vbgr")
                               A.subpixel = "rgb"; } },
-            { n: "Hinting", s: "Nudges stems onto whole pixels. Off is truer to "
-                 + "the typeface's own shapes and slightly blurrier.",
+            { n: "Hinting", s: "Snaps stems to whole pixels. Off is truer to the typeface, slightly softer",
               type: "toggle", value: A.fontHinting, set: v => A.fontHinting = v },
             { n: "Written to", s: "Delete this file, or set the order back to "
                  + "Leave alone, to hand the decision back to fontconfig",
@@ -851,9 +820,7 @@ Scope {
 
         case "Clipboard": return [
             { n: "Keep clipboard history",
-              s: "Everything copied, newest first, to put back with Super+Shift+V or the "
-                 + "launcher. Kept in memory for this login only; what a password manager "
-                 + "marks as secret is never kept. Turning it off forgets everything.",
+              s: "Everything copied, for Super+Shift+V. In memory for this login only; passwords are never kept",
               type: "toggle", value: A.clipboardHistory, set: v => A.clipboardHistory = v },
             { n: "Entries kept", s: "Older ones drop off the end. Images count too (at most 20 of them).",
               type: "slider", min: 10, max: 500, unit: "", value: A.clipboardMax,
@@ -1179,18 +1146,13 @@ Scope {
             // than no slider.
             if (livePreset === "hdr" || livePreset === "hdredid") {
                 rows.push({ n: "SDR brightness",
-                    s: "How bright ordinary windows are inside the HDR "
-                       + "blend. At 100% their white sits at the reference "
-                       + "80 nits, which beside HDR highlights reads as "
-                       + "grey.",
+                    s: "How bright ordinary windows are beside HDR. At 100% white is 80 nits, which can read as grey",
                     type: "slider", min: 50, max: 300, unit: "%",
                     value: Math.round((ipc.sdrBrightness || 1) * 100),
                     set: v => Services.Devices.rememberColour(m.name,
                                   { sdrbrightness: Math.round(v) / 100 }) });
                 rows.push({ n: "SDR saturation",
-                    s: "sRGB colours stretched into the wider gamut come "
-                       + "out oversaturated. Pull this down if reds and "
-                       + "greens have gone lurid.",
+                    s: "Turn down if sRGB reds and greens look oversaturated",
                     type: "slider", min: 50, max: 150, unit: "%",
                     value: Math.round((ipc.sdrSaturation || 1) * 100),
                     set: v => Services.Devices.rememberColour(m.name,
@@ -1203,19 +1165,14 @@ Scope {
             // overriding the hardware's own answer is the right call.
             if (hw.bt2020 !== true) {
                 rows.push({ n: "Force wide gamut",
-                    s: "Tell Hyprland this panel can do BT.2020 even "
-                       + "though its EDID doesn't say so. Harmless to try: "
-                       + "if it can't, colours will look wrong and you "
-                       + "turn it back off.",
+                    s: "For panels whose EDID undersells them. If colours look wrong, turn it back off",
                     type: "toggle", value: forcedWide,
                     set: v => Services.Devices.rememberColour(m.name,
                                   { supports_wide_color: v ? 1 : 0 }) });
             }
             if (hw.hdr !== true && canWide) {
                 rows.push({ n: "Force HDR",
-                    s: "Same, for HDR. Needs wide gamut above to be on or "
-                       + "advertised, because Hyprland will not consider "
-                       + "HDR without it.",
+                    s: "Same, for HDR. Needs wide gamut on or advertised",
                     type: "toggle", value: forcedHdr,
                     set: v => Services.Devices.rememberColour(m.name,
                                   { supports_hdr: v ? 1 : 0 }) });
@@ -1236,10 +1193,7 @@ Scope {
 
             if (mons.length > 1) {
                 rows.push({ n: "Arrangement",
-                    s: "Drag a screen to where it actually is. Released near "
-                       + "another it lands flush against it — a one pixel gap "
-                       + "between two outputs is a column of desktop the "
-                       + "pointer cannot cross.",
+                    s: "Drag each screen to where it really is. Edges snap together, so the pointer can cross",
                     type: "monitors",
                     monitors: mons.map(x => ({
                         name: x.name, x: x.x, y: x.y,
@@ -1323,9 +1277,7 @@ Scope {
                 set: v => Services.Brightness.set(v / 100) });
             for (const r of root.nightRows()) rows.push(r);
             rows.push({ n: "Forget saved layouts",
-                s: "Drops the remembered mode, scale, arrangement and colour "
-                   + "settings for every output, so they fall back to what "
-                   + "hyprland.lua says at the next reload",
+                s: "Every output goes back to what hyprland.lua says at the next reload",
                 type: "action", label: "Forget",
                 set: () => Services.Devices.forgetDisplays() });
             return rows;
@@ -1527,9 +1479,7 @@ Scope {
             // changes, so these only store the value. The outline beside
             // each is the border itself, as Hyprland will draw it.
             { n: "Active border brightness",
-              s: "The focused window's border as a darker or lighter shade of "
-                 + "the accent — 100% is the accent itself"
-                 + (A.borderFollowsAccent ? "" : ". Only while Border follows accent is on"),
+              s: "A darker or lighter shade of the accent. 100% is the accent" + (A.borderFollowsAccent ? "" : ". Only while Border follows accent is on"),
               type: "slider", min: 20, max: 160, unit: "%", value: A.activeBorderPct,
               preview: v => { const c = A.shade(A.accent, v);
                               return Qt.rgba(c.r, c.g, c.b, 0xee / 255); },
@@ -1541,8 +1491,7 @@ Scope {
               preview: v => { const c = A.shade(A.div, v);
                               return Qt.rgba(c.r, c.g, c.b, 0xaa / 255); },
               set: v => A.inactiveBorderPct = v },
-            { n: "Corner radius", s: "Window corners at 100% Corner rounding; that "
-                 + "setting under Appearance scales them along with everything else",
+            { n: "Corner radius", s: "At 100% Corner rounding; Appearance scales them with everything else",
               type: "slider", min: 0, max: 24, unit: "px", value: A.hyprRounding,
               set: v => { A.hyprRounding = v; Services.Devices.applyFrame(); } },
 
@@ -1590,9 +1539,7 @@ Scope {
 
             { type: "header", n: "The config file", s: "" },
             { n: "Where these are written",
-              s: "Changes here are applied live and saved to theme.json, then "
-                 + "re-applied after every compositor reload. hyprland.lua is "
-                 + "never rewritten — your own edits to it stay yours.",
+              s: "Applied live, saved to theme.json and re-applied after every reload. hyprland.lua is never rewritten",
               type: "info", value: "hypr/hyprland.lua" },
             { n: "Reload Hyprland", s: "Re-read hyprland.lua, then put these "
                  + "back on top of it",
@@ -2075,7 +2022,7 @@ Scope {
                         set: v => { if (hhmm(v)) A.nightTo = v.trim(); } });
         }
         if (N.mode === "sun") {
-            rows.push({ n: "Location", s: "Latitude, longitude — empty uses your time zone's city. Only for the sun's times; never sent anywhere.",
+            rows.push({ n: "Location", s: "Latitude, longitude. Empty uses your time zone's city; never sent anywhere",
                         type: "text", value: A.nightLat !== "" ? A.nightLat + ", " + A.nightLon : "",
                         placeholder: "e.g. 51.5, -0.12", label: "Set",
                         set: v => {
@@ -2109,8 +2056,7 @@ Scope {
             rows.push({ n: "Rebuild", s: "Draw it again and put it in use — if the pointer didn't change",
                         type: "action", label: "Rebuild", set: () => C.build() });
         if (A.cursorTheme === "accent") {
-            rows.push({ n: "Style", s: "Light lines on a dark body, or the reverse — drawn like the app icons, "
-                     + "with one part in the accent",
+            rows.push({ n: "Style", s: "Light on dark or the reverse, with one part in the accent",
                 type: "seg",
                 options: [{ label: "Auto", value: "auto" }, { label: "Dark", value: "dark" },
                           { label: "Light", value: "light" }],

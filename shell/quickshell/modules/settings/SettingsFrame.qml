@@ -336,24 +336,12 @@ PanelSurface {
     }
 
     // ── cards ─────────────────────────────────────────────────────────
-    // A pane whose meta says `cards` is drawn as cards: each run of rows
-    // between two headers is one, under its header. Each row is told where
-    // in its card it falls and draws that slice itself ("h" for a header).
+    // Every pane is drawn as cards (Settings.cardPositions). Each row is
+    // told where in its card it falls and draws that slice itself.
     readonly property var cardPositions: {
         const meta = frame.app.paneMeta[frame.app.pane];
-        if (!meta || !meta.cards) return [];
-        const rows = frame.app.rows || [];
-        const out = [];
-        let i = 0;
-        while (i < rows.length) {
-            if (rows[i].type === "header") { out.push("h"); i++; continue; }
-            let j = i;
-            while (j < rows.length && rows[j].type !== "header") j++;
-            for (let k = i; k < j; k++)
-                out.push(j - i === 1 ? "only" : k === i ? "first" : k === j - 1 ? "last" : "middle");
-            i = j;
-        }
-        return out;
+        if (meta && meta.cards === false) return [];
+        return frame.app.cardPositions(frame.app.rows || []);
     }
 
     // ── a row asked for by the launcher's search ──────────────────────

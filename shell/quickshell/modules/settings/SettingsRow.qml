@@ -40,7 +40,9 @@ Item {
     // the plain list. A carded row draws its own slice of the card, so the
     // rows stay a flat list that the settings search can find its way in.
     property string cardPos: ""
-    readonly property bool carded: cardPos !== "" && !isHeader && spec.type !== "preview"
+    // "free": a row that is a card of its own (a panel, the preview), in a
+    // pane of cards — no card behind it, and no list rule above it.
+    readonly property bool carded: cardPos !== "" && cardPos !== "h" && cardPos !== "free" && !isHeader
     readonly property real inset: carded ? 16 : 0
     readonly property bool cardTop: cardPos === "only" || cardPos === "first"
     readonly property bool cardBottom: cardPos === "only" || cardPos === "last"
