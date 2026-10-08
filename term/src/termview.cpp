@@ -1031,6 +1031,20 @@ void TermView::keyPressEvent(QKeyEvent *event) {
         return;
     }
 
+    // Backspace or Delete with a selection on the line being typed deletes
+    // the selection, as it would in any text box. Anywhere else — output
+    // above, a full-screen program — the key goes through as it always has.
+    if ((event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete) && m_hasSelection
+        && !(mods & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier | Qt::ShiftModifier))) {
+        if (m_term->eraseSelection(m_selRow0, m_selCol0, m_selRow1, m_selCol1)) {
+            clearSelection();
+            m_kbActive = false;
+            wake();
+            event->accept();
+            return;
+        }
+    }
+
     if (keySelect(event->key(), mods)) { event->accept(); return; }
 
     if (m_hasSelection) clearSelection();

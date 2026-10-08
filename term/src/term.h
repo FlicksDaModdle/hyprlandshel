@@ -86,6 +86,11 @@ public:
     // line being edited belongs to the shell, which is told about keys and
     // nothing else.
     Q_INVOKABLE void placeCursor(int row, int col);
+    // Deletes a selection out of the line being typed, the way a text box
+    // would: the cursor to its end, then a backspace for each character in
+    // it. Line ids, inclusive cells. False when the selection is not in the
+    // line at the prompt — then nothing is sent.
+    bool eraseSelection(qint64 id0, int col0, qint64 id1, int col1);
 
     Q_INVOKABLE void scrollBy(int lines);
     Q_INVOKABLE void scrollToBottom();

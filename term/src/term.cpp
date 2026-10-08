@@ -184,6 +184,70 @@ void Term::placeCursor(int row, int col) {
     scrollToBottom();
 }
 
+// The line editor (readline, zle, fish) knows nothing of the screen, only
+// of the line it holds and where its cursor is in it, so a selection is
+// deleted through the keys a person would press: arrows to its end, one
+// backspace per character. That holds only where those keys reach — the
+// input line — so the selection has to sit on the cursor's own line, or on
+// rows it wraps across, at a prompt rather than in a full-screen program.
+// The prompt itself cannot be told from what was typed; a selection that
+// takes some of it in deletes back to where the input starts, and the
+// editor refuses the rest.
+bool Term::eraseSelection(qint64 id0, int col0, qint64 id1, int col1) {
+    if (!m_pty || m_altScreen || m_mouse || m_cols <= 0) return false;
+    if (id1 < id0 || (id1 == id0 && col1 < col0)) { std::swap(id0, id1); std::swap(col0, col1); }
+
+    // Lines of the live screen, 0 at its top.
+    const qint64 base = m_firstLineId + scrollbackLines();
+    const int l0 = static_cast<int>(id0 - base), l1 = static_cast<int>(id1 - base);
+    const int cur = m_st.cursor_row;
+    if (l0 < 0 || l1 >= m_rows) return false;
+    const int lo = qMin(l0, cur), hi = qMax(l1, cur);
+    if (hi - lo > 6) return false;
+
+    auto cellOf = [&](int line, int col, HtCell *c) { return ht_cell(m_core, line, col, c); };
+    // One logical line: every row but the last full to its edge, which is
+    // what a line wrapping onto the next looks like. A row that stops short
+    // ends a line, and the editor's arrows do not cross into another.
+    for (int r = lo; r < hi; ++r) {
+        HtCell c;
+        if (!cellOf(r, m_cols - 1, &c) || c.chars[0] == 0) return false;
+    }
+
+    const int P = cur * m_cols + m_st.cursor_col;
+    // Where the typing ends: its last character, or the cursor if that is
+    // past it (spaces typed at the end). Selected blank space beyond it is
+    // not in the line, and is not deleted.
+    int inputEnd = P;
+    for (int r = lo; r <= hi; ++r)
+        for (int c = 0; c < m_cols; ++c) {
+            HtCell cell;
+            if (cellOf(r, c, &cell) && cell.chars[0] != 0 && cell.chars[0] != ' ')
+                inputEnd = qMax(inputEnd, r * m_cols + c + 1);
+        }
+    const int S = l0 * m_cols + col0;
+    const int E = qMin(l1 * m_cols + col1 + 1, inputEnd);
+    if (E <= S) return true;    // nothing of the line in it: done
+
+    // Characters, not cells: the second half of a wide character is not
+    // a keystroke of its own.
+    auto chars = [&](int from, int to) {
+        int n = 0;
+        for (int k = from; k < to; ++k) {
+            HtCell cell;
+            if (!cellOf(k / m_cols, k % m_cols, &cell) || cell.width != 0) ++n;
+        }
+        return n;
+    };
+    // Through sendKey, so the arrows are spelled as the editor asked for
+    // them (application cursor mode or not) and backspace as it expects.
+    if (E > P) for (int i = chars(P, E); i > 0; --i) sendKey(Qt::Key_Right, 0, QString());
+    else for (int i = chars(E, P); i > 0; --i) sendKey(Qt::Key_Left, 0, QString());
+    for (int i = chars(S, E); i > 0; --i) sendKey(Qt::Key_Backspace, 0, QString());
+    scrollToBottom();
+    return true;
+}
+
 void Term::scrollBy(int lines) { setScrollOffset(m_scrollOffset + lines); }
 void Term::scrollToBottom() { setScrollOffset(0); }
 
