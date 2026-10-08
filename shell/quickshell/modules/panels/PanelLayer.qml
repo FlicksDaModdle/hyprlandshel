@@ -46,7 +46,24 @@ Variants {
         // it. Reserving space is for *windows*, not for the shell's own
         // full-screen surfaces.
         exclusionMode: ExclusionMode.Ignore
-        visible: hasScreen && Config.UiState.anyPanelOpen && isPrimary
+        // Stays mapped a moment after the last panel closes, so it can be
+        // seen drawing back in. Hiding it at once froze that animation
+        // where it stood — Qt stops a window's animations with it — and the
+        // next panel opened at full size, with nothing left to animate.
+        // Meanwhile it takes no input (the mask below), so a click lands on
+        // whatever is under it.
+        readonly property bool open: hasScreen && Config.UiState.anyPanelOpen && isPrimary
+        property bool lingering: false
+        onOpenChanged: {
+            if (open) { linger.stop(); lingering = false; }
+            else if (visible) { lingering = true; linger.restart(); }
+        }
+        Timer { id: linger; interval: Math.max(1, Config.Appearance.anim(320)); onTriggered: layer.lingering = false }
+        visible: open || lingering
+        mask: Region {
+            width: layer.open ? layer.width : 0
+            height: layer.open ? layer.height : 0
+        }
         color: "transparent"
         exclusiveZone: 0
 

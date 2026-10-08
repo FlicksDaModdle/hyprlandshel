@@ -23,8 +23,10 @@ MouseArea {
     required property Flickable flick
     // One notch of a mouse wheel.
     property real notch: 96
-    // How quickly a flick slows, in px/s².
-    property real friction: 1800
+    // How quickly a flick slows, in px/s² — Settings → Appearance →
+    // Animation → Momentum glide makes it go further or less far.
+    readonly property real friction: 1800 * 100 / Math.max(25, Config.Appearance.scrollGlide)
+    onFrictionChanged: flick.flickDeceleration = friction
 
     x: flick.originX
     y: flick.originY - flick.topMargin
@@ -51,7 +53,7 @@ MouseArea {
         id: glide
         target: root.flick
         property: "contentY"
-        duration: Config.Appearance.anim(170)
+        duration: Config.Appearance.smoothWheel ? Config.Appearance.anim(170) : 0
         easing.type: Easing.OutCubic
     }
     // Without scroll phases there is no "lifted": a pause stands in for it.
@@ -78,7 +80,7 @@ MouseArea {
             v = win.slice(1).reduce((a, e) => a + e.dy, 0) / dt;
         else
             v = last.dy * 60;
-        if (Math.abs(v) < 120 || !Config.Appearance.animated) return;
+        if (Math.abs(v) < 120 || !Config.Appearance.animated || !Config.Appearance.scrollMomentum) return;
         // flick() takes the content's velocity the way a drag gives it:
         // positive moves it down, which is scrolling up.
         flick.flick(0, -v);

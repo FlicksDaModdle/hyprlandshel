@@ -393,16 +393,43 @@ Scope {
               type: "slider", min: 0, max: 160, unit: "%", value: A.roundingPct, set: v => A.roundingPct = v },
         ].concat(root.cornerRows(false)).concat([
 
-            { type: "header", n: "Motion" },
+            { type: "header", n: "Animation" },
             { n: "Style",
-              s: A.springy ? "Things land with a little spring, the way macOS moves them — windows too"
+              s: A.springy ? "Springs that swing a little past and settle, like macOS — windows too"
                            : "Things ease straight into place",
               type: "seg", options: [{ label: "Springy", value: "springy" }, { label: "Smooth", value: "smooth" }],
               value: A.motionStyle, set: v => A.motionStyle = v },
-            { n: "Animation speed",
-              s: "Scales every animation in the shell. 0% is instant",
-              type: "slider", min: 0, max: 250, unit: "%",
-              value: A.animSpeed, set: v => A.animSpeed = v },
+            { n: "Speed",
+              s: A.animSpeed <= 0 ? "Off: everything changes at once" : "Every animation in the shell. Higher is faster",
+              type: "slider", min: 0, max: 300, unit: "%",
+              value: A.animSpeed, set: v => A.animSpeed = Math.round(v) },
+        ]).concat(A.springy ? [
+            { n: "Bounce",
+              s: A.motionBounce <= 0 ? "Lands without swinging past" : "How far things swing past before they settle",
+              type: "slider", min: 0, max: 200, unit: "%",
+              value: A.motionBounce, set: v => A.motionBounce = Math.round(v) },
+            { n: "Panels grow from their button",
+              s: "Menus and panels stretch out of the control that opened them",
+              type: "toggle", value: A.panelsGrow, set: v => A.panelsGrow = v },
+        ] : []).concat([
+            { n: "Window speed",
+              s: "Hyprland's own: windows opening, closing and moving, and workspaces",
+              type: "slider", min: 25, max: 300, unit: "%", value: A.hyprAnimSpeed,
+              set: v => { A.hyprAnimSpeed = Math.round(v); Services.Devices.applyFrame(); } },
+
+            { type: "header", n: "Scrolling" },
+            { n: "Trackpad momentum",
+              s: "A flick keeps scrolling after you lift, and slows to a stop",
+              type: "toggle", value: A.scrollMomentum, set: v => A.scrollMomentum = v },
+        ]).concat(A.scrollMomentum ? [
+            { n: "Glide",
+              s: "How far a flick carries",
+              type: "slider", min: 50, max: 200, unit: "%",
+              value: A.scrollGlide, set: v => A.scrollGlide = Math.round(v) },
+        ] : []).concat([
+            { n: "Smooth mouse wheel",
+              s: A.smoothWheel ? "Each notch glides" : "Each notch jumps",
+              type: "toggle", value: A.smoothWheel, set: v => A.smoothWheel = v },
         ]).concat(root.cursorRows()).concat([
 
             { type: "header", n: "Settings window" },

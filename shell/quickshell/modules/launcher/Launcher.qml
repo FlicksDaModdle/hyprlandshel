@@ -66,7 +66,7 @@ Variants {
 
         onWantedChanged: {
             if (wanted) { linger.stop(); lingering = false; resetInput(); }
-            else if (visible && Config.Appearance.launcherMorph) {
+            else if (visible && Config.Appearance.animated) {
                 lingering = true; linger.restart();
             }
             // Drives the morph too: one handler, because QML keeps only the
@@ -98,7 +98,7 @@ Variants {
         // should not stretch the fade itself.
         Timer {
             id: fadeDelay
-            interval: 150
+            interval: launcher.grows ? 70 : 110
             onTriggered: launcher.morphFade = 1
         }
         Timer {
@@ -204,6 +204,13 @@ Variants {
         // panel's shape is this number, so one animation drives the lot.
         readonly property bool morphing: Config.Appearance.launcherMorph
                                          && Config.UiState.dockPillWidth > 0
+        // With no pill to grow out of — the morph off, the dock hidden, or
+        // opened from the keyboard — it grows out of the edge it sits on
+        // instead, the way the panels grow out of the bar: wide first,
+        // then up, a little past and back. Smooth motion rises it instead.
+        readonly property bool grows: !morphing && Config.Appearance.animated
+                                      && Config.Appearance.springy && Config.Appearance.panelsGrow
+        readonly property bool rises: !morphing && !grows && Config.Appearance.animated
 
         // Three numbers, not one, all chasing the same 0-or-1 target at
         // different rates. A single number moves every edge in lockstep,
@@ -663,12 +670,19 @@ Variants {
 
             x: launcher.morphing ? Math.round(launcher.lerp(launcher.pillX, targetX))
                                  : targetX
+            transform: Scale {
+                origin.x: launcher.isLeft ? 0 : panel.width / 2
+                origin.y: launcher.isLeft ? panel.height / 2 : panel.height
+                xScale: launcher.grows ? 0.4 + 0.6 * launcher.morph : 1
+                yScale: launcher.grows ? 0.1 + 0.9 * launcher.morphY : 1
+            }
             // The exit slides it towards the edge it came from, so it
             // leaves the way a dock does rather than dissolving in place.
             y: (launcher.morphing ? Math.round(launcher.lerpY(launcher.pillY, targetY))
                                   : targetY)
+               + (launcher.rises && !launcher.isLeft ? Math.round((1 - launcher.morphY) * launcher.z(24)) : 0)
                + (launcher.isLeft ? 0 : Math.round(launcher.exit * launcher.z(56)))
-            opacity: 1 - launcher.exit
+            opacity: (1 - launcher.exit) * (launcher.rises ? Math.min(1, launcher.morphY * 4) : 1)
 
             // Swallow clicks so they don't reach the catcher behind.
             MouseArea { anchors.fill: parent }
@@ -685,7 +699,7 @@ Variants {
                 // Fades in over the back half of the morph: at the start
                 // there is a pill-sized hole to look through and text in it
                 // would just be clipped nonsense.
-                opacity: launcher.morphing ? launcher.morphFade : 1
+                opacity: launcher.morphing || launcher.grows || launcher.rises ? launcher.morphFade : 1
 
             Column {
                 id: body

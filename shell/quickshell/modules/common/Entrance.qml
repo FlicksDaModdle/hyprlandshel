@@ -5,14 +5,19 @@ import "../../config" as Config
 //
 // The way Liquid Glass does it: a panel grows out of the control that
 // opened it, like a drop drawn out of the bar. Its width leads and its
-// height follows, so it stretches out sideways, drops down, overshoots a
-// little and settles. Leaving, it draws back into the same spot. There is
-// hardly any fade: it is visible from the first frame, small, and it is
-// the movement that says where it came from.
+// height follows, so it stretches out sideways, drops down, swings a
+// little past and settles. Leaving, it draws back into the same spot.
+// There is hardly any fade: the glass is there from the first frame, and
+// its contents come in a beat behind it.
 //
 // Opened from anywhere but a bar control (a shortcut, the launcher) it
-// grows from its own top edge, centred. With Motion set to Smooth it only
-// drops a short way and eases in, as it used to.
+// grows from its own top edge, centred. With "Panels grow from their
+// button" off, or Motion set to Smooth, it drops a short way and settles.
+//
+// Played explicitly on every change of `shown`, from wherever it stands,
+// rather than left to Behaviors on bound values: those keep their last
+// state, and an exit frozen part-way (the layer hidden under it) left the
+// next opening with nothing to animate.
 Item {
     id: root
 
@@ -26,30 +31,71 @@ Item {
     implicitWidth: holder.childrenRect.width
     implicitHeight: holder.childrenRect.height
 
-    readonly property bool liquid: Config.Appearance.springy && Config.Appearance.animated
+    readonly property var ap: Config.Appearance
+    readonly property bool grows: ap.springy && ap.panelsGrow && ap.animated
+    readonly property real startX: grows ? 0.4 : 0.97
+    readonly property real startY: grows ? 0.1 : 0.97
+    readonly property real startLift: grows ? 0 : fromY * 1.6
+    readonly property real startShift: grows ? 0 : fromX * 1.6
 
     // Where across it to grow from, fixed when it opens so leaving goes
     // back to the same place.
     property real originX: width / 2
-    onShownChanged: if (shown) {
+
+    property real sx: startX
+    property real sy: startY
+    property real lift: startLift
+    property real shift: startShift
+    opacity: 0
+    visible: shown || opacity > 0.001
+
+    Component.onCompleted: if (shown) { sx = 1; sy = 1; lift = 0; shift = 0; opacity = 1; holder.opacity = 1; }
+    onShownChanged: shown ? arrive() : leave()
+
+    function arrive() {
+        leaving.stop();
         const ui = Config.UiState;
         const fresh = ui.panelOriginX >= 0 && Date.now() - ui.panelOriginAt < 700;
-        originX = fresh ? Math.max(0, Math.min(width, ui.panelOriginX - x)) : width / 2;
+        // Mid-exit it turns round from where it is; otherwise it starts
+        // from the bud.
+        if (opacity < 0.05) {
+            originX = fresh ? Math.max(0, Math.min(width, ui.panelOriginX - x)) : width / 2;
+            sx = startX; sy = startY; lift = startLift; shift = startShift;
+            holder.opacity = 0;
+        }
+        arriving.restart();
+    }
+    function leave() {
+        arriving.stop();
+        leaving.restart();
     }
 
-    // Held on screen until the exit has played out.
-    visible: shown || opacity > 0.01
-    // Only the first and last few frames are faded — enough that it never
-    // pops, not enough to read as a fade.
-    opacity: shown ? 1 : 0
-    Behavior on opacity {
-        NumberAnimation { duration: Config.Appearance.anim(root.shown ? 70 : 210); easing.type: Easing.InQuad }
+    ParallelAnimation {
+        id: arriving
+        NumberAnimation { target: root; property: "opacity"; to: 1; duration: root.ap.anim(50) }
+        // Width first, height a beat behind: stretched, then full.
+        Spring { target: root; property: "sx"; to: 1; ms: 360; bounce: 1.1 }
+        Spring { target: root; property: "sy"; to: 1; ms: 440; bounce: 0.9 }
+        Spring { target: root; property: "lift"; to: 0; ms: 360 }
+        Spring { target: root; property: "shift"; to: 0; ms: 360 }
+        SequentialAnimation {
+            PauseAnimation { duration: root.ap.anim(root.grows ? 50 : 0) }
+            NumberAnimation { target: holder; property: "opacity"; to: 1; duration: root.ap.anim(110); easing.type: Easing.OutQuad }
+        }
+    }
+    ParallelAnimation {
+        id: leaving
+        NumberAnimation { target: holder; property: "opacity"; to: 0; duration: root.ap.anim(70) }
+        Spring { target: root; property: "sx"; to: root.startX; ms: 220; bounce: 0 }
+        Spring { target: root; property: "sy"; to: root.startY; ms: 200; bounce: 0 }
+        Spring { target: root; property: "lift"; to: root.startLift; ms: 200; bounce: 0 }
+        Spring { target: root; property: "shift"; to: root.startShift; ms: 200; bounce: 0 }
+        SequentialAnimation {
+            PauseAnimation { duration: root.ap.anim(90) }
+            NumberAnimation { target: root; property: "opacity"; to: 0; duration: root.ap.anim(100); easing.type: Easing.InQuad }
+        }
     }
 
-    property real sx: shown ? 1 : (liquid ? 0.42 : 0.985)
-    property real sy: shown ? 1 : (liquid ? 0.12 : 0.985)
-    Behavior on sx { Spring { ms: root.shown ? 520 : 240; bounce: root.shown ? 1.2 : 0 } }
-    Behavior on sy { Spring { ms: root.shown ? 640 : 220; bounce: root.shown ? 1.0 : 0 } }
     transform: Scale {
         origin.x: root.originX
         origin.y: root.fromY > 0 ? root.height : 0
@@ -61,17 +107,8 @@ Item {
         id: holder
         width: parent.width
         height: parent.height
-        // Smooth motion drops it in; liquid motion grows it in place.
-        readonly property real travel: root.liquid ? 0 : 1
-        y: root.shown ? 0 : root.fromY * travel
-        x: root.shown ? 0 : root.fromX * travel
-        Behavior on y { Spring { ms: root.shown ? 420 : 140; bounce: 0 } }
-        Behavior on x { Spring { ms: root.shown ? 420 : 140; bounce: 0 } }
-        // The contents arrive a beat behind the glass around them, so the
-        // shape is mostly there before what is in it shows.
-        opacity: root.shown ? 1 : 0
-        Behavior on opacity {
-            NumberAnimation { duration: Config.Appearance.anim(root.shown ? 180 : 90); easing.type: Easing.OutQuad }
-        }
+        y: root.lift
+        x: root.shift
+        opacity: 0
     }
 }

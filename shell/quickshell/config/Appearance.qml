@@ -202,6 +202,17 @@ Singleton {
             // way macOS does; "smooth" eases straight in. Windows too —
             // services/Devices.qml sends Hyprland the matching curves.
             property string motionStyle: "springy"
+            // How much things overshoot and settle, as a share of the house
+            // amount (0 lands without overshooting at all).
+            property int motionBounce: 100            // 0-200 %
+            // Panels grow out of the bar button that opened them.
+            property bool panelsGrow: true
+            // Trackpad scrolling carries on after the fingers lift; how far
+            // it glides as a share of the default.
+            property bool scrollMomentum: true
+            property int scrollGlide: 100             // 50-200 %
+            // A mouse wheel glides each step rather than jumping.
+            property bool smoothWheel: true
             // Black rounded corners over the screen's own, for a panel
             // whose corners are square against a rounded-looking desktop.
             property bool screenCorners: false
@@ -853,6 +864,11 @@ Singleton {
     property alias hyprAnimSpeed: prefs.hyprAnimSpeed
     property alias hyprAnimEnabled: prefs.hyprAnimEnabled
     property alias motionStyle: prefs.motionStyle
+    property alias motionBounce: prefs.motionBounce
+    property alias panelsGrow: prefs.panelsGrow
+    property alias scrollMomentum: prefs.scrollMomentum
+    property alias scrollGlide: prefs.scrollGlide
+    property alias smoothWheel: prefs.smoothWheel
     property alias hyprLayout: prefs.hyprLayout
     property alias hyprInactiveOpacity: prefs.hyprInactiveOpacity
     property alias hyprFocusFollowsMouse: prefs.hyprFocusFollowsMouse
@@ -1089,6 +1105,7 @@ Singleton {
     // A few places want to know without asking for a number.
     readonly property bool animated: animSpeed > 0 && !saverCalm
     readonly property bool springy: motionStyle !== "smooth"
+
 
     // ── per-output scale ──────────────────────────────────────────────────
     // A laptop panel run at a compositor scale that makes applications
