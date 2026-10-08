@@ -452,6 +452,8 @@ Singleton {
     Connections {
         target: Hyprland
         function onRawEvent(event) {
+            if (event.name === "openwindow") root.windowOpened(event.data);
+            else if (event.name === "closewindow") root.windowClosed(event.data);
             switch (event.name) {
             case "openwindow":
             case "closewindow":
@@ -764,6 +766,11 @@ Singleton {
     signal configReloaded()
     // An output was added or removed.
     signal outputsChanged()
+    // A window has just been mapped (Hyprland's openwindow; the data is
+    // "address,workspace,class,title").
+    signal windowOpened(string data)
+    // ...and one has gone (closewindow; the data is its address, no 0x).
+    signal windowClosed(string data)
 
     // hl.device({ name=, ... }): settings for one input device, over the
     // input ones. Hyprland keeps them by name, so they hold for a device

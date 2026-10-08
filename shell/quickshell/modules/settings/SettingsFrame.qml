@@ -24,6 +24,14 @@ PanelSurface {
     required property var host
     required property var app
 
+    // Any touch of the window brings floating Settings back above the
+    // windows it went behind (Settings.raise). Passive: it takes nothing
+    // from the control that was pressed.
+    PointHandler {
+        acceptedButtons: Qt.AllButtons
+        onActiveChanged: if (active && frame.app.raise) frame.app.raise()
+    }
+
     showSeam: false
     color: Config.Appearance.sheet
     // Tiled, it is a real window: Hyprland rounds it and draws its border,

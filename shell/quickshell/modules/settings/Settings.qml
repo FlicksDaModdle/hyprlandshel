@@ -52,6 +52,45 @@ Scope {
         }
     }
     Timer { id: coolDown; interval: 60000; onTriggered: root.warm = false }
+
+    // ── stacking, floating ───────────────────────────────────────────────
+    // A layer surface sits on a layer, not in the stack of windows, so on
+    // the Top layer the floating window was over every window there was —
+    // including the Files window it had just opened (Choose image…, Show
+    // in Files) or its file dialog, which came up behind it.
+    //
+    // So it stacks like a window: up while it is what you are using, and
+    // down below the windows (on the Bottom layer, still above the
+    // wallpaper) once another window opens or takes the focus. Touching it
+    // brings it back up, and so does the focus going to no window at all —
+    // the dialog it opened closing, say.
+    property bool raised: true
+    property string raisedOver: ""
+    // The window that opened over it — the Files dialog, typically. When
+    // that one closes, Settings comes back up, since that is where you
+    // were.
+    property string openedOver: ""
+    function raise() { raised = true; openedOver = ""; raisedOver = Services.Compositor.activeAddress; }
+    Connections {
+        target: Config.UiState
+        function onSettingsOpenChanged() { if (Config.UiState.settingsOpen) root.raise(); }
+    }
+    Connections {
+        target: Services.Compositor
+        enabled: Config.UiState.settingsOpen && !root.tiled
+        function onWindowOpened(data) {
+            root.raised = false;
+            root.openedOver = "0x" + String(data).split(",")[0];
+        }
+        function onWindowClosed(data) {
+            if (root.openedOver !== "" && "0x" + data === root.openedOver) root.raise();
+        }
+        function onActiveAddressChanged() {
+            const a = Services.Compositor.activeAddress;
+            if (a === "") root.raise();
+            else if (a !== root.raisedOver && a !== root.openedOver) root.raised = false;
+        }
+    }
     readonly property string pane: Config.UiState.settingsPane
 
     // Settings → Wallpaper, with a wallpaper per screen: which screen the
@@ -185,7 +224,7 @@ Scope {
             anchors.right: true
 
             WlrLayershell.namespace: "quickshell:panel"
-            WlrLayershell.layer: WlrLayer.Top
+            WlrLayershell.layer: root.raised ? WlrLayer.Top : WlrLayer.Bottom
             // Needs real keyboard focus: the sliders have type-in numeric fields.
             WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
