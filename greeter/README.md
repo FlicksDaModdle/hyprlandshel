@@ -16,6 +16,12 @@ theme, wallpaper and picture in `/var/lib/hyprshell-greeter/users/<you>`
 reach, and the greeter shows whoever is picked in their own. Someone who has
 never run the shell gets the greeter's own look (`--theme`).
 
+**At your desktop's size, with your pointer.** The same folder holds each
+screen's resolution, refresh rate, position and scale, and your cursor
+theme and size — the accent cursor copied in, as it lives in your home —
+and the greeter hands them to its Hyprland as it starts (`GreeterLook.qml`),
+instead of Hyprland's automatic scale and default 24 px pointer.
+
 **Your login unlocks the keyring** — where Mail, the browser and Wi-Fi keep
 passwords: the installer adds `pam_gnome_keyring` to `/etc/pam.d/greetd`
 (the old file is kept as `greetd.before-hyprshell`; `--no-keyring` skips

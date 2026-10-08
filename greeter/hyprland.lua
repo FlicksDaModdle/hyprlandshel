@@ -16,6 +16,11 @@ hl.env("XDG_CONFIG_HOME", "@STATE@/config")
 hl.env("QT_QPA_PLATFORM", "wayland")
 hl.env("XCURSOR_SIZE", "24")
 hl.env("HYPRCURSOR_SIZE", "24")
+-- Where GreeterLook.qml links the cursor theme of the person picked (your
+-- accent cursor lives in your home, which the greeter cannot read), ahead
+-- of the system's themes, so `hyprctl setcursor` finds it by name.
+hl.env("XCURSOR_PATH", "@CACHE@/data/icons:/usr/local/share/icons:/usr/share/icons:/usr/share/pixmaps")
+hl.env("XDG_DATA_DIRS", "@CACHE@/data:/usr/local/share:/usr/share")
 
 hl.config({
     input = {

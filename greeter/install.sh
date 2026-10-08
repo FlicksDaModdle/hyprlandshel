@@ -339,6 +339,7 @@ fi
 mkdir -p "$ETC"
 sed -e "s|@STATE@|/var/lib/hyprshell-greeter|g" \
     -e "s|@SHARE@|/usr/share/hyprshell-greeter|g" \
+    -e "s|@CACHE@|/var/cache/hyprshell-greeter|g" \
     -e "s|@QS@|$QS|g" \
     -e "s|@KB_LAYOUT@|$layout|g" \
     -e "s|@KB_VARIANT@|$variant|g" \

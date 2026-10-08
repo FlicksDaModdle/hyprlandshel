@@ -15,6 +15,8 @@ ShellRoot {
     id: root
 
     GreeterState { id: greeter }
+    // Your desktop's screen scale and pointer, on the login screen too.
+    GreeterLook { greeter: greeter }
 
     // Dressed as the person picked: their own theme — accent, light or
     // dark, rounding, fonts, wallpaper — as their shell last saved it.

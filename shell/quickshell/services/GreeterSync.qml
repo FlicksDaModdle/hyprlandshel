@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "../config" as Config
+import "." as Services
 
 // Keeps the login screen dressed like your desktop.
 //
@@ -77,8 +78,6 @@ Singleton {
         repeat: true
         onTriggered: theme.reload()
     }
-    property string lastSource: ""
-    property bool fresh: true
 
     // Changes made together (a theme import, dragging a slider) go as one.
     Timer {
@@ -87,14 +86,59 @@ Singleton {
         onTriggered: root.sync()
     }
 
+    // The screens as the desktop has them — mode, position and scale — so
+    // the login screen is the same size as the desktop rather than at
+    // Hyprland's automatic scale. From what Hyprland reports, so a scale
+    // set in hyprland.lua counts as much as one set in Settings.
+    readonly property string screensText: JSON.stringify((Services.Compositor.monitors || [])
+        .filter(m => m && m.name)
+        .map(m => {
+            const o = m.lastIpcObject || ({});
+            return {
+                name: String(m.name),
+                width: o.width || m.width, height: o.height || m.height,
+                refreshRate: o.refreshRate || 60,
+                x: o.x !== undefined ? o.x : m.x, y: o.y !== undefined ? o.y : m.y,
+                scale: m.scale || o.scale || 1
+            };
+        }), null, 2)
+    // And the pointer: the accent theme (copied, as it lives in your home)
+    // or the system one named in Settings, at your size.
+    readonly property string cursorText: JSON.stringify({
+        theme: Services.Cursor.enabled ? Services.Cursor.themeName
+                                       : (Config.Appearance.cursorSystemTheme || "Adwaita"),
+        size: Services.Cursor.size
+    }, null, 2)
+    onScreensTextChanged: if (root.active) syncSoon.restart()
+    onCursorTextChanged: if (root.active) syncSoon.restart()
+    // A rebuilt accent cursor — a new accent — is copied once it is built.
+    Connections {
+        target: Services.Cursor
+        function onBuildingChanged() { if (!Services.Cursor.building && root.active) syncSoon.restart(); }
+    }
+
     // The copy of theme.json, written once the files it names are in place.
-    property string pending: ""
     FileView {
         id: out
         path: root.dir + "/theme.json"
         atomicWrites: true
         printErrors: false
     }
+    FileView {
+        id: outScreens
+        path: root.dir + "/screens.json"
+        atomicWrites: true
+        printErrors: false
+    }
+    FileView {
+        id: outCursor
+        path: root.dir + "/cursor.json"
+        atomicWrites: true
+        printErrors: false
+    }
+    // What was last written to each, to write only what changed.
+    property var written: ({})
+    property var pendingFiles: ({})
 
     function ext(p) {
         const m = /\.[A-Za-z0-9]{1,5}$/.exec(String(p));
@@ -140,15 +184,20 @@ Singleton {
         t.liveLast = "";
         media.push([root.home + "/.face", root.dir + "/face"]);
 
-        // Written only when it is new, or the copy there has gone (the
-        // greeter reinstalled); the files it names are checked every time,
+        // Each written only when it is new, or the copy there has gone (the
+        // greeter reinstalled); the files they name are checked every time,
         // and copied only when they changed.
-        root.fresh = source !== root.lastSource;
-        root.lastSource = source;
-        root.pending = JSON.stringify(t, null, 2);
+        root.pendingFiles = {
+            "theme.json": JSON.stringify(t, null, 2),
+            "screens.json": root.screensText,
+            "cursor.json": root.cursorText
+        };
         const args = [];
         for (const [a, b] of media) args.push(a, b);
-        copy.command = ["sh", "-c", copy.script, "greeter-sync", root.dir].concat(args);
+        const cursorTheme = Services.Cursor.enabled ? Services.Cursor.themeName
+                                                    : (Config.Appearance.cursorSystemTheme || "");
+        copy.command = ["sh", "-c", copy.script, "greeter-sync", root.dir, cursorTheme,
+                        Services.Cursor.dataHome].concat(args);
         copy.running = true;
     }
 
@@ -158,8 +207,27 @@ Singleton {
     Process {
         id: copy
         readonly property string script: `
-            dir=$1; shift
-            keep=" theme.json "
+            dir=$1 curname=$2 datahome=$3; shift 3
+            keep=" theme.json screens.json cursor.json "
+            # The cursor theme, when it is one in your home the greeter cannot
+            # read: the whole folder, again whenever anything in it changed.
+            src=""
+            if [ -n "$curname" ]; then
+                for d in "$datahome/icons/$curname" "$HOME/.icons/$curname"; do
+                    [ -d "$d" ] && { src=$d; break; }
+                done
+            fi
+            if [ -n "$src" ]; then
+                stamp="$src $(find "$src" -printf '%T@\n' 2>/dev/null | sort -n | tail -n1)"
+                if [ ! -d "$dir/cursor" ] || [ "$(cat "$dir/.cursor.from" 2>/dev/null)" != "$stamp" ]; then
+                    rm -rf "$dir/cursor.part"
+                    cp -a "$src" "$dir/cursor.part" 2>/dev/null && chmod -R a+rX "$dir/cursor.part" \
+                        && rm -rf "$dir/cursor" && mv "$dir/cursor.part" "$dir/cursor" \
+                        && printf '%s' "$stamp" > "$dir/.cursor.from"
+                fi
+            else
+                rm -rf "$dir/cursor" "$dir/.cursor.from"
+            fi
             while [ $# -ge 2 ]; do
                 from=$1; to=$2; shift 2
                 name=\${to##*/}
@@ -177,16 +245,27 @@ Singleton {
                 case "$keep" in *" $n "*) ;; *) rm -f "$f" "$dir/.$n.from" ;; esac
             done
             chmod 755 "$dir" 2>/dev/null
-            [ -f "$dir/theme.json" ] && echo have
+            for n in theme.json screens.json cursor.json; do [ -f "$dir/$n" ] && echo "$n"; done
             exit 0`
         stdout: StdioCollector { id: copyOut }
         onExited: {
-            if (root.pending === "") return;
-            if (!root.fresh && copyOut.text.trim() === "have") { root.pending = ""; return; }
-            out.setText(root.pending);
-            root.lastSynced = new Date().toISOString();
-            console.log("GreeterSync: login screen updated in", root.dir);
-            root.pending = "";
+            const there = copyOut.text.split("\n");
+            const views = { "theme.json": out, "screens.json": outScreens, "cursor.json": outCursor };
+            const done = Object.assign({}, root.written);
+            let any = false;
+            for (const name in root.pendingFiles) {
+                const text = root.pendingFiles[name];
+                if (text === root.written[name] && there.indexOf(name) >= 0) continue;
+                views[name].setText(text);
+                done[name] = text;
+                any = true;
+            }
+            root.written = done;
+            root.pendingFiles = ({});
+            if (any) {
+                root.lastSynced = new Date().toISOString();
+                console.log("GreeterSync: login screen updated in", root.dir);
+            }
         }
     }
 }
