@@ -17,9 +17,11 @@ PanelSurface {
 
     readonly property bool expanded: Config.UiState.ccExpanded !== ""
     readonly property bool wifiPane: Config.UiState.ccExpanded === "Wi-Fi"
+    readonly property bool mixerPane: Config.UiState.ccExpanded === "Mixer"
 
     implicitWidth: 384
-    implicitHeight: expanded ? expandedView.implicitHeight : mainView.implicitHeight
+    implicitHeight: mixerPane ? mixerView.implicitHeight
+                  : expanded ? expandedView.implicitHeight : mainView.implicitHeight
 
     Behavior on implicitHeight { NumberAnimation { duration: Config.Appearance.anim(180); easing.type: Easing.OutCubic } }
 
@@ -279,6 +281,34 @@ PanelSurface {
                                 font.pixelSize: Config.Appearance.fs(12)
                                 color: Config.Appearance.ink2
                             }
+                            // Volume opens the mixer: each app's own level.
+                            Rectangle {
+                                visible: sliderRow.modelData === "volume"
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: mixRow.implicitWidth + 14
+                                height: 20
+                                radius: 10
+                                color: mixHover.hovered ? Config.Appearance.sel : Config.Appearance.hover
+                                Row {
+                                    id: mixRow
+                                    anchors.centerIn: parent
+                                    spacing: 3
+                                    StyledText {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: Services.Audio.streams.length > 0 ? "Apps · " + Services.Audio.streams.length : "Apps"
+                                        font.pixelSize: Config.Appearance.fs(10.5)
+                                        font.weight: Font.DemiBold
+                                        color: mixHover.hovered ? Config.Appearance.ink : Config.Appearance.ink3
+                                    }
+                                    MonoIcon {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        name: "chevronRight"; size: 11; monochrome: true
+                                        inkColor: Config.Appearance.ink3
+                                    }
+                                }
+                                HoverHandler { id: mixHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: Config.UiState.ccExpanded = "Mixer" }
+                            }
                         }
 
                         StyledText {
@@ -302,13 +332,25 @@ PanelSurface {
         }
     }
 
+    // ── the volume mixer ──────────────────────────────────────────────────
+    Loader {
+        id: mixerView
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        active: root.mixerPane
+        visible: active
+        implicitHeight: item ? item.implicitHeight : 0
+        sourceComponent: AppMixer {}
+    }
+
     // ── drill-down ────────────────────────────────────────────────────────
     Column {
         id: expandedView
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        visible: root.expanded
+        visible: root.expanded && !root.mixerPane
 
         Item {
             width: parent.width

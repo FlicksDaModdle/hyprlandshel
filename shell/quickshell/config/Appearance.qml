@@ -323,6 +323,12 @@ Singleton {
             property string peqBands: ""
             property string peqPresets: "[]"
             property int eqRange: 12
+            // What the equalizer is applied to: "all" (it is the output
+            // everything plays into) or "apps" (only those in eqApps, by
+            // their stream's node name; everything else plays straight to
+            // the device).
+            property string eqScope: "all"
+            property string eqApps: "[]"
             // Microphone noise suppression: on or off, how sure it must be
             // that it is hearing a voice before letting sound through, and
             // the real microphone it listens to.
@@ -714,6 +720,8 @@ Singleton {
     property alias peqBands: prefs.peqBands
     property alias peqPresets: prefs.peqPresets
     property alias eqRange: prefs.eqRange
+    property alias eqScope: prefs.eqScope
+    property alias eqApps: prefs.eqApps
     property alias nsEnabled: prefs.nsEnabled
     property alias nsThreshold: prefs.nsThreshold
     property alias nsTarget: prefs.nsTarget

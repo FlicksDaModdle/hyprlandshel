@@ -5,6 +5,7 @@ import Quickshell.Io
 import "../config" as Config
 import "." as Services
 import "EqMath.js" as EqM
+import "../modules/common"
 
 // Sound effects the shell runs itself, for Settings → Sound:
 //
@@ -295,14 +296,122 @@ Singleton {
     }
     function syncEq() {
         if (!au.eqSink) return;
-        if (eqWanted && !au.eqActive) {
-            if (prefs.eqTarget === "" && au.rawSink && !au.isOurs(au.rawSink)) prefs.eqTarget = au.rawSink.name;
+        if (!eqWanted) return;
+        if (prefs.eqTarget === "" && au.rawSink && !au.isOurs(au.rawSink)) prefs.eqTarget = au.rawSink.name;
+        if (eqPerApp) {
+            // Only the chosen apps go through it: the device stays the
+            // default, and the equalizer plays into whichever that is.
+            if (au.eqActive) {
+                const real = au.sinks.find(n => n.name === prefs.eqTarget) || au.sinks[0];
+                if (real) au.setRawDefaultSink(real);
+            }
+            routeSoon.restart();
+        } else if (!au.eqActive) {
             au.setRawDefaultSink(au.eqSink);
-            eqStatus = "on";
-            pushGains();
         }
+        eqStatus = "on";
+        pushGains();
     }
     function setEnabled(on) { prefs.eqEnabled = on; if (on && eqStatus === "error") retryEq(); }
+
+    // ── for some apps only ───────────────────────────────────────────────
+    // With eqScope "apps" the equalizer is not the default output: the
+    // streams of the apps chosen are pointed at it one by one (PipeWire's
+    // target.object, which WirePlumber follows and remembers per app), and
+    // everything else plays straight to the device. An app is known by its
+    // binary, or else its name, so a stream started later — the next song,
+    // the next tab — goes the same way.
+    readonly property bool eqPerApp: prefs.eqScope === "apps"
+    readonly property var eqApps: { try { return JSON.parse(prefs.eqApps || "[]"); } catch (e) { return []; } }
+    function appKey(s) {
+        const p = s ? s.properties || {} : {};
+        return p["application.process.binary"] || p["application.name"] || (s ? s.name : "") || "";
+    }
+    function isEqApp(s) { const k = appKey(s); return k !== "" && eqApps.indexOf(k) >= 0; }
+    function isEqAppKey(k) { return eqApps.indexOf(k) >= 0; }
+    function setEqAppKey(k, on) {
+        if (k === "") return;
+        const list = eqApps.filter(x => x !== k);
+        if (on) list.push(k);
+        prefs.eqApps = JSON.stringify(list);
+    }
+    function setEqApp(s, on) { setEqAppKey(appKey(s), on); }
+    function setScope(scope) { prefs.eqScope = scope === "apps" ? "apps" : "all"; }
+    onEqPerAppChanged: syncEq()
+
+    // Streams' properties (their app) only arrive once they are bound.
+    readonly property bool routing: eqWanted && eqPerApp
+    SteadyTracker { nodes: root.routing ? root.au.streams : [] }
+    // pactl's tables, to see which streams are still on the equalizer.
+    property bool watching: false
+    onRoutingChanged: {
+        if (routing !== watching) { watching = routing; au.watch(routing); }
+        if (!routing) unrouteAll();
+        routeSoon.restart();
+    }
+
+    // Which streams were pointed at the equalizer, by node id.
+    property var routed: ({})
+    readonly property string routeKey: routing
+        ? au.streams.map(s => s.id + "=" + appKey(s) + ">" + au.streamSinkName(s)).join(",") + "|" + prefs.eqApps
+          + "|" + (au.eqSink ? au.eqSink.id : -1)
+        : ""
+    onRouteKeyChanged: if (routing) routeSoon.restart()
+    Timer { id: routeSoon; interval: 400; onTriggered: root.route() }
+
+    function route() {
+        if (!routing || !au.eqSink) return;
+        const next = {};
+        for (const s of au.streams) {
+            const k = String(s.id);
+            const want = isEqApp(s);
+            const on = routed[k] === true || au.streamSinkName(s) === au.eqSinkName;
+            if (want) {
+                if (routed[k] !== true) target(s.id, au.eqSinkName);
+                next[k] = true;
+            } else if (on) {
+                target(s.id, "");
+            }
+        }
+        routed = next;
+    }
+    // Everything pointed at the equalizer let go again, to follow the
+    // default — on switching it off or back to every app.
+    function unrouteAll() {
+        for (const k in routed) if (routed[k] && au.streams.some(s => String(s.id) === k)) target(parseInt(k), "");
+        routed = ({});
+    }
+    property var metaQueue: []
+    function target(id, sinkName) {
+        const cmd = sinkName !== ""
+            ? ["pw-metadata", String(id), "target.object", sinkName]
+            : ["pw-metadata", "-d", String(id), "target.object"];
+        metaQueue = metaQueue.concat([cmd]);
+        if (!metaProc.running) nextMeta();
+    }
+    function nextMeta() {
+        const q = metaQueue.slice();
+        metaProc.command = q.shift();
+        metaQueue = q;
+        metaProc.running = true;
+    }
+    Process {
+        id: metaProc
+        onExited: if (root.metaQueue.length > 0) root.nextMeta()
+    }
+    // The device chosen while only some apps are equalized is the one the
+    // equalizer plays into as well.
+    Connections {
+        target: root.au
+        enabled: root.routing
+        function onRawSinkChanged() {
+            const r = root.au.rawSink;
+            if (!r || root.au.isOurs(r) || r.name === root.prefs.eqTarget) return;
+            root.prefs.eqTarget = r.name;
+            const out = root.au.nodes.find(n => n.name === root.au.eqOutName);
+            if (out) root.au.moveStream(out, r);
+        }
+    }
     function retryEq() { eqError = ""; eqEpoch++; }
 
     // ── the bands, changed ───────────────────────────────────────────────

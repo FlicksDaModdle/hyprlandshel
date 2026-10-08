@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Services.Pipewire
 
 // Keeps PipeWire nodes bound (their volumes and properties live) without the
@@ -12,9 +13,10 @@ import Quickshell.Services.Pipewire
 // whatever decides whether it belongs in the list to have settled — and is
 // never let go while it still exists. It goes when PipeWire removes it, or
 // when this tracker does.
-Item {
+// A Scope rather than an Item, so it can sit in a service as well as in a
+// pane.
+Scope {
     id: root
-    visible: false
 
     property var nodes: []
     // How long a node has to have existed before it is bound.

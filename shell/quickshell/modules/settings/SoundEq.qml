@@ -72,7 +72,8 @@ Rectangle {
                         : !root.on ? "Off — shape the sound of everything you play"
                         : root.fx.eqStatus === "starting" ? "Starting…"
                         : root.fx.eqStatus === "error" ? "Didn't start — see below"
-                        : "On, for " + (Services.Audio.sink ? Services.Audio.displayName(Services.Audio.sink) : "the output")
+                        : "On, for " + (root.fx.eqPerApp ? (root.fx.eqApps.length === 1 ? "1 app" : root.fx.eqApps.length + " apps")
+                                     : Services.Audio.sink ? Services.Audio.displayName(Services.Audio.sink) : "the output")
                           + " · " + root.prefs.eqPreset + " · " + root.fx.bands.filter(b => b.on).length + " bands"
                     font.pixelSize: root.ap.fs(12)
                     color: root.ap.ink3
@@ -100,6 +101,98 @@ Rectangle {
             visible: root.fx.eqStatus === "error" && root.on
             label: "Try again"
             onClicked: root.fx.retryEq()
+        }
+
+        // ── what it applies to ───────────────────────────────────────────
+        Item {
+            width: parent.width
+            height: 32
+            StyledText {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Applies to"
+                font.pixelSize: root.ap.fs(12.5)
+                font.weight: Font.Medium
+                color: root.ap.ink2
+            }
+            Segmented {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                segmentPadding: 12
+                options: [{ label: "Everything", value: "all" }, { label: "Chosen apps", value: "apps" }]
+                value: root.fx.eqPerApp ? "apps" : "all"
+                onSelected: v => root.fx.setScope(v)
+            }
+        }
+        // The apps, as chips: those playing now, and those chosen before
+        // that aren't. A tap puts one through the equalizer or takes it out.
+        Flow {
+            visible: root.fx.eqPerApp
+            width: parent.width
+            spacing: 6
+            Repeater {
+                model: {
+                    const out = [];
+                    const seen = {};
+                    for (const s of Services.Audio.streams) {
+                        const k = root.fx.appKey(s);
+                        if (k === "" || seen[k]) continue;
+                        seen[k] = true;
+                        out.push({ key: k, label: Services.Audio.streamApp(s), hint: Services.Audio.streamHint(s), live: true });
+                    }
+                    for (const k of root.fx.eqApps)
+                        if (!seen[k]) out.push({ key: k, label: k, hint: k, live: false });
+                    return out;
+                }
+                Rectangle {
+                    id: chip
+                    required property var modelData
+                    readonly property bool chosen: root.fx.isEqAppKey(modelData.key)
+                    height: 30
+                    width: chipRow.implicitWidth + 20
+                    radius: 15
+                    color: chosen ? Qt.rgba(root.ap.accent.r, root.ap.accent.g, root.ap.accent.b, 0.16)
+                         : chipHover.hovered ? root.ap.sel : root.ap.ground
+                    border.width: 1
+                    border.color: chosen ? root.ap.accent : root.ap.rule
+                    opacity: modelData.live ? 1 : 0.7
+                    Behavior on color { ColorAnimation { duration: root.ap.anim(140) } }
+                    Row {
+                        id: chipRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        MonoIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            name: Config.Apps.iconFor(chip.modelData.hint)
+                            size: 14
+                            inkColor: chip.chosen ? root.ap.accent : root.ap.ink2
+                            accentColor: root.ap.accent
+                        }
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: chip.modelData.label
+                            font.pixelSize: root.ap.fs(12)
+                            font.weight: chip.chosen ? Font.DemiBold : Font.Normal
+                            color: chip.chosen ? root.ap.ink : root.ap.ink2
+                        }
+                        MonoIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            name: chip.chosen ? "check" : "plus"
+                            size: 12; monochrome: true
+                            inkColor: chip.chosen ? root.ap.accent : root.ap.ink3
+                        }
+                    }
+                    HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.fx.setEqAppKey(chip.modelData.key, !chip.chosen) }
+                }
+            }
+        }
+        StyledText {
+            visible: root.fx.eqPerApp && Services.Audio.streams.length === 0 && root.fx.eqApps.length === 0
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "Start something playing and it shows here, to choose."
+            font.pixelSize: root.ap.fs(12)
+            color: root.ap.ink3
         }
 
         // ── presets ──────────────────────────────────────────────────────
