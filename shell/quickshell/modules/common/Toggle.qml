@@ -64,14 +64,8 @@ Item {
             color: root.checked ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
 
             Behavior on x {
-                NumberAnimation {
-                    id: xAnim
-                    duration: Config.Appearance.anim(260)
-                    // A little past, then back. The overshoot is small
-                    // enough to feel like weight rather than like a bounce.
-                    easing.type: Easing.OutBack
-                    easing.overshoot: 1.1
-                }
+                // A little past, then back.
+                Spring { id: xAnim; ms: 340; bounce: 1.2 }
             }
             Behavior on width {
                 NumberAnimation {

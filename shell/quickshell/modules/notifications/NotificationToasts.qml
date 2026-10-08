@@ -4,6 +4,7 @@ import Quickshell.Wayland
 import Quickshell.Services.Notifications
 import "../../config" as Config
 import "../../services" as Services
+import "../common"
 import "../panels"
 
 // Banner stack under the top bar's right edge. Each banner is the same card
@@ -56,9 +57,11 @@ PanelWindow {
                 Component.onCompleted: shown = true
 
                 opacity: shown ? 1 : 0
-                x: shown ? 0 : 28
+                x: shown ? 0 : 56
+                scale: shown ? 1 : 0.96
                 Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(180) } }
-                Behavior on x { NumberAnimation { duration: Config.Appearance.anim(220); easing.type: Easing.OutCubic } }
+                Behavior on x { Spring { ms: 460; bounce: slot.shown ? 0.9 : 0 } }
+                Behavior on scale { Spring { ms: 420 } }
 
                 NotificationRow {
                     id: card

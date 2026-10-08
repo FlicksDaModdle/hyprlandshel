@@ -23,7 +23,7 @@ PanelSurface {
     implicitHeight: mixerPane ? mixerView.implicitHeight
                   : expanded ? expandedView.implicitHeight : mainView.implicitHeight
 
-    Behavior on implicitHeight { NumberAnimation { duration: Config.Appearance.anim(180); easing.type: Easing.OutCubic } }
+    Behavior on implicitHeight { Spring { ms: 420; bounce: 0.5 } }
 
     // ── main ──────────────────────────────────────────────────────────────
     Column {
@@ -134,6 +134,8 @@ PanelSurface {
                         required property var modelData
                         width: (tileGrid.width - tileGrid.spacing * 2) / 3
                         height: 88
+                        scale: tileArea.pressed ? 0.94 : 1
+                        Behavior on scale { Spring { ms: 340; bounce: 1.3 } }
 
                         MouseArea {
                             id: tileArea

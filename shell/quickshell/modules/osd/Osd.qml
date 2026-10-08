@@ -58,8 +58,13 @@ PanelWindow {
 
         // Rise into place, matching the dock's own reveal easing.
         opacity: osd.visible ? 1 : 0
-        transform: Translate { y: osd.visible ? 0 : 12 }
+        scale: osd.visible ? 1 : 0.92
+        transform: Translate {
+            y: osd.visible ? 0 : 16
+            Behavior on y { Spring { ms: 420 } }
+        }
         Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(140) } }
+        Behavior on scale { Spring { ms: 420; bounce: 1.1 } }
 
         Row {
             anchors.fill: parent

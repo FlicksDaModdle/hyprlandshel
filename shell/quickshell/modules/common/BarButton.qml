@@ -28,6 +28,9 @@ Item {
 
     implicitWidth: Math.max(26, row.implicitWidth + padding * 2)
     implicitHeight: 26
+    // Gives under the finger, and springs back.
+    scale: tap.pressed ? 0.92 : 1
+    Behavior on scale { Spring { ms: 320; bounce: 1.3 } }
 
     data: [
         Rectangle {
@@ -52,6 +55,7 @@ Item {
         },
 
         TapHandler {
+            id: tap
             enabled: root.interactive
             acceptedButtons: Qt.LeftButton
             onTapped: root.activated()

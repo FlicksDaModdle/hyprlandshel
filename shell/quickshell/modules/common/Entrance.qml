@@ -28,39 +28,28 @@ Item {
     // Held on screen until the exit has played out.
     visible: shown || opacity > 0.01
     opacity: shown ? 1 : 0
-    scale: shown ? 1 : 0.985
-    transformOrigin: Item.Top
+    // Springy motion starts it smaller, so the overshoot has something
+    // to land from.
+    scale: shown ? 1 : (Config.Appearance.springy ? 0.9 : 0.985)
+    transformOrigin: root.fromX < 0 ? Item.TopLeft : root.fromX > 0 ? Item.TopRight : Item.Top
 
     Behavior on opacity {
         NumberAnimation {
-            duration: Config.Appearance.anim(root.shown ? 180 : 120)
+            duration: Config.Appearance.anim(root.shown ? 160 : 120)
             easing.type: Easing.OutCubic
         }
     }
-    Behavior on scale {
-        NumberAnimation {
-            duration: Config.Appearance.anim(220)
-            easing.type: Easing.OutQuint
-        }
-    }
+    Behavior on scale { Spring { ms: root.shown ? 480 : 140; bounce: root.shown ? 1.4 : 0 } }
 
     Item {
         id: holder
         width: parent.width
         height: parent.height
-        y: root.shown ? 0 : root.fromY
-        x: root.shown ? 0 : root.fromX
-        Behavior on y {
-            NumberAnimation {
-                duration: Config.Appearance.anim(root.shown ? 260 : 140)
-                easing.type: Easing.OutQuint
-            }
-        }
-        Behavior on x {
-            NumberAnimation {
-                duration: Config.Appearance.anim(root.shown ? 260 : 140)
-                easing.type: Easing.OutQuint
-            }
-        }
+        // Further to travel when it springs, so the landing shows.
+        readonly property real travel: Config.Appearance.springy ? 1.8 : 1
+        y: root.shown ? 0 : root.fromY * travel
+        x: root.shown ? 0 : root.fromX * travel
+        Behavior on y { Spring { ms: root.shown ? 480 : 140; bounce: root.shown ? 1.2 : 0 } }
+        Behavior on x { Spring { ms: root.shown ? 480 : 140; bounce: root.shown ? 1.2 : 0 } }
     }
 }

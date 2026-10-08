@@ -27,12 +27,40 @@ Item {
         border.color: Config.Appearance.rule
     }
 
+    // The accent pill, which slides from the old choice to the new one
+    // rather than one segment going out as another lights up.
+    readonly property int activeIndex: {
+        for (let i = 0; i < options.length; i++) if (valueOf(options[i]) === value) return i;
+        return -1;
+    }
+    readonly property Item activeItem: {
+        // Re-read when the delegates are made or resized.
+        const n = segs.count + track.implicitWidth;
+        return n >= 0 && activeIndex >= 0 ? segs.itemAt(activeIndex) : null;
+    }
+    Rectangle {
+        id: thumb
+        visible: root.activeItem !== null
+        x: track.x + (root.activeItem ? root.activeItem.x : 0)
+        y: track.y
+        width: root.activeItem ? root.activeItem.width : 0
+        height: track.height
+        radius: Config.Appearance.rSm
+        color: Config.Appearance.accent
+        // Not on the first placing: only a change of choice slides.
+        property bool ready: false
+        Component.onCompleted: Qt.callLater(() => thumb.ready = true)
+        Behavior on x { enabled: thumb.ready; Spring { ms: 360 } }
+        Behavior on width { enabled: thumb.ready; Spring { ms: 360 } }
+    }
+
     Row {
         id: track
         anchors.centerIn: parent
         spacing: 2
 
         Repeater {
+            id: segs
             model: root.options
 
             Rectangle {
@@ -41,8 +69,7 @@ Item {
                 readonly property bool active: root.valueOf(modelData) === root.value
 
                 radius: Config.Appearance.rSm
-                color: active ? Config.Appearance.accent
-                              : (segHover.hovered ? Config.Appearance.sel : "transparent")
+                color: !active && segHover.hovered ? Config.Appearance.sel : "transparent"
                 implicitWidth: segLabel.implicitWidth + root.segmentPadding * 2
                 implicitHeight: 26
                 Behavior on color { ColorAnimation { duration: Config.Appearance.anim(140) } }
@@ -54,6 +81,7 @@ Item {
                     font.pixelSize: Config.Appearance.fs(12)
                     font.weight: Font.DemiBold
                     color: seg.active ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
+                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(160) } }
                 }
 
                 HoverHandler { id: segHover; cursorShape: Qt.PointingHandCursor }

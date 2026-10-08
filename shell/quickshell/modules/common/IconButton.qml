@@ -28,6 +28,9 @@ Rectangle {
     height: size
     radius: Config.Appearance.rCap
     opacity: enabled ? 1 : 0.35
+    // Gives under the finger, and springs back.
+    scale: press.pressed ? 0.86 : 1
+    Behavior on scale { Spring { ms: 320; bounce: 1.3 } }
 
     color: root.accent
            ? (hover.hovered ? Qt.lighter(Config.Appearance.accent, 1.08)
@@ -53,6 +56,7 @@ Rectangle {
     }
 
     MouseArea {
+        id: press
         anchors.fill: parent
         onClicked: root.activated()
     }

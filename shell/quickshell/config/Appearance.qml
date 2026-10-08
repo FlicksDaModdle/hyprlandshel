@@ -198,6 +198,10 @@ Singleton {
             // them off outright rather than making them very fast, since
             // "instant" is what people who turn animations down want.
             property int animSpeed: 100               // 0-250 %
+            // How things move: "springy" lands with a little overshoot, the
+            // way macOS does; "smooth" eases straight in. Windows too —
+            // services/Devices.qml sends Hyprland the matching curves.
+            property string motionStyle: "springy"
             // Black rounded corners over the screen's own, for a panel
             // whose corners are square against a rounded-looking desktop.
             property bool screenCorners: false
@@ -848,6 +852,7 @@ Singleton {
     property alias hyprShadow: prefs.hyprShadow
     property alias hyprAnimSpeed: prefs.hyprAnimSpeed
     property alias hyprAnimEnabled: prefs.hyprAnimEnabled
+    property alias motionStyle: prefs.motionStyle
     property alias hyprLayout: prefs.hyprLayout
     property alias hyprInactiveOpacity: prefs.hyprInactiveOpacity
     property alias hyprFocusFollowsMouse: prefs.hyprFocusFollowsMouse
@@ -1083,6 +1088,7 @@ Singleton {
     }
     // A few places want to know without asking for a number.
     readonly property bool animated: animSpeed > 0 && !saverCalm
+    readonly property bool springy: motionStyle !== "smooth"
 
     // ── per-output scale ──────────────────────────────────────────────────
     // A laptop panel run at a compositor scale that makes applications

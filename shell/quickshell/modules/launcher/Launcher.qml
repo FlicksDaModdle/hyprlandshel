@@ -216,12 +216,11 @@ Variants {
         property real morphY: 0         // height, half a beat behind
         property real morphFade: 0      // the contents
 
-        Behavior on morph {
-            NumberAnimation { duration: Config.Appearance.anim(340); easing.type: Easing.OutQuint }
-        }
-        Behavior on morphY {
-            NumberAnimation { duration: Config.Appearance.anim(460); easing.type: Easing.OutQuint }
-        }
+        // Opening, each lands a touch past and settles back — a spring
+        // rather than a fade-in. Closing goes straight into the dock: an
+        // overshoot below 0 would turn the shape inside out.
+        Behavior on morph { Spring { ms: launcher.wanted ? 460 : 300; bounce: launcher.wanted ? 0.7 : 0 } }
+        Behavior on morphY { Spring { ms: launcher.wanted ? 560 : 360; bounce: launcher.wanted ? 0.5 : 0 } }
         Behavior on morphFade {
             NumberAnimation { duration: Config.Appearance.anim(260); easing.type: Easing.OutCubic }
         }

@@ -368,6 +368,11 @@ Scope {
         ].concat(root.cornerRows(false)).concat([
 
             { type: "header", n: "Motion" },
+            { n: "Style",
+              s: A.springy ? "Things land with a little spring, the way macOS moves them — windows too"
+                           : "Things ease straight into place",
+              type: "seg", options: [{ label: "Springy", value: "springy" }, { label: "Smooth", value: "smooth" }],
+              value: A.motionStyle, set: v => A.motionStyle = v },
             { n: "Animation speed",
               s: "Scales every animation in the shell. 0% is instant",
               type: "slider", min: 0, max: 250, unit: "%",

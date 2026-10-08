@@ -51,18 +51,12 @@ Item {
     z: dragging ? 10 : 0
     // Lifted a little while carried, so it reads as picked up.
     scale: dragging ? 1.08 : 1
-    Behavior on scale { NumberAnimation { duration: Config.Appearance.anim(120); easing.type: Easing.OutCubic } }
+    Behavior on scale { Spring { ms: 300 } }
     transform: Translate {
         x: root.vertical ? 0 : root.slide
         y: root.vertical ? root.slide : 0
-        Behavior on x {
-            enabled: root.slideAnimated
-            NumberAnimation { duration: Config.Appearance.anim(180); easing.type: Easing.OutCubic }
-        }
-        Behavior on y {
-            enabled: root.slideAnimated
-            NumberAnimation { duration: Config.Appearance.anim(180); easing.type: Easing.OutCubic }
-        }
+        Behavior on x { enabled: root.slideAnimated; Spring { ms: 320; bounce: 0.7 } }
+        Behavior on y { enabled: root.slideAnimated; Spring { ms: 320; bounce: 0.7 } }
     }
 
     readonly property bool hovered: hoverHandler.hovered
@@ -73,9 +67,7 @@ Item {
     // Matches the label's fade, and eases out of the same curve the rest of
     // the dock uses. Until the surface stopped being resized to the pill on
     // every frame of this, no easing here could have looked smooth.
-    Behavior on implicitWidth {
-        NumberAnimation { duration: Config.Appearance.anim(260); easing.type: Easing.OutQuint }
-    }
+    Behavior on implicitWidth { Spring { ms: 360; bounce: 0.6 } }
 
     Rectangle {
         anchors.fill: parent
@@ -88,9 +80,37 @@ Item {
         Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
     }
 
+    // ── launching ─────────────────────────────────────────────────────────
+    // An app tile that isn't running bounces when clicked, until its window
+    // turns up — or a few hops, if it is slow or never shows one.
+    property bool bounceOnLaunch: false
+    property real hop: 0
+    property int hopCount: 0
+    function launchBounce() {
+        if (!bounceOnLaunch || running || !Config.Appearance.animated) return;
+        hopCount = 0;
+        hops.restart();
+    }
+    SequentialAnimation {
+        id: hops
+        loops: Animation.Infinite
+        onStopped: root.hop = 0
+        NumberAnimation { target: root; property: "hop"; to: -Math.round(root.tileSize * 0.38); duration: Config.Appearance.anim(260); easing.type: Easing.OutQuad }
+        NumberAnimation { target: root; property: "hop"; to: 0; duration: Config.Appearance.anim(300); easing.type: Easing.OutBounce }
+        PauseAnimation { duration: Config.Appearance.anim(120) }
+        // Landed: again only while there is still nothing to show for it.
+        ScriptAction { script: { root.hopCount++; if (root.running || root.hopCount >= 3) hops.stop(); } }
+    }
+
     Row {
+        id: glyphRow
         anchors.centerIn: parent
         spacing: 9
+        // Lifts a little under the pointer and gives under a press; the
+        // launch hop rides on top.
+        transform: Translate { y: root.hop * (root.vertical ? 0 : 1); x: root.hop * (root.vertical ? -1 : 0) }
+        scale: tapper.pressed ? 0.86 : (root.hovered && !root.dragging && !root.showLabel ? 1.12 : 1)
+        Behavior on scale { Spring { ms: 320; bounce: 1.2 } }
 
         MonoIcon {
             anchors.verticalCenter: parent.verticalCenter
@@ -134,7 +154,7 @@ Item {
                 height: 2.5
                 radius: 1.25
                 color: root.active ? Config.Appearance.accent : Config.Appearance.ink3
-                Behavior on width { NumberAnimation { duration: Config.Appearance.anim(140); easing.type: Easing.OutCubic } }
+                Behavior on width { Spring { ms: 300 } }
             }
         }
     }
@@ -201,8 +221,9 @@ Item {
             if (active) root.dragMoved(root.vertical ? activeTranslation.y : activeTranslation.x)
     }
     TapHandler {
+        id: tapper
         acceptedButtons: Qt.LeftButton
-        onTapped: root.activated()
+        onTapped: { root.launchBounce(); root.activated(); }
     }
     TapHandler {
         acceptedButtons: Qt.RightButton

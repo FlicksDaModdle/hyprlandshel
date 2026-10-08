@@ -221,7 +221,8 @@ Variants {
         readonly property real pillHiddenPos: headroom + panelBreadth + 20
 
         property real pillPos: revealed ? pillShownPos : pillHiddenPos
-        Behavior on pillPos { NumberAnimation { duration: Config.Appearance.anim(260); easing.type: Easing.OutCubic } }
+        // Rises with a little spring; drops away plainly.
+        Behavior on pillPos { Spring { ms: dock.revealed ? 440 : 240; bounce: dock.revealed ? 0.7 : 0 } }
 
         // The surface spans the whole edge and the pill is centred inside
         // it, rather than the surface being cut to the pill.
@@ -736,6 +737,7 @@ Variants {
                         iconName: modelData.icon
                         label: modelData.label
                         running: wins.length > 0
+                        bounceOnLaunch: true
                         windowCount: wins.length
                         active: isActive
                         showLabel: isActive && Config.Appearance.dockLabels && !dock.isLeft
@@ -906,7 +908,7 @@ Variants {
                 y: preview.shown ? 0 : dock.u(6)
                 Behavior on y {
                     enabled: preview.shown
-                    NumberAnimation { duration: Config.Appearance.anim(160); easing.type: Easing.OutCubic }
+                    Spring { ms: 340 }
                 }
             }
 

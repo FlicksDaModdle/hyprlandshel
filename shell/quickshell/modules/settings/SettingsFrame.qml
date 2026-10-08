@@ -402,6 +402,24 @@ PanelSurface {
             width: parent.width - 48
             spacing: 0
 
+            // A new pane rises into place rather than swapping in where
+            // the last one was.
+            property real rise: 0
+            transform: Translate { y: paneColumn.rise }
+            // Both jump away and animate back: each Behavior is off at its
+            // resting value, so only the return is animated.
+            Behavior on rise { enabled: paneColumn.rise !== 0; Spring { ms: 460; bounce: 0.8 } }
+            Connections {
+                target: frame.app
+                function onPaneChanged() {
+                    if (!Config.Appearance.animated) return;
+                    paneColumn.rise = 18;
+                    paneColumn.opacity = 0;
+                    Qt.callLater(() => { paneColumn.rise = 0; paneColumn.opacity = 1; });
+                }
+            }
+            Behavior on opacity { enabled: paneColumn.opacity < 1; NumberAnimation { duration: Config.Appearance.anim(200); easing.type: Easing.OutCubic } }
+
             StyledText {
                 text: frame.app.pane
                 font.pixelSize: Config.Appearance.fs(17)

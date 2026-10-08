@@ -158,6 +158,9 @@ Singleton {
                 },
                 shadow: { enabled: prefs.hyprShadow }
             },
+            // Battery saver may be holding them off; it puts back whatever
+            // this says when it lets go.
+            animations: { enabled: prefs.hyprAnimEnabled && !Services.PowerSaver.want.animations },
             input: { follow_mouse: prefs.hyprFocusFollowsMouse ? 1 : 0 }
         };
     }
@@ -165,6 +168,52 @@ Singleton {
     function applyFrame() {
         Services.Compositor.setConfig(frameTree());
         applyShellBlur();
+        Services.Compositor.evalLua(motionLua());
+    }
+
+    // ── window motion ─────────────────────────────────────────────────────
+    // Hyprland's animations, matched to the shell's Motion style. Springy:
+    // windows pop in from a little smaller on hyprland.lua's spring and
+    // settle, workspaces slide a touch past and back. Smooth: the same
+    // movements eased straight in. Settings → Hyprland → Speed scales them
+    // all; Hyprland's speeds are durations in tenths of a second, so a
+    // faster setting divides them.
+    //
+    // Each call is guarded (pcall), so one Hyprland doesn't accept leaves
+    // the others as they were rather than abandoning the rest; the spring
+    // falls back to the overshooting curve when hyprland.lua's "easy"
+    // spring isn't there.
+    function motionLua() {
+        const k = 100 / Math.max(25, prefs.hyprAnimSpeed);
+        const sp = v => Math.max(0.5, Math.round(v * k * 10) / 10);
+        const opts = (leaf, speed, style) => 'leaf = "' + leaf + '", enabled = true, speed = ' + sp(speed)
+            + (style ? ', style = "' + style + '"' : '');
+        const curve = (leaf, speed, name, style) => 'pcall(hl.animation, { ' + opts(leaf, speed, style) + ', bezier = "' + name + '" }) ';
+        const spring = (leaf, speed, style) => 'if not pcall(hl.animation, { ' + opts(leaf, speed, style) + ', spring = "easy" }) then '
+            + curve(leaf, speed, "hsOvershot", style) + 'end ';
+        let lua = 'pcall(hl.curve, "hsOvershot", { type = "bezier", points = { {0.05, 0.9}, {0.1, 1.08} } }) '
+                + 'pcall(hl.curve, "hsSmooth", { type = "bezier", points = { {0.23, 1}, {0.32, 1} } }) ';
+        if (prefs.springy) {
+            lua += spring("windows", 4.5, "popin 85%")
+                 + curve("windowsOut", 2.6, "hsSmooth", "popin 88%")
+                 + spring("windowsMove", 4.5, "")
+                 + curve("workspaces", 4, "hsOvershot", "slide")
+                 + curve("specialWorkspace", 4, "hsOvershot", "slidevert");
+        } else {
+            lua += curve("windows", 4, "hsSmooth", "popin 95%")
+                 + curve("windowsOut", 2.6, "hsSmooth", "popin 95%")
+                 + curve("windowsMove", 4, "hsSmooth", "")
+                 + curve("workspaces", 3, "hsSmooth", "slide")
+                 + curve("specialWorkspace", 3, "hsSmooth", "slidevert");
+        }
+        lua += curve("fade", 3, "hsSmooth", "")
+             + curve("border", 5, "hsSmooth", "")
+             + curve("layers", 3.5, "hsSmooth", "fade");
+        return lua;
+    }
+    Connections {
+        target: root.prefs
+        function onMotionStyleChanged() { if (root.applied) root.applyFrame(); }
     }
 
     // The blur rules for the shell's own surfaces (hyprland.lua has them

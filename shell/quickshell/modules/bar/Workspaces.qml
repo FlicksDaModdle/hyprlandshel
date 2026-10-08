@@ -62,7 +62,7 @@ Item {
 
                 width: root.w(expanded ? 26 : 16)
                 height: root.w(22)
-                Behavior on width { NumberAnimation { duration: Config.Appearance.anim(220); easing.type: Easing.OutCubic } }
+                Behavior on width { Spring { ms: 360; bounce: 1.1 } }
 
                 Rectangle {
                     anchors.fill: parent
@@ -96,7 +96,7 @@ Item {
                     color: pill.occupied ? Config.Appearance.ink2 : "transparent"
                     border.width: pill.occupied ? 0 : 1.5
                     border.color: Config.Appearance.div
-                    Behavior on width { NumberAnimation { duration: Config.Appearance.anim(160) } }
+                    Behavior on width { Spring { ms: 260 } }
                 }
 
                 // MouseArea rather than Hover/Tap handlers: it grabs the
