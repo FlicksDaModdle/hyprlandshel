@@ -231,7 +231,7 @@ pkgs_for() {
         shell)    echo "hyprland quickshell inter-font ttf-jetbrains-mono networkmanager bluez-utils rust brightnessctl grim slurp wl-clipboard wf-recorder tesseract tesseract-data-eng libnotify playerctl pacman-contrib kvantum" ;;
         terminal) echo "base-devel cmake rust qt6-base qt6-declarative" ;;
         files)    echo "base-devel cmake qt6-base qt6-declarative vulkan-headers" ;;
-        images)   echo "base-devel cmake qt6-base qt6-declarative qt6-imageformats" ;;
+        images)   echo "base-devel cmake qt6-base qt6-declarative qt6-imageformats qt6-svg kimageformats" ;;
         mail)     echo "base-devel cmake rust qt6-base qt6-declarative qt6-webengine gnome-keyring libnotify xdg-utils" ;;
         tasks)    echo "base-devel cmake qt6-base qt6-declarative" ;;
         browser)  echo "firefox" ;;

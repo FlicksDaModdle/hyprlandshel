@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Images
+GenericName=Image Viewer
+Comment=Look through your pictures
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/hyprshell-images %U
+Icon=image-viewer
+Terminal=false
+Categories=Graphics;Viewer;2DGraphics;RasterGraphics;
+Keywords=image;picture;photo;viewer;gallery;screenshot;
+MimeType=image/png;image/jpeg;image/gif;image/webp;image/bmp;image/svg+xml;image/svg+xml-compressed;image/tiff;image/x-icon;image/vnd.microsoft.icon;image/x-portable-pixmap;image/x-portable-graymap;image/x-portable-bitmap;image/x-xbitmap;image/x-xpixmap;image/x-tga;image/avif;image/heif;image/heic;image/jxl;image/x-exr;image/apng;
+StartupWMClass=hyprshell-images
