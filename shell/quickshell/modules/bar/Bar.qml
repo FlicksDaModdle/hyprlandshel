@@ -125,10 +125,20 @@ Variants {
                                              && Config.Appearance.dockAutoHide
                                              && onFocusedScreen
 
+        // A fullscreen window — a browser, a video, a game — covers the bar
+        // whatever auto-hide says, since it is drawn above the bar's layer.
+        // Opening the launcher over one brings the bar out too, above it,
+        // on the launcher's screen, until the launcher closes.
+        readonly property bool fullscreenHere: onFocusedScreen
+            && !!Services.Compositor.activeClient
+            && Services.Compositor.activeClient.fullscreenMode === 2
+        readonly property bool launcherOverFullscreen: Config.UiState.launcherOpen && fullscreenHere
+
         readonly property bool revealed: !Config.Appearance.barAutoHide
                                          || hoverLatch
                                          || panelHere
                                          || launcherHere
+                                         || launcherOverFullscreen
 
         // Where the bar sits inside its surface. Hidden is one bar-height
         // up, which is out.
@@ -169,7 +179,9 @@ Variants {
         HoverHandler { id: barHover }
 
         WlrLayershell.namespace: "quickshell:bar"
-        WlrLayershell.layer: WlrLayer.Top
+        // Above the fullscreen window while the launcher is open over it;
+        // otherwise where a bar belongs, under fullscreen windows.
+        WlrLayershell.layer: bar.launcherOverFullscreen ? WlrLayer.Overlay : WlrLayer.Top
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
         readonly property var battery: UPower.displayDevice
