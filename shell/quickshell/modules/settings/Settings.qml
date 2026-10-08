@@ -2050,6 +2050,10 @@ Scope {
               type: "seg",
               options: [{ label: "Built-in", value: "builtin" }, { label: "All", value: "all" }],
               value: A.screenCornerScreens, set: v => A.screenCornerScreens = v },
+            { n: "Over fullscreen apps",
+              s: A.screenCornersFullscreen ? "The screen keeps its shape for games and video too"
+                                           : "Gone while an app is fullscreen, so Hyprland can send it straight to the display",
+              type: "toggle", value: A.screenCornersFullscreen, set: v => A.screenCornersFullscreen = v },
             { n: "Top left", type: "toggle", value: A.screenCornerTL, set: v => A.screenCornerTL = v },
             { n: "Top right", type: "toggle", value: A.screenCornerTR, set: v => A.screenCornerTR = v },
             { n: "Bottom left", type: "toggle", value: A.screenCornerBL, set: v => A.screenCornerBL = v },

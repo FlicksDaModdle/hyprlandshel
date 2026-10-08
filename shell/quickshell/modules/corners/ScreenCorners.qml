@@ -22,14 +22,17 @@ Variants {
         required property var modelData
 
         readonly property bool builtIn: /^(eDP|LVDS|DSI)/.test(String(modelData ? modelData.name : ""))
-        // Gone while a window is fullscreen on this screen. The game or
-        // video fills the panel's own corners anyway, and with nothing of
-        // the shell's over it Hyprland can hand its frames straight to the
-        // display (direct scanout) instead of compositing every one — less
-        // GPU work for as long as the video plays, and less latency.
+        // Kept over a fullscreen window too, by default, so the display is
+        // the same shape whatever is on it. Settings → Appearance → "Over
+        // fullscreen apps" off takes them away while one is: with nothing
+        // of the shell's over it, Hyprland can hand the game's or video's
+        // frames straight to the display (direct scanout) instead of
+        // compositing every one — less GPU work, and less latency.
         readonly property bool fullscreenHere: !!modelData
             && Services.Compositor.clientsShownOn(modelData.name).some(c => c.fullscreenMode === 2)
-        readonly property bool wanted: !!modelData && !fullscreenHere && Config.Appearance.screenCorners
+        readonly property bool wanted: !!modelData
+                                       && (Config.Appearance.screenCornersFullscreen || !fullscreenHere)
+                                       && Config.Appearance.screenCorners
                                        && Config.Appearance.screenCornerRadius > 0
                                        && (Config.Appearance.screenCornerScreens === "all" || screenScope.builtIn)
 

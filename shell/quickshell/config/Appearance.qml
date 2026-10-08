@@ -222,6 +222,9 @@ Singleton {
             property bool screenCornerBL: true
             property bool screenCornerBR: true
             property string screenCornerScreens: "builtin" // builtin | all
+            // Kept over a fullscreen app too. Off lets Hyprland hand the
+            // app's frames straight to the display (direct scanout).
+            property bool screenCornersFullscreen: true
             // Per-output shell scale, as {"eDP-1": 85, "DP-1": 100}. The
             // compositor's own scale makes everything on that output
             // bigger, the shell included; this is how much of that the
@@ -654,6 +657,7 @@ Singleton {
     property alias screenCornerBL: prefs.screenCornerBL
     property alias screenCornerBR: prefs.screenCornerBR
     property alias screenCornerScreens: prefs.screenCornerScreens
+    property alias screenCornersFullscreen: prefs.screenCornersFullscreen
     property alias screenScales: prefs.screenScales
     property alias clock24: prefs.clock24
     property alias showTray: prefs.showTray
