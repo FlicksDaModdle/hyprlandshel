@@ -26,7 +26,9 @@ Singleton {
         if (!raw) return defaultPinned;
         try {
             const list = JSON.parse(raw);
-            if (!Array.isArray(list) || list.length === 0) return defaultPinned;
+            // [] is a dock you emptied on purpose; only no setting at all
+            // (or "Reset pinned apps") means the defaults.
+            if (!Array.isArray(list)) return defaultPinned;
             return list.map(e => {
                 // A saved tile keeps the regex it was saved with, for
                 // ever. That is right for one you re-pointed at another
@@ -86,13 +88,11 @@ Singleton {
 
     function isPinned(key) { return pinned.some(e => e.key === key); }
 
-    function unpin(key) {
-        const next = pinned.filter(e => e.key !== key);
-        // Never leave an empty dock — an empty list means "use the defaults",
-        // so unpinning the last app would silently restore all of them.
-        save(next.length > 0 ? next : [{ key: "appSettings", label: "Settings",
-                                         icon: "settings", exec: [], match: /^$/ }]);
-    }
+    // Any tile, the shell's own included — Settings is in the launcher and
+    // the bar, Files and the terminal in the launcher. Unpinning the last
+    // leaves the dock with running apps only; "Reset pinned apps" in
+    // Settings → Dock brings the defaults back.
+    function unpin(key) { save(pinned.filter(e => e.key !== key)); }
 
     // Moves a pinned tile to position `to` in the list, everything between
     // closing up behind it — what dropping a dragged dock tile, or Move

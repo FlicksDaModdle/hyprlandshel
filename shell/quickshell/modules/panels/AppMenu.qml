@@ -26,8 +26,9 @@ PanelSurface {
     readonly property var entry: pinned
         ? Config.Apps.pinned.find(e => e.key === key) : null
 
-    // The Settings tile is the shell's own and has no application behind it,
-    // so re-pointing or unpinning it would just break the dock.
+    // The shell's own tiles (Settings, Files, Terminal, Music) are opened
+    // through the shell's commands, so re-pointing one at another program
+    // would do nothing — but any of them can be unpinned.
     readonly property bool isShellTile: Config.Apps.isShellTile(key)
 
     readonly property var entries: {
@@ -66,9 +67,11 @@ PanelSurface {
             out.push({ n: "Change icon…", icon: "palette", rule: out.length > 0,
                        run: () => Config.UiState.openIconPicker(root.key) });
         }
-        if (pinned && !isShellTile) {
+        if (pinned && !isShellTile)
             out.push({ n: "Choose application…", icon: "grid", rule: false,
                        run: () => Config.UiState.pickAppFor(root.key) });
+        // Every tile can go, the built-in ones too.
+        if (pinned) {
             out.push({ n: "Unpin from dock", icon: "minus",
                        run: () => { Config.Apps.unpin(root.key);
                                     Config.UiState.appMenuOpen = false; } });

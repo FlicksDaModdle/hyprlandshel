@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../config" as Config
 import "." as Services
 
 // Hyprshell Mail (mail/), from the shell's side: the unread count for the
@@ -21,9 +22,26 @@ Singleton {
     // [{ uid, summary, start, end, allDay, location, response, … }]
     property var events: []
 
-    function open() { Quickshell.execDetached(["hyprshell-mail"]); }
-    function compose(to) { Quickshell.execDetached(["hyprshell-mail", to ? "mailto:" + to : "--compose"]); }
-    function openMessage(id) { Quickshell.execDetached(["hyprshell-mail", "--message=" + id]); }
+    // Found the way the terminal and Files are (Config.Apps): by name, then
+    // in ~/.local/bin — which a session started by a display manager often
+    // does not have on its PATH, and a bare name then started nothing — and
+    // through the launch door, so it gets the session's current settings.
+    readonly property string finder:
+        'command -v hyprshell-mail >/dev/null 2>&1 && exec hyprshell-mail "$@"; '
+        + 'for d in "$HOME/.local/bin" /usr/local/bin /usr/bin; do '
+        + '[ -x "$d/hyprshell-mail" ] && exec "$d/hyprshell-mail" "$@"; done; '
+        + 'notify-send "Mail" "Not installed yet — run mail/install.sh from the hyprshell folder" 2>/dev/null; exit 127'
+    function run(args) { Config.Apps.launch(["sh", "-c", root.finder, "open-mail"].concat(args || [])); }
+
+    // Open already: its window brought forward — a Wayland app cannot raise
+    // itself, so a second start only reaches the first without showing it.
+    function open() {
+        const w = (Services.Compositor.clients || []).find(c => /^hyprshell-mail$/i.test(c.cls || ""));
+        if (w && w.address) { Services.Compositor.focusClient(w.address); return; }
+        root.run([]);
+    }
+    function compose(to) { root.run([to ? "mailto:" + to : "--compose"]); }
+    function openMessage(id) { root.run(["--message=" + id]); }
 
     // Events on a given day, for the calendar's marks and list.
     function eventsOn(y, m, d) {

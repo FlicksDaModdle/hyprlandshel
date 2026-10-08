@@ -707,7 +707,14 @@ Variants {
                     onActivated: Config.UiState.toggleOverview()
                 }
 
-                DockDivider { isLeft: dock.isLeft; tileSize: dock.tileSize }
+                // Only with something after it: a dock with nothing pinned
+                // and nothing running is the launcher and Settings, with
+                // one divider between them, not two side by side.
+                DockDivider {
+                    isLeft: dock.isLeft
+                    tileSize: dock.tileSize
+                    visible: Config.Apps.pinned.length > 0 || dock.unpinnedClasses.length > 0
+                }
 
                 // ── Pinned apps ───────────────────────────────────────────
                 Repeater {
@@ -778,7 +785,7 @@ Variants {
                 DockDivider {
                     isLeft: dock.isLeft
                     tileSize: dock.tileSize
-                    visible: dock.unpinnedClasses.length > 0
+                    visible: dock.unpinnedClasses.length > 0 && Config.Apps.pinned.length > 0
                 }
 
                 Repeater {
