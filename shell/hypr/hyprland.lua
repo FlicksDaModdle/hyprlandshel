@@ -654,6 +654,34 @@ hl.window_rule({
     size  = { 940, 620 },
 })
 
+-- Nothing round a window that fills the screen. Fullscreen (Super+F) and
+-- maximised (Super+Shift+F) alike: no border, no rounded corners, no
+-- shadow, so the app runs right to the edge whichever way it got there.
+-- Window rules beat the border and rounding Settings → Hyprland applies,
+-- so this holds whatever those are set to.
+--
+-- Each in a pcall: a Hyprland that spells one of these fields differently
+-- skips that rule instead of taking the rest of this file down with it.
+for _, rule in ipairs({
+    {
+        name        = "fullscreen-edge-to-edge",
+        match       = { fullscreen = true },
+        border_size = 0,
+        rounding    = 0,
+        no_shadow   = true,
+    },
+    {
+        -- "1 *": maximised by the compositor, whatever the app thinks.
+        name        = "maximised-edge-to-edge",
+        match       = { fullscreen_state_internal = "1 *" },
+        border_size = 0,
+        rounding    = 0,
+        no_shadow   = true,
+    },
+}) do
+    pcall(hl.window_rule, rule)
+end
+
 -------------------------------------
 ---- SHELL-MANAGED KEYBINDS (last) ---
 -------------------------------------
