@@ -324,20 +324,38 @@
 }
 :root[hyprshell] #urlbar {
   font-size: 12.5px !important;
+  /* Open, Firefox enlarges the field past the pill — out to the sides by
+   * this margin, and up to the toolbar's full height — so the panel stuck
+   * out over the tab strip and either side of where the pill was. Both to
+   * nothing, here only (the toolbar keeps its own height): the open panel
+   * starts exactly where the pill is, the same width, and grows downward. */
+  --urlbar-margin-inline: 0px !important;
+  --urlbar-container-height: var(--urlbar-height) !important;
+}
+:root[hyprshell] #urlbar:is([breakout-extend], [open]) {
+  margin-inline: 0 !important;
 }
 :root[hyprshell] #urlbar > .urlbar-background {
   background: var(--hs-hover) !important;
   border: none !important;
   border-radius: var(--hs-r) !important;
-  box-shadow: inset 0 0 0 1px var(--hs-rule) !important;
+  box-shadow: none !important;
   outline: none !important;
 }
-/* Focused: the accent ring, 2px, inside the pill — drawn on the row you
- * type in, which stays the pill's size. On the background it would follow
- * it when Firefox enlarges it behind the suggestions, and trace a second,
- * larger outline round the top of the open panel. */
-:root[hyprshell] #urlbar[focused] .urlbar-input-container {
+/* The border: one, over the whole field — the pill, and with suggestions
+ * open the pill and the list together — drawn above everything in it, so
+ * the list never covers part of it and the two read as one panel. A thin
+ * light line at rest; the accent, 2px, while you are in it. No shadow. */
+:root[hyprshell] #urlbar::after {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
   border-radius: var(--hs-r) !important;
+  box-shadow: inset 0 0 0 1px var(--hs-edge) !important;
+  pointer-events: none !important;
+  z-index: 10 !important;
+}
+:root[hyprshell] #urlbar[focused]::after {
   box-shadow: inset 0 0 0 2px var(--hs-accent) !important;
 }
 /* With suggestions open the pill grows into a panel — an opaque one, or the
@@ -349,18 +367,25 @@
   background: var(--hs-menu) !important;
   background-color: var(--hs-menu) !important;
   opacity: 1 !important;
-  box-shadow: 0 0 0 1px var(--hs-edge), 0 22px 52px -18px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: none !important;
 }
-/* The suggestions themselves. Newer Firefox no longer grows the pill into
- * the panel: the list is a box of its own under it, painted from a variable
- * rather than from the background above, and it was the page that showed
- * through. Painted here directly, as one of the shell's menus. */
+/* The suggestions themselves: the same opaque menu colour, so where
+ * Firefox draws the list as a box of its own (as 157 does) it still reads
+ * as the panel, and no line or shadow of its own — the border above is
+ * the panel's. */
 :root[hyprshell] .urlbarView {
   background: var(--hs-menu) !important;
   background-color: var(--hs-menu) !important;
   opacity: 1 !important;
+  border: none !important;
   border-radius: 0 0 var(--hs-r) var(--hs-r) !important;
   box-shadow: none !important;
+  margin-inline: 0 !important;
+}
+/* The row you type in keeps the pill's height when the panel opens. */
+:root[hyprshell] #urlbar:is([breakout-extend], [open]) > .urlbar-input-container {
+  height: var(--urlbar-height) !important;
+  padding-block: 0 !important;
 }
 :root[hyprshell] #urlbar .urlbar-input-container {
   padding-inline: 10px 6px !important;
