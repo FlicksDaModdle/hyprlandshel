@@ -317,6 +317,12 @@ Singleton {
             property real eqPreamp: 0
             property string eqPreset: "Flat"
             property string eqTarget: ""
+            // The parametric equalizer (services/EqMath.js): its bands, as
+            // JSON — "" until the ten-band gains above are carried over —
+            // the presets you saved, and how tall the graph's scale is.
+            property string peqBands: ""
+            property string peqPresets: "[]"
+            property int eqRange: 12
             // Microphone noise suppression: on or off, how sure it must be
             // that it is hearing a voice before letting sound through, and
             // the real microphone it listens to.
@@ -705,6 +711,9 @@ Singleton {
     property alias eqPreamp: prefs.eqPreamp
     property alias eqPreset: prefs.eqPreset
     property alias eqTarget: prefs.eqTarget
+    property alias peqBands: prefs.peqBands
+    property alias peqPresets: prefs.peqPresets
+    property alias eqRange: prefs.eqRange
     property alias nsEnabled: prefs.nsEnabled
     property alias nsThreshold: prefs.nsThreshold
     property alias nsTarget: prefs.nsTarget

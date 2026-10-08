@@ -4,10 +4,13 @@ import Quickshell
 import Quickshell.Io
 import "../config" as Config
 import "." as Services
+import "EqMath.js" as EqM
 
 // Sound effects the shell runs itself, for Settings → Sound:
 //
-//   equalizer           ten bands and a preamp over everything played. A
+//   equalizer           parametric: up to sixteen bands — bells, shelves,
+//                       cuts from 12 to 48 dB/octave, notches, band
+//                       passes — and a preamp over everything played. A
 //                       PipeWire filter-chain: a virtual output that
 //                       becomes the default and passes the sound on to the
 //                       real device. Loaded into hyprshell-daemon when it
@@ -75,23 +78,52 @@ Singleton {
     function reprobe() { probe.running = false; probe.running = true; }
 
     // ══ equalizer ════════════════════════════════════════════════════════
-    readonly property var bands: [31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
-    readonly property var gains: {
-        const g = String(prefs.eqGains || "").split(",").map(v => parseFloat(v) || 0);
-        while (g.length < 10) g.push(0);
-        return g.slice(0, 10).map(v => Math.max(-12, Math.min(12, v)));
+    // The bands, as Settings keeps them (EqMath.js has the shape). Each
+    // is one or more of PipeWire's builtin biquads, named b<id>_<n>, so a
+    // band keeps its nodes however the others move.
+    readonly property var bands: EqM.parse(prefs.peqBands)
+    // In the chain: every band that is on, and the gain types even while
+    // off (at 0 dB) — switching one of those is then a change of gain,
+    // heard at once, rather than a new chain. Cuts, notches and band
+    // passes cannot be made neutral, so switching them rebuilds it.
+    readonly property var chainBands: bands.filter(b => b.on || EqM.hasGain(b.type))
+    // What the chain is built from; anything else about a band moves live.
+    readonly property string structure: chainBands.map(b => b.id + ":" + b.type
+                                         + (EqM.isCut(b.type) ? "/" + b.slope : "")).join(",")
+
+    // The ten-band equalizer this replaced kept its gains in eqGains;
+    // those become bands the first time this runs.
+    Connections {
+        target: root.prefs
+        function onSettingsReadyChanged() { root.migrate(); }
     }
-    readonly property var presets: [
-        { name: "Flat",          gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-        { name: "Bass boost",    gains: [6, 5, 4, 2, 0, 0, 0, 0, 0, 0] },
-        { name: "Bass cut",      gains: [-6, -5, -3, -1, 0, 0, 0, 0, 0, 0] },
-        { name: "Treble boost",  gains: [0, 0, 0, 0, 0, 1, 2, 4, 5, 6] },
-        { name: "Vocal",         gains: [-3, -2, -1, 1, 3, 4, 3, 1, 0, -1] },
-        { name: "Loudness",      gains: [5, 4, 2, 0, -1, -1, 0, 2, 4, 5] },
-        { name: "Laptop speakers", gains: [-4, -3, -1, 1, 2, 2, 2, 3, 3, 2] },
-        { name: "Headphones",    gains: [2, 2, 1, 0, -1, 0, 1, 2, 2, 1] },
-        { name: "Podcast",       gains: [-6, -4, -2, 0, 2, 3, 3, 2, 0, -2] }
-    ]
+    Component.onCompleted: migrate()
+    // The old gains are zeroed once carried over, so this happens once —
+    // and still happens if the settings were late to load and the bands
+    // were started empty before they arrived.
+    Connections {
+        target: root.prefs
+        function onEqGainsChanged() { root.migrate(); }
+    }
+    function migrate() {
+        if (!prefs.settingsReady) return;
+        const old = EqM.fromGraphic(prefs.eqGains);
+        if (prefs.peqBands === "" || (prefs.peqBands === "[]" && old.length > 0)) {
+            prefs.peqBands = JSON.stringify(old);
+            if (old.length > 0) {
+                prefs.eqGains = "0,0,0,0,0,0,0,0,0,0";
+                if (prefs.eqPreset === "Flat") prefs.eqPreset = "Custom";
+            }
+        }
+    }
+
+    readonly property var builtinPresets: EqM.PRESETS
+    readonly property var userPresets: {
+        try {
+            const a = JSON.parse(prefs.peqPresets || "[]");
+            return Array.isArray(a) ? a.filter(p => p && typeof p.name === "string") : [];
+        } catch (e) { return []; }
+    }
 
     property string eqStatus: "off"     // off | starting | on | error
     property string eqError: ""
@@ -99,7 +131,6 @@ Singleton {
     property int eqEpoch: 0
     readonly property bool eqWanted: prefs.eqEnabled && eqAvailable && au.pipewireUp
 
-    function bandLabel(f) { return f >= 1000 ? (f / 1000) + "k" : String(f); }
     function num(v) { return Number(v).toFixed(2); }
 
     function eqArgs() {
@@ -107,14 +138,15 @@ Singleton {
                        + num(prefs.eqPreamp) + ' } }'];
         const links = [];
         let prev = "preamp";
-        for (let i = 0; i < 10; i++) {
-            const label = i === 0 ? "bq_lowshelf" : i === 9 ? "bq_highshelf" : "bq_peaking";
-            const q = i === 0 || i === 9 ? 0.7 : 1.0;
-            const name = "eq_band_" + (i + 1);
-            nodes.push('{ type = builtin name = ' + name + ' label = ' + label + ' control = { "Freq" = '
-                       + num(bands[i]) + ' "Q" = ' + num(q) + ' "Gain" = ' + num(gains[i]) + ' } }');
-            links.push('{ output = "' + prev + ':Out" input = "' + name + ':In" }');
-            prev = name;
+        for (const b of chainBands) {
+            const st = EqM.stages(b);
+            for (let k = 0; k < st.length; k++) {
+                const name = "b" + b.id + "_" + k;
+                nodes.push('{ type = builtin name = ' + name + ' label = ' + st[k].label + ' control = { "Freq" = '
+                           + num(st[k].freq) + ' "Q" = ' + num(st[k].q) + ' "Gain" = ' + num(b.on ? st[k].gain : 0) + ' } }');
+                links.push('{ output = "' + prev + ':Out" input = "' + name + ':In" }');
+                prev = name;
+            }
         }
         const target = prefs.eqTarget !== "" ? '\n                target.object = "' + prefs.eqTarget.replace(/"/g, "") + '"' : "";
         return '{\n'
@@ -122,7 +154,7 @@ Singleton {
             + '            media.name = "Equalizer"\n'
             + '            filter.graph = {\n'
             + '                nodes = [\n                    ' + nodes.join("\n                    ") + '\n                ]\n'
-            + '                links = [\n                    ' + links.join("\n                    ") + '\n                ]\n'
+            + (links.length ? '                links = [\n                    ' + links.join("\n                    ") + '\n                ]\n' : '')
             + '            }\n'
             + '            audio.channels = 2\n'
             + '            audio.position = [ FL FR ]\n'
@@ -158,7 +190,7 @@ Singleton {
     // life is the equalizer's.
     Process {
         id: eqProc
-        running: root.eqWanted && root.fxProcess && root.eqEpoch >= 0
+        running: root.eqWanted && root.fxProcess && !root.eqRebuilding && root.eqEpoch >= 0
         command: ["sh", "-c", 'mkdir -p "$(dirname "$1")" && printf "%s" "$2" > "$1" && exec pipewire -c "$1"',
                   "sh", root.dir + "/equalizer.conf", root.conf(root.eqArgs())]
         stderr: StdioCollector { id: eqErr }
@@ -273,37 +305,124 @@ Singleton {
     function setEnabled(on) { prefs.eqEnabled = on; if (on && eqStatus === "error") retryEq(); }
     function retryEq() { eqError = ""; eqEpoch++; }
 
-    function setGain(i, db) {
-        const g = gains.slice();
-        g[i] = Math.round(Math.max(-12, Math.min(12, db)) * 2) / 2;
-        prefs.eqGains = g.join(",");
-        prefs.eqPreset = "Custom";
+    // ── the bands, changed ───────────────────────────────────────────────
+    // A band's frequency, gain and Q move live; a change in what the chain
+    // is made of (a band added, removed, of another type or slope) builds it
+    // again, a moment after the last such change. The device goes and comes
+    // back with it, and the sound with it — a fraction of a second.
+    property bool eqRebuilding: false
+    onStructureChanged: if (eqWanted) rebuildSoon.restart()
+    Timer {
+        id: rebuildSoon
+        interval: 350
+        onTriggered: root.rebuild()
+    }
+    function rebuild() {
+        if (!eqWanted) return;
+        if (eqInDaemon) { daemonSync("eq"); return; }
+        if (!fxProcess) return;
+        // The process reads its configuration once: stopped, and started
+        // again with the new one once it has gone.
+        eqStopping = true;
+        eqRebuilding = true;
+        rebuildGap.restart();
+    }
+    Timer { id: rebuildGap; interval: 450; onTriggered: root.eqRebuilding = false }
+
+    function store(list, custom) {
+        prefs.peqBands = JSON.stringify(list.map(b => EqM.clean(b, b.id)));
+        if (custom !== false) prefs.eqPreset = "Custom";
         pushGains();
     }
+    function band(id) { return bands.find(b => b.id === id) || null; }
+    // patch: any of type, freq, gain, q, slope, on.
+    function setBand(id, patch) {
+        store(bands.map(b => {
+            if (b.id !== id) return b;
+            const n = Object.assign({}, b, patch);
+            // A band turned into a cut or a notch has no gain to keep.
+            if (patch.type !== undefined && !EqM.hasGain(n.type)) n.gain = 0;
+            if (patch.type !== undefined && EqM.isCut(n.type) && !EqM.isCut(b.type)) n.q = 0.71;
+            return n;
+        }));
+    }
+    // Returns the new band's id, or -1 when there are already as many as
+    // there can be.
+    function addBand(freq, gain) {
+        if (bands.length >= EqM.MAX_BANDS) return -1;
+        const id = EqM.nextId(bands);
+        store(bands.concat([EqM.bandAt(freq, gain || 0, id)]));
+        return id;
+    }
+    function removeBand(id) { store(bands.filter(b => b.id !== id)); }
+    function toggleBand(id) { const b = band(id); if (b) setBand(id, { on: !b.on }); }
     function setPreamp(db) {
-        prefs.eqPreamp = Math.round(Math.max(-12, Math.min(12, db)) * 2) / 2;
+        prefs.eqPreamp = Math.round(Math.max(-24, Math.min(24, db)) * 10) / 10;
+        pushGains();
+    }
+    // The preamp down by however far the curve rises above 0 dB, so the
+    // loudest passage still has room: what a mastering engineer would do
+    // before anything else.
+    function autoPreamp() {
+        const top = EqM.peakBoost(bands.filter(b => b.on));
+        setPreamp(top > 0.05 ? -Math.ceil(top * 10) / 10 : 0);
+    }
+    function reset() {
+        prefs.peqBands = "[]";
+        prefs.eqPreamp = 0;
+        prefs.eqPreset = "Flat";
         pushGains();
     }
     function applyPreset(p) {
-        prefs.eqGains = p.gains.join(",");
+        const list = p.user ? (p.bands || []).map((b, i) => EqM.clean(b, i + 1)) : EqM.presetBands(p);
+        prefs.peqBands = JSON.stringify(list);
         prefs.eqPreset = p.name;
-        // Boosting anything risks clipping; the preamp makes the room.
-        const top = Math.max.apply(null, p.gains);
-        prefs.eqPreamp = top > 0 ? -Math.ceil(top / 2) : 0;
+        if (p.user && typeof p.preamp === "number") prefs.eqPreamp = p.preamp;
+        else {
+            const top = EqM.peakBoost(list);
+            prefs.eqPreamp = top > 0.05 ? -Math.ceil(top * 10) / 10 : 0;
+        }
         pushGains();
     }
+    // Yours, kept beside the built-in ones: the bands and the preamp as
+    // they are now, under a name (the same name replaces it).
+    function savePreset(name) {
+        name = String(name || "").trim().slice(0, 40);
+        if (name === "") return false;
+        const list = userPresets.filter(p => p.name !== name);
+        list.push({ name: name, preamp: prefs.eqPreamp, bands: bands });
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        prefs.peqPresets = JSON.stringify(list);
+        prefs.eqPreset = name;
+        return true;
+    }
+    function deletePreset(name) {
+        prefs.peqPresets = JSON.stringify(userPresets.filter(p => p.name !== name));
+        if (prefs.eqPreset === name) prefs.eqPreset = "Custom";
+    }
 
-    // Live: every band's gain to the running filter, at most every 60 ms
-    // while a slider is dragged.
-    Timer { id: pushSoon; interval: 60; onTriggered: root.sendGains() }
+    // Live: every stage's frequency, Q and gain to the running filter, at
+    // most every 50 ms while something is dragged. Only when the chain it
+    // is sent to is the one these bands describe; a rebuild on its way
+    // brings them with it.
+    Timer { id: pushSoon; interval: 50; onTriggered: root.sendGains() }
     function pushGains() { if (au.eqSink) pushSoon.restart(); }
     Process { id: paramProc }
+    property string sentStructure: ""
     function sendGains() {
         if (!au.eqSink || !hasPwCli) return;
+        if (rebuildSoon.running || eqRebuilding) return;
         const parts = ['"preamp:Gain" ' + num(prefs.eqPreamp)];
-        for (let i = 0; i < 10; i++) parts.push('"eq_band_' + (i + 1) + ':Gain" ' + num(gains[i]));
+        for (const b of chainBands) {
+            const st = EqM.stages(b);
+            for (let k = 0; k < st.length; k++) {
+                const n = '"b' + b.id + '_' + k + ':';
+                parts.push(n + 'Freq" ' + num(st[k].freq), n + 'Q" ' + num(st[k].q),
+                           n + 'Gain" ' + num(b.on ? st[k].gain : 0));
+            }
+        }
         const props = '{ params = [ ' + parts.join(" ") + ' ] }';
-        paramProc.running = false;
+        if (paramProc.running) { pushSoon.restart(); return; }
         paramProc.command = ["pw-cli", "set-param", String(au.eqSink.id), "Props", props];
         paramProc.running = true;
     }
