@@ -650,18 +650,42 @@ fi
 #
 # A running shell has just had its QML replaced under it and reloads
 # itself, so this waits a moment and then asks it to regenerate.
+#
+# The reload takes a few seconds on a large shell, and until it is done the
+# call is refused, so it is asked again for a while rather than once.
+RUNNING=0
 if command -v qs >/dev/null 2>&1 && pgrep -x qs >/dev/null 2>&1; then
+    RUNNING=1
     head1 "Generated files"
-    sleep 2
-    if qs -c hyprshell ipc call shell syncTheming >/dev/null 2>&1; then
+    _synced=0
+    for _try in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        sleep 1
+        if qs -c hyprshell ipc call shell syncTheming >/dev/null 2>&1; then
+            _synced=1
+            break
+        fi
+    done
+    if [ "$_synced" = 1 ]; then
         ok "regenerated" "from your theme.json"
     else
-        warn "not regenerated" "the running shell did not answer — restart it"
+        warn "not regenerated" "the running shell did not answer — restart it (super + shift + R)"
     fi
 fi
 
 # ── next steps ───────────────────────────────────────────────────────────────
 head1 "Next"
+if [ "$RUNNING" = 1 ]; then
+cat <<EOF
+  1. The running shell has reloaded itself with this version. If anything
+     looks stale, restart it with super + shift + R, or by hand to read
+     any errors:
+
+         pkill -x qs; qs -c hyprshell
+
+  2. Changes to hyprland.lua take effect the next time Hyprland reloads
+     its config, or at the next login.
+EOF
+else
 cat <<EOF
   1. Start the shell by hand first, so you can read any errors:
 
@@ -671,6 +695,9 @@ cat <<EOF
      appear. Ctrl-C to stop it.
 
   2. If that looks right, log out and back in — hyprland.lua autostarts it.
+EOF
+fi
+cat <<EOF
 
   3. Preferences live in:
 
