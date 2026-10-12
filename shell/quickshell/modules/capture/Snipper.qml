@@ -32,7 +32,7 @@ Variants {
 
         readonly property var cap: Services.Capture
         readonly property var ap: Config.Appearance
-        readonly property string file: cap.snip && modelData ? (cap.snip.files[modelData.name] || "") : ""
+        readonly property string file: cap.snip && modelData ? cap.fileFor(modelData) : ""
         readonly property bool focusedHere: Services.Compositor.isFocusedScreen(modelData)
         readonly property string mode: cap.snipMode
 
@@ -68,7 +68,7 @@ Variants {
 
         onVisibleChanged: {
             dragging = false; taking = false; px = -1; py = -1;
-            if (visible) { keys.forceActiveFocus(); bar.shown = false; barIn.restart(); }
+            if (visible) { cap.snipShown(); keys.forceActiveFocus(); bar.shown = false; barIn.restart(); }
         }
         Timer { id: barIn; interval: 16; onTriggered: bar.shown = true }
 
@@ -108,6 +108,13 @@ Variants {
             cutter.sourceClipRect = pr;
             cutter.source = "";
             cutter.source = "file://" + file;
+            cutWatch.restart();
+        }
+        // A cut that never comes back must not leave the screen frozen.
+        Timer {
+            id: cutWatch
+            interval: 4000
+            onTriggered: if (win.taking) win.cap.snipFailed("The picture could not be cut out (timed out)")
         }
 
         // The cut: the picture again, clipped to the choice at full
@@ -127,6 +134,7 @@ Variants {
                 Qt.callLater(() => {
                     const target = win.cap.snipTarget();
                     const ok = cutter.grabToImage(res => {
+                        cutWatch.stop();
                         if (res.saveToFile(target)) win.cap.snipSaved(target);
                         else win.cap.snipFailed("Could not write " + target);
                     }, cutter.want);

@@ -40,22 +40,45 @@ Singleton {
     // Panels are closed first and given a moment to leave the screen, so
     // a shot of the desktop is not a shot of the toolbar that took it.
     function shot(mode, opts) {
-        if (busy) return;
-        const o = opts || {};
         const m = mode || "region";
+        console.log("Capture: shot", m, busy ? "(busy since " + Math.round((Date.now() - busySince) / 1000) + " s)" : "");
+        if (busy && !unstick()) return;
+        const o = opts || {};
         if (prefs.captureFreeze && (m === "region" || m === "window")) {
             freeze("shot", m, o.delay !== undefined ? o.delay : prefs.captureDelay,
                    o.pointer !== undefined ? o.pointer : prefs.capturePointer);
             return;
         }
+        shotLive(m, o);
+    }
+    // Choosing over the live screen with slurp: with Freeze off, and the
+    // fallback when the frozen screen cannot be put up.
+    function shotLive(m, o) {
         busy = true;
         Config.UiState.closeAll();
-        pending = { kind: "shot", mode: mode || "region", delay: o.delay !== undefined ? o.delay : prefs.captureDelay,
+        pending = { kind: "shot", mode: m, delay: o.delay !== undefined ? o.delay : prefs.captureDelay,
                     pointer: o.pointer !== undefined ? o.pointer : prefs.capturePointer };
         settle.restart();
     }
+    // `busy` set by something that never finished — a capture that died
+    // half-way — must not leave every later press doing nothing. Nothing
+    // here legitimately takes longer than this without something on screen.
+    property real busySince: 0
+    onBusyChanged: if (busy) busySince = Date.now()
+    function unstick() {
+        const stuck = Date.now() - busySince > 20000
+            && !freezeProc.running && !shotProc.running && !ocrProc.running && !recProc.running;
+        if (!stuck) return false;
+        console.warn("Capture: was stuck busy; starting over");
+        const dir = snip ? snip.dir : "";
+        snip = null;
+        pending = null;
+        busy = false;
+        cleanSnip(dir);
+        return true;
+    }
     function ocr() {
-        if (busy) return;
+        if (busy && !unstick()) return;
         if (prefs.captureFreeze) { freeze("ocr", "region", 0, false); return; }
         busy = true;
         Config.UiState.closeAll();
@@ -176,21 +199,61 @@ Singleton {
         stderr: StdioCollector { id: freezeErr }
         onExited: code => {
             const files = {};
+            const list = [];
             for (const line of freezeOut.text.split("\n")) {
                 const t = line.split("\t");
-                if (t.length === 2 && t[1] !== "") files[t[0]] = t[1];
+                if (t.length === 2 && t[1] !== "") { files[t[0]] = t[1]; list.push(t[1]); }
             }
-            if (code !== 0 || Object.keys(files).length === 0) {
+            console.log("Capture: froze", list.length, "output(s)", JSON.stringify(Object.keys(files)), "exit", code,
+                        freezeErr.text.trim());
+            if (code !== 0 || list.length === 0) {
                 root.busy = false;
-                root.lastError = code === 4 ? "Needs grim — sudo pacman -S grim"
-                               : code === 3 ? "Could not create " + root.picturesDir
-                               : (freezeErr.text.trim() || "grim could not capture the screen");
-                root.say("Screenshot failed", root.lastError, "", []);
                 root.cleanSnip(freezeProc.dir);
+                if (code === 4) { root.say("Screenshot failed", "Needs grim — sudo pacman -S grim", "", []); return; }
+                if (code === 3) { root.say("Screenshot failed", "Could not create " + root.picturesDir, "", []); return; }
+                // grim could not capture the outputs one by one: choose
+                // over the live screen instead, as before.
+                console.warn("Capture: freezing failed (" + (freezeErr.text.trim() || "no picture") + "); choosing live");
+                root.liveFallback();
                 return;
             }
-            root.snip = { kind: root.freezeWant.kind, dir: freezeProc.dir, files: files };
+            root.snip = { kind: root.freezeWant.kind, dir: freezeProc.dir, files: files, list: list };
+            root.shownOnce = false;
+            snipWatch.restart();
         }
+    }
+    // The picture for a screen: by its name, or else by its place in the
+    // list grim was given (the two can name an output differently), or —
+    // one screen, one picture — that one.
+    function fileFor(screen) {
+        if (!snip || !screen) return "";
+        if (snip.files[screen.name]) return snip.files[screen.name];
+        if (snip.list.length === 1) return snip.list[0];
+        const i = Quickshell.screens.indexOf(screen);
+        return i >= 0 && i < snip.list.length ? snip.list[i] : "";
+    }
+    // The frozen screen has to be up within a moment of the pictures; if
+    // it is not, choose over the live screen rather than leave the key
+    // doing nothing.
+    property bool shownOnce: false
+    function snipShown() { shownOnce = true; snipWatch.stop(); }
+    Timer {
+        id: snipWatch
+        interval: 2000
+        onTriggered: {
+            if (!root.snip || root.shownOnce) return;
+            console.warn("Capture: the frozen screen never came up; choosing live");
+            root.liveFallback();
+        }
+    }
+    function liveFallback() {
+        const kind = snip ? snip.kind : (freezeWant ? freezeWant.kind : "shot");
+        const dir = snip ? snip.dir : "";
+        snip = null;
+        busy = false;
+        cleanSnip(dir);
+        if (kind === "ocr") { busy = true; pending = { kind: "ocr" }; settle.restart(); }
+        else shotLive(snipMode, {});
     }
     // Where the overlay saves what was chosen.
     function snipTarget() {
@@ -207,6 +270,7 @@ Singleton {
     }
     // The overlay has written the chosen part to `path`.
     function snipSaved(path) {
+        console.log("Capture: saved", path);
         if (!snip) return;
         const s = snip;
         snip = null;
@@ -227,6 +291,7 @@ Singleton {
         copyProc.running = true;
     }
     function snipFailed(why) {
+        console.warn("Capture: cut failed:", why);
         const dir = snip ? snip.dir : "";
         snip = null;
         busy = false;
