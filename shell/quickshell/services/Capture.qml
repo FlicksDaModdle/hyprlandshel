@@ -217,9 +217,14 @@ Singleton {
                 root.liveFallback();
                 return;
             }
-            root.snip = { kind: root.freezeWant.kind, dir: freezeProc.dir, files: files, list: list };
+            // Armed before the pictures are handed over: handing them over
+            // puts the frozen screen up at once, and it reports so there
+            // and then. Armed after, it wiped that report out, and two
+            // seconds later took a perfectly good frozen screen away and
+            // put slurp's live picker up in its place.
             root.shownOnce = false;
             snipWatch.restart();
+            root.snip = { kind: root.freezeWant.kind, dir: freezeProc.dir, files: files, list: list };
         }
     }
     // The picture for a screen: by its name, or else by its place in the
