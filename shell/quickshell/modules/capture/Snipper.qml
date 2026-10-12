@@ -68,7 +68,12 @@ Variants {
 
         onVisibleChanged: {
             dragging = false; taking = false; px = -1; py = -1;
-            if (visible) { cap.snipShown(); keys.forceActiveFocus(); bar.shown = false; barIn.restart(); }
+            if (visible) {
+                cap.snipShown(modelData ? modelData.name : "");
+                cap.trace("overlay", modelData ? modelData.name : "?", width + "x" + height, "picture",
+                          still.sourceSize.width + "x" + still.sourceSize.height, "ratio", ratio.toFixed(3));
+                keys.forceActiveFocus(); bar.shown = false; barIn.restart();
+            }
         }
         Timer { id: barIn; interval: 16; onTriggered: bar.shown = true }
 
@@ -98,7 +103,7 @@ Variants {
 
         // Cut `r` (logical) out of the still picture and save it.
         function take(r) {
-            if (taking || r.width < 2 || r.height < 2) return;
+            if (taking || r.width < 2 || r.height < 2) { cap.trace("take ignored", taking, r.width + "x" + r.height); return; }
             taking = true;
             const pr = Qt.rect(Math.round(r.x * ratio), Math.round(r.y * ratio),
                                Math.max(1, Math.round(r.width * ratio)), Math.max(1, Math.round(r.height * ratio)));
@@ -106,6 +111,8 @@ Variants {
             cutter.height = r.height;
             cutter.want = Qt.size(pr.width, pr.height);
             cutter.sourceClipRect = pr;
+            cap.trace("take", Math.round(r.x) + "," + Math.round(r.y), Math.round(r.width) + "x" + Math.round(r.height),
+                      "-> pixels", pr.x + "," + pr.y, pr.width + "x" + pr.height);
             cutter.source = "";
             cutter.source = "file://" + file;
             cutWatch.restart();
@@ -129,15 +136,18 @@ Variants {
             fillMode: Image.Stretch
             onStatusChanged: {
                 if (!win.taking) return;
+                win.cap.trace("cut image status", status, "size", sourceSize.width + "x" + sourceSize.height);
                 if (status === Image.Error) { win.cap.snipFailed("Could not read the frozen screen"); return; }
                 if (status !== Image.Ready) return;
                 Qt.callLater(() => {
                     const target = win.cap.snipTarget();
                     const ok = cutter.grabToImage(res => {
+                        win.cap.trace("grabbed", res.image ? "image" : "nothing", "saving to", target);
                         cutWatch.stop();
                         if (res.saveToFile(target)) win.cap.snipSaved(target);
                         else win.cap.snipFailed("Could not write " + target);
                     }, cutter.want);
+                    win.cap.trace("grab started", ok);
                     if (!ok) win.cap.snipFailed("Could not cut the picture");
                 });
             }
@@ -217,11 +227,14 @@ Variants {
             onPositionChanged: mouse => { win.px = mouse.x; win.py = mouse.y; }
             onExited: if (!win.dragging) { win.px = -1; win.py = -1; }
             onPressed: mouse => {
-                if (mouse.button === Qt.RightButton) { win.cap.cancelSnip(); return; }
+                win.cap.trace("press", mouse.button === Qt.RightButton ? "right" : "left", Math.round(mouse.x) + "," + Math.round(mouse.y), "mode", win.mode);
+                if (mouse.button === Qt.RightButton) { win.cap.cancelSnip("right click"); return; }
                 win.px = mouse.x; win.py = mouse.y;
                 if (win.mode === "region") { win.ax = mouse.x; win.ay = mouse.y; win.dragging = true; }
             }
             onReleased: mouse => {
+                win.cap.trace("release", Math.round(mouse.x) + "," + Math.round(mouse.y), "pick",
+                              Math.round(win.pick.width) + "x" + Math.round(win.pick.height));
                 if (mouse.button !== Qt.LeftButton) return;
                 if (win.mode === "region") {
                     const r = win.pick;
@@ -305,7 +318,7 @@ Variants {
                     color: closeHover.hovered ? win.ap.sel : "transparent"
                     MonoIcon { anchors.centerIn: parent; name: "x"; size: 16; monochrome: true; inkColor: win.ap.ink2 }
                     HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: win.cap.cancelSnip() }
+                    TapHandler { onTapped: win.cap.cancelSnip("close button") }
                 }
             }
         }
@@ -329,7 +342,7 @@ Variants {
         Item {
             id: keys
             focus: true
-            Keys.onEscapePressed: win.cap.cancelSnip()
+            Keys.onEscapePressed: win.cap.cancelSnip("Esc")
             Keys.onPressed: event => {
                 if (event.key === Qt.Key_R) win.cap.snipMode = "region";
                 else if (event.key === Qt.Key_W) win.cap.snipMode = "window";

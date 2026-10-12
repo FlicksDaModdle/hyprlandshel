@@ -30,6 +30,35 @@ Singleton {
     readonly property var prefs: Config.Appearance
 
     readonly property string picturesDir: Quickshell.env("HOME") + "/Pictures/Screenshots"
+
+    // ── what happened, step by step ──────────────────────────────────────
+    // Every screenshot writes its steps to ~/.cache/hyprshell/capture.log
+    // (the last one only), and to the shell's own log, so that when one
+    // goes wrong there is something to look at that says where.
+    readonly property string traceFile: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache"))
+                                        + "/hyprshell/capture.log"
+    property var traceQueue: []
+    property bool traceFresh: false
+    function trace(...parts) {
+        const line = Qt.formatDateTime(new Date(), "HH:mm:ss.zzz") + "  " + parts.join(" ");
+        console.log("Capture:", parts.join(" "));
+        traceQueue.push(line);
+        if (!traceProc.running) flushTrace();
+    }
+    function flushTrace() {
+        const lines = traceQueue.join("\n");
+        traceQueue = [];
+        const fresh = traceFresh;
+        traceFresh = false;
+        traceProc.command = ["sh", "-c",
+            'mkdir -p "$(dirname "$1")" && if [ "$3" = 1 ]; then printf "%s\\n" "$2" > "$1"; else printf "%s\\n" "$2" >> "$1"; fi',
+            "trace", traceFile, lines, fresh ? "1" : "0"];
+        traceProc.running = true;
+    }
+    Process {
+        id: traceProc
+        onExited: if (root.traceQueue.length > 0) root.flushTrace()
+    }
     readonly property string videosDir: Quickshell.env("HOME") + "/Videos/Recordings"
 
     property bool busy: false
@@ -41,7 +70,8 @@ Singleton {
     // a shot of the desktop is not a shot of the toolbar that took it.
     function shot(mode, opts) {
         const m = mode || "region";
-        console.log("Capture: shot", m, busy ? "(busy since " + Math.round((Date.now() - busySince) / 1000) + " s)" : "");
+        traceFresh = true;
+        trace("shot", m, "freeze=" + prefs.captureFreeze, busy ? "busy since " + Math.round((Date.now() - busySince) / 1000) + " s" : "");
         if (busy && !unstick()) return;
         const o = opts || {};
         if (prefs.captureFreeze && (m === "region" || m === "window")) {
@@ -69,7 +99,7 @@ Singleton {
         const stuck = Date.now() - busySince > 20000
             && !freezeProc.running && !shotProc.running && !ocrProc.running && !recProc.running;
         if (!stuck) return false;
-        console.warn("Capture: was stuck busy; starting over");
+        trace("was stuck busy; starting over");
         const dir = snip ? snip.dir : "";
         snip = null;
         pending = null;
@@ -131,6 +161,7 @@ Singleton {
     ].join("\n")
 
     function runShot(p) {
+        trace("live pick (slurp)", p.mode);
         shotProc.command = ["sh", "-c", shotScript, "shot", p.mode, String(p.delay || 0), p.pointer ? "1" : "0",
                             picturesDir, focusedOutput(), p.mode === "window" ? windowBoxes() : ""];
         shotProc.running = true;
@@ -204,8 +235,8 @@ Singleton {
                 const t = line.split("\t");
                 if (t.length === 2 && t[1] !== "") { files[t[0]] = t[1]; list.push(t[1]); }
             }
-            console.log("Capture: froze", list.length, "output(s)", JSON.stringify(Object.keys(files)), "exit", code,
-                        freezeErr.text.trim());
+            root.trace("froze", list.length, "output(s)", JSON.stringify(Object.keys(files)), "exit", code,
+                       "screens", JSON.stringify(Quickshell.screens.map(s => s.name)), freezeErr.text.trim());
             if (code !== 0 || list.length === 0) {
                 root.busy = false;
                 root.cleanSnip(freezeProc.dir);
@@ -213,7 +244,7 @@ Singleton {
                 if (code === 3) { root.say("Screenshot failed", "Could not create " + root.picturesDir, "", []); return; }
                 // grim could not capture the outputs one by one: choose
                 // over the live screen instead, as before.
-                console.warn("Capture: freezing failed (" + (freezeErr.text.trim() || "no picture") + "); choosing live");
+                root.trace("freezing failed (" + (freezeErr.text.trim() || "no picture") + "); choosing live");
                 root.liveFallback();
                 return;
             }
@@ -241,13 +272,13 @@ Singleton {
     // it is not, choose over the live screen rather than leave the key
     // doing nothing.
     property bool shownOnce: false
-    function snipShown() { shownOnce = true; snipWatch.stop(); }
+    function snipShown(screen) { trace("frozen screen up on", screen || "?"); shownOnce = true; snipWatch.stop(); }
     Timer {
         id: snipWatch
         interval: 2000
         onTriggered: {
             if (!root.snip || root.shownOnce) return;
-            console.warn("Capture: the frozen screen never came up; choosing live");
+            root.trace("the frozen screen never came up; choosing live");
             root.liveFallback();
         }
     }
@@ -266,7 +297,8 @@ Singleton {
         if (snip.kind === "ocr") return snip.dir + "/text.png";
         return picturesDir + "/Screenshot_" + Qt.formatDateTime(new Date(), "yyyy-MM-dd_HH-mm-ss") + ".png";
     }
-    function cancelSnip() {
+    function cancelSnip(why) {
+        trace("cancelled:", why || "?");
         if (!snip) return;
         const dir = snip.dir;
         snip = null;
@@ -275,7 +307,7 @@ Singleton {
     }
     // The overlay has written the chosen part to `path`.
     function snipSaved(path) {
-        console.log("Capture: saved", path);
+        trace("saved", path);
         if (!snip) return;
         const s = snip;
         snip = null;
@@ -296,7 +328,7 @@ Singleton {
         copyProc.running = true;
     }
     function snipFailed(why) {
-        console.warn("Capture: cut failed:", why);
+        trace("cut failed:", why);
         const dir = snip ? snip.dir : "";
         snip = null;
         busy = false;
