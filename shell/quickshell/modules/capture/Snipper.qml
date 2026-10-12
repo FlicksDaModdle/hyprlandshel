@@ -101,9 +101,26 @@ Variants {
             return Qt.rect(0, 0, 0, 0);
         }
 
+        // The pointer let go: take what is chosen. The choice is copied
+        // first — `pick` read later is the live property, and it empties
+        // the moment dragging stops.
+        function finish() {
+            const r = Qt.rect(pick.x, pick.y, pick.width, pick.height);
+            if (mode === "region") {
+                dragging = false;
+                if (r.width >= 3 && r.height >= 3) take(r);
+                else cap.trace("too small to take", r.width + "x" + r.height);
+            } else if (hasPick) take(r);
+        }
+
         // Cut `r` (logical) out of the still picture and save it.
         function take(r) {
+            cap.trace("take asked", Math.round(r.x) + "," + Math.round(r.y), Math.round(r.width) + "x" + Math.round(r.height), "ratio", ratio);
             if (taking || r.width < 2 || r.height < 2) { cap.trace("take ignored", taking, r.width + "x" + r.height); return; }
+            try { cut(r); }
+            catch (e) { cap.trace("take failed", e); cap.snipFailed("Could not cut the picture: " + e); }
+        }
+        function cut(r) {
             taking = true;
             const pr = Qt.rect(Math.round(r.x * ratio), Math.round(r.y * ratio),
                                Math.max(1, Math.round(r.width * ratio)), Math.max(1, Math.round(r.height * ratio)));
@@ -227,20 +244,18 @@ Variants {
             onPositionChanged: mouse => { win.px = mouse.x; win.py = mouse.y; }
             onExited: if (!win.dragging) { win.px = -1; win.py = -1; }
             onPressed: mouse => {
-                win.cap.trace("press", mouse.button === Qt.RightButton ? "right" : "left", Math.round(mouse.x) + "," + Math.round(mouse.y), "mode", win.mode);
+                win.cap.trace("press", "button", mouse.button, "buttons", mouse.buttons, Math.round(mouse.x) + "," + Math.round(mouse.y), "mode", win.mode);
                 if (mouse.button === Qt.RightButton) { win.cap.cancelSnip("right click"); return; }
                 win.px = mouse.x; win.py = mouse.y;
                 if (win.mode === "region") { win.ax = mouse.x; win.ay = mouse.y; win.dragging = true; }
             }
             onReleased: mouse => {
-                win.cap.trace("release", Math.round(mouse.x) + "," + Math.round(mouse.y), "pick",
-                              Math.round(win.pick.width) + "x" + Math.round(win.pick.height));
-                if (mouse.button !== Qt.LeftButton) return;
-                if (win.mode === "region") {
-                    const r = win.pick;
-                    win.dragging = false;
-                    if (r.width >= 3 && r.height >= 3) win.take(r);
-                } else if (win.hasPick) win.take(win.pick);
+                win.cap.trace("release", "button", mouse.button, "buttons", mouse.buttons, Math.round(mouse.x) + "," + Math.round(mouse.y),
+                              "pick", Math.round(win.pick.width) + "x" + Math.round(win.pick.height));
+                // Only a right click (handled on press) is not a choice. A
+                // trackpad's tap-and-drag can report another button, or none,
+                // on release, so anything else that ends a drag takes it.
+                if (mouse.button !== Qt.RightButton) win.finish();
             }
         }
 
