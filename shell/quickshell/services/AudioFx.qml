@@ -131,6 +131,26 @@ Singleton {
     property bool eqStopping: false
     property int eqEpoch: 0
     readonly property bool eqWanted: prefs.eqEnabled && eqAvailable && au.pipewireUp
+    // Switching it off, the device is kept a moment after it stops being
+    // wanted: the real one is made the default first, and only once that
+    // has gone through — and the streams have moved, and everything that
+    // was bound to the equalizer's device has let it go — is the device
+    // taken away. Taking it away in the same instant as the switch handed
+    // Quickshell a device that was being destroyed while it was still the
+    // default, and that is the moment the shell went down.
+    property bool eqKeep: false
+    readonly property bool eqRunning: eqWanted || eqKeep
+    Timer {
+        id: eqRelease
+        interval: 150
+        repeat: true
+        property int ticks: 0
+        onTriggered: {
+            ticks++;
+            // At least 0.9 s, and no longer than 3 s whatever happens.
+            if ((!root.au.eqActive && ticks >= 6) || ticks >= 20) { stop(); root.eqKeep = false; }
+        }
+    }
 
     function num(v) { return Number(v).toFixed(2); }
 
@@ -191,7 +211,7 @@ Singleton {
     // life is the equalizer's.
     Process {
         id: eqProc
-        running: root.eqWanted && root.fxProcess && !root.eqRebuilding && root.eqEpoch >= 0
+        running: root.eqRunning && root.fxProcess && !root.eqRebuilding && root.eqEpoch >= 0
         command: ["sh", "-c", 'mkdir -p "$(dirname "$1")" && printf "%s" "$2" > "$1" && exec pipewire -c "$1"',
                   "sh", root.dir + "/equalizer.conf", root.conf(root.eqArgs())]
         stderr: StdioCollector { id: eqErr }
@@ -219,7 +239,7 @@ Singleton {
     }
 
     // The same, in the daemon: loaded when wanted, unloaded when not.
-    readonly property bool eqInDaemon: eqWanted && fxDaemon
+    readonly property bool eqInDaemon: eqRunning && fxDaemon
     onEqInDaemonChanged: daemonSync("eq")
     onEqEpochChanged: if (eqInDaemon) daemonSync("eq")
     onNsInDaemonChanged: daemonSync("ns")
@@ -289,7 +309,16 @@ Singleton {
             const real = au.sinks.find(n => n.name === prefs.eqTarget) || au.sinks[0];
             if (au.eqActive && real) au.setRawDefaultSink(real);
             eqStopping = true;
+            if (au.eqSink) {
+                eqKeep = true;
+                eqRelease.ticks = 0;
+                eqRelease.restart();
+            }
         } else {
+            // Back on before the device was let go: it never stopped.
+            if (eqKeep) eqStopping = false;
+            eqRelease.stop();
+            eqKeep = false;
             // Remember the device it is going in front of.
             if (!au.eqActive && au.rawSink && !au.isOurs(au.rawSink)) prefs.eqTarget = au.rawSink.name;
         }
