@@ -5,6 +5,7 @@ import Quickshell.Io
 import Quickshell.Services.Pipewire
 import "../config" as Config
 import "." as Services
+import "../modules/common"
 
 // PipeWire audio: the default output and input, every device and every
 // application stream, for the bar's volume readout, the control center's
@@ -78,8 +79,16 @@ Singleton {
     // Node properties (volume/mute) are only live while the node is bound.
     // Either default can be null before PipeWire is up, so the list is
     // filtered rather than handed nulls.
-    PwObjectTracker {
-        objects: [root.sink, root.source, root.rawSink, root.rawSource].filter(n => n !== null && n !== undefined)
+    //
+    // Bound steadily (SteadyTracker): a default that stops being the default
+    // stays bound for as long as it exists. Switching the equalizer off puts
+    // the real device back as the default *before* the equalizer's device is
+    // removed, and a plain tracker let go of that device in between — an
+    // update from PipeWire still on its way to it then reached an unbound
+    // node and took the shell down (PwNodeBoundAudio::onInfo).
+    SteadyTracker {
+        settleDelay: 0
+        nodes: [root.sink, root.source, root.rawSink, root.rawSource].filter(n => n !== null && n !== undefined)
     }
 
     // The ceiling a drag or a volume key can reach, set in Settings →

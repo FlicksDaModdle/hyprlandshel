@@ -25,8 +25,11 @@ Scope {
     property var held: []
     property var seen: ({})
 
+    // How long the list has to stop changing before it is looked at.
+    property int settleDelay: 150
+
     onNodesChanged: settle.restart()
-    Timer { id: settle; interval: 150; onTriggered: root.update() }
+    Timer { id: settle; interval: root.settleDelay; onTriggered: root.update() }
     // Ages new nodes in.
     Timer { id: again; interval: root.settleMs; onTriggered: root.update() }
 

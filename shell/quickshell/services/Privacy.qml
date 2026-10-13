@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Services.Pipewire
 import "." as Services
+import "../modules/common"
 
 // What is using the microphone, the camera and the screen right now.
 //
@@ -25,7 +26,9 @@ Singleton {
     // name, what it records from) can be read. There are few of them.
     readonly property var candidates: Pipewire.nodes.values.filter(n => n && (n.isStream || n.type === 0
         || n.type === PwNodeType.VideoSource))
-    PwObjectTracker { objects: root.candidates }
+    // Steadily (common/SteadyTracker.qml): never let go of a node that still
+    // exists, which is what crashed Quickshell elsewhere.
+    SteadyTracker { nodes: root.candidates; settleDelay: 0; settleMs: 0 }
 
     function cls(n) { return (n.properties || {})["media.class"] || ""; }
     function appOf(n) {
