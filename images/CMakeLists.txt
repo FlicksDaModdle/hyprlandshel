@@ -27,7 +27,7 @@ target_link_libraries(hyprshell-images-backend PRIVATE Qt6::Core Qt6::Gui Qt6::Q
 
 qt_add_executable(hyprshell-images src/main.cpp)
 
-set(SHARED_QML Appearance.qml MonoIcon.qml StyledText.qml SmoothScroll.qml)
+set(SHARED_QML Appearance.qml MonoIcon.qml StyledText.qml SmoothScroll.qml Spring.qml ColorSpring.qml)
 set(SHARED_PATHS "")
 foreach(f ${SHARED_QML})
     set_source_files_properties(${FILES}/qml/${f} PROPERTIES QT_RESOURCE_ALIAS qml/${f})

@@ -169,9 +169,9 @@ PanelSurface {
                 x: 1; y: 1
                 height: parent.height - 2
                 radius: 2
-                width: (parent.width - 2) * Math.max(0, Math.min(1, (win.j.percent || 0) / 100))
+                width: (parent.width - 2) * Math.max(0, fill.value)
                 color: win.j.paused ? Appearance.ink3 : Appearance.accent
-                Behavior on width { NumberAnimation { duration: 180 } }
+                Spring { id: fill; to: Math.max(0, Math.min(1, (win.j.percent || 0) / 100)); response: 300; bounce: 0 }
             }
             Rectangle {
                 id: band
@@ -181,13 +181,12 @@ PanelSurface {
                 radius: 2
                 width: parent.width * 0.3
                 color: Appearance.accent
-                NumberAnimation on x {
-                    running: band.visible && !win.j.paused
-                    loops: Animation.Infinite
-                    from: -band.width
-                    to: band.parent.width
-                    duration: 1100
-                }
+                // No percentage to show: the band swings from end to end on
+                // a spring while the job runs.
+                property bool atEnd: false
+                x: sweep.value
+                Spring { id: sweep; to: band.atEnd ? band.parent.width - band.width : 0; response: 900; bounce: 0.4 }
+                Timer { running: band.visible && !win.j.paused; repeat: true; interval: 750; onTriggered: band.atEnd = !band.atEnd }
             }
         }
 

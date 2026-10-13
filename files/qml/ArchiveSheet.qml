@@ -35,6 +35,13 @@ PanelSurface {
     showSeam: false
     color: Appearance.dialog
     visible: sheet.spec !== null && (sheet.mode !== "extractNow" || sheet.ask !== null)
+    // Swells into place with a little give when it appears (Spring.qml).
+    // It goes at once: what it shows is gone the moment it closes.
+    scale: popGrow.value
+    opacity: Math.max(0, Math.min(1, popFade.value))
+    Spring { id: popGrow; to: 1; response: 340 }
+    Spring { id: popFade; to: 1; response: 160; bounce: 0 }
+    onVisibleChanged: if (visible) { popGrow.snap(0.92); popGrow.wake(); popFade.snap(0); popFade.wake(); }
     z: 950
     implicitWidth: sheet.mode === "extractNow" ? askBox.width
                  : sheet.mode === "browse" ? Math.min(sheet.maxWidth, 940)

@@ -95,9 +95,9 @@ Column {
                         visible: card.j.percent >= 0
                         height: parent.height
                         radius: 3
-                        width: parent.width * Math.max(0.02, card.j.percent / 100)
+                        width: parent.width * Math.max(0, fill.value)
                         color: card.j.paused ? Appearance.ink3 : Appearance.accent
-                        Behavior on width { NumberAnimation { duration: 180 } }
+                        Spring { id: fill; to: Math.max(0.02, card.j.percent / 100); response: 300; bounce: 0 }
                     }
                     Rectangle {
                         id: band
@@ -106,13 +106,12 @@ Column {
                         radius: 3
                         width: parent.width * 0.3
                         color: Appearance.accent
-                        NumberAnimation on x {
-                            running: band.visible
-                            loops: Animation.Infinite
-                            from: -band.width
-                            to: band.parent.width
-                            duration: 1100
-                        }
+                        // No percentage to show: the band swings from end
+                        // to end on a spring while the job runs.
+                        property bool atEnd: false
+                        x: sweep.value
+                        Spring { id: sweep; to: band.atEnd ? band.parent.width - band.width : 0; response: 900; bounce: 0.4 }
+                        Timer { running: band.visible; repeat: true; interval: 750; onTriggered: band.atEnd = !band.atEnd }
                     }
                 }
 

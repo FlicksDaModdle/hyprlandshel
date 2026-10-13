@@ -16,7 +16,16 @@ Item {
     readonly property real menuWidth: 236
 
     anchors.fill: parent
-    visible: open
+    // Liquid: it swells out of where it was opened, width a beat ahead of
+    // height, and settles with a little give; closing, it draws back
+    // without a swing.
+    visible: menu.open || opacity > 0.004
+    enabled: menu.open
+    opacity: Math.max(0, Math.min(1, menuFade.value))
+    transform: Scale { origin.x: menu.atX; origin.y: menu.atY; xScale: menuGrowX.value; yScale: menuGrowY.value }
+    Spring { id: menuFade; to: menu.open ? 1 : 0; response: menu.open ? 150 : 160; bounce: 0 }
+    Spring { id: menuGrowX; to: menu.open ? 1 : 0.86; response: menu.open ? 300 : 200; bounce: menu.open ? 1 : 0 }
+    Spring { id: menuGrowY; to: menu.open ? 1 : 0.7; response: menu.open ? 360 : 200; bounce: menu.open ? 0.9 : 0 }
     z: 3000
 
     function openAt(x, y, list) {

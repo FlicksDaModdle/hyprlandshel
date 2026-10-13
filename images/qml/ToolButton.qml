@@ -16,12 +16,12 @@ Rectangle {
     width: 32; height: 32
     radius: Appearance.rSm
     opacity: enabled ? 1 : 0.4
-    color: checked ? Appearance.sel
-         : !area.containsMouse ? "transparent"
-         : danger ? Appearance.accent : Appearance.hover
-    scale: area.pressed ? 0.9 : 1
-    Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 2 } }
-    Behavior on color { ColorAnimation { duration: 110 } }
+    color: tint1.value
+    scale: scaleSpring.value
+    Spring { id: scaleSpring; to: area.pressed ? 0.9 : 1; response: 260 }
+    ColorSpring { id: tint1; to: btn.checked ? Appearance.sel
+             : !area.containsMouse ? "transparent"
+             : btn.danger ? Appearance.accent : Appearance.hover }
 
     MonoIcon {
         anchors.centerIn: parent

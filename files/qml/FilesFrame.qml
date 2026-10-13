@@ -307,11 +307,11 @@ PanelSurface {
         anchors.left: parent.left
         anchors.top: titleBar.bottom
         anchors.bottom: statusBar.top
-        width: frame.app.showSidebar ? 192 : 0
+        width: widthSpring.value
         visible: width > 0
         clip: true
 
-        Behavior on width { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+        Spring { id: widthSpring; to: frame.app.showSidebar ? 192 : 0; response: 210; bounce: 0 }
 
         SmoothScroll {
             target: sideFlick
@@ -717,10 +717,10 @@ PanelSurface {
                         width: 30
                         height: 26
                         radius: Appearance.rSm
-                        color: on ? Appearance.accent
-                             : (viewArea.containsMouse ? Appearance.sel : "transparent")
+                        color: tint1.value
 
-                        Behavior on color { ColorAnimation { duration: 160 } }
+                        ColorSpring { id: tint1; to: viewBtn.on ? Appearance.accent
+                                 : (viewArea.containsMouse ? Appearance.sel : "transparent") }
 
                         MonoIcon {
                             anchors.centerIn: parent
@@ -750,14 +750,14 @@ PanelSurface {
             anchors.right: pinButton.visible ? pinButton.left : viewRow.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            width: searchField.active || frame.app.filter !== "" ? 180 : 30
+            width: widthSpring2.value
             height: 30
             radius: Appearance.rSm
             color: searchField.active || frame.app.filter !== ""
                    ? Appearance.surface
                    : (searchIconArea.containsMouse ? Appearance.hover : "transparent")
 
-            Behavior on width { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+            Spring { id: widthSpring2; to: searchField.active || frame.app.filter !== "" ? 180 : 30; response: 210; bounce: 0 }
 
             MonoIcon {
                 id: searchGlyph
@@ -1297,12 +1297,12 @@ PanelSurface {
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.bottom: statusBar.top
-        height: frame.app.confirmingDelete ? 48 : 0
+        height: heightSpring.value
         visible: height > 0
         clip: true
         color: Appearance.accent
 
-        Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        Spring { id: heightSpring; to: frame.app.confirmingDelete ? 48 : 0; response: 190; bounce: 0 }
 
         StyledText {
             anchors.left: parent.left

@@ -23,17 +23,23 @@ Item {
     Timer {
         id: delay
         interval: 420
-        onTriggered: bubble.opacity = 1
+        onTriggered: bubble.up = true
     }
 
     onWantedChanged: {
         if (wanted) delay.restart();
-        else { delay.stop(); bubble.opacity = 0; }
+        else { delay.stop(); bubble.up = false; }
     }
 
     Rectangle {
         id: bubble
-        opacity: 0
+        // Swells out of the name a little and settles; goes without a swing.
+        property bool up: false
+        opacity: Math.max(0, Math.min(1, bubbleFade.value))
+        scale: bubbleGrow.value
+        transformOrigin: tip.below ? Item.TopLeft : Item.BottomLeft
+        Spring { id: bubbleFade; to: bubble.up ? 1 : 0; response: bubble.up ? 170 : 150; bounce: 0 }
+        Spring { id: bubbleGrow; to: bubble.up ? 1 : 0.9; response: 300; bounce: bubble.up ? 1 : 0 }
         // Anchored to the label rather than the pointer: it is about the
         // name, and a bubble that chases the cursor is harder to read than
         // one that sits still under the thing it explains.
@@ -47,10 +53,6 @@ Item {
         color: Appearance.surface
         border.width: 1
         border.color: Appearance.rule
-
-        Behavior on opacity {
-            NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
-        }
 
         StyledText {
             id: tipText

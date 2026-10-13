@@ -70,6 +70,8 @@ qt_add_qml_module(hyprshell-files
         qml/SevenCombo.qml
         qml/ScrollBar.qml
         qml/SmoothScroll.qml
+        qml/Spring.qml
+        qml/ColorSpring.qml
         qml/FileMenu.qml
         qml/FileTile.qml
         qml/FileRow.qml

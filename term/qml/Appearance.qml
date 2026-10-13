@@ -35,6 +35,16 @@ QtObject {
 
     Component.onCompleted: loadTheme()
 
+    // ── motion ────────────────────────────────────────────────────────────
+    // The shell's Settings → Appearance → Animation, so the apps move the
+    // way the desktop does (Spring.qml reads these): how fast, Liquid
+    // ("springy", a settle with a touch of give) or Calm ("smooth",
+    // critically damped), and how much give. 0 speed is no animation.
+    readonly property int animSpeed: typeof root.theme.animSpeed === "number" ? root.theme.animSpeed : 100
+    readonly property bool animated: animSpeed > 0
+    readonly property bool springy: (root.theme.motionStyle || "springy") !== "smooth"
+    readonly property int motionBounce: typeof root.theme.motionBounce === "number" ? root.theme.motionBounce : 100
+
     // ── theme ─────────────────────────────────────────────────────────────
     readonly property string themeMode: root.theme.theme || "dark"
     readonly property bool dark: {

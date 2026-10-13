@@ -59,7 +59,7 @@ endif()
 qt_add_executable(hyprshell-mail src/main.cpp)
 
 set(SHARED_QML Appearance.qml MonoIcon.qml PanelSurface.qml StyledText.qml DialogButton.qml
-               ScrollBar.qml SmoothScroll.qml)
+               ScrollBar.qml SmoothScroll.qml Spring.qml ColorSpring.qml)
 set(SHARED_PATHS "")
 foreach(f ${SHARED_QML})
     set_source_files_properties(${FILES}/qml/${f} PROPERTIES QT_RESOURCE_ALIAS qml/${f})

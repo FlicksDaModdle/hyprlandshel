@@ -19,7 +19,16 @@ PanelSurface {
     property bool open: false
 
     showSeam: false
-    visible: open
+    // Liquid: it swells out of where it was opened, width a beat ahead of
+    // height, and settles with a little give; closing, it draws back
+    // without a swing.
+    visible: menu.open || opacity > 0.004
+    enabled: menu.open
+    opacity: Math.max(0, Math.min(1, menuFade.value))
+    transform: Scale { origin.x: menu.atX - menu.x; origin.y: menu.atY - menu.y; xScale: menuGrowX.value; yScale: menuGrowY.value }
+    Spring { id: menuFade; to: menu.open ? 1 : 0; response: menu.open ? 150 : 160; bounce: 0 }
+    Spring { id: menuGrowX; to: menu.open ? 1 : 0.86; response: menu.open ? 300 : 200; bounce: menu.open ? 1 : 0 }
+    Spring { id: menuGrowY; to: menu.open ? 1 : 0.7; response: menu.open ? 360 : 200; bounce: menu.open ? 0.9 : 0 }
     z: 900
     implicitWidth: 236
     implicitHeight: column.implicitHeight + 12

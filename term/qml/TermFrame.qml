@@ -399,8 +399,8 @@ Rectangle {
         anchors.bottom: view.bottom
         width: 12
         z: 5
-        opacity: active ? 1 : 0.35
-        Behavior on opacity { NumberAnimation { duration: 180 } }
+        opacity: opacitySpring.value
+        Spring { id: opacitySpring; to: scrollbar.active ? 1 : 0.35; response: 240; bounce: 0 }
 
         // Shown for a moment after any scroll, however it happened.
         onOffsetChanged: recent.restart()
@@ -412,8 +412,8 @@ Rectangle {
             id: thumb
             anchors.right: parent.right
             anchors.rightMargin: 2
-            width: hover.hovered || drag.pressed ? 8 : 4
-            Behavior on width { NumberAnimation { duration: 120 } }
+            width: widthSpring.value
+            Spring { id: widthSpring; to: hover.hovered || drag.pressed ? 8 : 4; response: 190; bounce: 0 }
             radius: width / 2
             height: scrollbar.thumbH
             // Offset 0 is the live screen, at the bottom.

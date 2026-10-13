@@ -9,15 +9,21 @@ Item {
     property string title: ""
     property real boxWidth: 420
     default property alias content: inner.data
-    visible: open
+    visible: open || modalFade.value > 0.004
+    enabled: open
     z: 2000
+    Spring { id: modalFade; to: modal.open ? 1 : 0; response: modal.open ? 180 : 170; bounce: 0 }
+    Spring { id: modalGrow; to: modal.open ? 1 : 0.92; response: modal.open ? 360 : 200; bounce: modal.open ? 1 : 0 }
     Rectangle {
         anchors.fill: parent
+        opacity: Math.max(0, Math.min(1, modalFade.value))
         color: Qt.rgba(0, 0, 0, 0.35)
         MouseArea { anchors.fill: parent; onClicked: modal.open = false; onWheel: w => w.accepted = true }
     }
     PanelSurface {
         anchors.centerIn: parent
+        opacity: Math.max(0, Math.min(1, modalFade.value))
+        scale: modalGrow.value
         showSeam: false
         color: Appearance.dialog
         width: modal.boxWidth

@@ -194,9 +194,9 @@ PanelSurface {
         anchors.left: parent.left
         anchors.top: titleBar.bottom
         anchors.bottom: parent.bottom
-        width: Tasks.settings.navCollapsed ? 58 : 214
+        width: widthSpring.value
         clip: true
-        Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+        Spring { id: widthSpring; to: Tasks.settings.navCollapsed ? 58 : 214; response: 220; bounce: 0 }
 
         SmoothScroll { target: railFlick; anchors.fill: railFlick; z: 5 }
         Flickable {

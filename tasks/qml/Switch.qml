@@ -19,9 +19,9 @@ Item {
             height: width
             radius: width / 2
             y: 3
-            x: sw.checked ? parent.width - width - 3 : 3
+            x: 3 + knobPos.value * (parent.width - width - 6)
             color: sw.checked ? Appearance.inkOnAccent : Appearance.ink2
-            Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+            Spring { id: knobPos; to: sw.checked ? 1 : 0; response: 300 }
         }
     }
     MouseArea {

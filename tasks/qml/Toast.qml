@@ -14,18 +14,24 @@ PanelSurface {
         toast.failed = !!bad;
         toast.actionText = actText || "";
         toast.action = act || null;
-        toast.opacity = 1;
+        toast.up = true;
         hide.restart();
     }
     showSeam: false
     color: Appearance.dialog
     width: Math.min(parent ? parent.width - 40 : 500, row.implicitWidth + 30)
     height: 42
-    opacity: 0
-    visible: opacity > 0
+    // Rises into place with a little give and sinks away without any.
+    property bool up: false
+    opacity: Math.max(0, Math.min(1, fade.value))
+    visible: opacity > 0.004
+    scale: grow.value
+    transform: Translate { y: rise.value }
     z: 2500
-    Behavior on opacity { NumberAnimation { duration: 180 } }
-    Timer { id: hide; interval: toast.actionText !== "" ? 9000 : 3500; onTriggered: toast.opacity = 0 }
+    Spring { id: fade; to: toast.up ? 1 : 0; response: toast.up ? 180 : 220; bounce: 0 }
+    Spring { id: grow; to: toast.up ? 1 : 0.94; response: 340; bounce: toast.up ? 1 : 0 }
+    Spring { id: rise; to: toast.up ? 0 : 14; response: 360; bounce: toast.up ? 0.8 : 0 }
+    Timer { id: hide; interval: toast.actionText !== "" ? 9000 : 3500; onTriggered: toast.up = false }
     Row {
         id: row
         anchors.centerIn: parent
@@ -55,7 +61,7 @@ PanelSurface {
                 anchors.fill: parent
                 anchors.margins: -6
                 cursorShape: Qt.PointingHandCursor
-                onClicked: { toast.opacity = 0; if (toast.action) toast.action(); }
+                onClicked: { toast.up = false; if (toast.action) toast.action(); }
             }
         }
     }

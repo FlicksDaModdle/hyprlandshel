@@ -20,8 +20,8 @@ Rectangle {
 
     required property var host
 
-    color: host.fullscreen ? "#0d0c0c" : Appearance.sheet
-    Behavior on color { ColorAnimation { duration: 180 } }
+    color: tint1.value
+    ColorSpring { id: tint1; to: root.host.fullscreen ? "#0d0c0c" : Appearance.sheet }
 
     // ── the folder ───────────────────────────────────────────────────────
     property var files: []
@@ -157,10 +157,10 @@ Rectangle {
         id: titleBar
         anchors.left: parent.left
         anchors.right: parent.right
-        y: root.host.fullscreen ? -height : 0
+        y: ySpring.value
         height: 46
         z: 10
-        Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        Spring { id: ySpring; to: root.host.fullscreen ? -titleBar.height : 0; response: 360; bounce: root.host.fullscreen ? 0 : 0.8 }
 
         MouseArea {
             anchors.fill: parent
@@ -295,7 +295,19 @@ Rectangle {
             property real panY: 0
             property real rot: 0
             property bool glide: false
-            property real slide: 0
+            // Stepping to another picture: the new one slides in over the old
+            // on a spring, settling with a little give; the old one drifts
+            // the other way and fades without any.
+            readonly property real slide: slideSp.value
+            property bool leaving: false
+            Spring { id: slideSp; to: 0; response: 380; bounce: slot.leaving ? 0 : 0.9 }
+            Spring {
+                id: fadeSp
+                to: 0
+                response: slot.leaving ? 200 : 170
+                bounce: 0
+                onSettled: if (slot.leaving && to === 0) { slot.path = ""; slot.reset(); }
+            }
             readonly property bool animated: path !== "" && !!Gallery.info(path).animated
             readonly property var pic: loader.item
             readonly property real natW: pic ? pic.implicitWidth : 0
@@ -306,12 +318,12 @@ Rectangle {
             readonly property real mag: fitted ? root.fitFor(slot) : zoom
 
             anchors.fill: parent
-            opacity: 0
+            opacity: Math.max(0, Math.min(1, fadeSp.value))
 
             function reset() { glide = false; fitted = true; zoom = 1; panX = 0; panY = 0; rot = 0; }
             // Ready for the next picture: whatever it was doing is over,
             // and the old one is let go so the new one loads afresh.
-            function prepare() { enterAnim.stop(); leaveAnim.stop(); opacity = 0; path = ""; reset(); }
+            function prepare() { leaving = false; fadeSp.to = 0; fadeSp.snap(0); slideSp.to = 0; slideSp.snap(0); path = ""; reset(); }
             function setPan(x, y) {
                 const w = (rotated ? natH : natW) * zoomTarget(), h = (rotated ? natW : natH) * zoomTarget();
                 const mx = Math.max(0, (w - stage.width) / 2), my = Math.max(0, (h - stage.height) / 2);
@@ -320,38 +332,34 @@ Rectangle {
             }
             function zoomTarget() { return fitted ? root.fitFor(slot) : zoom; }
             function enter() {
-                leaveAnim.stop();
-                slide = dir * 36;
-                enterAnim.restart();
+                leaving = false;
+                slideSp.to = 0;
+                slideSp.snap(dir * 36);
+                slideSp.wake();
+                fadeSp.to = 1;
+                fadeSp.wake();
             }
-            function leave() { enterAnim.stop(); leaveAnim.restart(); }
+            function leave() {
+                leaving = true;
+                slideSp.to = -dir * 24;
+                fadeSp.to = 0;
+                fadeSp.wake();
+            }
             onReadyChanged: if (ready && slot === root.back) root.swapIn(slot)
             onFailedChanged: if (failed && slot === root.back) root.swapIn(slot)
 
-            ParallelAnimation {
-                id: enterAnim
-                NumberAnimation { target: slot; property: "opacity"; to: 1; duration: 140 }
-                NumberAnimation { target: slot; property: "slide"; to: 0; duration: 420; easing.type: Easing.OutElastic; easing.amplitude: 1; easing.period: 0.9 }
-            }
-            ParallelAnimation {
-                id: leaveAnim
-                NumberAnimation { target: slot; property: "opacity"; to: 0; duration: 160 }
-                NumberAnimation { target: slot; property: "slide"; to: -slot.dir * 24; duration: 200; easing.type: Easing.OutCubic }
-                onFinished: { slot.path = ""; slot.reset(); }
-            }
-
             Item {
                 id: frame
-                width: slot.natW * slot.mag
-                height: slot.natH * slot.mag
-                x: (slot.width - width) / 2 + slot.panX + slot.slide
-                y: (slot.height - height) / 2 + slot.panY
-                rotation: slot.rot
-                Behavior on width { enabled: slot.glide; NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                Behavior on height { enabled: slot.glide; NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                Behavior on x { enabled: slot.glide; NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                Behavior on y { enabled: slot.glide; NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                Behavior on rotation { NumberAnimation { duration: 380; easing.type: Easing.OutElastic; easing.amplitude: 1; easing.period: 0.9 } }
+                width: widthSpring.value
+                height: heightSpring.value
+                x: xSpring.value
+                y: ySpring2.value
+                rotation: rotationSpring.value
+                Spring { id: widthSpring; to: slot.natW * slot.mag; response: 340; bounce: 0.5; enabled: slot.glide }
+                Spring { id: heightSpring; to: slot.natH * slot.mag; response: 340; bounce: 0.5; enabled: slot.glide }
+                Spring { id: xSpring; to: (slot.width - widthSpring.to) / 2 + slot.panX + slot.slide; response: 340; bounce: 0.5; enabled: slot.glide }
+                Spring { id: ySpring2; to: (slot.height - heightSpring.to) / 2 + slot.panY; response: 340; bounce: 0.5; enabled: slot.glide }
+                Spring { id: rotationSpring; to: slot.rot; response: 420; bounce: 0.9 }
 
                 Loader {
                     id: loader
@@ -476,10 +484,10 @@ Rectangle {
                 color: sideArea.containsMouse ? Qt.rgba(0, 0, 0, 0.55) : Qt.rgba(0, 0, 0, 0.35)
                 border.width: 1
                 border.color: Qt.rgba(1, 1, 1, 0.12)
-                opacity: sideArea.containsMouse || stage.chromeShown ? 1 : 0
-                scale: sideArea.pressed ? 0.9 : 1
-                Behavior on opacity { NumberAnimation { duration: 160 } }
-                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 2 } }
+                opacity: opacitySpring.value
+                scale: scaleSpring.value
+                Spring { id: opacitySpring; to: sideArea.containsMouse || stage.chromeShown ? 1 : 0; response: 220; bounce: 0 }
+                Spring { id: scaleSpring; to: sideArea.pressed ? 0.9 : 1; response: 260 }
                 MonoIcon {
                     anchors.centerIn: parent
                     name: side.modelData < 0 ? "chevronLeft" : "chevronRight"
@@ -525,8 +533,8 @@ Rectangle {
                 width: openText.implicitWidth + 32; height: 36
                 radius: 18
                 color: openArea.containsMouse ? Qt.darker(Appearance.accent, 1.08) : Appearance.accent
-                scale: openArea.pressed ? 0.94 : 1
-                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 2 } }
+                scale: scaleSpring2.value
+                Spring { id: scaleSpring2; to: openArea.pressed ? 0.94 : 1; response: 260 }
                 StyledText {
                     id: openText
                     anchors.centerIn: parent
@@ -551,14 +559,14 @@ Rectangle {
             readonly property bool wanted: root.files.length > 1
                 && (!root.host.fullscreen || stripHover.hovered || stage.chromeShown)
             anchors.horizontalCenter: parent.horizontalCenter
-            y: wanted ? parent.height - height - 14 : parent.height + 8
+            y: ySpring3.value
             width: Math.min(parent.width - 40, thumbs.contentWidth + 16)
             height: 68
             radius: 18
             color: root.host.fullscreen ? Qt.rgba(0.08, 0.08, 0.08, 0.8) : Appearance.dialog
             border.width: 1
             border.color: Appearance.edge
-            Behavior on y { NumberAnimation { duration: 380; easing.type: Easing.OutElastic; easing.amplitude: 1; easing.period: 1.1 } }
+            Spring { id: ySpring3; to: strip.wanted ? strip.parent.height - strip.height - 14 : strip.parent.height + 8; response: 400; bounce: strip.wanted ? 0.8 : 0 }
             HoverHandler { id: stripHover }
 
             ListView {
@@ -585,9 +593,9 @@ Rectangle {
                     color: Appearance.hover
                     border.width: on ? 2 : 0
                     border.color: Appearance.accent
-                    scale: on ? 1 : (thumbArea.containsMouse ? 0.97 : 0.9)
+                    scale: scaleSpring3.value
                     opacity: on ? 1 : 0.75
-                    Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
+                    Spring { id: scaleSpring3; to: thumb.on ? 1 : (thumbArea.containsMouse ? 0.97 : 0.9); response: 300 }
                     Image {
                         anchors.fill: parent
                         anchors.margins: thumb.on ? 3 : 0
@@ -618,10 +626,10 @@ Rectangle {
         anchors.top: titleBar.bottom
         anchors.bottom: parent.bottom
         anchors.right: parent.right
-        width: root.infoOpen && root.current !== "" ? 280 : 0
+        width: widthSpring2.value
         clip: true
         color: "transparent"
-        Behavior on width { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+        Spring { id: widthSpring2; to: root.infoOpen && root.current !== "" ? 280 : 0; response: 380; bounce: 0.5 }
         Rectangle { width: 1; height: parent.height; color: Appearance.rule }
 
         Column {
@@ -689,7 +697,7 @@ Rectangle {
         function say(t) { text = t; shown = true; hide.restart(); }
         property bool shown: false
         anchors.horizontalCenter: stage.horizontalCenter
-        y: shown ? root.height - height - (strip.wanted ? 96 : 24) : root.height + 10
+        y: ySpring4.value
         width: toastText.implicitWidth + 28
         height: 34
         radius: 17
@@ -697,7 +705,7 @@ Rectangle {
         border.width: 1
         border.color: Appearance.edge
         z: 20
-        Behavior on y { NumberAnimation { duration: 380; easing.type: Easing.OutElastic; easing.amplitude: 1; easing.period: 1.0 } }
+        Spring { id: ySpring4; to: toast.shown ? root.height - toast.height - (strip.wanted ? 96 : 24) : root.height + 10; response: 400; bounce: toast.shown ? 0.8 : 0 }
         StyledText {
             id: toastText
             anchors.centerIn: parent

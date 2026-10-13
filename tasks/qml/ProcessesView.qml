@@ -501,11 +501,11 @@ Item {
         anchors.topMargin: 6
         anchors.bottom: parent.bottom
         anchors.right: parent.right
-        width: view.detailsOpen && view.selectedPid > 0 ? Math.min(380, view.width * 0.4) : 0
+        width: widthSpring.value
         pid: view.selectedPid
         onCloseRequested: view.detailsOpen = false
         onEndRequested: sig => view.endTask(view.current(), sig)
-        Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+        Spring { id: widthSpring; to: view.detailsOpen && view.selectedPid > 0 ? Math.min(380, view.width * 0.4) : 0; response: 260; bounce: 0 }
     }
 
     // ── dialogs ───────────────────────────────────────────────────────────

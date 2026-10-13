@@ -58,7 +58,7 @@ QtObject {
     // Start moving from wherever it is, at whatever speed it has — for
     // when `value` or `velocity` was set by hand.
     function wake() {
-        if (!live) { snap(); return; }
+        if (!live) { snap(); settled(); return; }
         span = Math.max(Math.abs(to - value), Math.abs(velocity) / omega);
         fresh = true;
         driver.restart();
@@ -71,7 +71,7 @@ QtObject {
     property bool fresh: false
 
     onToChanged: {
-        if (!ready || !live) { snap(); return; }
+        if (!ready || !live) { snap(); if (ready) settled(); return; }
         wake();
     }
     onLiveChanged: if (!live) snap()

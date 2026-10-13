@@ -57,6 +57,12 @@ qt_add_executable(hyprshell-term
 )
 
 set_source_files_properties(qml/Appearance.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+# The physics the shell and the other apps move with (files/qml), so the
+# terminal's menus and fades are the same springs.
+set(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../files)
+foreach(f Spring.qml ColorSpring.qml)
+    set_source_files_properties(${FILES}/qml/${f} PROPERTIES QT_RESOURCE_ALIAS qml/${f})
+endforeach()
 
 qt_add_qml_module(hyprshell-term
     URI Hyprterm
@@ -69,6 +75,8 @@ qt_add_qml_module(hyprshell-term
         qml/TermMenu.qml
         qml/MonoIcon.qml
         qml/StyledText.qml
+        ${FILES}/qml/Spring.qml
+        ${FILES}/qml/ColorSpring.qml
     RESOURCES
         qml/IconPaths.js
 )

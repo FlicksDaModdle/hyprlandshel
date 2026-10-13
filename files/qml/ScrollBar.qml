@@ -23,17 +23,17 @@ Item {
         id: thumb
         anchors.right: parent.right
         anchors.rightMargin: 3
-        width: bar.hot ? 8 : 5
+        width: widthSpring.value
         radius: width / 2
         height: Math.max(32, bar.height * bar.target.height / Math.max(1, bar.target.contentHeight))
         y: bar.range > 0
            ? (bar.height - height) * Math.max(0, Math.min(1, (bar.target.contentY - bar.target.originY) / bar.range))
            : 0
         color: area.dragging ? Appearance.accent : bar.hot ? Appearance.ink2 : Appearance.ink3
-        opacity: bar.hot || bar.target.moving ? 0.9 : 0.55
+        opacity: opacitySpring.value
 
-        Behavior on width { NumberAnimation { duration: 120 } }
-        Behavior on opacity { NumberAnimation { duration: 150 } }
+        Spring { id: widthSpring; to: bar.hot ? 8 : 5; response: 190; bounce: 0 }
+        Spring { id: opacitySpring; to: bar.hot || bar.target.moving ? 0.9 : 0.55; response: 240; bounce: 0 }
     }
 
     MouseArea {

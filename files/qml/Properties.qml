@@ -16,6 +16,13 @@ PanelSurface {
 
     showSeam: false
     visible: props.entry !== null
+    // Swells into place with a little give when it appears (Spring.qml).
+    // It goes at once: what it shows is gone the moment it closes.
+    scale: popGrow.value
+    opacity: Math.max(0, Math.min(1, popFade.value))
+    Spring { id: popGrow; to: 1; response: 340 }
+    Spring { id: popFade; to: 1; response: 160; bounce: 0 }
+    onVisibleChanged: if (visible) { popGrow.snap(0.92); popGrow.wake(); popFade.snap(0); popFade.wake(); }
     z: 950
     implicitWidth: 340
     implicitHeight: column.implicitHeight + 24

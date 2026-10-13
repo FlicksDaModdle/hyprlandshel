@@ -13,8 +13,8 @@ Rectangle {
     Rectangle {
         height: parent.height
         radius: parent.radius
-        width: parent.width * Math.max(0, Math.min(1, meter.value))
+        width: parent.width * Math.max(0, fill.value)
         color: meter.fillColor
-        Behavior on width { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+        Spring { id: fill; to: Math.max(0, Math.min(1, meter.value)); response: 400; bounce: 0 }
     }
 }
