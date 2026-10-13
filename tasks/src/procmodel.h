@@ -172,6 +172,8 @@ private:
     Row procRow(const Proc &p, int depth, const QString &section) const;
     QString displayName(const Proc &p) const;
     QString iconFor(const Proc &p) const;
+    QString shellRole(const Proc &p, QString *key = nullptr, QString *label = nullptr) const;
+    QSet<int> shellCorePids() const;
     bool matches(const Proc &p) const;
     double cpuShown(double perCoreCpu) const { return m_perCore ? perCoreCpu : perCoreCpu / qMax(1, m_ncpu); }
     int powerLevel(double cpuMachine, double gpu) const;

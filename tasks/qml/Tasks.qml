@@ -33,7 +33,7 @@ QtObject {
         sortKey: "cpu",
         columns: ["status", "cpu", "mem", "disk", "gpu", "power"],
         navCollapsed: false,
-        shellMemory: false,      // the shell's own use, over the process list
+        shellMemory: true,       // the shell's own use, over the process list
         startView: "summary"
     })
     readonly property string path: Sys.configDir() + "/hyprshell-tasks/settings.json"

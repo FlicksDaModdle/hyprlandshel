@@ -512,12 +512,17 @@ void ProcessModel::rebuild() {
         // apps: grouped under the window-owning process above them
         // (assignGroups, each sample).
         QHash<QString, QVector<int>> appMembers;
-        QVector<int> background, system;
+        QVector<int> background, system, shell;
+        const QSet<int> shellPids = shellCorePids();
         for (auto it = m_procs.cbegin(); it != m_procs.cend(); ++it) {
             const Proc &p = it.value();
             if (!visible(p)) continue;
             const QString &g = p.group;
-            if (!g.isEmpty()) appMembers[g] << p.pid;
+            // The shell and its services first, on their own, whatever
+            // they would otherwise be filed under (the shell owns the
+            // Settings window, so it would be an app while that is open).
+            if (shellPids.contains(p.pid)) shell << p.pid;
+            else if (!g.isEmpty()) appMembers[g] << p.pid;
             else if (p.uid == m_myUid) background << p.pid;
             else system << p.pid;
         }
@@ -587,6 +592,46 @@ void ProcessModel::rebuild() {
             sectionCounts.insert(id, n);
             return !m_collapsed.contains(h.key) || filtering;
         };
+        // Hyprshell: one row with the whole shell's total, opening on the
+        // processes it is made of.
+        QVector<Row> shellKids;
+        for (int pid : shell) {
+            const Proc &p = m_procs[pid];
+            if (!filtering || matches(p)) shellKids << procRow(p, 1, "shell");
+        }
+        if (!shell.isEmpty() && (!filtering || !shellKids.isEmpty()
+                                 || QStringLiteral("hyprshell").contains(m_filter.trimmed(), Qt::CaseInsensitive))) {
+            Row g;
+            g.kind = 1;
+            g.key = "app:~hyprshell";
+            g.section = "shell";
+            g.name = "Hyprshell";
+            g.title = "The shell and its services";
+            g.icon = "qs";
+            g.dead = true;
+            for (int pid : shell) {
+                const Proc &p = m_procs[pid];
+                g.pids << pid;
+                g.cpu += cpuShown(p.cpu);
+                g.mem += p.mem + p.shmem;
+                g.rBps += p.rBps;
+                g.wBps += p.wBps;
+                g.gpu += p.gpu;
+                g.gpuMem += p.gpuMem;
+                g.ioKnown = g.ioKnown && p.ioOk;
+                if (!p.dead) g.dead = false;
+            }
+            g.pid = g.pids.first();
+            g.gpu = qMin(100.0, g.gpu);
+            g.power = g.dead ? 0 : powerLevel(m_perCore ? g.cpu / m_ncpu : g.cpu, g.gpu);
+            g.count = g.pids.size();
+            g.expandable = true;
+            sortRows(shellKids);
+            if (section("shell", "Hyprshell", 1)) {
+                out << g;
+                if (filtering || m_expanded.contains(g.key)) out << shellKids;
+            }
+        }
         if (!apps.isEmpty() && section("apps", "Apps", apps.size())) {
             for (const Row &g : std::as_const(apps)) {
                 out << g;
@@ -924,21 +969,82 @@ void rollup(int pid, qint64 &pss, qint64 &rss) {
 }
 }
 
-QVariantMap ProcessModel::shellUsage() const {
-    struct Kind { const char *key, *label; bool app; };
-    // The shell's own programs, by name. Anything else called hyprshell-*
-    // is one of its helpers, and counts as the shell.
-    static const Kind known[] = {
-        {"hyprshell-daemon", "Background service", false},
-        {"hyprshell-maild", "Mail sync", false},
-        {"hyprshell-agent", "Network & Bluetooth agent", false},
-        {"hyprshell-files", "Files", true},
-        {"hyprshell-images", "Images", true},
-        {"hyprshell-term", "Terminal", true},
-        {"hyprshell-mail", "Mail", true},
-        {"hyprshell-tasks", "Task Manager", true},
-        {"hyprshell-browser", "Browser", true},
+// Which part of hyprshell a process is, if any: "core" for the shell and
+// the services it runs on, "app" for one of its own apps, "" for anything
+// else. Your own processes only.
+QString ProcessModel::shellRole(const Proc &p, QString *key, QString *label) const {
+    if (p.dead || p.kernel || p.uid != m_myUid) return {};
+    const QString exe = QFileInfo(p.exe).fileName();
+    // Quickshell, running this shell's config: `qs -c hyprshell`, or
+    // started from the config's path. Another Quickshell config is
+    // somebody else's shell.
+    const bool qs = p.name == "qs" || p.name == "quickshell" || exe == "qs" || exe == "quickshell"
+                    || exe.startsWith(".quickshell");
+    if (qs) {
+        if (!p.cmd.contains("hyprshell") && (p.cmd.contains(" -c ") || p.cmd.contains(" -p "))) return {};
+        if (key) *key = "shell";
+        if (label) *label = "Shell (Quickshell)";
+        return "core";
+    }
+    const QString name = p.name.startsWith("hyprshell-") ? p.name : exe;
+    if (!name.startsWith("hyprshell-") || name == "hyprshell-greeter") return {};
+    struct Kind { const char *key, *label; };
+    // The services the shell runs on, and its one-off helpers. Anything
+    // else called hyprshell-* is one of its apps.
+    static const Kind core[] = {
+        {"hyprshell-daemon", "Background service"},
+        {"hyprshell-maild", "Mail sync"},
+        {"hyprshell-agent", "Network & Bluetooth agent"},
     };
+    static const char *helpers[] = {"hyprshell-accent", "hyprshell-colors", "hyprshell-cursors",
+                                    "hyprshell-render", "hyprshell-tools", "hyprshell-backend"};
+    for (const Kind &c : core) if (name == QLatin1String(c.key)) {
+        if (key) *key = name;
+        if (label) *label = QString::fromLatin1(c.label);
+        return "core";
+    }
+    for (const char *h : helpers) if (name.startsWith(QLatin1String(h))) {
+        if (key) *key = "helpers";
+        if (label) *label = "Helpers";
+        return "core";
+    }
+    static const Kind apps[] = {
+        {"hyprshell-files", "Files"}, {"hyprshell-images", "Images"}, {"hyprshell-term", "Terminal"},
+        {"hyprshell-mail", "Mail"}, {"hyprshell-tasks", "Task Manager"}, {"hyprshell-browser", "Browser"},
+        {"hyprshell-rog", "ROG Control"}, {"hyprshell-notes", "Notes"}, {"hyprshell-snapshots", "Snapshots"},
+        {"hyprshell-disks", "Disks"}, {"hyprshell-keys", "Passwords & Keys"}, {"hyprshell-docs", "Documents"},
+        {"hyprshell-music", "Music"}, {"hyprshell-video", "Videos"}, {"hyprshell-recorder", "Sound Recorder"},
+    };
+    if (key) *key = name;
+    if (label) {
+        *label = name.mid(10, 1).toUpper() + name.mid(11);
+        for (const Kind &a : apps) if (name == QLatin1String(a.key)) *label = QString::fromLatin1(a.label);
+    }
+    return "app";
+}
+
+// The shell's core processes: Quickshell and its services, and whatever
+// Quickshell itself started that is not an app of its own (no window, not
+// one of hyprshell's apps) — the helpers it runs, which are its cost too.
+QSet<int> ProcessModel::shellCorePids() const {
+    QSet<int> out, roots;
+    for (const Proc &p : m_procs) {
+        if (shellRole(p) != "core") continue;
+        out.insert(p.pid);
+        roots.insert(p.pid);
+    }
+    for (const Proc &p : m_procs) {
+        if (p.dead || out.contains(p.pid) || m_windowsByPid.contains(p.pid) || !shellRole(p).isEmpty()) continue;
+        for (int pp = p.ppid, hops = 0; pp > 1 && hops < 32; ++hops) {
+            if (roots.contains(pp)) { out.insert(p.pid); break; }
+            if (m_windowsByPid.contains(pp) || !m_procs.contains(pp)) break;
+            pp = m_procs[pp].ppid;
+        }
+    }
+    return out;
+}
+
+QVariantMap ProcessModel::shellUsage() const {
     QMap<QString, QVariantMap> parts;
     auto add = [&](const QString &key, const QString &label, bool app, const Proc &p) {
         QVariantMap &m = parts[key];
@@ -956,25 +1062,12 @@ QVariantMap ProcessModel::shellUsage() const {
         m["gpuMem"] = m.value("gpuMem").toDouble() + double(p.gpuMem);
         m["cpu"] = m.value("cpu").toDouble() + cpuShown(p.cpu);
     };
+    const QSet<int> core = shellCorePids();
     for (const Proc &p : m_procs) {
-        if (p.dead || p.kernel || p.uid != m_myUid) continue;
-        const QString exe = QFileInfo(p.exe).fileName();
-        // Quickshell, running this shell's config: `qs -c hyprshell`, or
-        // started from the config's path. Another Quickshell config is
-        // somebody else's shell.
-        const bool qs = p.name == "qs" || p.name == "quickshell" || exe == "qs" || exe == "quickshell"
-                        || exe.startsWith(".quickshell");
-        if (qs) {
-            if (p.cmd.contains("hyprshell") || !(p.cmd.contains(" -c ") || p.cmd.contains(" -p ")))
-                add("shell", "Shell (Quickshell)", false, p);
-            continue;
-        }
-        const QString name = p.name.startsWith("hyprshell-") ? p.name : exe;
-        if (!name.startsWith("hyprshell-") || name == "hyprshell-greeter") continue;
-        const Kind *k = nullptr;
-        for (const Kind &c : known) if (name == QLatin1String(c.key)) { k = &c; break; }
-        if (k) add(k->key, k->label, k->app, p);
-        else add("helpers", "Helpers", false, p);
+        QString key, label;
+        const QString role = shellRole(p, &key, &label);
+        if (!role.isEmpty()) add(key, label, role == "app", p);
+        else if (core.contains(p.pid)) add("helpers", "Helpers", false, p);
     }
 
     QVariantList list;
