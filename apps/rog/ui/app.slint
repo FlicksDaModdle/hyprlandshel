@@ -29,7 +29,6 @@ export struct Curve {
     enabled: bool,
     temps: [int],      // 8 points, °C
     pwm: [int],        // 8 points, 0..255
-    path: string,      // the line, in a 100×100 view box
 }
 
 export struct Reading { label: string, value: string, icon: string, frac: float, tint: color }
@@ -104,11 +103,6 @@ export global Rog {
 
     in property <string> toast;
     in property <bool> toast-bad;
-}
-
-component Page inherits Scroll {
-    in property <string> title;
-    in property <string> subtitle;
 }
 
 component Row inherits Rectangle {
@@ -227,17 +221,32 @@ component CurveChart inherits Rectangle {
         color: Theme.ink3;
         font-size: Theme.fs(10);
     }
+    // In the chart's own pixels: a path in a fixed view box keeps its
+    // aspect ratio, and the line came out squeezed between the points.
+    pure function cx(i: int) -> float {
+        return (root.pad + root.w * max(0, min(1, (root.curve.temps[i] - 20) / 80))) / 1px;
+    }
+    pure function cy(i: int) -> float {
+        return (root.pad + root.h * (1 - root.curve.pwm[i] / 255)) / 1px;
+    }
     Path {
-        x: root.pad;
-        y: root.pad;
-        width: root.w;
-        height: root.h;
-        viewbox-width: 100;
-        viewbox-height: 100;
-        commands: root.curve.path;
+        width: root.width;
+        height: root.height;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
         stroke: root.curve.enabled ? root.tint : Theme.ink3;
         stroke-width: 2.5px;
         fill: transparent;
+        MoveTo { x: root.pad / 1px; y: root.cy(0); }
+        LineTo { x: root.cx(0); y: root.cy(0); }
+        LineTo { x: root.cx(1); y: root.cy(1); }
+        LineTo { x: root.cx(2); y: root.cy(2); }
+        LineTo { x: root.cx(3); y: root.cy(3); }
+        LineTo { x: root.cx(4); y: root.cy(4); }
+        LineTo { x: root.cx(5); y: root.cy(5); }
+        LineTo { x: root.cx(6); y: root.cy(6); }
+        LineTo { x: root.cx(7); y: root.cy(7); }
+        LineTo { x: (root.pad + root.w) / 1px; y: root.cy(7); }
     }
     for t[i] in root.curve.temps: Rectangle {
         property <float> fx: (t - 20) / 80;
@@ -288,6 +297,8 @@ export component AppWindow inherits KitWindow {
     preferred-width: 1080px;
     preferred-height: 720px;
     in-out property <string> page: "overview";
+    // Shown along the bottom for three seconds (main.rs times it).
+    callback toast(string, bool);
     property <[{id: string, label: string, icon: string, shown: bool}]> pages: [
         { id: "overview", label: "Overview", icon: "layoutDashboard", shown: true },
         { id: "performance", label: "Performance", icon: "gauge", shown: Rog.profiles.length > 0 },
@@ -336,12 +347,13 @@ export component AppWindow inherits KitWindow {
                 }
                 if Rog.ready && Rog.available && root.page == "overview": Scroll {
                     VerticalLayout {
+                        alignment: start;
                         padding: 24px;
                         spacing: 18px;
                         SectionTitle { title: "Overview"; text: Rog.model; }
-                        HorizontalLayout {
+                        if Rog.sensors.length > 0: HorizontalLayout {
                             spacing: 12px;
-                            for s in Rog.sensors: Tile { icon: s.icon; label: s.label; value: s.value; frac: s.frac; tint: s.tint; }
+                            for s in Rog.sensors: Tile { preferred-width: 1px; horizontal-stretch: 1; icon: s.icon; label: s.label; value: s.value; frac: s.frac; tint: s.tint; }
                         }
                         if Rog.profiles.length > 0: Card {
                             VerticalLayout {
@@ -353,6 +365,7 @@ export component AppWindow inherits KitWindow {
                                     for p in Rog.profiles: Rectangle {
                                         height: 64px;
                                         horizontal-stretch: 1;
+                                        preferred-width: 1px;
                                         border-radius: Theme.r-sm;
                                         background: Rog.profile == p.id ? Theme.accent : pta.has-hover ? Theme.sel : Theme.hover;
                                         animate background { duration: Theme.t(240); easing: spring(0); }
@@ -428,17 +441,18 @@ export component AppWindow inherits KitWindow {
                                             text: m.name;
                                             kind: Rog.gpu-mode == m.id ? "primary" : "secondary";
                                             horizontal-stretch: 1;
+                                            preferred-width: 1px;
                                             clicked => { Rog.set-gpu-mode(m.id); }
                                         }
                                     }
                                 }
                             }
                         }
-                        Rectangle { vertical-stretch: 1; }
                     }
                 }
                 if Rog.ready && Rog.available && root.page == "performance": Scroll {
                     VerticalLayout {
+                        alignment: start;
                         padding: 24px;
                         spacing: 14px;
                         SectionTitle {
@@ -491,11 +505,11 @@ export component AppWindow inherits KitWindow {
                                 }
                             }
                         }
-                        Rectangle { vertical-stretch: 1; }
                     }
                 }
                 if Rog.ready && Rog.available && root.page == "fans": Scroll {
                     VerticalLayout {
+                        alignment: start;
                         padding: 24px;
                         spacing: 14px;
                         SectionTitle {
@@ -538,11 +552,11 @@ export component AppWindow inherits KitWindow {
                             title: "No curves for this profile";
                             text: "asusd has no custom fan curves for it on this model.";
                         }
-                        Rectangle { vertical-stretch: 1; }
                     }
                 }
                 if Rog.ready && Rog.available && root.page == "keyboard": Scroll {
                     VerticalLayout {
+                        alignment: start;
                         padding: 24px;
                         spacing: 14px;
                         SectionTitle { title: "Keyboard lighting"; text: "The keyboard's backlight and its effect."; }
@@ -615,20 +629,20 @@ export component AppWindow inherits KitWindow {
                                 }
                             }
                         }
-                        Rectangle { vertical-stretch: 1; }
                     }
                 }
                 if Rog.ready && Rog.available && root.page == "battery": Scroll {
                     VerticalLayout {
+                        alignment: start;
                         padding: 24px;
                         spacing: 14px;
                         SectionTitle {
                             title: "Battery";
                             text: "Stopping the charge short of full is easier on the battery when the laptop lives on its charger.";
                         }
-                        HorizontalLayout {
+                        if Rog.battery.length > 0: HorizontalLayout {
                             spacing: 12px;
-                            for s in Rog.battery: Tile { icon: s.icon; label: s.label; value: s.value; frac: s.frac; tint: s.tint; }
+                            for s in Rog.battery: Tile { preferred-width: 1px; horizontal-stretch: 1; icon: s.icon; label: s.label; value: s.value; frac: s.frac; tint: s.tint; }
                         }
                         if Rog.has-charge-limit: Card {
                             VerticalLayout {
@@ -665,11 +679,11 @@ export component AppWindow inherits KitWindow {
                                 }
                             }
                         }
-                        Rectangle { vertical-stretch: 1; }
                     }
                 }
                 if Rog.ready && Rog.available && root.page == "graphics": Scroll {
                     VerticalLayout {
+                        alignment: start;
                         padding: 24px;
                         spacing: 14px;
                         SectionTitle {
@@ -685,6 +699,7 @@ export component AppWindow inherits KitWindow {
                                     for m in Rog.gpu-modes: Rectangle {
                                         height: 74px;
                                         horizontal-stretch: 1;
+                                        preferred-width: 1px;
                                         border-radius: Theme.r-sm;
                                         background: Rog.gpu-mode == m.id ? Theme.accent : gta.has-hover ? Theme.sel : Theme.hover;
                                         border-width: Rog.gpu-pending == m.id ? 2px : 0px;
@@ -718,11 +733,11 @@ export component AppWindow inherits KitWindow {
                                 Dim { text: "Switched through " + Rog.gpu-source + "."; }
                             }
                         }
-                        Rectangle { vertical-stretch: 1; }
                     }
                 }
                 if Rog.ready && Rog.available && root.page == "firmware": Scroll {
                     VerticalLayout {
+                        alignment: start;
                         padding: 24px;
                         spacing: 14px;
                         SectionTitle {
@@ -768,7 +783,6 @@ export component AppWindow inherits KitWindow {
                                 }
                             }
                         }
-                        Rectangle { vertical-stretch: 1; }
                     }
                 }
                 Toast { text: Rog.toast; bad: Rog.toast-bad; }

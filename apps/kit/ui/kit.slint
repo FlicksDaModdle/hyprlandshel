@@ -232,7 +232,7 @@ export component Slider inherits Rectangle {
         y: track.y;
         height: 4px;
         border-radius: 2px;
-        width: max(0px, min(1, root.frac)) * (root.width - 16px) + 8px;
+        width: max(0, min(1, root.frac)) * (root.width - 16px) + 8px;
         background: root.fill;
     }
     Rectangle {
@@ -332,7 +332,7 @@ export component Field inherits Rectangle {
     callback edited(string);
     callback accepted(string);
     callback escape();
-    public function focus() { input.focus(); }
+    public function focus-input() { input.focus(); }
     public function select-all() { input.select-all(); }
     height: 34px;
     min-width: 120px;
@@ -467,9 +467,8 @@ export component NavItem inherits Rectangle {
 }
 
 export component Scroll inherits Rectangle {
-    in-out property <length> viewport-y <=> f.viewport-y;
-    out property <length> viewport-height: f.viewport-height;
-    out property <length> visible-height: f.visible-height;
+    in-out property <length> viewport-y <=> f.content-y;
+    out property <length> viewport-height: f.content-height;
     in property <length> pad: 0px;
     clip: true;
     f := Flickable {
@@ -477,27 +476,27 @@ export component Scroll inherits Rectangle {
         height: parent.height;
         @children
     }
-    if f.viewport-height > f.height: Rectangle {
+    if f.content-height > f.height: Rectangle {
         x: parent.width - 8px;
         width: 4px;
         border-radius: 2px;
         background: bar.pressed || bar.has-hover ? Theme.ink3 : Theme.sel;
-        height: max(24px, f.height * f.height / f.viewport-height);
-        y: -f.viewport-y / (f.viewport-height - f.height) * (f.height - self.height);
+        height: max(24px, f.height * f.height / f.content-height);
+        y: -f.content-y / (f.content-height - f.height) * (f.height - self.height);
         bar := TouchArea {
             property <length> start;
             property <length> start-y;
             pointer-event(e) => {
                 if (e.kind == PointerEventKind.down) {
-                    self.start = f.viewport-y;
+                    self.start = f.content-y;
                     self.start-y = self.absolute-position.y + self.mouse-y;
                 }
             }
             moved => {
                 if (self.pressed) {
                     let dy = self.absolute-position.y + self.mouse-y - self.start-y;
-                    let k = (f.viewport-height - f.height) / max(1px, f.height - parent.height);
-                    f.viewport-y = max(f.height - f.viewport-height, min(0px, self.start - dy * k));
+                    let k = (f.content-height - f.height) / max(1px, f.height - parent.height);
+                    f.content-y = max(f.height - f.content-height, min(0px, self.start - dy * k));
                 }
             }
         }
@@ -674,29 +673,32 @@ export component Dialog inherits Rectangle {
 }
 
 // A message along the bottom that goes by itself (the app clears `text`).
+// Laid over the whole area it belongs to; the pill sits at its foot.
 export component Toast inherits Rectangle {
     in property <string> text;
     in property <bool> bad: false;
     property <bool> shown: text != "";
-    width: min(parent.width - 40px, t.preferred-width + 36px);
-    height: 38px;
-    x: (parent.width - self.width) / 2;
-    y: parent.height - (shown ? self.height + 22px : -10px);
-    opacity: shown ? 1 : 0;
-    animate y { duration: Theme.t(380); easing: spring(0.25); }
-    animate opacity { duration: Theme.t(200); easing: spring(0); }
-    border-radius: 19px;
-    background: Theme.dialog;
-    border-width: 1px;
-    border-color: bad ? Theme.danger : Theme.edge;
-    drop-shadow-blur: 16px;
-    drop-shadow-color: #00000059;
-    t := Text {
-        text: root.text;
-        color: root.bad ? Theme.danger : Theme.ink;
-        font-size: Theme.fs(12.5);
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    pill := Rectangle {
+        width: min(root.width - 40px, t.preferred-width + 36px);
+        height: 38px;
+        x: (root.width - self.width) / 2;
+        y: root.height - (root.shown ? self.height + 22px : -10px);
+        opacity: root.shown ? 1 : 0;
+        animate y { duration: Theme.t(380); easing: spring(0.25); }
+        animate opacity { duration: Theme.t(200); easing: spring(0); }
+        border-radius: 19px;
+        background: Theme.dialog;
+        border-width: 1px;
+        border-color: root.bad ? Theme.danger : Theme.edge;
+        drop-shadow-blur: 16px;
+        drop-shadow-color: #00000059;
+        t := Text {
+            text: root.text;
+            color: root.bad ? Theme.danger : Theme.ink;
+            font-size: Theme.fs(12.5);
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
     }
 }
 

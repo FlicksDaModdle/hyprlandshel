@@ -8,6 +8,7 @@ description = "ROG Control Center for Hyprshell: profiles, fans, keyboard, batte
 hyprshell-kit = { workspace = true }
 slint = { workspace = true }
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+serde = "1"
 
 [build-dependencies]
 slint-build = { workspace = true }

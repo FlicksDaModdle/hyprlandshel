@@ -605,22 +605,6 @@ fn opts(v: Vec<(i32, String)>) -> ModelRc<Opt> {
     ModelRc::new(VecModel::from(v.into_iter().map(|(id, name)| Opt { id, name: name.into() }).collect::<Vec<_>>()))
 }
 
-/// The line through a curve's points, in a 100×100 view box (temperature
-/// 20–100 °C across, fan 0–100 % up), with a flat lead-in and tail so it
-/// spans the chart.
-fn curve_path(temps: &[u8; 8], pwm: &[u8; 8]) -> String {
-    let pt = |i: usize| ((temps[i] as f64 - 20.0) / 80.0 * 100.0, 100.0 - pwm[i] as f64 / 255.0 * 100.0);
-    let (x0, y0) = pt(0);
-    let mut d = format!("M 0 {y0:.2} L {:.2} {y0:.2}", x0.max(0.0));
-    for i in 1..8 {
-        let (x, y) = pt(i);
-        d += &format!(" L {:.2} {y:.2}", x.clamp(0.0, 100.0));
-    }
-    let (_, yl) = pt(7);
-    d += &format!(" L 100 {yl:.2}");
-    d
-}
-
 fn fan_label(f: &str) -> String {
     match f {
         "CPU" | "cpu" => "CPU fan".into(),
@@ -637,7 +621,6 @@ fn to_curve(c: &CurveData) -> Curve {
         enabled: c.3,
         temps: ModelRc::new(VecModel::from(c.2.iter().map(|v| *v as i32).collect::<Vec<_>>())),
         pwm: ModelRc::new(VecModel::from(c.1.iter().map(|v| *v as i32).collect::<Vec<_>>())),
-        path: curve_path(&c.2, &c.1).into(),
     }
 }
 
@@ -823,6 +806,10 @@ fn main() {
     kit::setup!(ui, "hyprshell-rog");
     let model = model_name();
     ui.global::<Rog>().set_model(model.into());
+    // HYPRSHELL_ROG_PAGE=fans opens on a page (for screenshots and tests).
+    if let Ok(p) = std::env::var("HYPRSHELL_ROG_PAGE") {
+        ui.set_page(p.into());
+    }
 
     let (tx, rx) = channel::<Option<Cmd>>();
     let weak = ui.as_weak();
@@ -961,16 +948,9 @@ fn main() {
         let lo_p = if i > 0 { pwms[i - 1] } else { 0 };
         let hi_p = if i + 1 < pwms.len() { pwms[i + 1] } else { 255 };
         pwms[i] = pwm.clamp(lo_p, hi_p.max(lo_p));
-        let mut t8 = [0u8; 8];
-        let mut p8 = [0u8; 8];
-        for k in 0..8.min(temps.len()) {
-            t8[k] = temps[k].clamp(0, 255) as u8;
-            p8[k] = pwms[k].clamp(0, 255) as u8;
-        }
         let next = Curve {
             temps: ModelRc::new(VecModel::from(temps)),
             pwm: ModelRc::new(VecModel::from(pwms)),
-            path: curve_path(&t8, &p8).into(),
             ..c
         };
         slint::Model::set_row_data(&curves, ci as usize, next);

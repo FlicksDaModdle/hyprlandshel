@@ -1535,6 +1535,7 @@ name = "hyprshell-rog"
 version = "0.1.0"
 dependencies = [
  "hyprshell-kit",
+ "serde",
  "slint",
  "slint-build",
  "zbus",
