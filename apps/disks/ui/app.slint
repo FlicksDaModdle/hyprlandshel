@@ -1,0 +1,388 @@
+// Disks: every drive, what is on it, how healthy and how fast it is, and
+// the things a person does with partitions — through UDisks2, which asks
+// for a password itself where one is needed.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Sidebar, NavItem, Card, Caption, Label, Dim, Heading,
+         Button, IconButton, Seg, Field, Scroll, Empty, Toast, Rule, Icon, Dialog, Badge, Spinner,
+         Meter, KeyValue, Slider } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct Drive {
+    path: string,
+    name: string,
+    size: string,
+    kind: string,          // "NVMe SSD", "SSD", "Hard disk", "USB drive", "SD card"
+    icon: string,
+    removable: bool,
+    can-eject: bool,
+    can-power-off: bool,
+}
+
+export struct KV { key: string, value: string }
+
+export struct Part {
+    path: string,          // the block's object path, or "" for free space
+    device: string,
+    title: string,         // label, or what it is
+    fs: string,            // "ext4", "btrfs", "swap", "crypto_LUKS", "" (free)
+    size: string,
+    offset-frac: float,    // where it sits on the drive, 0..1
+    size-frac: float,
+    used-frac: float,      // -1 when not known
+    used: string,
+    mount: string,
+    mounted: bool,
+    can-mount: bool,
+    locked: bool,          // an encrypted volume not unlocked
+    unlocked: bool,        // an encrypted volume that is
+    system: bool,          // /, /boot, /home, active swap: hands off
+    free: bool,
+    tint: color,
+    offset: string,        // bytes, for creating a partition in free space
+    free-bytes: string,
+}
+
+export global Disks {
+    in property <bool> ready;
+    in property <string> problem;
+    in property <[Drive]> drives;
+    in-out property <int> drive: 0;
+    in property <string> drive-summary;
+    in property <[KV]> drive-info;
+    in property <bool> health-known;
+    in property <bool> health-good;
+    in property <string> health-title;
+    in property <[KV]> health;
+    in property <[Part]> parts;
+    in-out property <int> part: -1;
+    in property <bool> busy;
+
+    in property <bool> bench-running;
+    in property <float> bench-progress;
+    in property <string> bench-read;
+    in property <string> bench-access;
+    in property <string> bench-note;
+
+    callback pick-drive(int);
+    callback mount(string);
+    callback unmount(string);
+    callback unlock(string, string);
+    callback lock(string);
+    callback rename(string, string);
+    callback check(string);
+    callback format(string, string, string);
+    callback delete(string);
+    callback create(string, string, float, string, string);   // drive, offset, fraction of free, type, label
+    callback eject(string);
+    callback power-off(string);
+    callback benchmark(string);
+    callback open(string);
+
+    in property <string> toast;
+    in property <bool> toast-bad;
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Disks";
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    // UDisks said something changed (main.rs reads everything again).
+    callback changed();
+    property <Drive> cur: Disks.drive >= 0 && Disks.drive < Disks.drives.length ? Disks.drives[Disks.drive] : { path: "" };
+    property <Part> sel: Disks.part >= 0 && Disks.part < Disks.parts.length ? Disks.parts[Disks.part] : { path: "", free: false };
+    property <bool> asking-format;
+    property <bool> asking-delete;
+    property <bool> asking-unlock;
+    property <bool> asking-rename;
+    property <bool> asking-create;
+    property <string> pass;
+    property <string> label;
+    property <int> fs-choice: 0;
+    property <float> create-frac: 1;
+    property <[string]> fs-names: ["ext4", "btrfs", "exFAT", "NTFS", "FAT32"];
+    property <[string]> fs-ids: ["ext4", "btrfs", "exfat", "ntfs", "vfat"];
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Disks";
+            app-icon: "disk";
+            subtitle: root.cur.name;
+            if Disks.busy: VerticalLayout { alignment: center; Spinner {} }
+        }
+        Rule {}
+        HorizontalLayout {
+            Sidebar {
+                width: 230px;
+                for d[i] in Disks.drives: Rectangle {
+                    height: 52px;
+                    border-radius: Theme.r-sm;
+                    background: Disks.drive == i ? Theme.sel : da.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 10px;
+                        spacing: 11px;
+                        VerticalLayout { alignment: center; Icon { name: d.icon; size: 20px; ink: Disks.drive == i ? Theme.ink : Theme.ink2; } }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 1px;
+                            Text { text: d.name; color: Theme.ink; font-size: Theme.fs(12.5); font-weight: Disks.drive == i ? 600 : 400; overflow: elide; }
+                            Text { text: d.size + "  ·  " + d.kind; color: Theme.ink3; font-size: Theme.fs(11); overflow: elide; }
+                        }
+                    }
+                    da := TouchArea { mouse-cursor: pointer; clicked => { Disks.pick-drive(i); } }
+                }
+                Rectangle { vertical-stretch: 1; }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                if !Disks.ready: VerticalLayout { alignment: center; HorizontalLayout { alignment: center; Spinner {} } }
+                if Disks.ready && Disks.problem != "": Empty {
+                    icon: "disk";
+                    title: "UDisks isn't answering";
+                    text: Disks.problem;
+                }
+                if Disks.ready && Disks.problem == "" && root.cur.path != "": Scroll {
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 24px;
+                        spacing: 16px;
+                        // The drive.
+                        HorizontalLayout {
+                            spacing: 14px;
+                            Rectangle {
+                                width: 52px;
+                                height: 52px;
+                                border-radius: Theme.r;
+                                background: Theme.hover;
+                                Icon { x: 13px; y: 13px; name: root.cur.icon; size: 26px; }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 3px;
+                                horizontal-stretch: 1;
+                                Heading { text: root.cur.name; overflow: elide; }
+                                Dim { text: Disks.drive-summary; }
+                            }
+                            if root.cur.can-eject || root.cur.can-power-off: VerticalLayout {
+                                alignment: center;
+                                Button { icon: "eject"; text: root.cur.can-power-off ? "Power off" : "Eject"; clicked => { if (root.cur.can-power-off) { Disks.power-off(root.cur.path); } else { Disks.eject(root.cur.path); } } }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            // Health.
+                            Card {
+                                horizontal-stretch: 1;
+                                preferred-width: 1px;
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 8px;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Icon { name: "pulse"; size: 16px; }
+                                        Caption { text: "HEALTH"; vertical-alignment: center; horizontal-stretch: 1; }
+                                        if Disks.health-known: Badge { text: Disks.health-good ? "Good" : "Attention"; tint: Disks.health-good ? Theme.ok : Theme.danger; }
+                                    }
+                                    Text { text: Disks.health-title; color: Theme.ink; font-size: Theme.fs(14); font-weight: 600; wrap: word-wrap; }
+                                    for h in Disks.health: KeyValue { key: h.key; value: h.value; key-width: 150px; }
+                                }
+                            }
+                            // Speed.
+                            Card {
+                                horizontal-stretch: 1;
+                                preferred-width: 1px;
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 8px;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Icon { name: "speed"; size: 16px; }
+                                        Caption { text: "SPEED"; vertical-alignment: center; horizontal-stretch: 1; }
+                                        Button {
+                                            small: true;
+                                            text: Disks.bench-running ? "Measuring…" : "Measure";
+                                            enabled: !Disks.bench-running;
+                                            clicked => { Disks.benchmark(root.cur.path); }
+                                        }
+                                    }
+                                    if Disks.bench-running: Meter { value: Disks.bench-progress; }
+                                    KeyValue { key: "Reading"; value: Disks.bench-read != "" ? Disks.bench-read : "—"; key-width: 150px; }
+                                    KeyValue { key: "Time to find data"; value: Disks.bench-access != "" ? Disks.bench-access : "—"; key-width: 150px; }
+                                    Text { text: Disks.bench-note; color: Theme.ink3; font-size: Theme.fs(11.5); wrap: word-wrap; }
+                                }
+                            }
+                        }
+                        // The map: each partition as wide as its share.
+                        Caption { text: "VOLUMES"; }
+                        Rectangle {
+                            height: 64px;
+                            border-radius: Theme.r-sm;
+                            background: Theme.hover;
+                            clip: true;
+                            for p[i] in Disks.parts: Rectangle {
+                                x: parent.width * p.offset-frac;
+                                width: max(6px, parent.width * p.size-frac - 2px);
+                                height: parent.height;
+                                background: p.free ? transparent : Disks.part == i ? p.tint : p.tint.transparentize(0.35);
+                                border-width: Disks.part == i ? 2px : p.free ? 1px : 0px;
+                                border-color: Disks.part == i ? Theme.ink : Theme.edge;
+                                border-radius: 4px;
+                                animate background { duration: Theme.t(200); easing: spring(0); }
+                                if !p.free && p.used-frac >= 0: Rectangle {
+                                    x: 0;
+                                    y: parent.height - 6px;
+                                    height: 6px;
+                                    width: parent.width * p.used-frac;
+                                    background: #00000055;
+                                }
+                                if parent.width * p.size-frac > 70px: VerticalLayout {
+                                    padding: 8px;
+                                    spacing: 1px;
+                                    alignment: center;
+                                    Text { text: p.title; color: p.free ? Theme.ink3 : #ffffff; font-size: Theme.fs(11.5); font-weight: 600; overflow: elide; }
+                                    Text { text: p.size + (p.fs != "" ? "  " + p.fs : ""); color: p.free ? Theme.ink3 : #ffffffcc; font-size: Theme.fs(10.5); overflow: elide; }
+                                }
+                                TouchArea { mouse-cursor: pointer; clicked => { Disks.part = i; } }
+                            }
+                        }
+                        // The list, and what can be done with the one picked.
+                        for p[i] in Disks.parts: Rectangle {
+                            height: 54px;
+                            border-radius: Theme.r-sm;
+                            background: Disks.part == i ? Theme.sel : pa.has-hover ? Theme.hover : transparent;
+                            pa := TouchArea { clicked => { Disks.part = i; } }
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                spacing: 12px;
+                                VerticalLayout { alignment: center; Rectangle { width: 12px; height: 12px; border-radius: 3px; background: p.free ? transparent : p.tint; border-width: p.free ? 1px : 0px; border-color: Theme.ink3; } }
+                                VerticalLayout {
+                                    alignment: center;
+                                    spacing: 2px;
+                                    horizontal-stretch: 1;
+                                    Text { text: p.title; color: Theme.ink; font-weight: 600; font-size: Theme.fs(13); overflow: elide; }
+                                    Text {
+                                        text: p.free ? "Unallocated" : (p.device + "  ·  " + (p.fs != "" ? p.fs : "no file system") + (p.mounted ? "  ·  " + p.mount : ""));
+                                        color: Theme.ink3;
+                                        font-size: Theme.fs(11.5);
+                                        overflow: elide;
+                                    }
+                                }
+                                if p.used-frac >= 0: VerticalLayout {
+                                    alignment: center;
+                                    width: 150px;
+                                    spacing: 4px;
+                                    Meter { value: p.used-frac; fill: p.used-frac > 0.9 ? Theme.danger : Theme.accent; }
+                                    Text { text: p.used; color: Theme.ink3; font-size: Theme.fs(11); horizontal-alignment: right; }
+                                }
+                                if p.system: VerticalLayout { alignment: center; Badge { text: "System"; tint: Theme.ink3; } }
+                                if p.locked: VerticalLayout { alignment: center; Badge { text: "Locked"; tint: Theme.warn; } }
+                                Text { text: p.size; color: Theme.ink2; vertical-alignment: center; width: 76px; horizontal-alignment: right; }
+                            }
+                        }
+                        if root.sel.path != "" || root.sel.free: Card {
+                            HorizontalLayout {
+                                padding: 12px;
+                                spacing: 8px;
+                                alignment: start;
+                                if root.sel.free: Button { icon: "plus"; text: "New partition…"; kind: "primary"; clicked => { root.label = ""; root.fs-choice = 0; root.create-frac = 1; root.asking-create = true; } }
+                                if root.sel.can-mount && !root.sel.mounted: Button { icon: "folderOpen"; text: "Mount"; kind: "primary"; clicked => { Disks.mount(root.sel.path); } }
+                                if root.sel.mounted: Button { icon: "folderOpen"; text: "Open"; clicked => { Disks.open(root.sel.mount); } }
+                                if root.sel.mounted && !root.sel.system: Button { icon: "eject"; text: "Unmount"; clicked => { Disks.unmount(root.sel.path); } }
+                                if root.sel.locked: Button { icon: "unlock"; text: "Unlock…"; kind: "primary"; clicked => { root.pass = ""; root.asking-unlock = true; } }
+                                if root.sel.unlocked && !root.sel.system: Button { icon: "lock"; text: "Lock"; clicked => { Disks.lock(root.sel.path); } }
+                                if root.sel.can-mount: Button { icon: "pencil"; text: "Rename…"; clicked => { root.label = root.sel.title; root.asking-rename = true; } }
+                                if root.sel.can-mount && !root.sel.mounted: Button { icon: "checkSquare"; text: "Check"; clicked => { Disks.check(root.sel.path); } }
+                                if !root.sel.free && !root.sel.system: Button { icon: "refresh"; text: "Format…"; clicked => { root.label = ""; root.fs-choice = 0; root.asking-format = true; } }
+                                if !root.sel.free && !root.sel.system: Button { icon: "trash"; text: "Delete…"; kind: "danger"; clicked => { root.asking-delete = true; } }
+                                if root.sel.system: Dim { text: "The running system uses this volume, so it can't be changed from here."; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                }
+                Toast { text: Disks.toast; bad: Disks.toast-bad; }
+            }
+        }
+    }
+
+    Dialog {
+        open: root.asking-unlock;
+        title: "Unlock " + root.sel.title;
+        text: "Its passphrase:";
+        dismissed => { root.asking-unlock = false; root.pass = ""; }
+        Field {
+            password: true;
+            text <=> root.pass;
+            accepted(t) => { Disks.unlock(root.sel.path, t); root.asking-unlock = false; root.pass = ""; }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-unlock = false; root.pass = ""; } }
+            Button { text: "Unlock"; kind: "primary"; clicked => { Disks.unlock(root.sel.path, root.pass); root.asking-unlock = false; root.pass = ""; } }
+        }
+    }
+    Dialog {
+        open: root.asking-rename;
+        title: "Rename " + root.sel.title;
+        dismissed => { root.asking-rename = false; }
+        Field {
+            text <=> root.label;
+            accepted(t) => { Disks.rename(root.sel.path, t); root.asking-rename = false; }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-rename = false; } }
+            Button { text: "Rename"; kind: "primary"; clicked => { Disks.rename(root.sel.path, root.label); root.asking-rename = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-format;
+        title: "Format " + root.sel.title + "?";
+        text: "Everything on it is erased. Pick what it should hold: ext4 or btrfs for Linux, exFAT for a drive shared with Windows and Macs, NTFS for Windows, FAT32 for old devices.";
+        card-width: 480px;
+        dismissed => { root.asking-format = false; }
+        Seg { options: root.fs-names; current <=> root.fs-choice; }
+        Field { placeholder: "Name (optional)"; text <=> root.label; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-format = false; } }
+            Button { text: "Erase and format"; kind: "danger"; clicked => { Disks.format(root.sel.path, root.fs-ids[root.fs-choice], root.label); root.asking-format = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-create;
+        title: "New partition";
+        text: "In " + root.sel.size + " of free space.";
+        card-width: 480px;
+        dismissed => { root.asking-create = false; }
+        HorizontalLayout {
+            spacing: 10px;
+            Slider { horizontal-stretch: 1; minimum: 0.01; maximum: 1; step: 0.01; value <=> root.create-frac; }
+            Text { text: round(root.create-frac * 100) + "%"; color: Theme.ink; vertical-alignment: center; width: 44px; }
+        }
+        Seg { options: root.fs-names; current <=> root.fs-choice; }
+        Field { placeholder: "Name (optional)"; text <=> root.label; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-create = false; } }
+            Button { text: "Create"; kind: "primary"; clicked => { Disks.create(root.cur.path, root.sel.offset, root.create-frac, root.fs-ids[root.fs-choice], root.label); root.asking-create = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-delete;
+        title: "Delete " + root.sel.title + "?";
+        text: "The partition and everything on it go. This can't be undone.";
+        dismissed => { root.asking-delete = false; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-delete = false; } }
+            Button { text: "Delete"; kind: "danger"; clicked => { Disks.delete(root.sel.path); root.asking-delete = false; } }
+        }
+    }
+}

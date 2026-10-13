@@ -1522,6 +1522,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48ce8546b993eaf241d69ded33b1be6d205dd9857ec879d9d18bd05d3676e144"
 
 [[package]]
+name = "hyprshell-disks"
+version = "0.1.0"
+dependencies = [
+ "hyprshell-kit",
+ "libc",
+ "serde",
+ "slint",
+ "slint-build",
+ "zbus",
+]
+
+[[package]]
 name = "hyprshell-kit"
 version = "0.1.0"
 dependencies = [
