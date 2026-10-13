@@ -38,6 +38,10 @@ Scope {
     readonly property bool preview: !Greetd.available
 
     property string hostname: ""
+
+    // The screen the card is on, by output name: the one the pointer was
+    // last moved on or clicked. Empty until then (shell.qml picks one).
+    property string pointerScreen: ""
     FileView {
         path: "/etc/hostname"
         printErrors: false

@@ -139,6 +139,12 @@ Item {
         anchors.fill: parent
         focus: view.primary
         Component.onCompleted: if (view.primary) forceActiveFocus()
+        // The greeter's card moves to whichever screen you point at, and
+        // the typing comes with it.
+        Connections {
+            target: view
+            function onPrimaryChanged() { if (view.primary) keys.forceActiveFocus(); }
+        }
 
         Keys.onPressed: event => {
             const a = view.auth;

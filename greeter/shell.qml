@@ -39,9 +39,35 @@ ShellRoot {
         onLoadFailed: there = false
     }
 
-    // The card goes on the first screen Hyprland lists — the one its own
-    // monitor order puts first — and the rest show the time.
-    readonly property var primaryScreen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
+    // Which screen has the card; the rest show the time.
+    //
+    // It used to be simply the first screen Hyprland lists, which on a
+    // laptop is its own panel — so with a monitor plugged in, the card was
+    // on the laptop (lid shut, or just not the screen being looked at) and
+    // the monitor in front of you showed a clock and nothing to type into.
+    //
+    // Now: an external monitor over the laptop's own panel (the biggest, if
+    // there are several), and after that wherever you move the pointer or
+    // click — the card, and the keyboard with it, come to that screen.
+    function isInternal(s) { return /^(eDP|LVDS|DSI)/i.test(String(s.name || "")); }
+    readonly property var defaultScreen: {
+        const all = Quickshell.screens;
+        if (all.length === 0) return null;
+        const outside = all.filter(s => !root.isInternal(s));
+        const pool = outside.length > 0 ? outside : all;
+        let best = pool[0];
+        for (const s of pool)
+            if (s.width * s.height > best.width * best.height) best = s;
+        return best;
+    }
+    readonly property var primaryScreen: {
+        const want = greeter.pointerScreen;
+        if (want !== "") {
+            const s = Quickshell.screens.find(x => x.name === want);
+            if (s) return s;
+        }
+        return root.defaultScreen;
+    }
 
     // A layer-shell window on Wayland, which is where greetd runs it; an
     // ordinary one anywhere else, for previews.
@@ -68,6 +94,8 @@ ShellRoot {
                         greeter: greeter,
                         primary: slot.modelData === root.primaryScreen
                     });
+                    if (slot.window)
+                        slot.window.primary = Qt.binding(() => slot.modelData === root.primaryScreen);
                 }
                 Component.onDestruction: if (slot.window) slot.window.destroy()
             }

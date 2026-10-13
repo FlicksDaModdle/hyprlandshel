@@ -59,6 +59,9 @@ screen; Escape on an empty field leaves. Nothing logs in from a preview.
 ## Using it
 
 - **Type your password** — there is no field to click first — and Enter.
+- **More than one screen:** the card is on an external monitor rather than
+  the laptop's own panel; move the mouse onto another screen, or click it,
+  and the card (and your typing) go there.
 - **Someone else:** the arrows beside the name, or Up and Down.
 - **Another session:** click the session under the card, or Tab.
 - **The eye** shows what you typed, for when Caps Lock is on.
@@ -76,7 +79,7 @@ greetd  →  Hyprland, /etc/hyprshell-greeter/hyprland.lua
 ```
 
 ```
-shell.qml          one window per screen; the card on the first
+shell.qml          one window per screen; the card on the one you point at
 GreeterState.qml   users, sessions, the choice remembered, and greetd
 Surface.qml        a screen: the shell's LoginView, fed the greeter's state
 GreeterWindow.qml  the window, as a layer holding the keyboard (Wayland)
