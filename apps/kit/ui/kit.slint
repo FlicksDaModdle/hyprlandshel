@@ -372,8 +372,11 @@ export component Field inherits Rectangle {
                 }
             }
             if root.text == "" : Text {
+                x: 0;
+                width: parent.width;
                 y: (parent.height - self.height) / 2;
                 text: root.placeholder;
+                overflow: elide;
                 color: Theme.ink3;
                 font-size: Theme.fs(13);
             }
@@ -815,5 +818,73 @@ export component Sidebar inherits Rectangle {
         padding-right: 9px;
         spacing: 2px;
         @children
+    }
+}
+
+// A multi-line text editor in the shell's look: wraps, scrolls to keep the
+// cursor in sight, and tells the app where the cursor and selection are
+// (byte offsets), so formatting can be applied to what is selected.
+export component Editor inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder;
+    in property <length> font-size: Theme.fs(14);
+    in property <string> font-family: Theme.font-family;
+    in property <length> pad: 0px;
+    in property <bool> read-only: false;
+    out property <int> cursor: input.cursor-position-byte-offset;
+    out property <int> anchor: input.anchor-position-byte-offset;
+    out property <bool> has-focus: input.has-focus;
+    callback edited(string);
+    callback key(KeyEvent) -> EventResult;
+    public function set-selection(anchor: int, cursor: int) { input.set-selection-offsets(anchor, cursor); }
+    public function focus-input() { input.focus(); }
+    clip: true;
+    forward-focus: input;
+    f := Flickable {
+        width: parent.width;
+        height: parent.height;
+        content-width: self.width;
+        content-height: max(self.height, input.preferred-height + 2 * root.pad);
+        input := TextInput {
+            x: root.pad;
+            y: root.pad;
+            width: parent.width - 2 * root.pad;
+            height: max(self.preferred-height, f.height - 2 * root.pad);
+            single-line: false;
+            wrap: word-wrap;
+            read-only: root.read-only;
+            color: Theme.ink;
+            selection-background-color: Theme.accent.transparentize(0.6);
+            font-size: root.font-size;
+            font-family: root.font-family;
+            page-height: f.height;
+            edited => { root.edited(self.text); }
+            key-pressed(e) => { root.key(e) }
+            cursor-position-changed(c) => {
+                let line = root.font-size * 1.6;
+                if (c.y + root.pad + f.content-y < 0px) {
+                    f.content-y = min(0px, -(c.y + root.pad) + 8px);
+                } else if (c.y + root.pad + line + f.content-y > f.height) {
+                    f.content-y = max(f.height - f.content-height, f.height - c.y - root.pad - line - 8px);
+                }
+            }
+        }
+    }
+    if root.text == "": Text {
+        x: root.pad;
+        y: root.pad;
+        width: parent.width - 2 * root.pad;
+        text: root.placeholder;
+        color: Theme.ink3;
+        font-size: root.font-size;
+        font-family: root.font-family;
+    }
+    if f.content-height > f.height: Rectangle {
+        x: parent.width - 8px;
+        width: 4px;
+        border-radius: 2px;
+        background: Theme.sel;
+        height: max(24px, f.height * f.height / f.content-height);
+        y: -f.content-y / (f.content-height - f.height) * (f.height - self.height);
     }
 }

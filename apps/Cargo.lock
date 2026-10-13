@@ -1531,6 +1531,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyprshell-notes"
+version = "0.1.0"
+dependencies = [
+ "hyprshell-kit",
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "hyprshell-rog"
 version = "0.1.0"
 dependencies = [

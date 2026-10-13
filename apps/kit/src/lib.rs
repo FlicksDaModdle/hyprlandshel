@@ -159,3 +159,114 @@ pub fn resize_direction(dir: i32) -> slint::winit_030::winit::window::ResizeDire
         _ => R::NorthWest,
     }
 }
+
+/// Local time, broken down: (year, month 1–12, day, hour, minute, weekday
+/// 0 = Sunday). Through libc's localtime_r, without a date crate.
+pub fn local(epoch: i64) -> (i32, u32, u32, u32, u32, u32) {
+    #[repr(C)]
+    struct Tm {
+        sec: i32, min: i32, hour: i32, mday: i32, mon: i32, year: i32, wday: i32, yday: i32, isdst: i32,
+        gmtoff: i64, zone: *const i8,
+    }
+    extern "C" {
+        fn localtime_r(t: *const i64, out: *mut Tm) -> *mut Tm;
+    }
+    let mut tm: Tm = unsafe { std::mem::zeroed() };
+    unsafe { localtime_r(&epoch, &mut tm) };
+    (tm.year + 1900, (tm.mon + 1) as u32, tm.mday as u32, tm.hour as u32, tm.min as u32, tm.wday as u32)
+}
+
+pub fn now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/// A moment the way a list says it: 14:05 today, Yesterday, Tuesday this
+/// week, 12 Oct this year, 12 Oct 2024 before that.
+pub fn when(epoch: i64) -> String {
+    let (y, m, d, hh, mm, wd) = local(epoch);
+    let (ny, nm, nd, _, _, _) = local(now());
+    let days_ago = {
+        let day = |e: i64| { let (y, m, d, ..) = local(e); (y, m, d) };
+        let mut n = 0;
+        let mut t = now();
+        while n < 7 && day(t) != (y, m, d) {
+            t -= 86400;
+            n += 1;
+        }
+        n
+    };
+    if (y, m, d) == (ny, nm, nd) {
+        format!("{hh:02}:{mm:02}")
+    } else if days_ago == 1 {
+        "Yesterday".into()
+    } else if days_ago < 7 {
+        DAYS[wd as usize % 7].into()
+    } else if y == ny {
+        format!("{d} {}", MONTHS[(m as usize + 11) % 12])
+    } else {
+        format!("{d} {} {y}", MONTHS[(m as usize + 11) % 12])
+    }
+}
+
+/// Move a file or folder to the desktop's Trash (the freedesktop.org
+/// spec: the Files app and every file manager can put it back).
+pub fn trash(path: &std::path::Path) -> std::io::Result<()> {
+    let base = data_dir().join("Trash");
+    let files = base.join("files");
+    let info = base.join("info");
+    std::fs::create_dir_all(&files)?;
+    std::fs::create_dir_all(&info)?;
+    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "item".into());
+    let mut pick = name.clone();
+    let mut n = 1;
+    while files.join(&pick).exists() || info.join(format!("{pick}.trashinfo")).exists() {
+        n += 1;
+        pick = match name.rsplit_once('.') {
+            Some((stem, ext)) if !stem.is_empty() => format!("{stem} {n}.{ext}"),
+            _ => format!("{name} {n}"),
+        };
+    }
+    let abs = std::fs::canonicalize(path)?;
+    let enc: String = abs
+        .to_string_lossy()
+        .bytes()
+        .map(|b| if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect();
+    let (y, mo, d, h, mi, _) = local(now());
+    let s = now() % 60;
+    std::fs::write(
+        info.join(format!("{pick}.trashinfo")),
+        format!("[Trash Info]\nPath={enc}\nDeletionDate={y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}\n"),
+    )?;
+    if std::fs::rename(&abs, files.join(&pick)).is_err() {
+        // Another file system: copy, then remove.
+        if abs.is_dir() {
+            copy_dir(&abs, &files.join(&pick))?;
+            std::fs::remove_dir_all(&abs)?;
+        } else {
+            std::fs::copy(&abs, files.join(&pick))?;
+            std::fs::remove_file(&abs)?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)? {
+        let e = e?;
+        let p = e.path();
+        if p.is_dir() { copy_dir(&p, &to.join(e.file_name()))?; } else { std::fs::copy(&p, to.join(e.file_name()))?; }
+    }
+    Ok(())
+}
+
+/// Write a file whole or not at all: to a sibling first, then renamed over.
+pub fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension(format!("{}.tmp", path.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default()));
+    std::fs::write(&tmp, data)?;
+    std::fs::rename(&tmp, path)
+}

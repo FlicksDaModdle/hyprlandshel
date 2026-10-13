@@ -1,0 +1,507 @@
+// Notes: plain Markdown files in ~/Notes — folders are folders — written
+// and read in the shell's look, with a live preview.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Sidebar, NavItem, Card, Caption, Label, Dim, Heading,
+         Button, IconButton, Seg, Field, Scroll, Empty, Toast, Rule, Icon, Dialog, Menu, MenuEntry,
+         Editor } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct Folder { path: string, name: string, count: int }
+
+export struct NoteRow {
+    path: string,
+    title: string,
+    snippet: string,
+    when: string,
+    pinned: bool,
+    folder: string,
+}
+
+// One block of the preview. kind: "h1" "h2" "h3" "p" "quote" "code"
+// "bullet" "number" "task" "rule".
+export struct Block {
+    kind: string,
+    text: string,
+    styled: styled-text,
+    checked: bool,
+    line: int,
+    level: int,
+    marker: string,
+}
+
+export global Notes {
+    in property <[Folder]> folders;
+    in property <int> all-count;
+    in property <int> pinned-count;
+    // "" all, "@pinned", or a folder's path
+    in-out property <string> place: "";
+    in property <[NoteRow]> notes;
+    in-out property <string> search;
+    in property <string> current;          // the open note's path
+    in property <string> current-title;
+    in property <bool> current-pinned;
+    in-out property <string> body;
+    in property <[Block]> preview;
+    in property <string> status;           // "Saved", "Saving…"
+    in property <int> words;
+    in property <string> root-dir;
+
+    callback pick-place(string);
+    callback open(string);
+    callback new-note();
+    callback new-folder(string);
+    callback edited(string);
+    callback toggle-pin(string);
+    callback delete-note(string);
+    callback move-note(string, string);
+    callback rename-folder(string, string);
+    callback delete-folder(string);
+    callback toggle-task(int);
+    callback searched(string);
+    callback show-folder();
+    // Formatting: kind, text, anchor, cursor → the app rewrites the text and
+    // says where the selection goes (format-done).
+    callback format(string, string, int, int);
+
+    in property <string> toast;
+}
+
+component NoteItem inherits Rectangle {
+    in property <NoteRow> note;
+    in property <bool> chosen;
+    callback clicked();
+    callback menu(length, length);
+    height: lay.preferred-height;
+    border-radius: Theme.r-sm;
+    background: chosen ? Theme.sel : ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: Theme.t(180); easing: spring(0); }
+    lay := VerticalLayout {
+        padding: 10px;
+        padding-left: 12px;
+        spacing: 3px;
+        HorizontalLayout {
+            spacing: 6px;
+            Text {
+                text: root.note.title;
+                color: Theme.ink;
+                font-size: Theme.fs(13.5);
+                font-weight: 600;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            if root.note.pinned: VerticalLayout { alignment: center; Icon { name: "pin"; size: 13px; ink: Theme.accent; } }
+        }
+        Text {
+            text: root.note.snippet;
+            color: Theme.ink3;
+            font-size: Theme.fs(12);
+            wrap: word-wrap;
+            max-lines: 2;
+            overflow: elide;
+        }
+        Text {
+            text: root.note.when + (root.note.folder != "" ? "  ·  " + root.note.folder : "");
+            color: Theme.ink3;
+            font-size: Theme.fs(11);
+            overflow: elide;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                root.menu(self.mouse-x, self.mouse-y);
+            }
+        }
+    }
+}
+
+component PreviewBlock inherits Rectangle {
+    in property <Block> b;
+    callback toggled(int);
+    height: lay.preferred-height;
+    lay := HorizontalLayout {
+        padding-left: (root.b.kind == "bullet" || root.b.kind == "number" || root.b.kind == "task") ? root.b.level * 22px : 0px;
+        spacing: 8px;
+        if root.b.kind == "quote": Rectangle { width: 3px; border-radius: 2px; background: Theme.accent; }
+        if root.b.kind == "bullet" || root.b.kind == "number": Text {
+            text: root.b.marker;
+            color: Theme.accent;
+            font-size: Theme.fs(14);
+            font-weight: 600;
+            min-width: 14px;
+        }
+        if root.b.kind == "task": Rectangle {
+            width: 18px;
+            height: 18px;
+            y: 2px;
+            border-radius: 5px;
+            border-width: root.b.checked ? 0px : 1.5px;
+            border-color: Theme.ink3;
+            background: root.b.checked ? Theme.accent : transparent;
+            animate background { duration: Theme.t(200); easing: spring(0.3); }
+            if root.b.checked: Icon { x: 2px; y: 2px; name: "check"; size: 14px; ink: Theme.ink-on-accent; acc: Theme.ink-on-accent; }
+            TouchArea { mouse-cursor: pointer; clicked => { root.toggled(root.b.line); } }
+        }
+        if root.b.kind == "h1" || root.b.kind == "h2" || root.b.kind == "h3": Text {
+            text: root.b.text;
+            wrap: word-wrap;
+            color: Theme.ink;
+            font-weight: 700;
+            font-size: root.b.kind == "h1" ? Theme.fs(24) : root.b.kind == "h2" ? Theme.fs(19) : Theme.fs(16);
+            horizontal-stretch: 1;
+        }
+        if root.b.kind == "code": Rectangle {
+            horizontal-stretch: 1;
+            height: code.preferred-height + 20px;
+            border-radius: Theme.r-sm;
+            background: Theme.hover;
+            border-width: 1px;
+            border-color: Theme.rule;
+            code := Text {
+                x: 12px;
+                y: 10px;
+                width: parent.width - 24px;
+                text: root.b.text;
+                wrap: word-wrap;
+                font-family: "monospace";
+                font-size: Theme.fs(12.5);
+                color: Theme.ink;
+            }
+        }
+        if root.b.kind == "rule": Rectangle {
+            horizontal-stretch: 1;
+            height: 17px;
+            Rectangle { y: 8px; height: 1px; background: Theme.rule; }
+        }
+        if root.b.kind == "p" || root.b.kind == "quote" || root.b.kind == "bullet" || root.b.kind == "number" || root.b.kind == "task": StyledText {
+            horizontal-stretch: 1;
+            text: root.b.styled;
+            default-color: root.b.kind == "quote" || (root.b.kind == "task" && root.b.checked) ? Theme.ink2 : Theme.ink;
+            default-font-size: Theme.fs(14);
+            default-font-family: Theme.font-family;
+            link-color: Theme.accent;
+        }
+    }
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Notes";
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    in-out property <int> view: 0;   // 0 write, 1 preview, 2 both
+    property <string> menu-for;
+    property <string> folder-menu-for;
+    property <bool> asking-folder: false;
+    property <string> new-folder-name;
+    property <bool> asking-delete: false;
+    property <bool> asking-move: false;
+    property <string> renaming-folder;
+    property <bool> asking-rename: false;
+    property <string> rename-to;
+
+    // The app answers a formatting request here.
+    public function apply-format(text: string, anchor: int, cursor: int) {
+        Notes.body = text;
+        editor.set-selection(anchor, cursor);
+        editor.focus-input();
+    }
+
+    forward-focus: editor;
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Notes";
+            app-icon: "stickyNote";
+            subtitle: Notes.current-title;
+        }
+        Rule {}
+        HorizontalLayout {
+            Sidebar {
+                width: 210px;
+                NavItem {
+                    icon: "list";
+                    text: "All notes";
+                    badge: Notes.all-count;
+                    selected: Notes.place == "";
+                    clicked => { Notes.pick-place(""); }
+                }
+                NavItem {
+                    icon: "pin";
+                    text: "Pinned";
+                    badge: Notes.pinned-count > 0 ? Notes.pinned-count : "";
+                    selected: Notes.place == "@pinned";
+                    clicked => { Notes.pick-place("@pinned"); }
+                }
+                Rectangle { height: 10px; }
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 4px;
+                    height: 26px;
+                    Caption { text: "FOLDERS"; vertical-alignment: center; horizontal-stretch: 1; }
+                    IconButton { icon: "folderPlus"; size: 26px; glyph: 15px; clicked => { root.new-folder-name = ""; root.asking-folder = true; } }
+                }
+                for f in Notes.folders: NavItem {
+                    icon: "folder";
+                    text: f.name;
+                    badge: f.count;
+                    selected: Notes.place == f.path;
+                    clicked => { Notes.pick-place(f.path); }
+                    TouchArea {
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                                root.folder-menu-for = f.path;
+                                fmenu.show();
+                            }
+                        }
+                        clicked => { Notes.pick-place(f.path); }
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+                Button {
+                    kind: "ghost";
+                    small: true;
+                    icon: "folderOpen";
+                    text: "Open the Notes folder";
+                    clicked => { Notes.show-folder(); }
+                }
+            }
+            // The list.
+            Rectangle {
+                width: 300px;
+                Rectangle { x: parent.width - 1px; width: 1px; background: Theme.rule; }
+                VerticalLayout {
+                    padding: 12px;
+                    padding-right: 13px;
+                    spacing: 10px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Field {
+                            icon: "search";
+                            placeholder: "Search notes";
+                            text <=> Notes.search;
+                            edited(t) => { Notes.searched(t); }
+                        }
+                        IconButton { icon: "noteAdd"; tip: "New note"; clicked => { Notes.new-note(); } }
+                    }
+                    if Notes.notes.length == 0: Empty {
+                        icon: "stickyNote";
+                        title: Notes.search != "" ? "Nothing matches" : "No notes yet";
+                        text: Notes.search != "" ? "Try other words." : "A new note starts with the + above.";
+                    }
+                    if Notes.notes.length > 0: Scroll {
+                        vertical-stretch: 1;
+                        VerticalLayout {
+                            alignment: start;
+                            spacing: 2px;
+                            for n in Notes.notes: NoteItem {
+                                note: n;
+                                chosen: Notes.current == n.path;
+                                clicked => { Notes.open(n.path); }
+                                menu(x, y) => {
+                                    root.menu-for = n.path;
+                                    nmenu.show();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // The note.
+            Rectangle {
+                horizontal-stretch: 1;
+                if Notes.current == "": Empty {
+                    icon: "pencil";
+                    title: "No note open";
+                    text: "Pick one on the left, or start a new one.";
+                }
+                VerticalLayout {
+                    visible: Notes.current != "";
+                    HorizontalLayout {
+                        padding: 10px;
+                        padding-left: 16px;
+                        spacing: 2px;
+                        height: 52px;
+                        for t in [
+                            { k: "h1", i: "heading" }, { k: "bold", i: "bold" }, { k: "italic", i: "italic" },
+                            { k: "task", i: "checkSquare" }, { k: "bullet", i: "list" }, { k: "quote", i: "quote" },
+                            { k: "code", i: "code" }
+                        ]: VerticalLayout {
+                            alignment: center;
+                            IconButton {
+                                icon: t.i;
+                                enabled: root.view != 1;
+                                clicked => { Notes.format(t.k, editor.text, editor.anchor, editor.cursor); }
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        VerticalLayout {
+                            alignment: center;
+                            Seg {
+                                width: 220px;
+                                options: ["Write", "Preview", "Both"];
+                                current <=> root.view;
+                            }
+                        }
+                        Rectangle { width: 8px; }
+                        VerticalLayout {
+                            alignment: center;
+                            IconButton {
+                                icon: "pin";
+                                checked: Notes.current-pinned;
+                                clicked => { Notes.toggle-pin(Notes.current); }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            IconButton {
+                                icon: "moreHorizontal";
+                                clicked => { root.menu-for = Notes.current; nmenu2.show(); }
+                            }
+                        }
+                    }
+                    Rule {}
+                    HorizontalLayout {
+                        vertical-stretch: 1;
+                        editor := Editor {
+                            visible: root.view != 1;
+                            horizontal-stretch: 1;
+                            pad: 28px;
+                            font-size: Theme.fs(14.5);
+                            placeholder: "Start writing. A first line like “# Groceries” names the note.";
+                            text <=> Notes.body;
+                            edited(t) => { Notes.edited(t); }
+                        }
+                        if root.view == 2: Rectangle { width: 1px; background: Theme.rule; }
+                        if root.view != 0: Scroll {
+                            horizontal-stretch: 1;
+                            VerticalLayout {
+                                alignment: start;
+                                padding: 28px;
+                                spacing: 10px;
+                                for b in Notes.preview: PreviewBlock {
+                                    b: b;
+                                    toggled(line) => { Notes.toggle-task(line); }
+                                }
+                            }
+                        }
+                    }
+                    Rule {}
+                    HorizontalLayout {
+                        height: 30px;
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        Dim { text: Notes.status; font-size: Theme.fs(11.5); horizontal-stretch: 1; }
+                        Dim { text: Notes.words + (Notes.words == 1 ? " word" : " words"); font-size: Theme.fs(11.5); }
+                    }
+                }
+            }
+        }
+    }
+
+    nmenu := Menu {
+        x: 520px;
+        y: 120px;
+        entries: [
+            { text: "Pin", icon: "pin" },
+            { text: "Move to folder…", icon: "folder" },
+            { text: "Move to Trash", icon: "trash", danger: true, rule: true },
+        ];
+        chosen(i) => {
+            if (i == 0) { Notes.toggle-pin(root.menu-for); }
+            if (i == 1) { root.asking-move = true; }
+            if (i == 2) { root.asking-delete = true; }
+        }
+    }
+    nmenu2 := Menu {
+        x: root.width - 240px;
+        y: 96px;
+        entries: [
+            { text: "Move to folder…", icon: "folder" },
+            { text: "Move to Trash", icon: "trash", danger: true, rule: true },
+        ];
+        chosen(i) => {
+            if (i == 0) { root.asking-move = true; }
+            if (i == 1) { root.asking-delete = true; }
+        }
+    }
+    fmenu := Menu {
+        x: 40px;
+        y: 200px;
+        entries: [
+            { text: "Rename…", icon: "pencil" },
+            { text: "Delete folder", icon: "trash", danger: true, rule: true },
+        ];
+        chosen(i) => {
+            if (i == 0) { root.renaming-folder = root.folder-menu-for; root.rename-to = ""; root.asking-rename = true; }
+            if (i == 1) { Notes.delete-folder(root.folder-menu-for); }
+        }
+    }
+
+    Dialog {
+        open: root.asking-folder;
+        title: "New folder";
+        dismissed => { root.asking-folder = false; }
+        Field {
+            placeholder: "Name";
+            text <=> root.new-folder-name;
+            accepted(t) => { Notes.new-folder(t); root.asking-folder = false; }
+            escape => { root.asking-folder = false; }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-folder = false; } }
+            Button { text: "Create"; kind: "primary"; clicked => { Notes.new-folder(root.new-folder-name); root.asking-folder = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-rename;
+        title: "Rename folder";
+        dismissed => { root.asking-rename = false; }
+        Field {
+            placeholder: "New name";
+            text <=> root.rename-to;
+            accepted(t) => { Notes.rename-folder(root.renaming-folder, t); root.asking-rename = false; }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-rename = false; } }
+            Button { text: "Rename"; kind: "primary"; clicked => { Notes.rename-folder(root.renaming-folder, root.rename-to); root.asking-rename = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-delete;
+        title: "Move this note to the Trash?";
+        text: "It can be put back from the Trash in Files.";
+        dismissed => { root.asking-delete = false; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-delete = false; } }
+            Button { text: "Move to Trash"; kind: "danger"; clicked => { Notes.delete-note(root.menu-for); root.asking-delete = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-move;
+        title: "Move to folder";
+        dismissed => { root.asking-move = false; }
+        VerticalLayout {
+            spacing: 2px;
+            NavItem { icon: "stickyNote"; text: "Notes (no folder)"; clicked => { Notes.move-note(root.menu-for, ""); root.asking-move = false; } }
+            for f in Notes.folders: NavItem {
+                icon: "folder";
+                text: f.name;
+                clicked => { Notes.move-note(root.menu-for, f.path); root.asking-move = false; }
+            }
+        }
+        HorizontalLayout {
+            alignment: end;
+            Button { text: "Cancel"; clicked => { root.asking-move = false; } }
+        }
+    }
+    Toast { text: Notes.toast; }
+}

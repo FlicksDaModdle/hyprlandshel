@@ -5,7 +5,7 @@
 use slint::Color;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct Palette {
@@ -124,19 +124,7 @@ impl Palette {
 }
 
 fn local_hour() -> u32 {
-    // Local time without a date crate: localtime_r through libc's symbol.
-    #[repr(C)]
-    struct Tm {
-        sec: i32, min: i32, hour: i32, mday: i32, mon: i32, year: i32, wday: i32, yday: i32, isdst: i32,
-        gmtoff: i64, zone: *const i8,
-    }
-    extern "C" {
-        fn localtime_r(t: *const i64, out: *mut Tm) -> *mut Tm;
-    }
-    let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
-    let mut tm: Tm = unsafe { std::mem::zeroed() };
-    unsafe { localtime_r(&now, &mut tm) };
-    tm.hour.clamp(0, 23) as u32
+    crate::local(crate::now()).3
 }
 
 thread_local! {
