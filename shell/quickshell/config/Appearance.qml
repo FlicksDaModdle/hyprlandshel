@@ -587,6 +587,11 @@ Singleton {
             // the arrows snaps to halves and quarters. hyprland.lua reads it
             // (services/Devices.qml writes it and reloads).
             property string windowMode: "tiling"
+            // External monitors dimmed in software (those that take no
+            // brightness over DDC/CI), by output: {"HDMI-A-1": 0.6}.
+            property string monitorDims: "{}"
+            // The main display, by output name ("" is the first one).
+            property string mainDisplay: ""
 
             // Notifications
             property bool dnd: false
@@ -900,6 +905,8 @@ Singleton {
     property alias hyprInactiveOpacity: prefs.hyprInactiveOpacity
     property alias hyprFocusFollowsMouse: prefs.hyprFocusFollowsMouse
     property alias windowMode: prefs.windowMode
+    property alias monitorDims: prefs.monitorDims
+    property alias mainDisplay: prefs.mainDisplay
     property alias dnd: prefs.dnd
     property alias badges: prefs.badges
     property alias grouping: prefs.grouping

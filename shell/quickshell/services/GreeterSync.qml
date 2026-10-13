@@ -99,7 +99,9 @@ Singleton {
                 width: o.width || m.width, height: o.height || m.height,
                 refreshRate: o.refreshRate || 60,
                 x: o.x !== undefined ? o.x : m.x, y: o.y !== undefined ? o.y : m.y,
-                scale: m.scale || o.scale || 1
+                scale: m.scale || o.scale || 1,
+                // The login screen puts its card on this one.
+                main: String(m.name) === Services.Devices.mainDisplay
             };
         }), null, 2)
     // And the pointer: the accent theme (copied, as it lives in your home)

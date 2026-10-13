@@ -619,6 +619,69 @@ Singleton {
         }
     }
 
+    // ── the main display ──────────────────────────────────────────────────
+    // Settings → Display → Main display. The one workspace 1 lives on (so
+    // the desktop you log in to is there), where the pointer starts, and
+    // where the login screen puts its card. "" is Hyprland's first output.
+    readonly property string mainDisplay: {
+        const want = Config.Appearance.mainDisplay;
+        const mons = Services.Compositor.monitors || [];
+        if (want !== "" && mons.some(m => m && m.name === want)) return want;
+        return mons.length > 0 && mons[0] ? mons[0].name : "";
+    }
+
+    function setMainDisplay(name) {
+        Config.Appearance.mainDisplay = name;
+        root.writeMainDisplay();
+        if (name === "") return;
+        const sel = Services.Compositor.luaSel(name);
+        // Live, as hyprland.lua will do it at the next login: the rule,
+        // workspace 1 moved over now, and the focus with it.
+        Services.Compositor.evalLua("hl.workspace_rule({ workspace = \"1\", monitor = " + sel + ", default = true })");
+        Services.Compositor.dispatch("hl.dsp.workspace.move({ workspace = 1, monitor = " + sel + " })");
+        Services.Compositor.dispatch("hl.dsp.focus({ monitor = " + sel + " })");
+    }
+
+    // Where hyprland.lua reads it at login. Written on every start too, so
+    // a choice made before this existed reaches it.
+    function writeMainDisplay() {
+        mainProc.running = false;
+        mainProc.command = ["sh", "-c",
+            'd="${XDG_STATE_HOME:-$HOME/.local/state}/hyprshell"; mkdir -p "$d" || exit 0; '
+          + 'if [ -n "$1" ]; then printf "%s\\n" "$1" > "$d/main-display"; else rm -f "$d/main-display"; fi',
+            "sh", Config.Appearance.mainDisplay];
+        mainProc.running = true;
+    }
+    Process { id: mainProc }
+
+    // Once per Hyprland session, as the shell first starts: the pointer and
+    // focus go to the main display, so the first window opens there. Not on
+    // a reload of the shell — that would yank the focus mid-work.
+    property bool mainFocused: false
+    function focusMainOnce() {
+        if (root.mainFocused || Config.Appearance.mainDisplay === "") return;
+        root.mainFocused = true;
+        root.writeMainDisplay();
+        focusProc.command = ["sh", "-c",
+            'f="${XDG_RUNTIME_DIR:-/tmp}/hyprshell-main-focused-${HYPRLAND_INSTANCE_SIGNATURE:-x}"; '
+          + '[ -e "$f" ] && exit 0; : > "$f"; echo FIRST'];
+        focusProc.running = true;
+    }
+    Process {
+        id: focusProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (text.indexOf("FIRST") < 0) return;
+                const sel = Services.Compositor.luaSel(root.mainDisplay);
+                Services.Compositor.dispatch("hl.dsp.focus({ monitor = " + sel + " })");
+            }
+        }
+    }
+    Connections {
+        target: Services.Compositor
+        function onMonitorsChanged() { if ((Services.Compositor.monitors || []).length > 0) root.focusMainOnce(); }
+    }
+
     // ── window behaviour ──────────────────────────────────────────────────
     // Tiling or Windows 11 (Settings → Hyprland). It changes binds and
     // window rules, which live in hyprland.lua, so the choice is written

@@ -53,9 +53,11 @@ pub fn whitepoint(k: f64) -> [f64; 3] {
     [(w[0] / n[0]).min(1.0), (w[1] / n[1]).min(1.0), (w[2] / n[2]).min(1.0)]
 }
 
-/// The three ramps, red then green then blue, as the protocol wants them.
-fn ramps(size: usize, k: f64) -> Vec<u8> {
-    let wp = whitepoint(k);
+/// The three ramps, red then green then blue, as the protocol wants them,
+/// at a temperature and scaled by `dim` (1 is full brightness): software
+/// dimming for a monitor that takes no brightness over DDC/CI.
+fn ramps(size: usize, k: f64, dim: f64) -> Vec<u8> {
+    let wp = whitepoint(k).map(|c| c * dim);
     let mut out = Vec::with_capacity(size * 6);
     for c in wp {
         for i in 0..size {
@@ -215,6 +217,8 @@ fn plan(cfg: &Config) -> Plan {
 
 struct Out {
     output: wl_output::WlOutput,
+    /// The connector (DP-1, HDMI-A-1), from wl_output 4's name event.
+    name: String,
     control: Option<ZwlrGammaControlV1>,
     size: usize,
     failed: bool,
@@ -223,8 +227,9 @@ struct Out {
 struct State {
     outputs: HashMap<u32, Out>,
     manager: Option<ZwlrGammaControlManagerV1>,
-    /// What is on the screens now, in kelvin.
+    /// What is on the screens now, in kelvin, and each one's dimming.
     applied: f64,
+    applied_dims: HashMap<String, f64>,
 }
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for State {
@@ -232,8 +237,8 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for State {
         match ev {
             // A display plugged in.
             wl_registry::Event::Global { name, interface, version } if interface == "wl_output" => {
-                let output = reg.bind::<wl_output::WlOutput, _, _>(name, version.min(4), qh, ());
-                st.outputs.insert(name, Out { output, control: None, size: 0, failed: false });
+                let output = reg.bind::<wl_output::WlOutput, _, _>(name, version.min(4), qh, name);
+                st.outputs.insert(name, Out { output, name: String::new(), control: None, size: 0, failed: false });
             }
             wl_registry::Event::GlobalRemove { name } => {
                 if let Some(o) = st.outputs.remove(&name) {
@@ -246,8 +251,15 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for State {
         }
     }
 }
-impl Dispatch<wl_output::WlOutput, ()> for State {
-    fn event(_: &mut Self, _: &wl_output::WlOutput, _: wl_output::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+impl Dispatch<wl_output::WlOutput, u32> for State {
+    fn event(st: &mut Self, _: &wl_output::WlOutput, ev: wl_output::Event, id: &u32, _: &Connection, _: &QueueHandle<Self>) {
+        if let wl_output::Event::Name { name } = ev {
+            if let Some(o) = st.outputs.get_mut(id) {
+                o.name = name;
+                st.applied = -1.0;
+            }
+        }
+    }
 }
 impl Dispatch<ZwlrGammaControlManagerV1, ()> for State {
     fn event(_: &mut Self, _: &ZwlrGammaControlManagerV1, _: <ZwlrGammaControlManagerV1 as Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
@@ -288,11 +300,11 @@ impl Wl {
         if manager.is_none() {
             return Err("the compositor has no gamma control (wlr-gamma-control)".into());
         }
-        let mut st = State { outputs: HashMap::new(), manager, applied: NEUTRAL };
+        let mut st = State { outputs: HashMap::new(), manager, applied: NEUTRAL, applied_dims: HashMap::new() };
         for g in globals.contents().clone_list() {
             if g.interface == "wl_output" {
-                let output = globals.registry().bind::<wl_output::WlOutput, _, _>(g.name, g.version.min(4), &qh, ());
-                st.outputs.insert(g.name, Out { output, control: None, size: 0, failed: false });
+                let output = globals.registry().bind::<wl_output::WlOutput, _, _>(g.name, g.version.min(4), &qh, g.name);
+                st.outputs.insert(g.name, Out { output, name: String::new(), control: None, size: 0, failed: false });
             }
         }
         let mut wl = Wl { conn, queue, qh, st };
@@ -304,26 +316,26 @@ impl Wl {
     fn pump(&mut self) {
         let _ = self.queue.roundtrip(&mut self.st);
     }
-    /// The temperature on every display; at 6500 K the controls are let go,
-    /// which gives the compositor's own ramps back.
-    fn apply(&mut self, k: f64) -> Option<String> {
+    /// The temperature on every display, and each one's software dimming;
+    /// a display at 6500 K and full brightness is let go, which gives the
+    /// compositor's own ramps back.
+    fn apply(&mut self, k: f64, dims: &HashMap<String, f64>) -> Option<String> {
         self.pump();
-        if (k - NEUTRAL).abs() < 1.0 {
-            for o in self.st.outputs.values_mut() {
+        let neutral = (k - NEUTRAL).abs() < 1.0;
+        let dim_of = |o: &Out| dims.get(&o.name).copied().unwrap_or(1.0).clamp(0.05, 1.0);
+        let mut busy = false;
+        let names: Vec<u32> = self.st.outputs.keys().copied().collect();
+        for name in names {
+            let o = self.st.outputs.get_mut(&name).unwrap();
+            let d = dims.get(&o.name).copied().unwrap_or(1.0);
+            if neutral && d >= 0.999 {
                 if let Some(c) = o.control.take() {
                     c.destroy();
                 }
                 o.size = 0;
                 o.failed = false;
+                continue;
             }
-            self.st.applied = NEUTRAL;
-            let _ = self.conn.flush();
-            return None;
-        }
-        let mut busy = false;
-        let names: Vec<u32> = self.st.outputs.keys().copied().collect();
-        for name in names {
-            let o = self.st.outputs.get_mut(&name).unwrap();
             if o.control.is_none() && !o.failed {
                 if let Some(m) = &self.st.manager {
                     o.control = Some(m.get_gamma_control(&o.output, &self.qh, name));
@@ -341,7 +353,7 @@ impl Wl {
             if size == 0 {
                 continue;
             }
-            let bytes = ramps(size, k);
+            let bytes = ramps(size, k, dim_of(o));
             let fd = unsafe { libc::memfd_create(c"hyprshell-gamma".as_ptr(), libc::MFD_CLOEXEC) };
             if fd < 0 {
                 continue;
@@ -356,6 +368,7 @@ impl Wl {
         }
         let _ = self.conn.flush();
         self.st.applied = k;
+        self.st.applied_dims = dims.clone();
         busy.then(|| match rival() {
             Some(name) => format!("{name} is already setting the screen colours — stop it to use this"),
             None => "the compositor would not hand over this display's colours (no gamma support?)".to_string(),
@@ -394,6 +407,9 @@ fn run(rx: Receiver<Value>) {
     let mut current = NEUTRAL;
     let mut last_emit = Value::Null;
     let mut configured = false;
+    // Software dimming, per output (0.05..1), for monitors that take no
+    // brightness over DDC/CI: gamma-dim {output, value 0..100}.
+    let mut dims: HashMap<String, f64> = HashMap::new();
     loop {
         let tick = if fade.is_some() { Duration::from_millis(40) } else { Duration::from_secs(30) };
         let mut quick = false;
@@ -413,6 +429,17 @@ fn run(rx: Receiver<Value>) {
                     "gamma-override" => {
                         let p = plan(&cfg);
                         override_on = Some((c["on"].as_bool().unwrap_or(false), p.next));
+                    }
+                    "gamma-dim" => {
+                        if let (Some(o), Some(v)) = (c["output"].as_str(), c["value"].as_f64()) {
+                            let v = (v / 100.0).clamp(0.05, 1.0);
+                            if v >= 0.999 { dims.remove(o); } else { dims.insert(o.to_string(), v); }
+                        }
+                        // Dimming wants no night-light schedule to apply.
+                        if !configured {
+                            configured = true;
+                            cfg.mode = "off".into();
+                        }
                     }
                     _ => {}
                 }
@@ -438,8 +465,10 @@ fn run(rx: Receiver<Value>) {
         };
         let target = NEUTRAL + (cfg.temp - NEUTRAL) * night;
 
-        // Only hold a Wayland connection while there is something to warm.
-        if (target - NEUTRAL).abs() >= 1.0 || (current - NEUTRAL).abs() >= 1.0 {
+        // Only hold a Wayland connection while there is something to warm
+        // or dim.
+        let dimming = !dims.is_empty();
+        if (target - NEUTRAL).abs() >= 1.0 || (current - NEUTRAL).abs() >= 1.0 || dimming || wl.as_ref().map(|w| !w.st.applied_dims.is_empty()).unwrap_or(false) {
             if wl.is_none() {
                 match Wl::connect() {
                     Ok(w) => {
@@ -468,10 +497,10 @@ fn run(rx: Receiver<Value>) {
             }
         }
         if let Some(w) = &mut wl {
-            if (w.st.applied - current).abs() >= 1.0 {
-                error = w.apply(current);
+            if (w.st.applied - current).abs() >= 1.0 || w.st.applied_dims != dims {
+                error = w.apply(current, &dims);
             }
-            if fade.is_none() && (current - NEUTRAL).abs() < 1.0 {
+            if fade.is_none() && (current - NEUTRAL).abs() < 1.0 && dims.is_empty() {
                 // Nothing to hold: let the connection go.
                 wl = None;
             }
@@ -515,7 +544,7 @@ mod tests {
         assert!((n[0] - 1.0).abs() < 1e-9 && (n[1] - 1.0).abs() < 1e-9 && (n[2] - 1.0).abs() < 1e-9);
         let w = whitepoint(3400.0);
         assert!(w[0] > 0.99 && w[1] > 0.7 && w[1] < 0.85 && w[2] > 0.45 && w[2] < 0.65, "{w:?}");
-        let r = ramps(4, 3400.0);
+        let r = ramps(4, 3400.0, 1.0);
         assert_eq!(r.len(), 4 * 2 * 3);
     }
     #[test]

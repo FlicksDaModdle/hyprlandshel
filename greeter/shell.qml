@@ -16,7 +16,7 @@ ShellRoot {
 
     GreeterState { id: greeter }
     // Your desktop's screen scale and pointer, on the login screen too.
-    GreeterLook { greeter: greeter }
+    GreeterLook { id: look; greeter: greeter }
 
     // Dressed as the person picked: their own theme — accent, light or
     // dark, rounding, fonts, wallpaper — as their shell last saved it.
@@ -46,13 +46,22 @@ ShellRoot {
     // on the laptop (lid shut, or just not the screen being looked at) and
     // the monitor in front of you showed a clock and nothing to type into.
     //
-    // Now: an external monitor over the laptop's own panel (the biggest, if
-    // there are several), and after that wherever you move the pointer or
-    // click — the card, and the keyboard with it, come to that screen.
+    // Now: the main display chosen in the person's Settings (their shell
+    // marks it in screens.json); failing that an external monitor over the
+    // laptop's own panel (the biggest, if there are several); and after
+    // that wherever you move the pointer or click — the card, and the
+    // keyboard with it, come to that screen.
     function isInternal(s) { return /^(eDP|LVDS|DSI)/i.test(String(s.name || "")); }
+    readonly property string savedMain: {
+        const list = Array.isArray(look.screens) ? look.screens : [];
+        const m = list.find(x => x && x.main === true);
+        return m ? String(m.name) : "";
+    }
     readonly property var defaultScreen: {
         const all = Quickshell.screens;
         if (all.length === 0) return null;
+        const chosen = all.find(s => s.name === root.savedMain);
+        if (chosen) return chosen;
         const outside = all.filter(s => !root.isInternal(s));
         const pool = outside.length > 0 ? outside : all;
         let best = pool[0];

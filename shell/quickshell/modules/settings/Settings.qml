@@ -894,6 +894,31 @@ Scope {
                    + (m.focused ? "  ·  focused" : "")
                    + "  ·  " + curRes + " at " + Math.round(rate) + " Hz" });
 
+            // The main display: workspace 1 lives there, the pointer starts
+            // there, and the login screen puts its card there.
+            if (mons.length > 1) {
+                const isMain = Services.Devices.mainDisplay === m.name;
+                rows.push({ n: "Main display",
+                    s: isMain ? "Workspace 1, the pointer at login and the login screen are here"
+                              : "Make this the screen workspace 1 and the login screen go to",
+                    type: "toggle", value: isMain,
+                    set: v => Services.Devices.setMainDisplay(v ? m.name : "") });
+            }
+
+            // Its brightness: the monitor's own backlight over DDC/CI, or
+            // dimmed in software when it takes none.
+            const ext = Services.Monitors.display(m.name);
+            if (ext) {
+                rows.push({ n: "Brightness",
+                    s: ext.method === "ddc" ? "The monitor's own backlight, over DDC/CI"
+                       : Services.Monitors.reason === "setup"
+                         ? "Dimmed in software. For the monitor's own backlight, run ./install.sh --monitors once (it lets the shell talk to monitors over DDC/CI)"
+                         : "Dimmed in software: this monitor (or the dock it is on) does not take brightness over DDC/CI",
+                    type: "slider", min: 5, max: 100, unit: "%",
+                    value: Math.round(ext.value * 100),
+                    set: v => Services.Monitors.set(m.name, v / 100) });
+            }
+
             // availableModes comes through as "2560x1440@165.00Hz" strings.
             // Splitting resolution from refresh rate lets each be its own
             // control, as every other settings panel does it.

@@ -873,23 +873,43 @@ PanelSurface {
     readonly property var sliders: {
         const out = ["volume"];
         if (Services.Brightness.available) out.push("brightness");
+        // Each external monitor its own, after the laptop's.
+        for (const o of root.monitorOutputs) out.push("mon:" + o);
         if (Services.Audio.sourceReady) out.push("mic");
         return out;
     }
+    // Just the outputs, so the list (and the delegates being dragged) only
+    // rebuild when a monitor comes or goes, not when a level changes.
+    property var monitorOutputs: Services.Monitors.displays.map(d => d.output)
+    Connections {
+        target: Services.Monitors
+        function onDisplaysChanged() {
+            const list = Services.Monitors.displays.map(d => d.output);
+            if (list.join("\n") !== root.monitorOutputs.join("\n")) root.monitorOutputs = list;
+        }
+    }
+    function monitorOf(k) { return Services.Monitors.display(k.slice(4)); }
 
     function sliderName(k) {
-        return k === "volume" ? "Volume" : (k === "brightness" ? "Brightness" : "Microphone");
+        if (k.startsWith("mon:")) {
+            const d = root.monitorOf(k);
+            return d ? d.name : k.slice(4);
+        }
+        if (k === "brightness") return Services.Monitors.available ? "Built-in display" : "Brightness";
+        return k === "volume" ? "Volume" : "Microphone";
     }
 
     function sliderIcon(k) {
         if (k === "volume") return Services.Audio.icon;
         if (k === "brightness") return "sun";
+        if (k.startsWith("mon:")) return "monitor";
         return Services.Audio.inputMuted ? "micOff" : "mic";
     }
 
     function sliderValue(k) {
         if (k === "volume") return Services.Audio.volume;
         if (k === "brightness") return Services.Brightness.value;
+        if (k.startsWith("mon:")) { const d = root.monitorOf(k); return d ? d.value : 0; }
         return Services.Audio.inputVolume;
     }
 
@@ -897,12 +917,17 @@ PanelSurface {
         if (k === "volume")
             return Services.Audio.muted ? "muted" : Services.Audio.volumePercent + "%";
         if (k === "brightness") return Services.Brightness.percent + "%";
+        if (k.startsWith("mon:")) {
+            const d = root.monitorOf(k);
+            return d ? Math.round(d.value * 100) + "%" : "";
+        }
         return Services.Audio.inputMuted ? "muted" : Services.Audio.inputPercent + "%";
     }
 
     function sliderSet(k, v) {
         if (k === "volume") Services.Audio.setVolume(v);
         else if (k === "brightness") Services.Brightness.set(v);
+        else if (k.startsWith("mon:")) Services.Monitors.set(k.slice(4), v);
         else Services.Audio.setInputVolume(v);
     }
 

@@ -148,6 +148,22 @@ do
     end
 end
 
+-- The main display, as Settings → Display last chose it (the shell writes
+-- it to main-display): workspace 1 lives there, so the desktop you log in
+-- to is on it. Nothing chosen leaves Hyprland's own order.
+do
+    local state = os.getenv("XDG_STATE_HOME")
+    if not state or state == "" then state = (os.getenv("HOME") or "") .. "/.local/state" end
+    local f = io.open(state .. "/hyprshell/main-display", "r")
+    if f then
+        local main = (f:read("*l") or ""):gsub("%s", "")
+        f:close()
+        if main:match("^[%w_.:-]+$") then
+            pcall(hl.workspace_rule, { workspace = "1", monitor = main, default = true })
+        end
+    end
+end
+
 -- Qt apps pick up the Wayland backend and drop their own window decorations,
 -- so client windows match the shell's own chrome instead of doubling it.
 hl.env("QT_QPA_PLATFORM", "wayland;xcb")

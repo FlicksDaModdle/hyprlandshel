@@ -24,6 +24,8 @@
 #   --browser      Hyprshell Browser (Firefox underneath, its own profile)
 #   --greeter      the login screen (greetd; asks for sudo)
 #   --all          all of the above except --shell-only
+#   --monitors     let the shell set external monitors' brightness over
+#                  DDC/CI (loads i2c-dev, adds a udev rule; asks for sudo)
 #
 # And how:
 #
@@ -93,10 +95,10 @@ installed() {
 
 # ── options ────────────────────────────────────────────────────────────────
 PREFIX="$HOME/.local"
-CHECK=0; DEPS=0; YES=0; LIST=0; SHELL_ONLY=0; DEFAULT_BROWSER=0
+CHECK=0; DEPS=0; YES=0; LIST=0; SHELL_ONLY=0; DEFAULT_BROWSER=0; MONITORS=0
 declare -A WANT=()
 picked_any=0
-usage() { sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -110,6 +112,7 @@ while [ $# -gt 0 ]; do
         --tasks)      WANT[tasks]=1; picked_any=1 ;;
         --browser)    WANT[browser]=1; picked_any=1 ;;
         --greeter)    WANT[greeter]=1; picked_any=1 ;;
+        --monitors)   MONITORS=1 ;;
         --deps)       DEPS=1 ;;
         --check)      CHECK=1 ;;
         --yes|-y)     YES=1 ;;
@@ -196,6 +199,18 @@ menu() {
         esac
     done
 }
+
+# External monitors' brightness: a system change, so its own step, and on
+# its own needs none of the parts.
+if [ "$MONITORS" = 1 ]; then
+    head1 "Monitor brightness (DDC/CI)"
+    if [ "$CHECK" = 1 ]; then
+        [ -e /etc/udev/rules.d/60-hyprshell-ddc.rules ] && note "set up" || note "not set up yet"
+    else
+        sudo sh "$ROOT/shell/monitors.sh"
+    fi
+    [ "$picked_any" = 0 ] && exit 0
+fi
 
 if [ "$picked_any" = 0 ]; then
     if [ -t 0 ] && [ "$YES" = 0 ]; then menu

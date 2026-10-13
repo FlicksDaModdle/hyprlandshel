@@ -6,6 +6,9 @@
 //!                 of `nmcli` every few seconds and `nmcli monitor`
 //!   backlight     sysfs, with the kernel's own change events; set through
 //!                 logind — in place of polling `brightnessctl`
+//!   monitors      external monitors' brightness over DDC/CI — in place of
+//!                 ddcutil — or dimmed through the gamma ramp when they
+//!                 take none
 //!   audio         PulseAudio (pipewire-pulse) natively: cards, modes,
 //!                 connectors, which app plays where — in place of `pactl`
 //!   night light   whether hyprsunset or wlsunset runs, from /proc — in
@@ -47,6 +50,7 @@ mod calc;
 mod camera;
 mod clip;
 mod cmds;
+mod ddc;
 mod fsearch;
 mod gamma;
 mod idle;
@@ -80,6 +84,7 @@ fn main() {
     let gamma = gamma::start();
     let idle = idle::start();
     let usb = usb::start();
+    let ddc = ddc::start();
     let camera = camera::start();
     let nhist = nhist::start();
     #[cfg(feature = "pulse")]
@@ -90,7 +95,7 @@ fn main() {
     out::emit(json!({
         "ev": "ready",
         "version": env!("CARGO_PKG_VERSION"),
-        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "usb": true, "nhist": true, "camera": true, "pulse": pulse.is_some() }
+        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "usb": true, "nhist": true, "camera": true, "ddc": true, "pulse": pulse.is_some() }
     }));
 
     let stdin = std::io::stdin();
@@ -116,6 +121,8 @@ fn main() {
             Some(&idle)
         } else if name.starts_with("gamma-") {
             Some(&gamma)
+        } else if name.starts_with("ddc-") {
+            Some(&ddc)
         } else if name == "calc" {
             Some(&calc)
         } else if name.starts_with("cmd-") {
