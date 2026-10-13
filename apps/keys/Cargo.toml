@@ -1,0 +1,23 @@
+[package]
+name = "hyprshell-keys"
+version = "0.1.0"
+edition = "2021"
+description = "Passwords and Keys for Hyprshell: the keyring, SSH keys and GPG keys"
+
+[dependencies]
+hyprshell-kit = { workspace = true }
+slint = { workspace = true }
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+serde = "1"
+ssh-key = { version = "0.6", default-features = false, features = ["std", "ed25519", "encryption", "rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+sha2 = "0.10"
+base64 = "0.22"
+libc = "0.2"
+# Copying a password: the clipboard served from here, marked as a secret
+# so clipboard histories (the shell's included) leave it out.
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+
+[build-dependencies]
+slint-build = { workspace = true }

@@ -1,0 +1,381 @@
+// Passwords and Keys: the keyring (where Wi-Fi, Mail and the browser keep
+// their passwords), your SSH keys and your GPG keys.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Sidebar, NavItem, Card, Caption, Label, Dim, Heading,
+         Button, IconButton, Seg, Field, Scroll, Empty, Toast, Rule, Icon, Dialog, Badge, Spinner,
+         KeyValue } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct Ring { path: string, label: string, locked: bool, count: int, is-default: bool }
+export struct Item {
+    path: string,
+    label: string,
+    sub: string,
+    icon: string,
+    when: string,
+}
+export struct Attr { key: string, value: string }
+export struct SshKey { name: string, kind: string, comment: string, fingerprint: string, has-private: bool, encrypted: bool, public: string }
+export struct GpgKey { id: string, uid: string, kind: string, created: string, expires: string, secret: bool }
+
+export global Keys {
+    in property <bool> ready;
+    in property <string> problem;
+    in property <[Ring]> rings;
+    // a keyring's path, "@ssh" or "@gpg"
+    in-out property <string> place;
+    in property <[Item]> items;
+    in-out property <int> item: -1;
+    in-out property <string> search;
+    in property <bool> ring-locked;
+    in property <string> ring-label;
+
+    in property <string> detail-label;
+    in property <[Attr]> detail-attrs;
+    in property <string> detail-created;
+    in property <string> detail-modified;
+    in property <string> secret;           // shown on asking; cleared when another item is picked
+    in property <bool> secret-shown;
+
+    in property <[SshKey]> ssh;
+    in property <[GpgKey]> gpg;
+    in property <bool> has-gpg;
+
+    callback pick(string);
+    callback pick-item(int);
+    callback searched(string);
+    callback unlock(string);
+    callback lock(string);
+    callback show-secret();
+    callback hide-secret();
+    callback copy-secret();
+    callback copy-text(string);
+    callback rename(string);
+    callback delete-item();
+    callback add(string, string, string, string);   // label, user, place (server/site), secret
+    callback new-keyring(string);
+    callback new-ssh(string, string, string);        // name, comment, passphrase
+    callback delete-ssh(string);
+    callback export-gpg(string);
+
+    in property <string> toast;
+    in property <bool> toast-bad;
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Passwords and Keys";
+    preferred-width: 1120px;
+    preferred-height: 720px;
+    property <Item> cur: Keys.item >= 0 && Keys.item < Keys.items.length ? Keys.items[Keys.item] : { path: "" };
+    property <bool> asking-add;
+    property <bool> asking-delete;
+    property <bool> asking-ssh;
+    property <bool> asking-ring;
+    property <bool> asking-rename;
+    property <string> f-label;
+    property <string> f-user;
+    property <string> f-place;
+    property <string> f-secret;
+    property <string> f-pass2;
+
+    VerticalLayout {
+        TitleBar { app-name: "Passwords and Keys"; app-icon: "key"; subtitle: Keys.place == "@ssh" ? "SSH keys" : Keys.place == "@gpg" ? "GPG keys" : Keys.ring-label; }
+        Rule {}
+        HorizontalLayout {
+            Sidebar {
+                width: 210px;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 4px;
+                    height: 26px;
+                    Caption { text: "PASSWORDS"; vertical-alignment: center; horizontal-stretch: 1; }
+                    IconButton { icon: "plus"; size: 26px; glyph: 15px; clicked => { root.f-label = ""; root.asking-ring = true; } }
+                }
+                for r in Keys.rings: NavItem {
+                    icon: r.locked ? "lock" : "key";
+                    text: r.label;
+                    badge: r.locked ? "" : r.count;
+                    selected: Keys.place == r.path;
+                    clicked => { Keys.pick(r.path); }
+                }
+                Rectangle { height: 10px; }
+                Caption { text: "KEYS"; x: 12px; height: 26px; vertical-alignment: center; }
+                NavItem { icon: "terminal"; text: "SSH keys"; badge: Keys.ssh.length; selected: Keys.place == "@ssh"; clicked => { Keys.pick("@ssh"); } }
+                if Keys.has-gpg: NavItem { icon: "shield"; text: "GPG keys"; badge: Keys.gpg.length; selected: Keys.place == "@gpg"; clicked => { Keys.pick("@gpg"); } }
+                Rectangle { vertical-stretch: 1; }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                if !Keys.ready: VerticalLayout { alignment: center; HorizontalLayout { alignment: center; Spinner {} } }
+                // ── a keyring ───────────────────────────────────────────
+                if Keys.ready && Keys.place != "@ssh" && Keys.place != "@gpg" && Keys.problem != "": Empty {
+                    icon: "key";
+                    title: "No keyring is running";
+                    text: Keys.problem;
+                }
+                if Keys.ready && Keys.place != "@ssh" && Keys.place != "@gpg" && Keys.problem == "" && Keys.ring-locked: VerticalLayout {
+                    alignment: center;
+                    spacing: 16px;
+                    Empty { icon: "lock"; title: Keys.ring-label + " is locked"; text: "Its passwords stay encrypted until it is unlocked with its own password."; }
+                    HorizontalLayout { alignment: center; Button { text: "Unlock"; icon: "unlock"; kind: "primary"; clicked => { Keys.unlock(Keys.place); } } }
+                }
+                if Keys.ready && Keys.place != "@ssh" && Keys.place != "@gpg" && Keys.problem == "" && !Keys.ring-locked: HorizontalLayout {
+                    Rectangle {
+                        width: 340px;
+                        Rectangle { x: parent.width - 1px; width: 1px; background: Theme.rule; }
+                        VerticalLayout {
+                            padding: 12px;
+                            padding-right: 13px;
+                            spacing: 10px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Field { icon: "search"; placeholder: "Search"; text <=> Keys.search; edited(t) => { Keys.searched(t); } }
+                                IconButton { icon: "plus"; clicked => { root.f-label = ""; root.f-user = ""; root.f-place = ""; root.f-secret = ""; root.asking-add = true; } }
+                                IconButton { icon: "lock"; clicked => { Keys.lock(Keys.place); } }
+                            }
+                            if Keys.items.length == 0: Empty { icon: "key"; title: Keys.search != "" ? "Nothing matches" : "Nothing kept here"; text: ""; }
+                            Scroll {
+                                vertical-stretch: 1;
+                                visible: Keys.items.length > 0;
+                                VerticalLayout {
+                                    alignment: start;
+                                    spacing: 2px;
+                                    for it[i] in Keys.items: Rectangle {
+                                        height: 50px;
+                                        border-radius: Theme.r-sm;
+                                        background: Keys.item == i ? Theme.sel : ia.has-hover ? Theme.hover : transparent;
+                                        ia := TouchArea { mouse-cursor: pointer; clicked => { Keys.pick-item(i); } }
+                                        HorizontalLayout {
+                                            padding-left: 10px;
+                                            padding-right: 10px;
+                                            spacing: 10px;
+                                            VerticalLayout { alignment: center; Icon { name: it.icon; size: 18px; } }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                spacing: 1px;
+                                                Text { text: it.label; color: Theme.ink; font-size: Theme.fs(12.5); font-weight: 600; overflow: elide; }
+                                                Text { text: it.sub; color: Theme.ink3; font-size: Theme.fs(11.5); overflow: elide; }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        if root.cur.path == "": Empty { icon: "key"; title: "Pick a password"; text: "What it is for, and the password itself when you ask for it."; }
+                        if root.cur.path != "": Scroll {
+                            VerticalLayout {
+                                alignment: start;
+                                padding: 24px;
+                                spacing: 14px;
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    Rectangle { width: 44px; height: 44px; border-radius: Theme.r-sm; background: Theme.hover; Icon { x: 11px; y: 11px; name: root.cur.icon; size: 22px; } }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        horizontal-stretch: 1;
+                                        Heading { text: Keys.detail-label; wrap: word-wrap; }
+                                        Dim { text: root.cur.sub; }
+                                    }
+                                    VerticalLayout { alignment: center; IconButton { icon: "pencil"; clicked => { root.f-label = Keys.detail-label; root.asking-rename = true; } } }
+                                }
+                                Card {
+                                    VerticalLayout {
+                                        padding: 16px;
+                                        spacing: 10px;
+                                        Caption { text: "PASSWORD"; }
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            Rectangle {
+                                                horizontal-stretch: 1;
+                                                height: 36px;
+                                                border-radius: Theme.r-sm;
+                                                background: Theme.hover;
+                                                Text {
+                                                    x: 12px;
+                                                    width: parent.width - 24px;
+                                                    text: Keys.secret-shown ? Keys.secret : "••••••••••••";
+                                                    color: Theme.ink;
+                                                    font-family: "monospace";
+                                                    font-size: Theme.fs(13);
+                                                    vertical-alignment: center;
+                                                    overflow: elide;
+                                                }
+                                            }
+                                            IconButton { icon: Keys.secret-shown ? "eyeOff" : "eye"; clicked => { if (Keys.secret-shown) { Keys.hide-secret(); } else { Keys.show-secret(); } } }
+                                            IconButton { icon: "copy"; clicked => { Keys.copy-secret(); } }
+                                        }
+                                        Dim { text: "Copied passwords leave the clipboard after 45 seconds."; font-size: Theme.fs(11.5); }
+                                    }
+                                }
+                                if Keys.detail-attrs.length > 0: Card {
+                                    VerticalLayout {
+                                        padding: 16px;
+                                        spacing: 4px;
+                                        Caption { text: "DETAILS"; }
+                                        for a in Keys.detail-attrs: KeyValue { key: a.key; value: a.value; key-width: 170px; }
+                                    }
+                                }
+                                KeyValue { key: "Saved"; value: Keys.detail-created; }
+                                KeyValue { key: "Changed"; value: Keys.detail-modified; }
+                                HorizontalLayout { alignment: start; Button { icon: "trash"; text: "Delete"; kind: "danger"; clicked => { root.asking-delete = true; } } }
+                            }
+                        }
+                    }
+                }
+                // ── SSH ─────────────────────────────────────────────────
+                if Keys.ready && Keys.place == "@ssh": Scroll {
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 24px;
+                        spacing: 12px;
+                        HorizontalLayout {
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                Heading { text: "SSH keys"; }
+                                Dim { text: "In ~/.ssh. The public half goes to servers and sites like GitHub; the private half never leaves here."; wrap: word-wrap; }
+                            }
+                            VerticalLayout { alignment: center; Button { text: "New key"; icon: "plus"; kind: "primary"; clicked => { root.f-label = "id_ed25519"; root.f-user = ""; root.f-secret = ""; root.f-pass2 = ""; root.asking-ssh = true; } } }
+                        }
+                        if Keys.ssh.length == 0: Empty { icon: "terminal"; title: "No SSH keys"; text: "Make one with New key."; }
+                        for k in Keys.ssh: Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 6px;
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Icon { name: "key"; size: 18px; }
+                                    Text { text: k.name; color: Theme.ink; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+                                    Badge { text: k.kind; tint: Theme.ink3; }
+                                    if k.encrypted: Badge { text: "Passphrase"; tint: Theme.ok; }
+                                    if k.has-private && !k.encrypted: Badge { text: "No passphrase"; tint: Theme.warn; }
+                                }
+                                if k.comment != "": KeyValue { key: "Comment"; value: k.comment; }
+                                KeyValue { key: "Fingerprint"; value: k.fingerprint; mono: true; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    Button { small: true; icon: "copy"; text: "Copy public key"; clicked => { Keys.copy-text(k.public); } }
+                                    Button { small: true; icon: "trash"; text: "Move to Trash"; kind: "ghost"; clicked => { Keys.delete-ssh(k.name); } }
+                                }
+                            }
+                        }
+                    }
+                }
+                // ── GPG ─────────────────────────────────────────────────
+                if Keys.ready && Keys.place == "@gpg": Scroll {
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 24px;
+                        spacing: 12px;
+                        Heading { text: "GPG keys"; }
+                        Dim { text: "From gpg's own keyring. New keys: gpg --full-generate-key in a terminal."; wrap: word-wrap; }
+                        for k in Keys.gpg: Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 6px;
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Icon { name: "shield"; size: 18px; }
+                                    Text { text: k.uid; color: Theme.ink; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                                    Badge { text: k.kind; tint: Theme.ink3; }
+                                    if k.secret: Badge { text: "Yours"; tint: Theme.ok; }
+                                }
+                                KeyValue { key: "Key"; value: k.id; mono: true; }
+                                KeyValue { key: "Made"; value: k.created; }
+                                KeyValue { key: "Expires"; value: k.expires; }
+                                HorizontalLayout { alignment: start; Button { small: true; icon: "copy"; text: "Copy public key"; clicked => { Keys.export-gpg(k.id); } } }
+                            }
+                        }
+                    }
+                }
+                Toast { text: Keys.toast; bad: Keys.toast-bad; }
+            }
+        }
+    }
+
+    Dialog {
+        open: root.asking-add;
+        title: "Save a password";
+        card-width: 460px;
+        dismissed => { root.asking-add = false; root.f-secret = ""; }
+        Field { placeholder: "What it's for (e.g. Router admin)"; text <=> root.f-label; }
+        Field { placeholder: "Username (optional)"; text <=> root.f-user; }
+        Field { placeholder: "Website or server (optional)"; text <=> root.f-place; }
+        Field { placeholder: "Password"; password: true; text <=> root.f-secret; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-add = false; root.f-secret = ""; } }
+            Button {
+                text: "Save";
+                kind: "primary";
+                enabled: root.f-label != "" && root.f-secret != "";
+                clicked => { Keys.add(root.f-label, root.f-user, root.f-place, root.f-secret); root.asking-add = false; root.f-secret = ""; }
+            }
+        }
+    }
+    Dialog {
+        open: root.asking-rename;
+        title: "Rename";
+        dismissed => { root.asking-rename = false; }
+        Field { text <=> root.f-label; accepted(t) => { Keys.rename(t); root.asking-rename = false; } }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-rename = false; } }
+            Button { text: "Rename"; kind: "primary"; clicked => { Keys.rename(root.f-label); root.asking-rename = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-delete;
+        title: "Delete " + Keys.detail-label + "?";
+        text: "Whatever uses it will ask for the password again.";
+        dismissed => { root.asking-delete = false; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-delete = false; } }
+            Button { text: "Delete"; kind: "danger"; clicked => { Keys.delete-item(); root.asking-delete = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-ring;
+        title: "New keyring";
+        text: "The keyring asks for the password to lock it with.";
+        dismissed => { root.asking-ring = false; }
+        Field { placeholder: "Name"; text <=> root.f-label; accepted(t) => { Keys.new-keyring(t); root.asking-ring = false; } }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-ring = false; } }
+            Button { text: "Create"; kind: "primary"; clicked => { Keys.new-keyring(root.f-label); root.asking-ring = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-ssh;
+        title: "New SSH key";
+        text: "An Ed25519 key, the kind GitHub and modern servers prefer. A passphrase protects it if the laptop is ever lost.";
+        card-width: 480px;
+        dismissed => { root.asking-ssh = false; root.f-secret = ""; root.f-pass2 = ""; }
+        Field { placeholder: "File name"; text <=> root.f-label; mono: true; }
+        Field { placeholder: "Comment (e.g. you@laptop)"; text <=> root.f-user; }
+        Field { placeholder: "Passphrase"; password: true; text <=> root.f-secret; }
+        Field { placeholder: "Passphrase again"; password: true; text <=> root.f-pass2; }
+        if root.f-secret != root.f-pass2: Text { text: "The two passphrases differ."; color: Theme.danger; font-size: Theme.fs(12); }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-ssh = false; root.f-secret = ""; root.f-pass2 = ""; } }
+            Button {
+                text: "Make it";
+                kind: "primary";
+                enabled: root.f-label != "" && root.f-secret == root.f-pass2;
+                clicked => { Keys.new-ssh(root.f-label, root.f-user, root.f-secret); root.asking-ssh = false; root.f-secret = ""; root.f-pass2 = ""; }
+            }
+        }
+    }
+}
