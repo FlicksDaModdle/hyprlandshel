@@ -44,11 +44,15 @@ Scope {
     // in front: a floating window is above the tiled ones, and a newly
     // mapped one has the focus. The same rule is in hyprland.lua; sent here
     // too so it holds without reloading Hyprland.
+    // Matched by app id alone: the title can still be empty at the moment
+    // the window maps, which is when Hyprland decides to float it, so a
+    // rule on "Settings" never matched. Every Quickshell toplevel is one of
+    // the shell's own utility windows (Settings, Icon Maker, the screenshot
+    // editor), and all of them float.
     function sendWindowRule() {
         Services.Compositor.evalLua(
-            'pcall(hl.window_rule, { name = "hyprshell-settings", '
-            + 'match = { class = "^(org[.]quickshell)$", title = "^(Settings)$" }, '
-            + 'float = true, center = true, size = { 900, 620 } })');
+            'pcall(hl.window_rule, { name = "hyprshell-own-windows", '
+            + 'match = { class = "^(org[.]quickshell)$" }, float = true, center = true })');
     }
 
     // Asked for while it is already open behind other windows: bring it
@@ -59,13 +63,36 @@ Scope {
     }
     function focusWindow() {
         const c = (Services.Compositor.clients || []).find(w =>
-            (w.cls === "org.quickshell" || w.initialClass === "org.quickshell") && w.title === "Settings");
-        if (!c || !c.address) return;
-        Services.Compositor.focusClient(c.address);
-        Services.Compositor.dispatch("hl.dsp.window.bring_to_top()");
+            /quickshell/i.test(w.cls + " " + w.initialClass) && w.title === "Settings");
+        if (!c || !c.address) return false;
+        const C = Services.Compositor;
+        // Tiled anyway — a Hyprland that has not read the rule yet, or an
+        // app id of another name — it is floated, sized and centred here.
+        if (!c.floating && !placedOnce) {
+            const sel = "window = " + C.luaSel("address:" + c.address);
+            C.dispatch('hl.dsp.window.float({ action = "enable", ' + sel + ' })');
+            C.dispatch("hl.dsp.window.resize({ x = 900, y = 620, " + sel + " })");
+            C.dispatch("hl.dsp.window.center({ " + sel + " })");
+        }
+        placedOnce = true;
+        C.focusClient(c.address);
+        C.dispatch("hl.dsp.window.bring_to_top()");
+        return true;
     }
-    // Opened: once Hyprland has mapped it and the client list has it.
-    Timer { id: frontSoon; interval: 350; onTriggered: root.focusWindow() }
+    // Floated by us at most once per opening, so tiling it yourself sticks.
+    property bool placedOnce: false
+    // Opened: once Hyprland has mapped it and the client list has it, which
+    // can take a few tries.
+    Timer {
+        id: frontSoon
+        interval: 150
+        repeat: true
+        property int tries: 0
+        onTriggered: {
+            Services.Compositor.fetchClients();
+            if (root.focusWindow() || ++tries >= 12) { stop(); tries = 0; }
+        }
+    }
 
     readonly property string pane: Config.UiState.settingsPane
 
@@ -180,7 +207,7 @@ Scope {
         // cannot be opened again for the rest of the session. The X
         // button never had this because it clears the flag itself.
         onVisibleChanged: {
-            if (visible) frontSoon.restart();
+            if (visible) { root.placedOnce = false; frontSoon.tries = 0; frontSoon.restart(); }
             else if (Config.UiState.settingsOpen) Config.UiState.closeSettings();
         }
         title: "Settings"

@@ -665,16 +665,22 @@ hl.window_rule({
     size  = { 1100, 700 },
 })
 
--- The shell's Settings: a Quickshell window (Quickshell's app id, told
--- apart by its title). It opens floating and centred, in front of the
--- tiled windows, and can still be tiled like any other window. The shell
--- sends this rule too when it starts, so it holds without a reload.
+-- The shell's own windows — Settings, Icon Maker, the screenshot editor —
+-- carry Quickshell's app id, and all of them float, centred. Matched by the
+-- app id alone: a window's title can still be empty at the moment it maps,
+-- which is when Hyprland decides, so a rule on the title "Settings" never
+-- matched and Settings opened tiled. The shell sends this rule too, and
+-- floats Settings itself if it ever arrives tiled.
 pcall(hl.window_rule, {
-    name   = "hyprshell-settings",
-    match  = { class = "^(org\\.quickshell)$", title = "^(Settings)$" },
+    name   = "hyprshell-own-windows",
+    match  = { class = "^(org\\.quickshell)$" },
     float  = true,
     center = true,
-    size   = { 900, 620 },
+})
+pcall(hl.window_rule, {
+    name  = "hyprshell-settings-size",
+    match = { class = "^(org\\.quickshell)$", title = "^(Settings)$" },
+    size  = { 900, 620 },
 })
 
 -- The shell's terminal. The size is a sensible number of columns and rows
