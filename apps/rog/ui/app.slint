@@ -1,0 +1,778 @@
+// ROG Control Center: what asusd and supergfxd can do on an ASUS laptop,
+// in the shell's own look. Every section appears only when the machine has
+// it — a model without keyboard lighting simply has no Keyboard page.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Sidebar, NavItem, Card, Caption, Label, Dim, Heading,
+         Button, IconButton, Switch, Slider, Seg, Badge, Meter, Scroll, Empty, KeyValue, Toast, Rule,
+         Icon, Spinner, Dialog } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct Opt { id: int, name: string }
+
+export struct Attr {
+    name: string,
+    label: string,
+    help: string,
+    kind: string,      // "switch", "slider" or "choice"
+    value: int,
+    min: int,
+    max: int,
+    step: int,
+    unit: string,
+    choices: [Opt],
+}
+
+export struct Curve {
+    fan: string,       // "CPU", "GPU", "MID"
+    label: string,
+    enabled: bool,
+    temps: [int],      // 8 points, °C
+    pwm: [int],        // 8 points, 0..255
+    path: string,      // the line, in a 100×100 view box
+}
+
+export struct Reading { label: string, value: string, icon: string, frac: float, tint: color }
+
+export global Rog {
+    in property <bool> ready: false;
+    in property <bool> available: false;
+    in property <string> reason;
+    in property <string> model;
+    in property <string> version;
+
+    // performance
+    in property <[Opt]> profiles;
+    in property <int> profile: -1;
+    in property <bool> has-auto-profile;
+    in property <bool> change-on-ac;
+    in property <bool> change-on-battery;
+    in property <int> profile-on-ac: -1;
+    in property <int> profile-on-battery: -1;
+    callback set-profile(int);
+    callback set-auto(bool /* ac? */, bool /* on */);
+    callback set-auto-profile(bool /* ac? */, int);
+
+    // battery
+    in property <bool> has-charge-limit;
+    in property <int> charge-limit: 100;
+    callback set-charge-limit(int);
+    callback full-charge();
+    in property <[Reading]> battery;
+    in property <float> battery-level: -1;
+    in property <string> battery-state;
+
+    // keyboard
+    in property <bool> has-keyboard;
+    in property <int> kbd-brightness;
+    in property <int> kbd-levels: 4;
+    in property <[Opt]> kbd-modes;
+    in property <int> kbd-mode;
+    in property <color> kbd-colour: #ff0000;
+    in property <color> kbd-colour2: #0000ff;
+    in property <int> kbd-speed: 1;
+    in property <int> kbd-direction: 0;
+    callback set-kbd-brightness(int);
+    callback set-kbd-effect(int /* mode */, color, color, int /* speed */, int /* direction */);
+
+    // graphics
+    in property <bool> has-gpu;
+    in property <[Opt]> gpu-modes;
+    in property <int> gpu-mode: -1;
+    in property <int> gpu-pending: -1;
+    in property <string> gpu-source;    // "asusd" or "supergfxd"
+    in property <string> gpu-power;
+    in property <string> gpu-action;
+    callback set-gpu-mode(int);
+
+    // fans
+    in property <bool> has-fans;
+    in property <int> fan-profile: -1;
+    in property <[Curve]> curves;
+    callback pick-fan-profile(int);
+    callback move-point(int /* curve */, int /* point */, int /* temp */, int /* pwm */);
+    callback apply-curve(int);
+    callback set-curve-enabled(int, bool);
+    callback reset-curves();
+
+    // firmware
+    in property <[Attr]> attrs;
+    callback set-attr(string, int);
+
+    // live
+    in property <[Reading]> sensors;
+
+    in property <string> toast;
+    in property <bool> toast-bad;
+}
+
+component Page inherits Scroll {
+    in property <string> title;
+    in property <string> subtitle;
+}
+
+component Row inherits Rectangle {
+    in property <string> title;
+    in property <string> text;
+    min-height: lay.preferred-height;
+    lay := HorizontalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 16px;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+            Text { text: root.title; color: Theme.ink; font-size: Theme.fs(13); font-weight: 600; }
+            if root.text != "": Text { text: root.text; color: Theme.ink3; font-size: Theme.fs(12); wrap: word-wrap; }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            @children
+        }
+    }
+}
+
+component Tile inherits Card {
+    in property <string> icon;
+    in property <string> label;
+    in property <string> value;
+    in property <float> frac: -1;
+    in property <color> tint: Theme.accent;
+    min-height: 92px;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 8px;
+            Icon { name: root.icon; size: 16px; }
+            Text { text: root.label; color: Theme.ink3; font-size: Theme.fs(12); vertical-alignment: center; overflow: elide; }
+        }
+        Text { text: root.value; color: Theme.ink; font-size: Theme.fs(20); font-weight: 600; overflow: elide; }
+        if root.frac >= 0: Meter { value: root.frac; fill: root.tint; }
+    }
+}
+
+component SectionTitle inherits VerticalLayout {
+    in property <string> title;
+    in property <string> text;
+    spacing: 4px;
+    padding-bottom: 6px;
+    Heading { text: root.title; }
+    if root.text != "": Text { text: root.text; color: Theme.ink3; font-size: Theme.fs(12.5); wrap: word-wrap; }
+}
+
+component Swatch inherits Rectangle {
+    in property <color> colour;
+    in property <bool> chosen;
+    callback picked();
+    width: 26px;
+    height: 26px;
+    border-radius: 13px;
+    background: colour;
+    border-width: chosen ? 3px : 1px;
+    border-color: chosen ? Theme.ink : Theme.edge;
+    animate border-width { duration: Theme.t(220); easing: spring(0.3); }
+    TouchArea { mouse-cursor: pointer; clicked => { root.picked(); } }
+}
+
+component ColourRow inherits HorizontalLayout {
+    in-out property <color> colour;
+    callback changed(color);
+    spacing: 8px;
+    alignment: end;
+    for c in [#ff0000, #ff5a00, #ffc800, #4cff4c, #00e5ff, #2f6bff, #9b4dff, #ff3ec8, #ffffff]: Swatch {
+        colour: c;
+        chosen: root.colour == c;
+        picked => { root.colour = c; root.changed(c); }
+    }
+}
+
+// The fan curve: eight points, temperature across and fan speed up, each
+// one dragged into place. The line is drawn by the app in a 100×100 view.
+component CurveChart inherits Rectangle {
+    in property <Curve> curve;
+    in property <int> index;
+    in property <color> tint: Theme.accent;
+    callback moved(int, int, int);
+    callback released();
+    height: 220px;
+    border-radius: Theme.r-sm;
+    background: Theme.hover;
+    property <length> pad: 18px;
+    property <length> w: self.width - 2 * pad;
+    property <length> h: self.height - 2 * pad;
+    // Grid: every 20 °C and every 25 %.
+    for i in 5: Rectangle {
+        x: root.pad + root.w * i / 4;
+        y: root.pad;
+        width: 1px;
+        height: root.h;
+        background: Theme.rule;
+    }
+    for i in 5: Rectangle {
+        x: root.pad;
+        y: root.pad + root.h * i / 4;
+        width: root.w;
+        height: 1px;
+        background: Theme.rule;
+    }
+    for i in 5: Text {
+        x: root.pad + root.w * i / 4 - 10px;
+        y: root.height - 15px;
+        width: 20px;
+        horizontal-alignment: center;
+        text: (20 + i * 20) + "°";
+        color: Theme.ink3;
+        font-size: Theme.fs(10);
+    }
+    Path {
+        x: root.pad;
+        y: root.pad;
+        width: root.w;
+        height: root.h;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: root.curve.path;
+        stroke: root.curve.enabled ? root.tint : Theme.ink3;
+        stroke-width: 2.5px;
+        fill: transparent;
+    }
+    for t[i] in root.curve.temps: Rectangle {
+        property <float> fx: (t - 20) / 80;
+        property <float> fy: root.curve.pwm[i] / 255;
+        x: root.pad + root.w * max(0, min(1, fx)) - 7px;
+        y: root.pad + root.h * (1 - fy) - 7px;
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        background: drag.pressed || drag.has-hover ? root.tint : Theme.dialog;
+        border-width: 2.5px;
+        border-color: root.curve.enabled ? root.tint : Theme.ink3;
+        drag := TouchArea {
+            mouse-cursor: move;
+            moved => {
+                if (self.pressed) {
+                    let px = parent.x + self.mouse-x - root.pad;
+                    let py = parent.y + self.mouse-y - root.pad;
+                    let temp = round(20 + 80 * max(0, min(1, px / root.w)));
+                    let pwm = round(255 * max(0, min(1, 1 - py / root.h)));
+                    root.moved(i, temp, pwm);
+                }
+            }
+            pointer-event(e) => { if (e.kind == PointerEventKind.up) { root.released(); } }
+        }
+        if drag.pressed: Rectangle {
+            x: -24px;
+            y: -30px;
+            width: 62px;
+            height: 22px;
+            border-radius: 6px;
+            background: Theme.dialog;
+            border-width: 1px;
+            border-color: Theme.edge;
+            Text {
+                text: t + "° · " + round(root.curve.pwm[i] / 2.55) + "%";
+                color: Theme.ink;
+                font-size: Theme.fs(10.5);
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component AppWindow inherits KitWindow {
+    title: "ROG Control Center";
+    preferred-width: 1080px;
+    preferred-height: 720px;
+    in-out property <string> page: "overview";
+    property <[{id: string, label: string, icon: string, shown: bool}]> pages: [
+        { id: "overview", label: "Overview", icon: "layoutDashboard", shown: true },
+        { id: "performance", label: "Performance", icon: "gauge", shown: Rog.profiles.length > 0 },
+        { id: "fans", label: "Fans", icon: "fan", shown: Rog.has-fans },
+        { id: "keyboard", label: "Keyboard", icon: "keyboard", shown: Rog.has-keyboard },
+        { id: "battery", label: "Battery", icon: "battery", shown: true },
+        { id: "graphics", label: "Graphics", icon: "chip", shown: Rog.has-gpu },
+        { id: "firmware", label: "Firmware", icon: "sliders", shown: Rog.attrs.length > 0 },
+    ];
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "ROG Control Center";
+            app-icon: "zap";
+            subtitle: Rog.model;
+        }
+        Rule {}
+        HorizontalLayout {
+            Sidebar {
+                for p in root.pages: NavItem {
+                    visible: p.shown;
+                    height: p.shown ? 34px : 0px;
+                    icon: p.icon;
+                    text: p.label;
+                    selected: root.page == p.id;
+                    clicked => { root.page = p.id; }
+                }
+                Rectangle { vertical-stretch: 1; }
+                if Rog.version != "": Text {
+                    text: "asusd " + Rog.version;
+                    color: Theme.ink3;
+                    font-size: Theme.fs(11);
+                    horizontal-alignment: center;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                if !Rog.ready: VerticalLayout {
+                    alignment: center;
+                    HorizontalLayout { alignment: center; Spinner {} }
+                }
+                if Rog.ready && !Rog.available: Empty {
+                    icon: "zap";
+                    title: "asusd isn't running";
+                    text: Rog.reason != "" ? Rog.reason : "ROG Control Center works through asusd (asusctl) and supergfxd.\nInstall them and run: systemctl enable --now asusd supergfxd";
+                }
+                if Rog.ready && Rog.available && root.page == "overview": Scroll {
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 18px;
+                        SectionTitle { title: "Overview"; text: Rog.model; }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            for s in Rog.sensors: Tile { icon: s.icon; label: s.label; value: s.value; frac: s.frac; tint: s.tint; }
+                        }
+                        if Rog.profiles.length > 0: Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 10px;
+                                Caption { text: "PERFORMANCE PROFILE"; }
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    for p in Rog.profiles: Rectangle {
+                                        height: 64px;
+                                        horizontal-stretch: 1;
+                                        border-radius: Theme.r-sm;
+                                        background: Rog.profile == p.id ? Theme.accent : pta.has-hover ? Theme.sel : Theme.hover;
+                                        animate background { duration: Theme.t(240); easing: spring(0); }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            spacing: 4px;
+                                            HorizontalLayout {
+                                                alignment: center;
+                                                Icon {
+                                                    name: p.id == 1 ? "zap" : p.id == 2 ? "moon" : p.id == 3 ? "battery" : "gauge";
+                                                    size: 18px;
+                                                    ink: Rog.profile == p.id ? Theme.ink-on-accent : Theme.ink2;
+                                                    acc: Rog.profile == p.id ? Theme.ink-on-accent : Theme.accent;
+                                                }
+                                            }
+                                            Text {
+                                                text: p.name;
+                                                horizontal-alignment: center;
+                                                font-weight: 600;
+                                                color: Rog.profile == p.id ? Theme.ink-on-accent : Theme.ink;
+                                            }
+                                        }
+                                        pta := TouchArea { mouse-cursor: pointer; clicked => { Rog.set-profile(p.id); } }
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            if Rog.has-charge-limit: Card {
+                                horizontal-stretch: 1;
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 10px;
+                                    Caption { text: "CHARGE LIMIT"; }
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        Slider {
+                                            horizontal-stretch: 1;
+                                            minimum: 20;
+                                            maximum: 100;
+                                            step: 5;
+                                            value: Rog.charge-limit;
+                                            released(v) => { Rog.set-charge-limit(v); }
+                                        }
+                                        Text { text: Rog.charge-limit + "%"; color: Theme.ink; font-weight: 600; vertical-alignment: center; width: 44px; }
+                                    }
+                                }
+                            }
+                            if Rog.has-keyboard: Card {
+                                horizontal-stretch: 1;
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 10px;
+                                    Caption { text: "KEYBOARD BACKLIGHT"; }
+                                    Seg {
+                                        options: Rog.kbd-levels >= 4 ? ["Off", "Low", "Medium", "High"] : ["Off", "On"];
+                                        current: Rog.kbd-brightness;
+                                        picked(i) => { Rog.set-kbd-brightness(i); }
+                                    }
+                                }
+                            }
+                            if Rog.has-gpu: Card {
+                                horizontal-stretch: 1;
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 10px;
+                                    Caption { text: "GPU MODE"; }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        for m in Rog.gpu-modes: Button {
+                                            small: true;
+                                            text: m.name;
+                                            kind: Rog.gpu-mode == m.id ? "primary" : "secondary";
+                                            horizontal-stretch: 1;
+                                            clicked => { Rog.set-gpu-mode(m.id); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+                if Rog.ready && Rog.available && root.page == "performance": Scroll {
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 14px;
+                        SectionTitle {
+                            title: "Performance";
+                            text: "How hard the processor and fans work. Quiet keeps the fans down; Performance lets everything run as fast as it can.";
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                Row {
+                                    title: "Profile";
+                                    text: "Fn+F5 cycles through these too.";
+                                    for p in Rog.profiles: Button {
+                                        small: true;
+                                        text: p.name;
+                                        kind: Rog.profile == p.id ? "primary" : "secondary";
+                                        clicked => { Rog.set-profile(p.id); }
+                                    }
+                                }
+                                if Rog.has-auto-profile: Rule {}
+                                if Rog.has-auto-profile: Row {
+                                    title: "Switch when plugged in";
+                                    text: "Change to a profile of its own on mains power.";
+                                    Switch { on: Rog.change-on-ac; toggled(v) => { Rog.set-auto(true, v); } }
+                                }
+                                if Rog.has-auto-profile && Rog.change-on-ac: Row {
+                                    title: "On mains power";
+                                    for p in Rog.profiles: Button {
+                                        small: true;
+                                        text: p.name;
+                                        kind: Rog.profile-on-ac == p.id ? "primary" : "ghost";
+                                        clicked => { Rog.set-auto-profile(true, p.id); }
+                                    }
+                                }
+                                if Rog.has-auto-profile: Rule {}
+                                if Rog.has-auto-profile: Row {
+                                    title: "Switch on battery";
+                                    text: "Change to a profile of its own when unplugged.";
+                                    Switch { on: Rog.change-on-battery; toggled(v) => { Rog.set-auto(false, v); } }
+                                }
+                                if Rog.has-auto-profile && Rog.change-on-battery: Row {
+                                    title: "On battery";
+                                    for p in Rog.profiles: Button {
+                                        small: true;
+                                        text: p.name;
+                                        kind: Rog.profile-on-battery == p.id ? "primary" : "ghost";
+                                        clicked => { Rog.set-auto-profile(false, p.id); }
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+                if Rog.ready && Rog.available && root.page == "fans": Scroll {
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 14px;
+                        SectionTitle {
+                            title: "Fan curves";
+                            text: "Each profile has its own curves. Drag a point to set how fast a fan runs at that temperature; a curve that is off leaves the fan to the firmware.";
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            for p in Rog.profiles: Button {
+                                small: true;
+                                text: p.name;
+                                kind: Rog.fan-profile == p.id ? "primary" : "secondary";
+                                clicked => { Rog.pick-fan-profile(p.id); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            Button { small: true; icon: "restore"; text: "Reset to defaults"; kind: "ghost"; clicked => { Rog.reset-curves(); } }
+                        }
+                        for c[ci] in Rog.curves: Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 12px;
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Icon { name: "fan"; size: 18px; }
+                                    Text { text: c.label; color: Theme.ink; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+                                    Dim { text: c.enabled ? "Custom curve" : "Firmware default"; }
+                                    Switch { on: c.enabled; toggled(v) => { Rog.set-curve-enabled(ci, v); } }
+                                }
+                                CurveChart {
+                                    curve: c;
+                                    index: ci;
+                                    tint: ci == 0 ? Theme.accent : ci == 1 ? #4c9cff : Theme.ok;
+                                    moved(i, t, p) => { Rog.move-point(ci, i, t, p); }
+                                    released => { Rog.apply-curve(ci); }
+                                }
+                            }
+                        }
+                        if Rog.curves.length == 0: Empty {
+                            icon: "fan";
+                            title: "No curves for this profile";
+                            text: "asusd has no custom fan curves for it on this model.";
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+                if Rog.ready && Rog.available && root.page == "keyboard": Scroll {
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 14px;
+                        SectionTitle { title: "Keyboard lighting"; text: "The keyboard's backlight and its effect."; }
+                        Card {
+                            VerticalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                Row {
+                                    title: "Brightness";
+                                    Seg {
+                                        width: 300px;
+                                        options: Rog.kbd-levels >= 4 ? ["Off", "Low", "Medium", "High"] : ["Off", "On"];
+                                        current: Rog.kbd-brightness;
+                                        picked(i) => { Rog.set-kbd-brightness(i); }
+                                    }
+                                }
+                                Rule {}
+                                Row {
+                                    title: "Effect";
+                                    text: "What the lighting does.";
+                                }
+                                // Six to a row: a dozen effects do not fit on one line.
+                                Rectangle {
+                                    property <int> cols: 6;
+                                    height: ceil(Rog.kbd-modes.length / self.cols) * 36px + 12px;
+                                    for m[i] in Rog.kbd-modes: Button {
+                                        small: true;
+                                        x: mod(i, parent.cols) * (parent.width + 8px) / parent.cols;
+                                        y: floor(i / parent.cols) * 36px;
+                                        width: (parent.width + 8px) / parent.cols - 8px;
+                                        text: m.name;
+                                        kind: Rog.kbd-mode == m.id ? "primary" : "secondary";
+                                        clicked => { Rog.set-kbd-effect(m.id, Rog.kbd-colour, Rog.kbd-colour2, Rog.kbd-speed, Rog.kbd-direction); }
+                                    }
+                                }
+                                Rule {}
+                                Row {
+                                    title: "Colour";
+                                    ColourRow {
+                                        colour: Rog.kbd-colour;
+                                        changed(c) => { Rog.set-kbd-effect(Rog.kbd-mode, c, Rog.kbd-colour2, Rog.kbd-speed, Rog.kbd-direction); }
+                                    }
+                                }
+                                if Rog.kbd-mode == 1: Row {
+                                    title: "Second colour";
+                                    text: "Breathing fades between the two.";
+                                    ColourRow {
+                                        colour: Rog.kbd-colour2;
+                                        changed(c) => { Rog.set-kbd-effect(Rog.kbd-mode, Rog.kbd-colour, c, Rog.kbd-speed, Rog.kbd-direction); }
+                                    }
+                                }
+                                Rule {}
+                                Row {
+                                    title: "Speed";
+                                    Seg {
+                                        width: 240px;
+                                        options: ["Slow", "Medium", "Fast"];
+                                        current: Rog.kbd-speed;
+                                        picked(i) => { Rog.set-kbd-effect(Rog.kbd-mode, Rog.kbd-colour, Rog.kbd-colour2, i, Rog.kbd-direction); }
+                                    }
+                                }
+                                if Rog.kbd-mode == 3: Row {
+                                    title: "Direction";
+                                    Seg {
+                                        width: 280px;
+                                        options: ["Right", "Left", "Up", "Down"];
+                                        current: Rog.kbd-direction;
+                                        picked(i) => { Rog.set-kbd-effect(Rog.kbd-mode, Rog.kbd-colour, Rog.kbd-colour2, Rog.kbd-speed, i); }
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+                if Rog.ready && Rog.available && root.page == "battery": Scroll {
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 14px;
+                        SectionTitle {
+                            title: "Battery";
+                            text: "Stopping the charge short of full is easier on the battery when the laptop lives on its charger.";
+                        }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            for s in Rog.battery: Tile { icon: s.icon; label: s.label; value: s.value; frac: s.frac; tint: s.tint; }
+                        }
+                        if Rog.has-charge-limit: Card {
+                            VerticalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                Row {
+                                    title: "Charge limit";
+                                    text: "Charging stops here. 80% is a good everyday limit.";
+                                    for v in [60, 80, 100]: Button {
+                                        small: true;
+                                        text: v + "%";
+                                        kind: Rog.charge-limit == v ? "primary" : "secondary";
+                                        clicked => { Rog.set-charge-limit(v); }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    padding-bottom: 14px;
+                                    spacing: 12px;
+                                    Slider {
+                                        horizontal-stretch: 1;
+                                        minimum: 20;
+                                        maximum: 100;
+                                        step: 1;
+                                        value: Rog.charge-limit;
+                                        released(v) => { Rog.set-charge-limit(v); }
+                                    }
+                                    Text { text: Rog.charge-limit + "%"; color: Theme.ink; font-weight: 600; vertical-alignment: center; width: 44px; }
+                                }
+                                Rule {}
+                                Row {
+                                    title: "Charge to full once";
+                                    text: "For a long day away from the charger: one charge to 100%, then back to the limit.";
+                                    Button { text: "Charge to 100%"; icon: "plugZap"; clicked => { Rog.full-charge(); } }
+                                }
+                            }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+                if Rog.ready && Rog.available && root.page == "graphics": Scroll {
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 14px;
+                        SectionTitle {
+                            title: "Graphics";
+                            text: "Integrated turns the discrete GPU off for the longest battery life. Hybrid uses it when an app asks. Ultimate wires the screen straight to it.";
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 12px;
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    for m in Rog.gpu-modes: Rectangle {
+                                        height: 74px;
+                                        horizontal-stretch: 1;
+                                        border-radius: Theme.r-sm;
+                                        background: Rog.gpu-mode == m.id ? Theme.accent : gta.has-hover ? Theme.sel : Theme.hover;
+                                        border-width: Rog.gpu-pending == m.id ? 2px : 0px;
+                                        border-color: Theme.accent;
+                                        animate background { duration: Theme.t(240); easing: spring(0); }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            spacing: 4px;
+                                            Text {
+                                                text: m.name;
+                                                horizontal-alignment: center;
+                                                font-weight: 600;
+                                                color: Rog.gpu-mode == m.id ? Theme.ink-on-accent : Theme.ink;
+                                            }
+                                            if Rog.gpu-pending == m.id: Text {
+                                                text: "after restart";
+                                                horizontal-alignment: center;
+                                                font-size: Theme.fs(11);
+                                                color: Theme.accent;
+                                            }
+                                        }
+                                        gta := TouchArea { mouse-cursor: pointer; clicked => { Rog.set-gpu-mode(m.id); } }
+                                    }
+                                }
+                                if Rog.gpu-power != "": KeyValue { key: "Discrete GPU"; value: Rog.gpu-power; }
+                                if Rog.gpu-action != "": HorizontalLayout {
+                                    spacing: 8px;
+                                    Icon { name: "info"; size: 16px; }
+                                    Text { text: Rog.gpu-action; color: Theme.accent; wrap: word-wrap; horizontal-stretch: 1; }
+                                }
+                                Dim { text: "Switched through " + Rog.gpu-source + "."; }
+                            }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+                if Rog.ready && Rog.available && root.page == "firmware": Scroll {
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 14px;
+                        SectionTitle {
+                            title: "Firmware";
+                            text: "Settings the laptop's firmware keeps itself. Power limits are in watts; leave them alone unless you know what you want.";
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                for a[i] in Rog.attrs: VerticalLayout {
+                                    if i > 0: Rule {}
+                                    Row {
+                                        title: a.label;
+                                        text: a.help;
+                                        if a.kind == "switch": Switch {
+                                            on: a.value != 0;
+                                            toggled(v) => { Rog.set-attr(a.name, v ? 1 : 0); }
+                                        }
+                                        if a.kind == "choice": HorizontalLayout {
+                                            spacing: 6px;
+                                            for o in a.choices: Button {
+                                                small: true;
+                                                text: o.name;
+                                                kind: a.value == o.id ? "primary" : "secondary";
+                                                clicked => { Rog.set-attr(a.name, o.id); }
+                                            }
+                                        }
+                                        if a.kind == "slider": HorizontalLayout {
+                                            spacing: 10px;
+                                            width: 300px;
+                                            Slider {
+                                                horizontal-stretch: 1;
+                                                minimum: a.min;
+                                                maximum: a.max;
+                                                step: max(1, a.step);
+                                                value: a.value;
+                                                released(v) => { Rog.set-attr(a.name, v); }
+                                            }
+                                            Text { text: a.value + a.unit; color: Theme.ink; font-weight: 600; vertical-alignment: center; width: 56px; horizontal-alignment: right; }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+                Toast { text: Rog.toast; bad: Rog.toast-bad; }
+            }
+        }
+    }
+}

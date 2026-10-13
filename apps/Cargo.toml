@@ -1,0 +1,15 @@
+# Hyprshell's Rust apps, built with Slint. `kit` is what they share.
+[workspace]
+members = ["kit", "rog"]
+resolver = "2"
+
+[workspace.dependencies]
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit-wayland", "renderer-femtovg", "renderer-software", "unstable-winit-030"] }
+slint-build = "1.18"
+hyprshell-kit = { path = "kit" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 8
+strip = true
