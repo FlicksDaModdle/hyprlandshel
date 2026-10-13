@@ -58,15 +58,15 @@ Singleton {
         const h = v => ("0" + Math.round(v * 255).toString(16)).slice(-2);
         return "#" + h(c.r) + h(c.g) + h(c.b);
     }
-    // Drawn as the app icons are (CursorShapes.js): ink lines on a body
-    // in the surface colour, one element in the accent. Dark is a dark body
-    // with light lines, light the reverse; auto follows the theme. Either
-    // shows on anything — the body frames the lines.
+    // Drawn as a system pointer is (CursorShapes.js): a solid body inside a
+    // thin outline, with a fine keyline of the accent between them. Dark
+    // is a near-black body with a white outline, light the reverse; auto
+    // follows the theme. Either shows on anything — the outline frames it.
     readonly property bool darkBody: prefs.cursorFill === "dark" ? true
                                    : prefs.cursorFill === "light" ? false
                                    : prefs.dark
-    readonly property string base: root.darkBody ? "#1f1d1c" : "#fbfafa"
-    readonly property string ink: root.darkBody ? "#f8f4f4" : "#201e1d"
+    readonly property string base: root.darkBody ? "#161515" : "#ffffff"
+    readonly property string ink: root.darkBody ? "#ffffff" : "#1a1919"
     readonly property string acc: root.hex(prefs.accent)
     readonly property int size: Math.max(16, Math.min(96, prefs.cursorSize))
 

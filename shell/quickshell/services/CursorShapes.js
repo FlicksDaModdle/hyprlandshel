@@ -1,20 +1,27 @@
 .pragma library
 
-// The shell's cursor set, drawn the way the app icons are (modules/icons/
-// IconPaths.js): on a 24-unit grid, in 2px monoline with round caps and
-// joins, ink for the drawing and exactly one accent element — the arrow's
-// tail, an arrowhead pair, a badge's mark, the spinner's arc.
+// The shell's cursor set.
 //
-// A cursor has to stand out on anything, where an icon sits on a tile, so
-// each shape carries its tile with it: the body filled in the surface
-// colour, and a halo of the same colour round every line, wider than the
-// line, so the ink is framed on both sides whatever is underneath. Then a
-// faint shadow, for depth on a background of the body's own colour.
+// Drawn the way a system pointer is, not the way an icon is: each shape is
+// a solid silhouette — the body — inside a crisp, thin outline, over a soft
+// shadow. Dark is a near-black body with a white outline (macOS); light is
+// a white body with a dark outline (Windows); either reads on anything,
+// because the outline frames the body against whatever is underneath.
 //
-// Plain SVG only (paths, circles, strokes, transforms) so QtSvg — the
-// XCursor sizes — and librsvg — Hyprland's, at any size — draw it alike.
-// Authored at 24 and scaled into the 32-unit square the theme uses, so the
-// line is 2px at the usual 24px cursor size, as an icon's is at 24.
+// The accent runs round every shape as a fine keyline, between the body
+// and the outline — dark body, a thread of accent, then the white edge —
+// so the pointer is unmistakably the shell's without being loud about it.
+// It is the whole colour of the busy ring's turning arc and of the badge
+// on copy, link and the rest.
+//
+// Plain SVG only — paths, circles, strokes, transforms, opacity, no filters
+// — so every renderer draws it alike: resvg (hyprshell-cursors, the XCursor
+// sizes), librsvg (Hyprland, any size) and QtSvg (the fallback builder).
+// The shadow is a few stacked strokes of falling opacity rather than a
+// blur filter, for the same reason.
+//
+// Authored on a 24-unit grid and scaled into the theme's 32-unit square,
+// so the outline is about 1.4px at the usual 24px size.
 
 const S = 32 / 24;
 
@@ -23,34 +30,62 @@ function svg(body) {
          + '<g transform="scale(' + S + ')">' + body + '</g></svg>';
 }
 
-// A shape as the icon pack spells one: { fill, ink, acc, dots }, each path
-// data (dots are [{ cx, cy, r, c: "ink" | "acc" | "base" }]).
-function draw(g, c) {
-    const fill = g.fill || "", ink = g.ink || "", acc = g.acc || "";
-    const lines = [ink, acc].filter(p => p).join(" ");
-    const all = [fill, lines].filter(p => p).join(" ");
-    const dots = g.dots || [];
-    let out = "";
-    // shadow
-    out += '<g transform="translate(0.35 0.7)" fill="#000" fill-opacity="0.2" stroke="#000" stroke-opacity="0.2" '
-         + 'stroke-width="5" stroke-linecap="round" stroke-linejoin="round">'
-         + (fill ? '<path d="' + fill + '"/>' : '')
-         + (lines ? '<path d="' + lines + '" fill="none"/>' : '')
-         + dots.map(d => '<circle cx="' + d.cx + '" cy="' + d.cy + '" r="' + d.r + '"/>').join("")
-         + '</g>';
-    // the tile: halo round everything, and the body filled
-    out += '<g stroke="' + c.base + '" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round">'
-         + (fill ? '<path d="' + fill + '" fill="' + c.base + '"/>' : '')
-         + (lines ? '<path d="' + lines + '" fill="none"/>' : '')
-         + dots.map(d => '<circle cx="' + d.cx + '" cy="' + d.cy + '" r="' + d.r + '" fill="' + c.base + '"/>').join("")
-         + '</g>';
-    // the drawing
-    if (fill) out += '<path d="' + fill + '" fill="none" stroke="' + c.ink + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-    if (ink) out += '<path d="' + ink + '" fill="none" stroke="' + c.ink + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-    if (acc) out += '<path d="' + acc + '" fill="none" stroke="' + c.acc + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-    for (const d of dots)
-        out += '<circle cx="' + d.cx + '" cy="' + d.cy + '" r="' + d.r + '" fill="'
-             + (d.c === "acc" ? c.acc : d.c === "base" ? c.base : c.ink) + '"/>';
+const OUTLINE = 1.3;
+// The accent keyline, between the body and the outline.
+const RIM = 0.65;
+
+// A shadow under some geometry: offset down a little, built from widening
+// strokes that fade, which reads as a soft edge at cursor sizes.
+function shadow(fills, lines, lineWidth) {
+    let out = '<g transform="translate(0 0.9)" stroke-linecap="round" stroke-linejoin="round">';
+    const layers = [[3.4, 0.05], [2.4, 0.07], [1.4, 0.1]];
+    for (const [w, o] of layers) {
+        out += '<g stroke="#000" stroke-opacity="' + o + '" fill="none">';
+        for (const f of fills) out += '<path d="' + f + '" stroke-width="' + (OUTLINE + RIM + w) + '"/>';
+        for (const l of lines) out += '<path d="' + l + '" stroke-width="' + (lineWidth + 2 * OUTLINE + w) + '"/>';
+        out += '</g>';
+    }
+    out += '<g fill="#000" fill-opacity="0.18" fill-rule="evenodd">';
+    for (const f of fills) out += '<path d="' + f + '"/>';
+    out += '</g></g>';
+    return out;
+}
+
+// A shape: { fills: [path], lines: [path], lineWidth, details: [path],
+// accent: [path] (lines in the accent), accentFill: [path] }.
+//   fills    solid areas: body colour, outlined
+//   lines    strokes drawn as the body, outlined (an I-beam, a crosshair)
+//   details  thin outline-coloured strokes on top of the body (the gaps
+//            between fingers)
+function draw(sh, c) {
+    const fills = sh.fills || [], lines = sh.lines || [], details = sh.details || [];
+    const lw = sh.lineWidth || 1.6;
+    let out = shadow(fills, lines, lw);
+    // Outward from the body's edge: the accent keyline, then the outline.
+    // Both are strokes centred on the edge, drawn under the body, so the
+    // body covers their inner halves and what shows is two clean rings.
+    const ring = (colour, reach, withLines) => {
+        let r = '<g stroke="' + colour + '" stroke-linecap="round" stroke-linejoin="round" fill="' + colour + '" fill-rule="evenodd">';
+        for (const f of fills) r += '<path d="' + f + '" stroke-width="' + (reach * 2) + '"/>';
+        if (withLines)
+            for (const l of lines) r += '<path d="' + l + '" fill="none" stroke-width="' + (lw + 2 * reach) + '"/>';
+        return r + '</g>';
+    };
+    // Lines (an I-beam, a crosshair) are too fine to frame in colour: they
+    // keep a plain outline, and only solid shapes carry the keyline.
+    out += ring(c.ink, OUTLINE + RIM, false);
+    out += ring(c.ink, OUTLINE, true);
+    out += ring(c.acc, RIM, false);
+    // body
+    for (const f of fills) out += '<path d="' + f + '" fill="' + c.base + '" fill-rule="evenodd"/>';
+    for (const l of lines)
+        out += '<path d="' + l + '" fill="none" stroke="' + c.base + '" stroke-width="' + lw
+             + '" stroke-linecap="round" stroke-linejoin="round"/>';
+    for (const d of details)
+        out += '<path d="' + d + '" fill="none" stroke="' + c.ink + '" stroke-width="1" stroke-linecap="round"/>';
+    for (const a of (sh.accent || []))
+        out += '<path d="' + a + '" fill="none" stroke="' + c.acc + '" stroke-width="' + (sh.accentWidth || 2)
+             + '" stroke-linecap="round"/>';
     return out;
 }
 
@@ -60,157 +95,181 @@ function circle(cx, cy, r) {
 }
 function g(transform, body) { return '<g transform="' + transform + '">' + body + '</g>'; }
 
-// The icon pack's own `cursor` glyph, with its tail picked out in accent.
-const ARROW = "M6 3 L6 17.5 L9.6 14.2 L12 19.8 L14.4 18.8 L12 13.4 L17.5 12.8 Z";
-const ARROW_HOT = [6 / 24, 3 / 24];
-function arrow(c) {
-    return draw({ fill: ARROW, acc: "M9.6 14.2 L12 19.8 L14.4 18.8 L12 13.4" }, c);
-}
-// Smaller, in the corner, leaving room for a badge; the badge's mark is
-// the accent then, so the arrow is plain ink.
-const SMALL = "translate(0.6 0.2) scale(0.82)";
-const SMALL_HOT = [(0.6 + 6 * 0.82) / 24, (0.2 + 3 * 0.82) / 24];
-function smallArrow(c) { return g(SMALL, draw({ fill: ARROW }, c)); }
-function badge(c, mark, dots) {
-    return draw({ fill: circle(17.5, 17.5, 4.6), acc: mark, dots: dots || [] }, c);
+// ── the arrow ───────────────────────────────────────────────────────────
+// Classic proportions: a straight left edge, the tail kinked out to the
+// lower right, the wing level with where the tail leaves.
+const ARROW = "M5.5 2.8 L5.5 19.4 L9.4 15.7 L11.9 21.5 L14.7 20.3 L12.2 14.6 L17.6 14.6 Z";
+const ARROW_HOT = [5.5 / 24, 2.8 / 24];
+function arrow(c) { return draw({ fills: [ARROW] }, c); }
+
+// Smaller, up in the corner, leaving room for a badge below right.
+const SMALL = "translate(0.4 0.2) scale(0.84)";
+const SMALL_HOT = [(0.4 + 5.5 * 0.84) / 24, (0.2 + 2.8 * 0.84) / 24];
+function smallArrow(c) { return g(SMALL, arrow(c)); }
+
+// A badge: a disc in the accent with a white mark, outlined like the rest.
+function badge(c, mark, dot) {
+    const cx = 17.6, cy = 17.6, r = 4.5;
+    let out = shadow([circle(cx, cy, r)], [], 0);
+    out += '<path d="' + circle(cx, cy, r + OUTLINE * 0.75) + '" fill="' + c.ink + '"/>';
+    out += '<path d="' + circle(cx, cy, r) + '" fill="' + c.acc + '"/>';
+    if (mark) out += '<path d="' + mark + '" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
+    if (dot) out += '<circle cx="' + dot[0] + '" cy="' + dot[1] + '" r="0.8" fill="#fff"/>';
+    return out;
 }
 
-// A pointing hand: the index finger up, three folded behind it, the thumb
-// along the side — one outline, as the icons' shapes are.
+// ── hands ───────────────────────────────────────────────────────────────
+// The index finger up, three folded behind it, the thumb along the side —
+// one silhouette, with the gaps between the folded fingers drawn in.
 const HAND = "M9.2 12.2 V4.6 A1.55 1.55 0 0 1 12.3 4.6 V10.6 "
            + "A1.5 1.5 0 0 1 15.3 10.6 V11.3 A1.5 1.5 0 0 1 18.3 11.3 V12 A1.45 1.45 0 0 1 21.2 12 "
            + "V15.6 A5.6 5.6 0 0 1 15.6 21.2 H13.4 A5 5 0 0 1 9.4 19.2 L5.6 14.6 "
            + "A1.55 1.55 0 0 1 7.9 12.5 L9.2 13.9 Z";
 function hand(c) {
-    return draw({ fill: HAND, ink: "M12.3 10.6 V13 M15.3 11.3 V13 M18.3 12 V13.4",
-                  acc: "M10.75 4.2 V6.2" }, c);
+    return draw({ fills: [HAND], details: ["M12.3 10.8 V13.4", "M15.3 11.5 V13.4", "M18.3 12.2 V13.6"] }, c);
 }
 const OPEN_HAND = "M8.6 12.6 V6.6 A1.45 1.45 0 0 1 11.5 6.6 V11.2 V4.8 A1.45 1.45 0 0 1 14.4 4.8 V11.2 "
                 + "V5.8 A1.45 1.45 0 0 1 17.3 5.8 V11.6 V8.2 A1.4 1.4 0 0 1 20.1 8.2 V15.4 "
                 + "A5.8 5.8 0 0 1 14.3 21.2 H13.2 A5 5 0 0 1 9.2 19.2 L5.2 14.2 "
                 + "A1.5 1.5 0 0 1 7.4 12.2 L8.6 13.4 Z";
 function openHand(c) {
-    return draw({ fill: OPEN_HAND, ink: "M11.5 11.2 V12.6 M14.4 11.2 V12.6 M17.3 11.6 V12.8",
-                  acc: "M9.2 20 H15" }, c);
+    return draw({ fills: [OPEN_HAND], details: ["M11.5 7 V12.6", "M14.4 5.4 V12.6", "M17.3 6.4 V12.8"] }, c);
 }
 const FIST = "M8.6 13 V10.4 A1.45 1.45 0 0 1 11.5 10.4 V9.4 A1.45 1.45 0 0 1 14.4 9.4 V9.8 "
            + "A1.45 1.45 0 0 1 17.3 9.8 V10.4 A1.4 1.4 0 0 1 20.1 10.4 V15.4 "
            + "A5.8 5.8 0 0 1 14.3 21.2 H13.2 A5 5 0 0 1 9.2 19.2 L7.2 16.4 A1.5 1.5 0 0 1 8.6 14.2 Z";
 function fist(c) {
-    return draw({ fill: FIST, ink: "M11.5 10.4 V12.6 M14.4 9.8 V12.6 M17.3 10.4 V12.6",
-                  acc: "M9.2 20 H15" }, c);
+    return draw({ fills: [FIST], details: ["M11.5 10.6 V12.8", "M14.4 10 V12.8", "M17.3 10.6 V12.8"] }, c);
 }
 
-const IBEAM = "M9 4.5 C10.8 4.5 12 5.2 12 7 V17 C12 18.8 10.8 19.5 9 19.5 "
-            + "M15 4.5 C13.2 4.5 12 5.2 12 7 M15 19.5 C13.2 19.5 12 18.8 12 17";
-function ibeam(c) { return draw({ ink: IBEAM, acc: "M10.2 12 H13.8" }, c); }
+// ── text ────────────────────────────────────────────────────────────────
+// A slim I-beam with small serifs, the way type cursors are drawn.
+const IBEAM = "M9.4 4.6 C11 4.6 12 5.3 12 6.8 V17.2 C12 18.7 11 19.4 9.4 19.4 "
+            + "M14.6 4.6 C13 4.6 12 5.3 12 6.8 M14.6 19.4 C13 19.4 12 18.7 12 17.2";
+function ibeam(c) { return draw({ lines: [IBEAM, "M10.4 12 H13.6"], lineWidth: 1.3 }, c); }
 
-// A ring with an accent arc turning round it, frame f of n.
-function spinnerParts(cx, cy, r, f, n) {
+// ── busy ────────────────────────────────────────────────────────────────
+// A disc with a faint track and an accent arc turning round it.
+function arcPath(cx, cy, r, f, n, sweep) {
     const a0 = (f / n) * Math.PI * 2 - Math.PI / 2;
-    const a1 = a0 + Math.PI * 0.6;
+    const a1 = a0 + Math.PI * sweep;
     const p = a => [(cx + r * Math.cos(a)).toFixed(2), (cy + r * Math.sin(a)).toFixed(2)];
     const s = p(a0), e = p(a1);
-    return { ring: circle(cx, cy, r), arc: "M" + s[0] + " " + s[1] + " A" + r + " " + r + " 0 0 1 " + e[0] + " " + e[1] };
+    return "M" + s[0] + " " + s[1] + " A" + r + " " + r + " 0 " + (sweep > 1 ? 1 : 0) + " 1 " + e[0] + " " + e[1];
 }
-function spinner(c, f, n) {
-    const sp = spinnerParts(12, 12, 7, f, n);
-    return draw({ fill: sp.ring, acc: sp.arc }, c);
+function spinnerAt(c, cx, cy, r, f, n) {
+    let out = draw({ fills: [circle(cx, cy, r)] }, c);
+    const tr = r * 0.62;
+    out += '<path d="' + circle(cx, cy, tr) + '" fill="none" stroke="' + c.ink + '" stroke-opacity="0.22" stroke-width="' + (r * 0.3).toFixed(2) + '"/>';
+    out += '<path d="' + arcPath(cx, cy, tr, f, n, 0.55) + '" fill="none" stroke="' + c.acc
+         + '" stroke-width="' + (r * 0.3).toFixed(2) + '" stroke-linecap="round"/>';
+    return out;
 }
-function progress(c, f, n) {
-    const sp = spinnerParts(17.6, 17.6, 3.6, f, n);
-    return g(SMALL, draw({ fill: ARROW }, c)) + draw({ fill: sp.ring, acc: sp.arc }, c);
-}
+function spinner(c, f, n) { return spinnerAt(c, 12, 12, 7.2, f, n); }
+function progress(c, f, n) { return smallArrow(c) + spinnerAt(c, 17.6, 17.6, 4.6, f, n); }
 
-// Double arrows: the shaft in ink, the heads — the part that says which
-// way — in accent.
-const NS = { ink: "M12 4.5 V19.5", acc: "M8.6 7.9 L12 4.5 L15.4 7.9 M8.6 16.1 L12 19.5 L15.4 16.1" };
-const SPLIT = { ink: "M12 4 V20 M4.5 12 H9.5 M14.5 12 H19.5",
-                acc: "M6.8 9.7 L4.5 12 L6.8 14.3 M17.2 9.7 L19.5 12 L17.2 14.3" };
-const MOVE = { ink: "M12 4.5 V19.5 M4.5 12 H19.5",
-               acc: "M9.8 6.7 L12 4.5 L14.2 6.7 M9.8 17.3 L12 19.5 L14.2 17.3 M6.7 9.8 L4.5 12 L6.7 14.2 M17.3 9.8 L19.5 12 L17.3 14.2" };
+// ── resizing and moving ─────────────────────────────────────────────────
+// Solid double arrows: a slim shaft between two broad heads.
+const NS = "M12 3.4 L16.4 8.4 H13.15 V15.6 H16.4 L12 20.6 L7.6 15.6 H10.85 V8.4 H7.6 Z";
+// Column / row splitters: two bars with a head pointing out from each.
+const SPLIT = ["M10.6 5 V19 H13.4 V5 Z",
+               "M3.2 12 L7.9 7.6 V16.4 Z",
+               "M20.8 12 L16.1 7.6 V16.4 Z"];
+// Four heads on a cross.
+const MOVE = "M12 2.8 L15.6 6.8 H13.15 V10.85 H17.2 V8.4 L21.2 12 L17.2 15.6 V13.15 H13.15 V17.2 H15.6 "
+           + "L12 21.2 L8.4 17.2 H10.85 V13.15 H6.8 V15.6 L2.8 12 L6.8 8.4 V10.85 H10.85 V6.8 H8.4 Z";
+// A thick plus, for picking cells.
+const CELL = "M10.2 4.8 H13.8 V10.2 H19.2 V13.8 H13.8 V19.2 H10.2 V13.8 H4.8 V10.2 H10.2 Z";
 
 function magnifier(c, plus) {
-    return draw({ fill: circle(10.5, 10.5, 6), ink: "M15 15 L19.5 19.5",
-                  acc: "M8 10.5 H13" + (plus ? " M10.5 8 V13" : "") }, c);
+    let out = draw({ lines: ["M14.6 14.6 L19.8 19.8"], lineWidth: 2.6 }, c);
+    out += draw({ fills: [circle(10.4, 10.4, 6.2)] }, c);
+    out += '<path d="M7.6 10.4 H13.2' + (plus ? ' M10.4 7.6 V13.2' : '') + '" fill="none" stroke="' + c.ink
+         + '" stroke-width="1.6" stroke-linecap="round"/>';
+    return out;
+}
+
+function notAllowed(c) {
+    const ring = circle(12, 12, 7.4), hole = circle(12, 12, 5.4);
+    let out = draw({ fills: [ring + " " + hole] }, c);
+    out += draw({ lines: ["M8.2 8.2 L15.8 15.8"], lineWidth: 2 }, c);
+    return out;
 }
 
 const CENTER = [0.5, 0.5];
 
 // [{ name, aliases, hot, delay, frames }], with { base, ink, acc } colours:
-// base the body and halo, ink the drawing, acc the accent element.
+// base the body, ink the outline and details, acc the accent.
 function shapes(base, ink, acc) {
     const c = { base: base, ink: ink, acc: acc };
     const spinFrames = [], progFrames = [];
-    for (let f = 0; f < 12; f++) {
-        spinFrames.push(svg(spinner(c, f, 12)));
-        progFrames.push(svg(progress(c, f, 12)));
+    const n = 20;
+    for (let f = 0; f < n; f++) {
+        spinFrames.push(svg(spinner(c, f, n)));
+        progFrames.push(svg(progress(c, f, n)));
     }
     return [
         { name: "default", hot: ARROW_HOT, frames: [svg(arrow(c))],
           aliases: ["left_ptr", "arrow", "top_left_arrow", "left_arrow"] },
-        { name: "pointer", hot: [10.75 / 24, 3.2 / 24], frames: [svg(hand(c))],
+        { name: "pointer", hot: [10.75 / 24, 3.1 / 24], frames: [svg(hand(c))],
           aliases: ["hand", "hand1", "hand2", "pointing_hand",
                     "9d800788f1b08800ae810202380a0822", "e29285e634086352946a0e7090d73106"] },
         { name: "text", hot: CENTER, frames: [svg(ibeam(c))], aliases: ["xterm", "ibeam"] },
         { name: "vertical-text", hot: CENTER, frames: [svg(g("rotate(90 12 12)", ibeam(c)))], aliases: [] },
-        { name: "wait", hot: CENTER, delay: 60, frames: spinFrames, aliases: ["watch"] },
-        { name: "progress", hot: SMALL_HOT, delay: 60, frames: progFrames,
+        { name: "wait", hot: CENTER, delay: 40, frames: spinFrames, aliases: ["watch"] },
+        { name: "progress", hot: SMALL_HOT, delay: 40, frames: progFrames,
           aliases: ["left_ptr_watch", "half-busy",
                     "08e8e1c95fe2fc01f976f1e063a24ccd", "3ecb610c1bf2410f44200f48c40d3599"] },
         { name: "crosshair", hot: CENTER,
-          frames: [svg(draw({ ink: "M12 4 V9.5 M12 14.5 V20 M4 12 H9.5 M14.5 12 H20",
-                              dots: [{ cx: 12, cy: 12, r: 1.2, c: "acc" }] }, c))],
+          frames: [svg(draw({ lines: ["M12 3.8 V9.6", "M12 14.4 V20.2", "M3.8 12 H9.6", "M14.4 12 H20.2"],
+                              lineWidth: 1.4 }, c))],
           aliases: ["cross", "tcross", "cross_reverse", "diamond_cross"] },
-        { name: "cell", hot: CENTER,
-          frames: [svg(draw({ ink: "M12 5 V19 M5 12 H19", dots: [{ cx: 12, cy: 12, r: 2, c: "acc" }] }, c))],
-          aliases: ["plus"] },
-        { name: "move", hot: CENTER, frames: [svg(draw(MOVE, c))],
+        { name: "cell", hot: CENTER, frames: [svg(draw({ fills: [CELL] }, c))], aliases: ["plus"] },
+        { name: "move", hot: CENTER, frames: [svg(draw({ fills: [MOVE] }, c))],
           aliases: ["fleur", "size_all", "all-scroll", "dnd-move",
                     "4498f0e0c1937ffe01fd06f973665830", "9081237383d90e509aa00f00170e968f"] },
         { name: "grab", hot: CENTER, frames: [svg(openHand(c))],
           aliases: ["openhand", "5aca4d189052212118709018842178c0", "9141b49c8149039304290b508d208c40"] },
         { name: "grabbing", hot: CENTER, frames: [svg(fist(c))],
           aliases: ["closedhand", "dnd-none", "208530c400c041818281048008011002", "fcf21c00b30f7e3f83fe0dfd12e71cff"] },
-        { name: "ns-resize", hot: CENTER, frames: [svg(draw(NS, c))],
+        { name: "ns-resize", hot: CENTER, frames: [svg(draw({ fills: [NS] }, c))],
           aliases: ["n-resize", "s-resize", "top_side", "bottom_side", "sb_v_double_arrow", "v_double_arrow",
                     "size_ver", "00008160000006810000408080010102"] },
-        { name: "ew-resize", hot: CENTER, frames: [svg(g("rotate(90 12 12)", draw(NS, c)))],
+        { name: "ew-resize", hot: CENTER, frames: [svg(g("rotate(90 12 12)", draw({ fills: [NS] }, c)))],
           aliases: ["e-resize", "w-resize", "left_side", "right_side", "sb_h_double_arrow", "h_double_arrow",
                     "size_hor", "028006030e0e7ebffc7f7070c0600140"] },
-        { name: "nwse-resize", hot: CENTER, frames: [svg(g("rotate(-45 12 12)", draw(NS, c)))],
+        { name: "nwse-resize", hot: CENTER, frames: [svg(g("rotate(-45 12 12)", draw({ fills: [NS] }, c)))],
           aliases: ["nw-resize", "se-resize", "top_left_corner", "bottom_right_corner", "bd_double_arrow",
                     "size_fdiag", "c7088f0f3e6c8088236ef8e1e3e70000"] },
-        { name: "nesw-resize", hot: CENTER, frames: [svg(g("rotate(45 12 12)", draw(NS, c)))],
+        { name: "nesw-resize", hot: CENTER, frames: [svg(g("rotate(45 12 12)", draw({ fills: [NS] }, c)))],
           aliases: ["ne-resize", "sw-resize", "top_right_corner", "bottom_left_corner", "fd_double_arrow",
                     "size_bdiag", "fcf1c3c7cd4491d801f1e1c78f100000"] },
-        { name: "col-resize", hot: CENTER, frames: [svg(draw(SPLIT, c))],
+        { name: "col-resize", hot: CENTER, frames: [svg(draw({ fills: SPLIT }, c))],
           aliases: ["split_h", "14fef782d02440884392942c11205230"] },
-        { name: "row-resize", hot: CENTER, frames: [svg(g("rotate(90 12 12)", draw(SPLIT, c)))],
+        { name: "row-resize", hot: CENTER, frames: [svg(g("rotate(90 12 12)", draw({ fills: SPLIT }, c)))],
           aliases: ["split_v", "2870a09082c103050810ffdffffe0204"] },
-        { name: "not-allowed", hot: CENTER,
-          frames: [svg(draw({ fill: circle(12, 12, 7), acc: "M7.1 7.1 L16.9 16.9" }, c))],
+        { name: "not-allowed", hot: CENTER, frames: [svg(notAllowed(c))],
           aliases: ["crossed_circle", "forbidden", "circle", "03b6e0fcb3499374a867c041f52298f0"] },
         { name: "no-drop", hot: SMALL_HOT,
-          frames: [svg(smallArrow(c) + badge(c, "M15.4 15.4 L19.6 19.6"))],
+          frames: [svg(smallArrow(c) + badge(c, "M15.9 15.9 L19.3 19.3 M19.3 15.9 L15.9 19.3"))],
           aliases: ["dnd-no-drop"] },
         { name: "help", hot: SMALL_HOT,
-          frames: [svg(smallArrow(c) + badge(c, "M16 16.6 A1.55 1.55 0 1 1 18.4 17.9 C17.7 18.3 17.5 18.6 17.5 19.1",
-                                              [{ cx: 17.5, cy: 20.7, r: 0.75, c: "acc" }]))],
+          frames: [svg(smallArrow(c) + badge(c, "M16.2 16.5 A1.45 1.45 0 1 1 18.5 17.6 C17.9 18 17.6 18.3 17.6 18.8",
+                                              [17.6, 20.3]))],
           aliases: ["question_arrow", "whats_this", "left_ptr_help",
                     "d9ce0ab605698f320427677b458ad60b", "5c6cd98b3f3ebcb1f9c7f1c204630408"] },
         { name: "copy", hot: SMALL_HOT,
-          frames: [svg(smallArrow(c) + badge(c, "M17.5 15.4 V19.6 M15.4 17.5 H19.6"))],
+          frames: [svg(smallArrow(c) + badge(c, "M17.6 15.5 V19.7 M15.5 17.6 H19.7"))],
           aliases: ["dnd-copy", "1081e37283d90000800003c07f3ef6bf", "6407b0e94181790501fd1e167b474872",
                     "b66166c04f8c3109214a4fbd64a50fc8"] },
         { name: "alias", hot: SMALL_HOT,
-          frames: [svg(smallArrow(c) + badge(c, "M15.6 19.4 L19.2 15.8 M16.6 15.6 H19.4 V18.4"))],
+          frames: [svg(smallArrow(c) + badge(c, "M15.8 19.4 L19.2 16 M16.8 15.8 H19.4 V18.4"))],
           aliases: ["dnd-link", "link", "640fb0e74195791501fd1ed57b41487f", "3085a0e285430894940527032f8b26df",
                     "a2a266d0498c3104214a47bd64ab0fc8"] },
         { name: "context-menu", hot: SMALL_HOT,
-          frames: [svg(smallArrow(c) + badge(c, "M15.6 16.2 H19.4 M15.6 18.8 H19.4"))],
+          frames: [svg(smallArrow(c) + badge(c, "M15.7 16.3 H19.5 M15.7 18.9 H19.5"))],
           aliases: [] },
-        { name: "zoom-in", hot: [10.5 / 24, 10.5 / 24], frames: [svg(magnifier(c, true))], aliases: [] },
-        { name: "zoom-out", hot: [10.5 / 24, 10.5 / 24], frames: [svg(magnifier(c, false))], aliases: [] }
+        { name: "zoom-in", hot: [10.4 / 24, 10.4 / 24], frames: [svg(magnifier(c, true))], aliases: [] },
+        { name: "zoom-out", hot: [10.4 / 24, 10.4 / 24], frames: [svg(magnifier(c, false))], aliases: [] }
     ];
 }
