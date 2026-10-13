@@ -76,7 +76,7 @@ QtObject {
         if (kind) all = all.filter(e => e.dir || kind(e.name));
         const q = root.filter.trim().toLowerCase();
         if (q !== "") all = all.filter(e => e.name.toLowerCase().indexOf(q) >= 0);
-        return root.svc.sortEntries(all, root.sortBy, root.sortReverse);
+        return root.svc.sortEntries(all, root.sortBy, root.sortReverse, root.grouping);
     }
 
     // Whether this listing is broken into date groups. Only when the sort
@@ -95,11 +95,11 @@ QtObject {
         if (!root.grouping) return "";
         const list = root.visibleEntries;
         if (i < 0 || i >= list.length) return "";
-        // Folders sort ahead of files regardless, so they are their own
-        // run and get their own heading rather than being dated.
-        const here = list[i].dir ? "Folders" : root.svc.dateGroup(list[i].mtime);
+        // Folders are dated like everything else: each group lists its own
+        // folders first (sortEntries).
+        const here = root.svc.dateGroup(list[i].mtime);
         if (i === 0) return here;
-        const prev = list[i - 1].dir ? "Folders" : root.svc.dateGroup(list[i - 1].mtime);
+        const prev = root.svc.dateGroup(list[i - 1].mtime);
         return here === prev ? "" : here;
     }
 

@@ -288,10 +288,33 @@ QtObject {
     }
 
     // Directories first, then by name, the way every file manager does it.
-
-    function sortEntries(list, by, reverse) {
+    //
+    // Broken into date groups (`grouped`, sorting by date), each group is
+    // its own little listing: the groups in date order, and inside each its
+    // folders first, A to Z, then its files by date. A folder is filed under
+    // when it last changed, like everything else, rather than all of them
+    // being lifted out into a block of their own above the dates.
+    readonly property var dateGroups: ["Today", "Yesterday", "Earlier this week", "Last week",
+                                       "Earlier this month", "Earlier this year", "Older", "Unknown"]
+    function sortEntries(list, by, reverse, grouped) {
         const dir = reverse ? -1 : 1;
         const sorted = (list || []).slice();
+        if (grouped && by === "modified") {
+            // Newest first puts Today on top; oldest first, Older.
+            const rank = e => {
+                const r = root.dateGroups.indexOf(root.dateGroup(e.mtime));
+                return reverse ? r : -r;
+            };
+            const keyed = sorted.map(e => ({ e: e, g: rank(e) }));
+            keyed.sort((x, y) => {
+                const a = x.e, b = y.e;
+                if (x.g !== y.g) return x.g - y.g;
+                if (a.dir !== b.dir) return a.dir ? -1 : 1;
+                if (a.dir) return root.compareNames(a.name, b.name);
+                return ((a.mtime - b.mtime) || root.compareNames(a.name, b.name)) * dir;
+            });
+            return keyed.map(k => k.e);
+        }
         sorted.sort((a, b) => {
             if (a.dir !== b.dir) return a.dir ? -1 : 1;
             let r = 0;
