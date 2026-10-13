@@ -284,13 +284,18 @@ Singleton {
         settingsFocusSeq++;
     }
 
+    // Asked for again while it may be behind other windows: Settings.qml
+    // brings its window forward.
+    signal settingsOpenRequested()
     function openSettings(pane) {
         closeAll();
         if (pane) settingsPane = pane;
         // Opens on whichever monitor you are on, unless it is already open
         // somewhere — then it stays put rather than jumping to you.
         if (!settingsOpen) settingsScreen = "";
+        const was = settingsOpen;
         settingsOpen = true;
+        if (was) settingsOpenRequested();
     }
 
     // ── session lock ──────────────────────────────────────────────────────

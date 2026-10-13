@@ -24,12 +24,10 @@ PanelSurface {
     required property var host
     required property var app
 
-    // Any touch of the window brings floating Settings back above the
-    // windows it went behind (Settings.raise). Passive: it takes nothing
-    // from the control that was pressed.
-    PointHandler {
-        acceptedButtons: Qt.AllButtons
-        onActiveChanged: if (active && frame.app.raise) frame.app.raise()
+    // Maximise: the compositor's, for a real window.
+    function toggleMaximised() {
+        if (frame.host.toggleMaximised) frame.host.toggleMaximised();
+        else Config.UiState.settingsMaximized = !frame.host.maximised;
     }
 
     showSeam: false
@@ -86,20 +84,22 @@ PanelSurface {
         // `cursor: grab` title bar.
         MouseArea {
             anchors.fill: parent
-            cursorShape: (frame.host.tiled || frame.host.maximised)
-                             ? Qt.ArrowCursor : Qt.OpenHandCursor
+            cursorShape: frame.host.maximised ? Qt.ArrowCursor : Qt.OpenHandCursor
             property real pressX: 0
             property real pressY: 0
 
-            onPressed: mouse => { pressX = mouse.x; pressY = mouse.y; }
+            // A real window: the compositor does the moving, from the press.
+            onPressed: mouse => {
+                pressX = mouse.x; pressY = mouse.y;
+                if (frame.host.tiled && !frame.host.maximised) frame.host.moveTo(0, 0);
+            }
             onPositionChanged: mouse => {
                 if (!pressed || frame.host.tiled || frame.host.maximised) return;
                 const p = mapToItem(null, mouse.x, mouse.y);
                 frame.host.moveTo(Math.round(p.x - pressX),
                                 Math.round(p.y - pressY));
             }
-            onDoubleClicked: if (!frame.host.tiled)
-                                     Config.UiState.settingsMaximized = !frame.host.maximised
+            onDoubleClicked: frame.toggleMaximised()
         }
 
         Row {
@@ -159,7 +159,7 @@ PanelSurface {
             Repeater {
                 model: [
                     { glyph: "minus",  danger: false, act: () => Config.UiState.minimiseSettings() },
-                    { glyph: "square", danger: false, act: () => Config.UiState.settingsMaximized = !frame.host.maximised },
+                    { glyph: "square", danger: false, act: () => frame.toggleMaximised() },
                     { glyph: "x",      danger: true,  act: () => Config.UiState.closeSettings() }
                 ]
 
@@ -276,9 +276,9 @@ PanelSurface {
                 color: Config.Appearance.sel
                 visible: placed
                 Spring { id: topSpring; to: selPill.edgeTop; enabled: selPill.placed
-                         response: selPill.down ? 420 : 300; bounce: selPill.down ? 0.5 : 1 }
+                         response: selPill.down ? 420 : 300; bounce: 0 }
                 Spring { id: bottomSpring; to: selPill.edgeBottom; enabled: selPill.placed
-                         response: selPill.down ? 300 : 420; bounce: selPill.down ? 1 : 0.5 }
+                         response: selPill.down ? 300 : 420; bounce: 0 }
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -448,7 +448,7 @@ PanelSurface {
             // A new pane rises into place rather than swapping in where
             // the last one was.
             // Both jump away and spring back.
-            Spring { id: rise; to: 0; response: 380; bounce: 0.8 }
+            Spring { id: rise; to: 0; response: 340; bounce: 0 }
             Spring { id: paneFade; to: 1; response: 200; bounce: 0 }
             transform: Translate { y: rise.value }
             opacity: Math.max(0, Math.min(1, paneFade.value))

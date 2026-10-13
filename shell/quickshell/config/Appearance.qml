@@ -569,6 +569,11 @@ Singleton {
             property string hyprLayout: "dwindle"    // dwindle | master
             property int hyprInactiveOpacity: 100    // 40-100 %
             property bool hyprFocusFollowsMouse: true
+            // "tiling", Hyprland's own, or "windows": Windows 11's — every
+            // window floats and opens centred, edges snap, and Super with
+            // the arrows snaps to halves and quarters. hyprland.lua reads it
+            // (services/Devices.qml writes it and reloads).
+            property string windowMode: "tiling"
 
             // Notifications
             property bool dnd: false
@@ -881,6 +886,7 @@ Singleton {
     property alias hyprLayout: prefs.hyprLayout
     property alias hyprInactiveOpacity: prefs.hyprInactiveOpacity
     property alias hyprFocusFollowsMouse: prefs.hyprFocusFollowsMouse
+    property alias windowMode: prefs.windowMode
     property alias dnd: prefs.dnd
     property alias badges: prefs.badges
     property alias grouping: prefs.grouping

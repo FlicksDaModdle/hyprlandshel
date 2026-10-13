@@ -12,34 +12,21 @@ import "../background/Palettes.js" as Palettes
 
 // The Settings app.
 //
-// It draws its own title bar rather than taking a toplevel's. As a real
-// FloatingWindow it got whatever decoration Qt felt like drawing — on Wayland
-// that is a client-side title bar that looks nothing like the mockup and is
-// only suppressed by an environment variable set before Qt starts. Owning the
-// whole surface is the only way the chrome is reliably the designed one.
+// An ordinary Hyprland window: it focuses, stacks, blurs and obeys your
+// window rules and binds like any other application. It opens floating and
+// centred, in front of the windows already there (the window rule below and
+// in hyprland.lua), and can be tiled like anything else.
 //
-// The trade for that is it floats above the desktop rather than tiling with
-// real windows. Move it by its title bar; the three buttons are the mockup's
-// and each does what it says.
-//
-// Every row acts on the live system and, where it's a shell preference,
-// persists to theme.json immediately. There's no Apply button because there's
-// nothing to apply: the shell repaints as you drag.
-// Two kinds of window, one set of panes.
-//
-// Floating is the default and what the mockup draws: a layer-shell surface
-// with our own title bar, above the desktop, movable between monitors.
-//
-// Tiled is an ordinary toplevel, so Hyprland treats Settings like any other
-// application — it takes a slot in the layout and obeys your window rules
-// and binds. The shell already sets QT_WAYLAND_DISABLE_WINDOWDECORATION, so
-// Qt draws no title bar of its own and the chrome is still the designed one.
-//
-// Both mount the same SettingsFrame, and everything below is shared.
+// It draws its own title bar rather than taking one from Qt: the shell sets
+// QT_WAYLAND_DISABLE_WINDOWDECORATION, and dragging the title bar hands the
+// move to the compositor. Every row acts on the live system and, where it's
+// a shell preference, persists to theme.json immediately. There's no Apply
+// button because there's nothing to apply: the shell repaints as you drag.
 Scope {
     id: root
 
-    readonly property bool tiled: Config.Appearance.settingsTiled
+    // Always a real window now; SettingsFrame still asks.
+    readonly property bool tiled: true
 
     // True for a minute after Settings closes: its windows keep what they
     // built, for an instant reopen, then let it go.
@@ -53,44 +40,33 @@ Scope {
     }
     Timer { id: coolDown; interval: 60000; onTriggered: root.warm = false }
 
-    // ── stacking, floating ───────────────────────────────────────────────
-    // A layer surface sits on a layer, not in the stack of windows, so on
-    // the Top layer the floating window was over every window there was —
-    // including the Files window it had just opened (Choose image…, Show
-    // in Files) or its file dialog, which came up behind it.
-    //
-    // So it stacks like a window: up while it is what you are using, and
-    // down below the windows (on the Bottom layer, still above the
-    // wallpaper) once another window opens or takes the focus. Touching it
-    // brings it back up, and so does the focus going to no window at all —
-    // the dialog it opened closing, say.
-    property bool raised: true
-    property string raisedOver: ""
-    // The window that opened over it — the Files dialog, typically. When
-    // that one closes, Settings comes back up, since that is where you
-    // were.
-    property string openedOver: ""
-    function raise() { raised = true; openedOver = ""; raisedOver = Services.Compositor.activeAddress; }
+    // Floating and centred, wherever Hyprland would otherwise tile it, and
+    // in front: a floating window is above the tiled ones, and a newly
+    // mapped one has the focus. The same rule is in hyprland.lua; sent here
+    // too so it holds without reloading Hyprland.
+    function sendWindowRule() {
+        Services.Compositor.evalLua(
+            'pcall(hl.window_rule, { name = "hyprshell-settings", '
+            + 'match = { class = "^(org[.]quickshell)$", title = "^(Settings)$" }, '
+            + 'float = true, center = true, size = { 900, 620 } })');
+    }
+
+    // Asked for while it is already open behind other windows: bring it
+    // forward. Focusing a floating window raises it.
     Connections {
         target: Config.UiState
-        function onSettingsOpenChanged() { if (Config.UiState.settingsOpen) root.raise(); }
+        function onSettingsOpenRequested() { root.focusWindow(); }
     }
-    Connections {
-        target: Services.Compositor
-        enabled: Config.UiState.settingsOpen && !root.tiled
-        function onWindowOpened(data) {
-            root.raised = false;
-            root.openedOver = "0x" + String(data).split(",")[0];
-        }
-        function onWindowClosed(data) {
-            if (root.openedOver !== "" && "0x" + data === root.openedOver) root.raise();
-        }
-        function onActiveAddressChanged() {
-            const a = Services.Compositor.activeAddress;
-            if (a === "") root.raise();
-            else if (a !== root.raisedOver && a !== root.openedOver) root.raised = false;
-        }
+    function focusWindow() {
+        const c = (Services.Compositor.clients || []).find(w =>
+            (w.cls === "org.quickshell" || w.initialClass === "org.quickshell") && w.title === "Settings");
+        if (!c || !c.address) return;
+        Services.Compositor.focusClient(c.address);
+        Services.Compositor.dispatch("hl.dsp.window.bring_to_top()");
     }
+    // Opened: once Hyprland has mapped it and the client list has it.
+    Timer { id: frontSoon; interval: 350; onTriggered: root.focusWindow() }
+
     readonly property string pane: Config.UiState.settingsPane
 
     // Settings → Wallpaper, with a wallpaper per screen: which screen the
@@ -191,114 +167,11 @@ Scope {
     ]
 
 
-    // ══ floating ═════════════════════════════════════════════════════════
-    // One surface per monitor, of which exactly one is mapped.
-    //
-    // This was a single PanelWindow with no `screen`, so the compositor put
-    // it on one output and there it stayed — there was no second surface for
-    // it to move onto, which is why it could not be dragged to another
-    // display. Now every screen has one, `settingsScreen` decides which is
-    // live, and dragging past an edge hands the window to the neighbour.
-    Variants {
-        model: Quickshell.screens
-
-        PanelWindow {
-            id: win
-            required property var modelData
-
-            screen: modelData ?? null
-
-            // "" means follow the focused monitor, which is what a freshly opened
-            // window should do; once dragged across, it stays where it was put.
-            readonly property bool isMine: Config.UiState.settingsScreen === ""
-                ? Services.Compositor.isFocusedScreen(modelData)
-                : (modelData && modelData.name === Config.UiState.settingsScreen)
-
-            visible: Config.UiState.settingsOpen && isMine && !root.tiled
-            color: "transparent"
-            exclusiveZone: 0
-
-            anchors.top: true
-            anchors.bottom: true
-            anchors.left: true
-            anchors.right: true
-
-            WlrLayershell.namespace: "quickshell:panel"
-            WlrLayershell.layer: root.raised ? WlrLayer.Top : WlrLayer.Bottom
-            // Needs real keyboard focus: the sliders have type-in numeric fields.
-            WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-
-            // Only the window itself takes input; the rest of the desktop stays live.
-            mask: Region { item: win.frame }
-
-            // The host contract SettingsFrame reads.
-            readonly property bool tiled: false
-
-            // Dragging past a screen edge hands the window to the monitor next door.
-            //
-            // Each surface only covers its own output, so x is always screen-local:
-            // crossing the boundary means switching which surface is mapped and
-            // re-entering from the opposite side, not letting x run past the width.
-            function moveTo(x, y) {
-                const mons = Services.Compositor.monitors || [];
-                const here = modelData ? modelData.name : "";
-
-                const frame = win.frame;
-                if (mons.length > 1 && frame) {
-                    // Ordered left to right by their real position in the layout.
-                    const ordered = mons.slice().sort((a, b) => a.x - b.x);
-                    const at = ordered.findIndex(m => m.name === here);
-
-                    if (x + frame.width > win.width + 8 && at >= 0 && at < ordered.length - 1) {
-                        Config.UiState.settingsScreen = ordered[at + 1].name;
-                        // Re-enter just inside the left edge of the new screen.
-                        Config.UiState.settingsX = 8;
-                        Config.UiState.settingsY = y;
-                        return;
-                    }
-                    if (x < -8 && at > 0) {
-                        Config.UiState.settingsScreen = ordered[at - 1].name;
-                        Config.UiState.settingsX = Math.max(
-                            8, (ordered[at - 1].width || win.width) - frame.width - 8);
-                        Config.UiState.settingsY = y;
-                        return;
-                    }
-                }
-
-                Config.UiState.settingsX = x;
-                Config.UiState.settingsY = y;
-            }
-
-            readonly property bool maximised: Config.UiState.settingsMaximized
-
-            readonly property real normalWidth: 900
-            readonly property real normalHeight: 596
-            // Maximised fills the work area, leaving the bar and dock reachable.
-            readonly property real workTop: Config.Appearance.barHeight + 8
-            readonly property real workBottom: win.height - 8
-                - (Config.Appearance.dockLeft ? 0 : Config.Appearance.dockPanelBreadth + Config.Appearance.dockEdgeGap)
-
-
-            // Built while shown, and for a minute after, so closing and
-            // reopening is instant but a Settings window nobody has opened
-            // costs nothing. There is one per screen, plus the tiled one.
-            readonly property Item frame: frameLoader.item
-            Loader {
-                id: frameLoader
-                active: win.visible || root.warm
-                sourceComponent: SettingsFrame {
-                    host: win
-                    app: root
-                }
-            }
-        }
-    }
-
-    // ══ tiled ════════════════════════════════════════════════════════════
+    // ══ the window ═══════════════════════════════════════════════════════
     FloatingWindow {
         id: toplevel
 
-        visible: Config.UiState.settingsOpen && !Config.UiState.locked && root.tiled
+        visible: Config.UiState.settingsOpen && !Config.UiState.locked
 
         // Closed by the compositor rather than by the X in its own title
         // bar — Super+Q, or a titlebar the compositor draws — the window
@@ -306,8 +179,10 @@ Scope {
         // writes true over true, which changes nothing, and Settings
         // cannot be opened again for the rest of the session. The X
         // button never had this because it clears the flag itself.
-        onVisibleChanged: if (!visible && Config.UiState.settingsOpen)
-                              Config.UiState.closeSettings()
+        onVisibleChanged: {
+            if (visible) frontSoon.restart();
+            else if (Config.UiState.settingsOpen) Config.UiState.closeSettings();
+        }
         title: "Settings"
         // Clear: the frame inside is the sheet. Painting it here as well
         // laid it twice, so tiled Settings let through much less of the
@@ -317,16 +192,18 @@ Scope {
         implicitWidth: 900
         implicitHeight: 620
 
-        // The host contract SettingsFrame reads. Tiled, the compositor owns
-        // the geometry, so the parts about placing a window of our own are
-        // constants that nothing acts on.
+        // The host contract SettingsFrame reads. The compositor owns the
+        // geometry: dragging the title bar hands the move to it, and the
+        // maximise button asks it (both guarded, for a Quickshell without
+        // them).
         readonly property bool tiled: true
-        readonly property bool maximised: false
+        readonly property bool maximised: toplevel.maximized === true
         readonly property real normalWidth: width
         readonly property real normalHeight: height
         readonly property real workTop: 0
         readonly property real workBottom: height
-        function moveTo(x, y) {}
+        function moveTo(x, y) { if (typeof toplevel.startSystemMove === "function") toplevel.startSystemMove(); }
+        function toggleMaximised() { if (toplevel.maximized !== undefined) toplevel.maximized = !toplevel.maximized; }
 
         // No anchors.fill: the frame already takes its size and position
         // from the host, and setting both would have QML resolve a conflict
@@ -469,18 +346,7 @@ Scope {
             { n: "Smooth mouse wheel",
               s: A.smoothWheel ? "Each notch glides" : "Each notch jumps",
               type: "toggle", value: A.smoothWheel, set: v => A.smoothWheel = v },
-        ]).concat(root.cursorRows()).concat([
-
-            { type: "header", n: "Settings window" },
-            { n: "Window mode",
-              s: A.settingsTiled ? "An ordinary window Hyprland tiles, so your window binds work on it"
-                                 : "Floats above the desktop; drag it by its title bar, even between monitors",
-              type: "seg",
-              options: [{ label: "Floating", value: "floating" },
-                        { label: "Tiled",    value: "tiled" }],
-              value: A.settingsTiled ? "tiled" : "floating",
-              set: v => A.settingsTiled = (v === "tiled") }
-        ]);
+        ]).concat(root.cursorRows());
 
         case "Wallpaper": return root.wallpaperRows();
 
@@ -1515,6 +1381,15 @@ Scope {
         case "Hyprland": return [
             { type: "header", n: "Layout",
               s: "How new windows are placed. Applied immediately." },
+            { n: "Window behaviour",
+              s: A.windowMode === "windows"
+                 ? "Like Windows 11: windows float and open centred, snap to edges, and Super + arrows snap them to halves and quarters (Up maximises, Down restores)"
+                 : "Hyprland's tiling: windows share the screen, and Super + arrows move the focus",
+              type: "seg",
+              options: [{ label: "Tiling", value: "tiling" },
+                        { label: "Windows 11", value: "windows" }],
+              value: A.windowMode,
+              set: v => { A.windowMode = v; } },
             { n: "Tiling layout", s: "Dwindle splits the focused window; "
                  + "master keeps one large window beside a stack",
               type: "seg",
@@ -1848,7 +1723,7 @@ Scope {
         }
         return out;
     }
-    Component.onCompleted: Config.UiState.settingsApp = root
+    Component.onCompleted: { Config.UiState.settingsApp = root; root.sendWindowRule(); }
 
     // The device settings themselves live in theme.json via
     // Config.Appearance, and Services.Devices is what pushes them to

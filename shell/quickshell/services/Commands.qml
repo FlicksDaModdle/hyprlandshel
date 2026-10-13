@@ -112,6 +112,8 @@ Singleton {
 
         // Appearance
         "toggleTheme":         () => Config.Appearance.toggleTheme(),
+        // Windows 11 window behaviour: Super + arrows (hyprland.lua).
+        "snapWindow":          arg => Services.Compositor.snapActive(arg || ""),
         "cycleTheme":          () => Config.Appearance.cycleTheme(),
         "setTheme":            arg => Config.Appearance.setTheme(arg),
         "setWallpaper":        arg => Config.Appearance.wallpaper = arg,

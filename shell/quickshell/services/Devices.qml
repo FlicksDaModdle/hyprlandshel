@@ -619,6 +619,33 @@ Singleton {
         }
     }
 
+    // ── window behaviour ──────────────────────────────────────────────────
+    // Tiling or Windows 11 (Settings → Hyprland). It changes binds and
+    // window rules, which live in hyprland.lua, so the choice is written
+    // where hyprland.lua reads it and Hyprland reloads — only when it
+    // actually changed, so starting the shell does not reload for nothing.
+    function syncWindowMode() {
+        windowModeProc.running = false;
+        windowModeProc.command = ["sh", "-c",
+            'd="${XDG_STATE_HOME:-$HOME/.local/state}/hyprshell"; f="$d/window-mode"; '
+          + 'old=$(cat "$f" 2>/dev/null); [ "$old" = "$1" ] && exit 0; '
+          // No file is tiling to hyprland.lua already: written, no reload.
+          + 'mkdir -p "$d" && printf "%s\\n" "$1" > "$f" || exit 0; '
+          + '[ -z "$old" ] && [ "$1" = tiling ] || echo CHANGED',
+            "sh", prefs.windowMode === "windows" ? "windows" : "tiling"];
+        windowModeProc.running = true;
+    }
+    Process {
+        id: windowModeProc
+        stdout: StdioCollector {
+            onStreamFinished: if (/CHANGED/.test(text)) Services.Compositor.reloadConfig()
+        }
+    }
+    Connections {
+        target: root.prefs
+        function onWindowModeChanged() { if (root.applied) root.syncWindowMode(); }
+    }
+
     // Waits for theme.json to have been read and for Hyprland to have told
     // us what is plugged in. Applying before either would push the built-in
     // defaults over the user's saved values, which is worse than not
@@ -651,6 +678,7 @@ Singleton {
             root.applyInput();
             root.applyFrame();
             root.applyDisplays();
+            root.syncWindowMode();
             root.checkSoon();
             running = false;
         }

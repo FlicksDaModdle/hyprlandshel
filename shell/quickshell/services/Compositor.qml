@@ -563,6 +563,66 @@ Singleton {
         return null;
     }
 
+    // ── Windows 11 snapping ─────────────────────────────────────────────
+    // Super + arrows in the Windows 11 window behaviour (hyprland.lua):
+    // Left/Right put the active window on that half of its monitor's free
+    // area (around the bar and dock); Up/Down from a half go to its upper
+    // or lower quarter; Up otherwise maximises and Down restores. The way
+    // back across — Left from the right half — restores, as Windows does.
+    property var snapState: ({})
+    function snapActive(where) {
+        const addr = root.activeAddress;
+        const c = root.clients.find(w => root.normAddress(w.address) === root.normAddress(addr));
+        if (!c) return;
+        const m = (root.monitors || []).find(o => o && o.lastIpcObject && o.lastIpcObject.id === c.monitor);
+        const ipc = m ? m.lastIpcObject : null;
+        if (!ipc) return;
+        const sc = ipc.scale || 1;
+        const swap = (ipc.transform || 0) % 2 === 1;
+        const lw = (swap ? ipc.height : ipc.width) / sc, lh = (swap ? ipc.width : ipc.height) / sc;
+        const r = ipc.reserved || [0, 0, 0, 0];
+        const gap = 10;
+        const ax = ipc.x + r[0] + gap, ay = ipc.y + r[1] + gap;
+        const aw = lw - r[0] - r[2] - 2 * gap, ah = lh - r[1] - r[3] - 2 * gap;
+        const halfW = (aw - gap) / 2, halfH = (ah - gap) / 2;
+        const rects = {
+            left:  [ax, ay, halfW, ah],
+            right: [ax + halfW + gap, ay, halfW, ah],
+            tl: [ax, ay, halfW, halfH],
+            tr: [ax + halfW + gap, ay, halfW, halfH],
+            bl: [ax, ay + halfH + gap, halfW, halfH],
+            br: [ax + halfW + gap, ay + halfH + gap, halfW, halfH]
+        };
+        const key = root.normAddress(addr);
+        const was = root.snapState[key] || (c.fullscreenMode === 1 ? "max" : "");
+        const next = {
+            left:  { right: "", tr: "", br: "" }[was] ?? "left",
+            right: { left: "", tl: "", bl: "" }[was] ?? "right",
+            up:    { left: "tl", right: "tr", bl: "left", br: "right", tl: "tl", tr: "tr" }[was] ?? "max",
+            down:  { left: "bl", right: "br", tl: "left", tr: "right", bl: "bl", br: "br" }[was] ?? ""
+        }[where];
+        if (next === undefined) return;
+        const st = Object.assign({}, root.snapState);
+        st[key] = next;
+        root.snapState = st;
+        if (was === "max" && next !== "max")
+            dispatch('hl.dsp.window.fullscreen({ mode = "maximized", action = "unset" })');
+        if (next === "max") {
+            dispatch('hl.dsp.window.fullscreen({ mode = "maximized", action = "set" })');
+        } else if (next === "") {
+            // Back to a window of its own: a comfortable size, centred.
+            dispatch('hl.dsp.window.float({ action = "enable" })');
+            dispatch("hl.dsp.window.resize({ x = " + Math.round(aw * 0.62) + ", y = " + Math.round(ah * 0.7) + " })");
+            dispatch("hl.dsp.window.center()");
+        } else {
+            const q = rects[next];
+            dispatch('hl.dsp.window.float({ action = "enable" })');
+            dispatch("hl.dsp.window.resize({ x = " + Math.round(q[2]) + ", y = " + Math.round(q[3]) + " })");
+            dispatch("hl.dsp.window.move({ x = " + Math.round(q[0]) + ", y = " + Math.round(q[1]) + " })");
+        }
+        actionSettle.restart();
+    }
+
     function focusClient(address) {
         if (!address) return;
         dispatch("hl.dsp.focus({ window = " + luaSel("address:" + address) + " })");

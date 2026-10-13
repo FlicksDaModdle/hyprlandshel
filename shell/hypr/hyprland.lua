@@ -132,6 +132,22 @@ do
         if v then hl.env(k, v) end
     end
 end
+-- How windows behave, as Settings → Hyprland → Window behaviour last set
+-- it (the shell writes it to window-mode and reloads): "tiling", the
+-- default, or "windows" — Windows 11's way: windows float, open centred
+-- and snap with Super and the arrows.
+local window_mode = "tiling"
+do
+    local state = os.getenv("XDG_STATE_HOME")
+    if not state or state == "" then state = (os.getenv("HOME") or "") .. "/.local/state" end
+    local f = io.open(state .. "/hyprshell/window-mode", "r")
+    if f then
+        local m = (f:read("*l") or ""):gsub("%s", "")
+        f:close()
+        if m == "windows" then window_mode = m end
+    end
+end
+
 -- Qt apps pick up the Wayland backend and drop their own window decorations,
 -- so client windows match the shell's own chrome instead of doubling it.
 hl.env("QT_QPA_PLATFORM", "wayland;xcb")
@@ -547,11 +563,22 @@ hl.bind(mainMod .. " + SHIFT + S",       hl.dsp.exec_cmd(shell("screenshot", "re
 hl.bind("SHIFT + Print",                 hl.dsp.exec_cmd(shell("screenshot", "screen")))
 hl.bind(mainMod .. " + SHIFT + Print",   hl.dsp.exec_cmd(shell("toggleRecording")))
 
--- Focus movement
-hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }))
-hl.bind(mainMod .. " + right", hl.dsp.focus({ direction = "right" }))
-hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }))
-hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }))
+if window_mode == "windows" then
+    -- Windows 11's snapping: Super+Left/Right to a half, then Up/Down to
+    -- a quarter; Super+Up maximises, Super+Down restores. The shell works
+    -- out each monitor's free area (around the bar and dock) and places
+    -- the window (Compositor.snapActive).
+    hl.bind(mainMod .. " + left",  hl.dsp.exec_cmd(shell("snapWindow", "left")))
+    hl.bind(mainMod .. " + right", hl.dsp.exec_cmd(shell("snapWindow", "right")))
+    hl.bind(mainMod .. " + up",    hl.dsp.exec_cmd(shell("snapWindow", "up")))
+    hl.bind(mainMod .. " + down",  hl.dsp.exec_cmd(shell("snapWindow", "down")))
+else
+    -- Focus movement
+    hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }))
+    hl.bind(mainMod .. " + right", hl.dsp.focus({ direction = "right" }))
+    hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }))
+    hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }))
+end
 
 -- Workspaces 1-10, and moving windows to them
 for i = 1, 10 do
@@ -638,6 +665,18 @@ hl.window_rule({
     size  = { 1100, 700 },
 })
 
+-- The shell's Settings: a Quickshell window (Quickshell's app id, told
+-- apart by its title). It opens floating and centred, in front of the
+-- tiled windows, and can still be tiled like any other window. The shell
+-- sends this rule too when it starts, so it holds without a reload.
+pcall(hl.window_rule, {
+    name   = "hyprshell-settings",
+    match  = { class = "^(org\\.quickshell)$", title = "^(Settings)$" },
+    float  = true,
+    center = true,
+    size   = { 900, 620 },
+})
+
 -- The shell's terminal. The size is a sensible number of columns and rows
 -- at the default font, and applies only in a floating layout — tiled, the
 -- layout decides and this is ignored.
@@ -677,6 +716,19 @@ hl.window_rule({
     float = true,
     size  = { 940, 620 },
 })
+
+-- Windows 11 behaviour (window_mode above): every window floats and opens
+-- centred where the app did not ask for a place, and floating windows snap
+-- to the screen's edges and to each other as they are dragged.
+if window_mode == "windows" then
+    pcall(hl.window_rule, {
+        name   = "hyprshell-windows-float",
+        match  = { class = ".*" },
+        float  = true,
+        center = true,
+    })
+    pcall(hl.config, { general = { snap = { enabled = true, window_gap = 12, monitor_gap = 12 } } })
+end
 
 -- Nothing round a window that fills the screen. Fullscreen (Super+F) and
 -- maximised (Super+Shift+F) alike: no border, no rounded corners, no
