@@ -1,0 +1,235 @@
+// Documents: PDFs and comics page by page, e-books as flowing text.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Card, Caption, Label, Dim, Heading,
+         Button, IconButton, Seg, Field, Scroll, Empty, Toast, Rule, Icon, Spinner } from "@kit";
+import { ListView } from "std-widgets.slint";
+
+export { Theme, Icons, Win }
+
+export struct Recent { path: string, name: string, sub: string, kind: string }
+
+export struct PageView {
+    index: int,
+    // logical size at the current zoom
+    width: length,
+    height: length,
+    image: image,
+    ready: bool,
+    gen: int,
+}
+
+export struct Para { kind: string, text: string }   // "h1" "h2" "h3" "p"
+
+export global Docs {
+    in property <string> mode: "start";   // start, pages, text, loading, error
+    in property <string> error;
+    in property <[Recent]> recents;
+    in property <string> name;
+    in property <string> kind;            // PDF, Comic, E-book
+    in property <[PageView]> pages;
+    in property <int> page-count;
+    in-out property <int> current: 0;     // the page in view
+    in property <float> zoom: 1;
+    in property <string> fit: "width";    // width, page, none
+    in property <[Para]> text;
+    in-out property <float> text-size: 17;
+    in property <int> chapter;
+    in property <int> chapters;
+    in property <string> chapter-title;
+
+    callback open-dialog();
+    callback open-recent(string);
+    callback forget-recent(string);
+    callback need(int, int);          // page, gen
+    callback zoom-by(float);
+    callback set-fit(string);
+    callback scrolled(int);           // the page now in view
+    callback go-chapter(int);
+    callback close();
+
+    in property <string> toast;
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Documents";
+    preferred-width: 1100px;
+    preferred-height: 820px;
+    // The width pages are fitted to, for main.rs.
+    out property <length> view-width: pages-view.visible-width;
+    out property <length> view-height: pages-view.visible-height;
+    property <string> goto;
+
+    public function go-to(page: int) {
+        // Pages are stacked with 16px between them; their heights are known.
+        let p = max(0, min(Docs.page-count - 1, page));
+        Docs.current = p;
+        pages-view.content-y = -root.offset-of(p);
+    }
+    pure function offset-of(p: int) -> length {
+        // Laid out evenly enough to find: the average page height.
+        return Docs.pages.length > 0 ? p * (Docs.pages[0].height + 16px) : 0px;
+    }
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.modifiers.control && (e.text == "=" || e.text == "+")) { Docs.zoom-by(1.15); return accept; }
+            if (e.modifiers.control && e.text == "-") { Docs.zoom-by(1 / 1.15); return accept; }
+            if (e.modifiers.control && e.text == "o") { Docs.open-dialog(); return accept; }
+            if (Docs.mode == "pages" && (e.text == Key.PageDown || e.text == Key.RightArrow)) { root.go-to(Docs.current + 1); return accept; }
+            if (Docs.mode == "pages" && (e.text == Key.PageUp || e.text == Key.LeftArrow)) { root.go-to(Docs.current - 1); return accept; }
+            if (Docs.mode == "pages" && e.text == Key.Home) { root.go-to(0); return accept; }
+            if (Docs.mode == "pages" && e.text == Key.End) { root.go-to(Docs.page-count - 1); return accept; }
+            reject
+        }
+    }
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Documents";
+            app-icon: "book";
+            subtitle: Docs.name;
+            if Docs.mode == "pages": HorizontalLayout {
+                spacing: 4px;
+                IconButton { icon: "chevronLeft"; size: 30px; glyph: 16px; clicked => { root.go-to(Docs.current - 1); } }
+                Rectangle {
+                    width: 96px;
+                    height: 30px;
+                    border-radius: Theme.r-sm;
+                    background: Theme.hover;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        TextInput {
+                            text: Docs.current + 1;
+                            color: Theme.ink;
+                            font-size: Theme.fs(12.5);
+                            vertical-alignment: center;
+                            horizontal-alignment: right;
+                            width: 34px;
+                            single-line: true;
+                            accepted => { root.go-to(self.text.to-float() - 1); keys.focus(); }
+                        }
+                        Text { text: "/ " + Docs.page-count; color: Theme.ink3; font-size: Theme.fs(12.5); vertical-alignment: center; }
+                    }
+                }
+                IconButton { icon: "chevronRight"; size: 30px; glyph: 16px; clicked => { root.go-to(Docs.current + 1); } }
+                Rectangle { width: 10px; }
+                IconButton { icon: "zoomOut"; size: 30px; glyph: 16px; clicked => { Docs.zoom-by(1 / 1.15); } }
+                Text { text: round(Docs.zoom * 100) + "%"; color: Theme.ink2; font-size: Theme.fs(12); vertical-alignment: center; width: 44px; horizontal-alignment: center; }
+                IconButton { icon: "zoomIn"; size: 30px; glyph: 16px; clicked => { Docs.zoom-by(1.15); } }
+                Seg {
+                    width: 150px;
+                    options: ["Width", "Page"];
+                    current: Docs.fit == "page" ? 1 : 0;
+                    picked(i) => { Docs.set-fit(i == 1 ? "page" : "width"); }
+                }
+            }
+            if Docs.mode == "text": HorizontalLayout {
+                spacing: 4px;
+                IconButton { icon: "chevronLeft"; size: 30px; glyph: 16px; enabled: Docs.chapter > 0; clicked => { Docs.go-chapter(Docs.chapter - 1); } }
+                Text { text: Docs.chapter-title; color: Theme.ink2; font-size: Theme.fs(12); vertical-alignment: center; overflow: elide; max-width: 260px; }
+                IconButton { icon: "chevronRight"; size: 30px; glyph: 16px; enabled: Docs.chapter < Docs.chapters - 1; clicked => { Docs.go-chapter(Docs.chapter + 1); } }
+                Rectangle { width: 10px; }
+                IconButton { icon: "zoomOut"; size: 30px; glyph: 16px; clicked => { Docs.text-size = max(12, Docs.text-size - 1); } }
+                IconButton { icon: "zoomIn"; size: 30px; glyph: 16px; clicked => { Docs.text-size = min(30, Docs.text-size + 1); } }
+            }
+            IconButton { icon: "folderOpen"; size: 30px; glyph: 16px; clicked => { Docs.open-dialog(); } }
+        }
+        Rule {}
+        Rectangle {
+            vertical-stretch: 1;
+            background: Docs.mode == "pages" ? Theme.ground.transparentize(0.3) : transparent;
+            if Docs.mode == "start": VerticalLayout {
+                alignment: start;
+                padding: 40px;
+                spacing: 18px;
+                HorizontalLayout {
+                    Heading { text: "Documents"; horizontal-stretch: 1; }
+                    Button { text: "Open…"; icon: "folderOpen"; kind: "primary"; clicked => { Docs.open-dialog(); } }
+                }
+                Dim { text: "PDFs, comic books (CBZ) and e-books (EPUB). Each opens where you left it."; }
+                if Docs.recents.length == 0: Empty { icon: "book"; title: "Nothing opened yet"; text: "Open a document, or open one from Files."; }
+                for r in Docs.recents: Rectangle {
+                    height: 56px;
+                    border-radius: Theme.r-sm;
+                    background: ra.has-hover ? Theme.hover : transparent;
+                    ra := TouchArea { mouse-cursor: pointer; clicked => { Docs.open-recent(r.path); } }
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 8px;
+                        spacing: 12px;
+                        VerticalLayout { alignment: center; Icon { name: r.kind == "PDF" ? "pdf" : r.kind == "Comic" ? "image" : "book"; size: 22px; } }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2px;
+                            horizontal-stretch: 1;
+                            Text { text: r.name; color: Theme.ink; font-weight: 600; overflow: elide; }
+                            Text { text: r.sub; color: Theme.ink3; font-size: Theme.fs(11.5); overflow: elide; }
+                        }
+                        VerticalLayout { alignment: center; IconButton { icon: "x"; size: 28px; glyph: 14px; clicked => { Docs.forget-recent(r.path); } } }
+                    }
+                }
+            }
+            if Docs.mode == "loading": VerticalLayout { alignment: center; HorizontalLayout { alignment: center; Spinner {} } }
+            if Docs.mode == "error": Empty { icon: "alert"; title: "Couldn't open it"; text: Docs.error; }
+            pages-view := ListView {
+                visible: Docs.mode == "pages";
+                for p in Docs.pages: Rectangle {
+                    height: p.height + 16px;
+                    property <int> g: p.gen;
+                    init => { Docs.need(p.index, p.gen); }
+                    changed g => { Docs.need(p.index, p.gen); }
+                    Rectangle {
+                        x: max(8px, (parent.width - p.width) / 2);
+                        y: 8px;
+                        width: p.width;
+                        height: p.height;
+                        background: #ffffff;
+                        drop-shadow-blur: 10px;
+                        drop-shadow-color: #00000040;
+                        drop-shadow-offset-y: 2px;
+                        Image {
+                            width: parent.width;
+                            height: parent.height;
+                            source: p.image;
+                            image-fit: fill;
+                        }
+                        if !p.ready: Spinner { x: (parent.width - self.width) / 2; y: 40px; }
+                    }
+                }
+            }
+            // Which page is in view, as it scrolls.
+            Timer {
+                interval: 150ms;
+                running: Docs.mode == "pages";
+                triggered => {
+                    if (Docs.pages.length > 0) {
+                        let h = Docs.pages[0].height + 16px;
+                        let p = round((-pages-view.content-y + pages-view.visible-height / 3) / h - 0.5);
+                        if (p != Docs.current) { Docs.current = max(0, min(Docs.page-count - 1, p)); Docs.scrolled(Docs.current); }
+                    }
+                }
+            }
+            if Docs.mode == "text": Scroll {
+                VerticalLayout {
+                    alignment: start;
+                    padding-top: 36px;
+                    padding-bottom: 60px;
+                    padding-left: max(32px, (parent.width - 720px) / 2);
+                    padding-right: max(32px, (parent.width - 720px) / 2);
+                    spacing: Docs.text-size * 0.8 * 1px;
+                    for t in Docs.text: Text {
+                        text: t.text;
+                        wrap: word-wrap;
+                        color: t.kind == "p" ? Theme.ink : Theme.ink;
+                        font-size: (t.kind == "h1" ? Docs.text-size * 1.6 : t.kind == "h2" ? Docs.text-size * 1.35 : t.kind == "h3" ? Docs.text-size * 1.15 : Docs.text-size) * 1px;
+                        font-weight: t.kind == "p" ? 400 : 700;
+                        font-family: t.kind == "p" ? "serif" : Theme.font-family;
+                    }
+                }
+            }
+            Toast { text: Docs.toast; }
+        }
+    }
+}

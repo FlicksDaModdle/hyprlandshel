@@ -8,3 +8,5 @@ description = "The shell's look and plumbing for Hyprshell's Rust apps"
 slint = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The desktop's file chooser, through xdg-desktop-portal.
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }

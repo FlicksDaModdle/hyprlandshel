@@ -8,6 +8,7 @@
 //! [`setup!`] macro, which runs in the app's own scope.
 
 pub mod icons;
+pub mod portal;
 pub mod theme;
 
 pub use slint;

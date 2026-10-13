@@ -767,8 +767,14 @@ export component TitleBar inherits Rectangle {
         HorizontalLayout {
             horizontal-stretch: 1;
             alignment: center;
-            spacing: 6px;
-            @children
+            // Whatever the app puts here, centred top to bottom.
+            VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    spacing: 6px;
+                    @children
+                }
+            }
         }
         HorizontalLayout {
             spacing: 2px;
