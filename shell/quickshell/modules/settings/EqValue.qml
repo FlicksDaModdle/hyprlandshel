@@ -105,11 +105,16 @@ Rectangle {
         // A notch of a mouse wheel is a step; a trackpad gives one for every
         // so far it travels. A page scroll already under way goes past.
         property real swipe: 0
+        property real notchAcc: 0
         onWheel: wheel => {
             if (Config.UiState.scrollLatched()) { wheel.accepted = false; return; }
             const fine = wheel.modifiers & Qt.ShiftModifier;
-            if (wheel.pixelDelta.y === 0 && wheel.phase === Qt.NoScrollPhase) {
-                root.nudge(wheel.angleDelta.y > 0 ? 1 : -1, fine);
+            if (wheel.phase === Qt.NoScrollPhase) {
+                // Whole notches: a high-resolution wheel sends each one as
+                // several small events.
+                notchAcc += wheel.angleDelta.y;
+                const k = notchAcc > 0 ? Math.floor(notchAcc / 120) : Math.ceil(notchAcc / 120);
+                if (k !== 0) { notchAcc -= k * 120; root.nudge(k, fine); }
                 return;
             }
             swipe += wheel.pixelDelta.y;

@@ -67,8 +67,11 @@ MouseArea {
         wheel.accepted = true;
         ss.target.cancelFlick();
         ss.sync();
+        // Only a touchpad sends scroll phases. Pixel deltas are no test:
+        // on Wayland Qt gives them for a plain mouse wheel too, and the
+        // mouse then coasted like a touchpad.
         const phased = wheel.phase !== Qt.NoScrollPhase;
-        const touchpad = phased || wheel.pixelDelta.y !== 0;
+        const touchpad = phased;
 
         if (!touchpad) {
             // A wheel. Turning the other way drops what is left of the

@@ -94,8 +94,13 @@ MouseArea {
     }
 
     // One wheel event, as numbers. Returns whether it was used.
+    //
+    // A touchpad is told apart by its scroll phases (begin, update, end),
+    // which only a touchpad sends. Not by pixel deltas: on Wayland Qt fills
+    // those in for an ordinary mouse wheel too, which gave the mouse a
+    // touchpad's coast — momentum is for fingers, not for notches.
     function scroll(pixelX, pixelY, angleY, phase) {
-        const trackpad = pixelY !== 0 || pixelX !== 0 || phase !== Qt.NoScrollPhase;
+        const trackpad = phase !== Qt.NoScrollPhase;
         if (!trackpad) {
             const steps = angleY / 120;
             if (steps === 0) return false;
@@ -112,7 +117,7 @@ MouseArea {
         Config.UiState.scrollLatch = Date.now() + 300;
         if (phase === Qt.ScrollBegin) { stopAll(); samples = []; }
 
-        const dy = -pixelY;
+        const dy = -(pixelY !== 0 ? pixelY : angleY / 120 * root.notch);
         if (dy !== 0) {
             stopAll();
             flick.contentY = clampY(flick.contentY + dy);

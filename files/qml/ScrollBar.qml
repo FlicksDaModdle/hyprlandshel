@@ -65,7 +65,8 @@ Item {
         onCanceled: area.dragging = false
         // The wheel over the bar scrolls what it belongs to.
         onWheel: wheel => {
-            const step = wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y : wheel.angleDelta.y / 120 * 80;
+            const step = wheel.phase !== Qt.NoScrollPhase && wheel.pixelDelta.y !== 0
+                         ? wheel.pixelDelta.y : wheel.angleDelta.y / 120 * 80;
             bar.target.contentY = Math.max(bar.target.originY,
                                            Math.min(bar.target.originY + bar.range, bar.target.contentY - step));
         }

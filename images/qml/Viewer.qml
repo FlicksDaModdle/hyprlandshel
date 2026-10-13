@@ -433,7 +433,9 @@ Rectangle {
             }
             onWheel: wheel => {
                 if (root.current === "") return;
-                const trackpad = wheel.pixelDelta.x !== 0 || wheel.pixelDelta.y !== 0;
+                // Scroll phases, not pixel deltas: on Wayland a mouse wheel
+                // has pixel deltas too, and would pan instead of zoom.
+                const trackpad = wheel.phase !== Qt.NoScrollPhase;
                 const ctrl = (wheel.modifiers & Qt.ControlModifier) !== 0;
                 if (trackpad && !ctrl) {
                     // Two fingers move about a zoomed picture; on a whole

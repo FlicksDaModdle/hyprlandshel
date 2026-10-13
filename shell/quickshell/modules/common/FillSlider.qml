@@ -93,7 +93,7 @@ Item {
         onReleased: root.released(root.dragValue)
         onWheel: wheel => {
             // A trackpad swipe is someone scrolling the page past it.
-            if (!root.takesWheel || wheel.pixelDelta.y !== 0 || wheel.phase !== Qt.NoScrollPhase) {
+            if (!root.takesWheel || wheel.phase !== Qt.NoScrollPhase) {
                 wheel.accepted = false;
                 return;
             }
