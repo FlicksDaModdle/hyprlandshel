@@ -235,8 +235,8 @@ Item {
                             visible: !row.sep
                             anchors.fill: parent
                             radius: Config.Appearance.rPill
-                            color: row.lit ? Config.Appearance.accent : "transparent"
-                            Behavior on color { ColorAnimation { duration: Config.Appearance.anim(90) } }
+                            color: tint1.value
+                            ColorSpring { id: tint1; to: row.lit ? Config.Appearance.accent : "transparent" }
                         }
 
                         // The glyph column: the app's icon, or a check box

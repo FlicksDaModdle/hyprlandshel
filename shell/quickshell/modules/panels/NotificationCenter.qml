@@ -98,9 +98,9 @@ PanelSurface {
                 width: dndRow.implicitWidth + 20
                 height: 28
                 radius: 9
-                color: Services.Focus.quiet ? Config.Appearance.accent
-                     : (dndHover.hovered ? Config.Appearance.sel : Config.Appearance.hover)
-                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(140) } }
+                color: tint1.value
+                ColorSpring { id: tint1; to: Services.Focus.quiet ? Config.Appearance.accent
+                         : (dndHover.hovered ? Config.Appearance.sel : Config.Appearance.hover) }
 
                 Row {
                     id: dndRow
@@ -134,9 +134,9 @@ PanelSurface {
                 width: clearLabel.implicitWidth + 20
                 height: 28
                 radius: 9
-                color: root.confirmClear ? "#d93a2b"
-                     : (clearHover.hovered ? Config.Appearance.sel : Config.Appearance.hover)
-                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                color: tint2.value
+                ColorSpring { id: tint2; to: root.confirmClear ? "#d93a2b"
+                         : (clearHover.hovered ? Config.Appearance.sel : Config.Appearance.hover) }
 
                 StyledText {
                     id: clearLabel

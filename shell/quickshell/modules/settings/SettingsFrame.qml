@@ -41,12 +41,8 @@ PanelSurface {
 
     // Tiled, the compositor decides the geometry and this fills whatever it
     // is given. Floating, the window is ours to place.
-    width: frame.host.tiled ? frame.host.width
-           : (frame.host.maximised ? frame.host.width - 16 : frame.host.normalWidth)
-    height: frame.host.tiled ? frame.host.height
-            : (frame.host.maximised
-               ? Math.max(320, frame.host.workBottom - frame.host.workTop)
-               : frame.host.normalHeight)
+    width: widthSpring.value
+    height: heightSpring.value
 
     // -1 means "not placed yet", so it opens centred.
     x: frame.host.tiled ? 0
@@ -61,8 +57,22 @@ PanelSurface {
                         Math.min(frame.host.height - height, Config.UiState.settingsY))
              : Math.round((frame.host.height - height) / 2)))
 
-    Behavior on width  { NumberAnimation { duration: Config.Appearance.anim(140); easing.type: Easing.OutCubic } }
-    Behavior on height { NumberAnimation { duration: Config.Appearance.anim(140); easing.type: Easing.OutCubic } }
+    // Maximising and restoring glide; tiled, the compositor is resizing
+    // it and it follows exactly.
+    Spring {
+        id: widthSpring
+        to: frame.host.tiled ? frame.host.width
+            : (frame.host.maximised ? frame.host.width - 16 : frame.host.normalWidth)
+        response: 300; bounce: 0.5; enabled: !frame.host.tiled
+    }
+    Spring {
+        id: heightSpring
+        to: frame.host.tiled ? frame.host.height
+            : (frame.host.maximised
+               ? Math.max(320, frame.host.workBottom - frame.host.workTop)
+               : frame.host.normalHeight)
+        response: 300; bounce: 0.5; enabled: !frame.host.tiled
+    }
 
     // ── title bar ─────────────────────────────────────────────────────
     Item {
@@ -260,13 +270,15 @@ PanelSurface {
                 property bool placed: false
                 x: 8
                 width: sidebarFlick.width - 16
-                y: edgeTop
-                height: Math.max(8, edgeBottom - edgeTop)
+                y: topSpring.value
+                height: Math.max(8, bottomSpring.value - topSpring.value)
                 radius: Config.Appearance.rSm
                 color: Config.Appearance.sel
                 visible: placed
-                Behavior on edgeTop { enabled: selPill.placed; Spring { ms: selPill.down ? 560 : 340; bounce: selPill.down ? 0.5 : 1 } }
-                Behavior on edgeBottom { enabled: selPill.placed; Spring { ms: selPill.down ? 340 : 560; bounce: selPill.down ? 1 : 0.5 } }
+                Spring { id: topSpring; to: selPill.edgeTop; enabled: selPill.placed
+                         response: selPill.down ? 420 : 300; bounce: selPill.down ? 0.5 : 1 }
+                Spring { id: bottomSpring; to: selPill.edgeBottom; enabled: selPill.placed
+                         response: selPill.down ? 300 : 420; bounce: selPill.down ? 1 : 0.5 }
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -435,21 +447,19 @@ PanelSurface {
 
             // A new pane rises into place rather than swapping in where
             // the last one was.
-            property real rise: 0
-            transform: Translate { y: paneColumn.rise }
-            // Both jump away and animate back: each Behavior is off at its
-            // resting value, so only the return is animated.
-            Behavior on rise { enabled: paneColumn.rise !== 0; Spring { ms: 460; bounce: 0.8 } }
+            // Both jump away and spring back.
+            Spring { id: rise; to: 0; response: 380; bounce: 0.8 }
+            Spring { id: paneFade; to: 1; response: 200; bounce: 0 }
+            transform: Translate { y: rise.value }
+            opacity: Math.max(0, Math.min(1, paneFade.value))
             Connections {
                 target: frame.app
                 function onPaneChanged() {
                     if (!Config.Appearance.animated) return;
-                    paneColumn.rise = 28;
-                    paneColumn.opacity = 0;
-                    Qt.callLater(() => { paneColumn.rise = 0; paneColumn.opacity = 1; });
+                    rise.snap(24); rise.wake();
+                    paneFade.snap(-0.15); paneFade.wake();
                 }
             }
-            Behavior on opacity { enabled: paneColumn.opacity < 1; NumberAnimation { duration: Config.Appearance.anim(110); easing.type: Easing.OutCubic } }
 
             StyledText {
                 text: frame.app.pane

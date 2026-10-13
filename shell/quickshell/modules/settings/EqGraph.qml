@@ -211,14 +211,14 @@ Item {
 
             Rectangle {
                 anchors.centerIn: parent
-                width: handle.sel ? 18 : 14
+                width: widthSpring.value
                 height: width
                 radius: width / 2
                 color: handle.b.on ? root.colourOf(handle.b) : root.ap.ground
                 border.width: handle.sel ? 2.5 : 1.5
                 border.color: handle.b.on ? (handle.sel ? root.ap.ink : Qt.darker(root.colourOf(handle.b), 1.4))
                                           : root.colourOf(handle.b)
-                Behavior on width { NumberAnimation { duration: root.ap.anim(90) } }
+                Spring { id: widthSpring; to: handle.sel ? 18 : 14; response: 140; bounce: 0 }
                 StyledText {
                     anchors.centerIn: parent
                     text: String(root.fx.bands.indexOf(handle.b) + 1)

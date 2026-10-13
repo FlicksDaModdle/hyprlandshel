@@ -434,9 +434,9 @@ Scope {
 
             { type: "header", n: "Animation" },
             { n: "Style",
-              s: A.springy ? "Springs that swing a little past and settle, like macOS — windows too"
-                           : "Things ease straight into place",
-              type: "seg", options: [{ label: "Springy", value: "springy" }, { label: "Smooth", value: "smooth" }],
+              s: A.springy ? "Everything moves on springs that settle with a touch of give — windows too"
+                           : "The same springs, damped so they land without swinging past",
+              type: "seg", options: [{ label: "Liquid", value: "springy" }, { label: "Calm", value: "smooth" }],
               value: A.motionStyle, set: v => A.motionStyle = v },
             { n: "Speed",
               s: A.animSpeed <= 0 ? "Off: everything changes at once" : "Every animation in the shell. Higher is faster",
@@ -444,11 +444,11 @@ Scope {
               value: A.animSpeed, set: v => A.animSpeed = Math.round(v) },
         ]).concat(A.springy ? [
             { n: "Bounce",
-              s: A.motionBounce <= 0 ? "Lands without swinging past" : "How far things swing past before they settle",
+              s: A.motionBounce <= 0 ? "Lands without swinging past" : "How much give the springs have as they settle",
               type: "slider", min: 0, max: 200, unit: "%",
               value: A.motionBounce, set: v => A.motionBounce = Math.round(v) },
             { n: "Panels grow from their button",
-              s: "Menus and panels stretch out of the control that opened them",
+              s: "Menus and panels swell out of the control that opened them",
               type: "toggle", value: A.panelsGrow, set: v => A.panelsGrow = v },
         ] : []).concat([
             { n: "Window speed",

@@ -47,21 +47,23 @@ MouseArea {
     // Recent finger movement: { t, dy }, dy as the change in contentY.
     property var samples: []
     property bool sawPhases: false
-    property real wheelTarget: 0
 
-    NumberAnimation {
+    // A wheel notch glides on a critically damped spring: quick, and it
+    // stops exactly on the step. Notches that come faster than it settles
+    // add to where it is going, at the speed it already has.
+    Spring {
         id: glide
-        target: root.flick
-        property: "contentY"
-        duration: Config.Appearance.smoothWheel ? Config.Appearance.anim(170) : 0
-        easing.type: Easing.OutCubic
+        response: 200
+        bounce: 0
+        enabled: Config.Appearance.smoothWheel
+        onValueChanged: if (moving) root.flick.contentY = value
     }
     // Without scroll phases there is no "lifted": a pause stands in for it.
     Timer { id: pause; interval: 60; onTriggered: root.release(true) }
 
     function stopAll() {
         flick.cancelFlick();
-        glide.stop();
+        glide.snap(glide.value);
     }
 
     function release(afterPause) {
@@ -98,11 +100,11 @@ MouseArea {
             const steps = angleY / 120;
             if (steps === 0) return false;
             flick.cancelFlick();
-            const from = glide.running ? root.wheelTarget : flick.contentY;
-            root.wheelTarget = clampY(from - steps * root.notch);
-            glide.stop();
-            glide.to = root.wheelTarget;
-            glide.start();
+            const target = clampY((glide.moving ? glide.to : flick.contentY) - steps * root.notch);
+            if (!glide.live) { flick.contentY = target; return true; }
+            if (!glide.moving) glide.snap(flick.contentY);
+            glide.to = target;
+            glide.wake();
             return true;
         }
 

@@ -75,8 +75,8 @@ PanelSurface {
                 Rectangle {
                     anchors.fill: parent
                     radius: Config.Appearance.rSm
-                    color: entryHover.hovered ? Config.Appearance.hover : "transparent"
-                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                    color: tint1.value
+                    ColorSpring { id: tint1; to: entryHover.hovered ? Config.Appearance.hover : "transparent" }
                 }
 
                 Row {

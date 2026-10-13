@@ -193,16 +193,20 @@ Variants {
         // it reads over light and dark alike.
         Rectangle {
             visible: win.hasPick
-            x: win.pick.x - 1; y: win.pick.y - 1
-            width: win.pick.width + 2; height: win.pick.height + 2
+            x: hx.value
+            y: hy.value
+            width: hw.value
+            height: hh.value
             color: "transparent"
             radius: win.mode === "region" ? 2 : 0
             border.width: 2
             border.color: win.ap.accent
-            Behavior on x { enabled: win.mode !== "region"; Spring { ms: 260; bounce: 0.4 } }
-            Behavior on y { enabled: win.mode !== "region"; Spring { ms: 260; bounce: 0.4 } }
-            Behavior on width { enabled: win.mode !== "region"; Spring { ms: 260; bounce: 0.4 } }
-            Behavior on height { enabled: win.mode !== "region"; Spring { ms: 260; bounce: 0.4 } }
+            // Dragging out a region it follows the pointer exactly; picking
+            // a window or a screen it glides from one to the next.
+            Spring { id: hx; to: win.pick.x - 1; response: 240; bounce: 0.5; enabled: win.mode !== "region" }
+            Spring { id: hy; to: win.pick.y - 1; response: 240; bounce: 0.5; enabled: win.mode !== "region" }
+            Spring { id: hw; to: win.pick.width + 2; response: 240; bounce: 0.5; enabled: win.mode !== "region" }
+            Spring { id: hh; to: win.pick.height + 2; response: 240; bounce: 0.5; enabled: win.mode !== "region" }
         }
         // Its size, in real pixels, beside it.
         Rectangle {
@@ -272,11 +276,11 @@ Variants {
             border.width: 1
             border.color: win.ap.edge
             visible: win.focusedHere || barHover.hovered
-            opacity: shown ? 1 : 0
-            scale: shown ? 1 : 0.7
+            opacity: opacitySpring.value
+            scale: scaleSpring.value
             transformOrigin: Item.Top
-            Behavior on opacity { NumberAnimation { duration: win.ap.anim(90) } }
-            Behavior on scale { Spring { ms: 420; bounce: 1.1 } }
+            Spring { id: opacitySpring; to: bar.shown ? 1 : 0; response: 140; bounce: 0 }
+            Spring { id: scaleSpring; to: bar.shown ? 1 : 0.9; response: 340 }
             HoverHandler { id: barHover }
 
             Row {
@@ -297,10 +301,10 @@ Variants {
                         width: modeRow.implicitWidth + 24
                         height: 36
                         radius: 18
-                        color: on ? win.ap.accent : (modeHover.hovered ? win.ap.sel : "transparent")
-                        Behavior on color { ColorAnimation { duration: win.ap.anim(120) } }
-                        scale: modeTap.pressed ? 0.92 : 1
-                        Behavior on scale { Spring { ms: 300; bounce: 1.3 } }
+                        color: tint1.value
+                        ColorSpring { id: tint1; to: modeBtn.on ? win.ap.accent : (modeHover.hovered ? win.ap.sel : "transparent") }
+                        scale: scaleSpring2.value
+                        Spring { id: scaleSpring2; to: modeTap.pressed ? 0.92 : 1; response: 260 }
                         Row {
                             id: modeRow
                             anchors.centerIn: parent

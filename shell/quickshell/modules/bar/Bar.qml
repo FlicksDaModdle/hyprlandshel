@@ -142,12 +142,13 @@ Variants {
 
         // Where the bar sits inside its surface. Hidden is one bar-height
         // up, which is out.
-        property real barPos: revealed ? 0 : -barH
-        Behavior on barPos {
-            NumberAnimation {
-                duration: Config.Appearance.anim(240)
-                easing.type: Easing.OutCubic
-            }
+        readonly property real barPos: barSpring.value
+        // Drops in with the dock's spring; goes back up plainly.
+        Spring {
+            id: barSpring
+            to: bar.revealed ? 0 : -bar.barH
+            response: bar.revealed ? 340 : 260
+            bounce: bar.revealed ? 0.6 : 0
         }
 
         // Explicit, for the same reason as the dock: three anchors would
@@ -377,14 +378,20 @@ Variants {
                     onActivated: Services.Capture.stopRecording()
 
                     Rectangle {
+                        id: recDot
                         anchors.verticalCenter: parent.verticalCenter
                         width: 10; height: 10; radius: 5
                         color: "#e5484d"
-                        SequentialAnimation on opacity {
+                        // Breathes: a slow spring pulled one way, then the other.
+                        property bool dim: false
+                        opacity: recBreath.value
+                        Spring { id: recBreath; to: recDot.dim ? 0.35 : 1; response: 1100; bounce: 0 }
+                        Timer {
                             running: recPill.visible
-                            loops: Animation.Infinite
-                            NumberAnimation { to: 0.35; duration: 700; easing.type: Easing.InOutSine }
-                            NumberAnimation { to: 1; duration: 700; easing.type: Easing.InOutSine }
+                            repeat: true
+                            interval: 750
+                            onTriggered: recDot.dim = !recDot.dim
+                            onRunningChanged: if (!running) recDot.dim = false
                         }
                     }
                     StyledText {

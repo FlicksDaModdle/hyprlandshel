@@ -315,21 +315,45 @@ hl.config({
     },
 })
 
-hl.curve("easeOutQuint", { type = "bezier", points = { {0.23, 1}, {0.32, 1} } })
+-- Every animation is a spring: the same physics as the shell's own
+-- (quickshell/modules/common/Spring.qml), which re-sends these with
+-- Settings → Appearance → Animation applied once it is running. Arrive
+-- settles with a touch of give; leave, fade and border are critically
+-- damped, so they never swing.
+--
 -- The spring's third field is `dampening` on Hyprland 0.55, which is this
 -- config's minimum. Upstream's own example currently spells it `damping`,
--- so it was renamed at some point: if your Hyprland reports
---   hl.curve("easy"): unknown field 'dampening'
--- change it to `damping` and nothing else. Getting it wrong is quiet but
--- not harmless — Hyprland reads nil, rejects the curve, and then the
--- windows animation below fails too with `no such spring "easy"`.
-hl.curve("easy",         { type = "spring", mass = 1, stiffness = 238.1191, dampening = 24.21279333 })
+-- so it was renamed at some point; both are tried. Getting it wrong is
+-- quiet but not harmless — Hyprland reads nil, rejects the curve, and the
+-- animations below fail too with `no such spring` — so each of those
+-- falls back to a plain ease-out curve rather than to nothing.
+local function spring(name, stiffness, damping)
+    if not pcall(hl.curve, name, { type = "spring", mass = 1, stiffness = stiffness, dampening = damping }) then
+        pcall(hl.curve, name, { type = "spring", mass = 1, stiffness = stiffness, damping = damping })
+    end
+end
+spring("hsArrive", 223.8, 23.34)   -- 0.42 s swing, damping ratio 0.78
+spring("hsLeave",  438.65, 41.89)  -- 0.30 s, critically damped
+spring("hsFade",   438.65, 41.89)
+spring("hsBorder", 246.74, 31.42)
+hl.curve("hsSmooth", { type = "bezier", points = { {0.23, 1}, {0.32, 1} } })
 
-hl.animation({ leaf = "windows",    enabled = true, speed = 4.5, spring = "easy" })
-hl.animation({ leaf = "border",     enabled = true, speed = 5,   bezier = "easeOutQuint" })
-hl.animation({ leaf = "fade",       enabled = true, speed = 3,   bezier = "easeOutQuint" })
-hl.animation({ leaf = "workspaces", enabled = true, speed = 3,   bezier = "easeOutQuint", style = "slide" })
-hl.animation({ leaf = "layers",     enabled = true, speed = 3.5, bezier = "easeOutQuint", style = "fade" })
+local function animate(leaf, curve, speed, style)
+    local spec = { leaf = leaf, enabled = true, speed = speed, style = style, spring = curve }
+    if not pcall(hl.animation, spec) then
+        spec.spring = nil
+        spec.bezier = "hsSmooth"
+        pcall(hl.animation, spec)
+    end
+end
+animate("windows",          "hsArrive", 4.5, "popin 86%")
+animate("windowsOut",       "hsLeave",  2.6, "popin 90%")
+animate("windowsMove",      "hsArrive", 4.5)
+animate("workspaces",       "hsArrive", 4,   "slide")
+animate("specialWorkspace", "hsArrive", 4,   "slidevert")
+animate("fade",             "hsFade",   2.5)
+animate("border",           "hsBorder", 5)
+animate("layers",           "hsFade",   2.5, "fade")
 
 -- The shell's layer-shell surfaces get real compositor blur-behind here,
 -- matched by the namespaces each module sets via WlrLayershell.namespace.

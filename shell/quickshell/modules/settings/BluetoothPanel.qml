@@ -377,15 +377,21 @@ Column {
             spacing: 8
             // A pulsing dot while it looks.
             Rectangle {
+                id: scanDot
                 anchors.verticalCenter: parent.verticalCenter
                 width: 8; height: 8; radius: 4
                 color: Config.Appearance.accent
                 visible: panel.bt.discovering
-                SequentialAnimation on opacity {
+                // Breathes while it looks: a slow spring, pulled each way.
+                property bool dim: false
+                opacity: scanBreath.value
+                Spring { id: scanBreath; to: scanDot.dim ? 0.25 : 1; response: 1100; bounce: 0 }
+                Timer {
                     running: panel.bt.discovering
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 1; to: 0.25; duration: 700 }
-                    NumberAnimation { from: 0.25; to: 1; duration: 700 }
+                    repeat: true
+                    interval: 750
+                    onTriggered: scanDot.dim = !scanDot.dim
+                    onRunningChanged: if (!running) scanDot.dim = false
                 }
             }
             StyledText {

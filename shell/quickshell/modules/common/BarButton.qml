@@ -29,17 +29,17 @@ Item {
     implicitWidth: Math.max(26, row.implicitWidth + padding * 2)
     implicitHeight: 26
     // Gives under the finger, and springs back.
-    scale: tap.pressed ? 0.92 : 1
-    Behavior on scale { Spring { ms: 320; bounce: 1.3 } }
+    scale: scaleSpring.value
+    Spring { id: scaleSpring; to: tap.pressed ? 0.92 : 1; response: 270 }
 
     data: [
         Rectangle {
             anchors.fill: root
             radius: Config.Appearance.rCap
-            color: root.open
-                   ? (root.accentWhenOpen ? Config.Appearance.accent : Config.Appearance.sel)
-                   : (root.hovered && root.interactive ? Config.Appearance.hover : "transparent")
-            Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+            color: tint1.value
+            ColorSpring { id: tint1; to: root.open
+                       ? (root.accentWhenOpen ? Config.Appearance.accent : Config.Appearance.sel)
+                       : (root.hovered && root.interactive ? Config.Appearance.hover : "transparent") }
         },
 
         Row {

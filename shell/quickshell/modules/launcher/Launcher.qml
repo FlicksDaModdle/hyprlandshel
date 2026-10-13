@@ -59,10 +59,8 @@ Variants {
         // gone behind it.
         readonly property bool exitAway:
             Config.Appearance.dockAutoHide && !Config.UiState.holdDockAfterLauncher
-        property real exit: 0
-        Behavior on exit {
-            NumberAnimation { duration: Config.Appearance.anim(210); easing.type: Easing.OutCubic }
-        }
+        readonly property real exit: exitSpring.value
+        Spring { id: exitSpring; to: 0; response: 260; bounce: 0 }
 
         onWantedChanged: {
             if (wanted) { linger.stop(); lingering = false; resetInput(); }
@@ -72,18 +70,18 @@ Variants {
             // Drives the morph too: one handler, because QML keeps only the
             // last handler declared for a signal and silently drops the rest.
             if (wanted) {
-                launcher.exit = 0;
-                launcher.morph = 1;
-                launcher.morphY = 1;
+                exitSpring.to = 0;
+                morphSpring.to = 1;
+                morphYSpring.to = 1;
             } else if (launcher.exitAway && launcher.morphing) {
                 // The shape is left where it is and the whole panel
                 // leaves; letting morph fall here as well would put the
                 // pill back on the way out, which is the thing being
                 // avoided.
-                launcher.exit = 1;
+                exitSpring.to = 1;
             } else {
-                launcher.morph = 0;
-                launcher.morphY = 0;
+                morphSpring.to = 0;
+                morphYSpring.to = 0;
             }
             // Closing, the contents go first and quickly: the shape should
             // look empty before it starts shrinking, not shrink around
@@ -91,7 +89,7 @@ Variants {
             // whole — there the contents should still be in it.
             fadeDelay.stop();
             if (wanted) fadeDelay.restart();
-            else if (!launcher.exitAway) launcher.morphFade = 0;
+            else if (!launcher.exitAway) fadeSpring.to = 0;
         }
         // Opening, the fade waits for the shape to be most of the way
         // there. A Timer rather than a longer easing because the delay
@@ -99,7 +97,7 @@ Variants {
         Timer {
             id: fadeDelay
             interval: launcher.grows || launcher.morphing ? 60 : 110
-            onTriggered: launcher.morphFade = 1
+            onTriggered: fadeSpring.to = 1
         }
         Timer {
             id: linger
@@ -110,10 +108,10 @@ Variants {
                 // or the next opening would start from a panel that is
                 // already the right size and appear with no movement at
                 // all.
-                launcher.morph = 0;
-                launcher.morphY = 0;
-                launcher.morphFade = 0;
-                launcher.exit = 0;
+                morphSpring.to = 0; morphSpring.snap();
+                morphYSpring.to = 0; morphYSpring.snap();
+                fadeSpring.to = 0; fadeSpring.snap();
+                exitSpring.to = 0; exitSpring.snap();
             }
         }
 
@@ -222,24 +220,21 @@ Variants {
         // and settles — the thing that reads as liquid rather than as a
         // rectangle interpolating. The content's own fade is third, and
         // slowest, so it arrives into a shape that has already stopped.
-        property real morph: 0          // width, and the lead
-        property real morphY: 0         // height, half a beat behind
-        property real morphFade: 0      // the contents
+        readonly property real morph: morphSpring.value      // width, and the lead
+        readonly property real morphY: morphYSpring.value    // height, half a beat behind
+        readonly property real morphFade: fadeSpring.value   // the contents
 
-        // Opening, each lands a touch past and settles back — a spring
-        // rather than a fade-in. Closing goes straight into the dock: an
-        // overshoot below 0 would turn the shape inside out.
-        // The same springs as the bar's panels: quick, a full swing past,
-        // and settled — the height a beat behind the width.
-        Behavior on morph { Spring { ms: launcher.wanted ? 380 : 220; bounce: launcher.wanted ? 1.1 : 0 } }
-        Behavior on morphY { Spring { ms: launcher.wanted ? 460 : 240; bounce: launcher.wanted ? 1.0 : 0 } }
-        Behavior on morphFade {
-            NumberAnimation { duration: Config.Appearance.anim(160); easing.type: Easing.OutCubic }
-        }
+        // Springs, so opening it again while it is still closing turns it
+        // round from where it is. Opening, each lands with a touch of give;
+        // closing goes straight into the dock: an overshoot below 0 would
+        // turn the shape inside out. The same springs as the bar's panels —
+        // the height a beat behind the width.
+        Spring { id: morphSpring; to: 0; response: launcher.wanted ? 340 : 230; bounce: launcher.wanted ? 0.9 : 0 }
+        Spring { id: morphYSpring; to: 0; response: launcher.wanted ? 400 : 240; bounce: launcher.wanted ? 0.8 : 0 }
+        Spring { id: fadeSpring; to: 0; response: launcher.wanted ? 240 : 150; bounce: 0 }
         Component.onCompleted: {
-            morph = wanted ? 1 : 0;
-            morphY = morph;
-            morphFade = morph;
+            const v = wanted ? 1 : 0;
+            for (const sp of [morphSpring, morphYSpring, fadeSpring]) { sp.to = v; sp.snap(); }
         }
 
         // Where the dock's pill sits, in this window's coordinates. This
@@ -681,9 +676,9 @@ Variants {
                 // Growing out of the dock it is already the dock's width, so
                 // the stretch is a gel's: a little narrow, a little past,
                 // settled — from the Start tile.
-                xScale: launcher.grows ? 0.4 + 0.6 * launcher.morph
+                xScale: launcher.grows ? 0.74 + 0.26 * launcher.morph
                       : launcher.morphing && Config.Appearance.springy ? 0.9 + 0.1 * launcher.morph : 1
-                yScale: launcher.grows ? 0.1 + 0.9 * launcher.morphY : 1
+                yScale: launcher.grows ? 0.5 + 0.5 * launcher.morphY : 1
             }
             // The exit slides it towards the edge it came from, so it
             // leaves the way a dock does rather than dissolving in place.
@@ -734,9 +729,9 @@ Variants {
                         radius: Config.Appearance.rSm
                         color: Config.Appearance.hover
                         border.width: searchInput.activeFocus ? 2 : 1
-                        border.color: searchInput.activeFocus
-                                      ? Config.Appearance.accent : Config.Appearance.edge
-                        Behavior on border.color { ColorAnimation { duration: Config.Appearance.anim(140) } }
+                        border.color: tint1.value
+                        ColorSpring { id: tint1; to: searchInput.activeFocus
+                                          ? Config.Appearance.accent : Config.Appearance.edge }
 
                         MonoIcon {
                             id: searchIcon
@@ -882,8 +877,8 @@ Variants {
                             width: allRow.implicitWidth + 20
                             height: launcher.z(25)
                             radius: Config.Appearance.rSm
-                            color: allHover.hovered ? Config.Appearance.accent : Config.Appearance.hover
-                            Behavior on color { ColorAnimation { duration: Config.Appearance.anim(140) } }
+                            color: tint2.value
+                            ColorSpring { id: tint2; to: allHover.hovered ? Config.Appearance.accent : Config.Appearance.hover }
 
                             Row {
                                 id: allRow
@@ -934,11 +929,11 @@ Variants {
                                 Rectangle {
                                     anchors.fill: parent
                                     radius: Config.Appearance.rSm
-                                    color: gridItem.selected || gridHover.hovered
-                                           ? Config.Appearance.sel : "transparent"
+                                    color: tint3.value
                                     border.width: gridItem.selected ? 1 : 0
                                     border.color: Config.Appearance.seam
-                                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                                    ColorSpring { id: tint3; to: gridItem.selected || gridHover.hovered
+                                               ? Config.Appearance.sel : "transparent" }
                                 }
 
                                 Column {
@@ -1013,12 +1008,12 @@ Variants {
 
                                 Rectangle {
                                     required property int index
-                                    width: launcher.page === index ? 16 : 5
+                                    width: widthSpring.value
                                     height: launcher.z(5)
                                     radius: launcher.z(3)
                                     color: launcher.page === index
                                            ? Config.Appearance.accent : Config.Appearance.div
-                                    Behavior on width { NumberAnimation { duration: Config.Appearance.anim(160) } }
+                                    Spring { id: widthSpring; to: launcher.page === index ? 16 : 5; response: 260; bounce: 0 }
 
                                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                                     TapHandler {
@@ -1093,8 +1088,8 @@ Variants {
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: Config.Appearance.rSm
-                                        color: recentHover.hovered ? Config.Appearance.sel : "transparent"
-                                        Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                                        color: tint4.value
+                                        ColorSpring { id: tint4; to: recentHover.hovered ? Config.Appearance.sel : "transparent" }
                                     }
 
                                     Row {
@@ -1252,9 +1247,9 @@ Variants {
                             Rectangle {
                                 anchors.fill: parent
                                 radius: Config.Appearance.rSm
-                                color: resultRow.selected ? Config.Appearance.accent
-                                     : (resultHover.hovered ? Config.Appearance.hover : "transparent")
-                                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(100) } }
+                                color: tint5.value
+                                ColorSpring { id: tint5; to: resultRow.selected ? Config.Appearance.accent
+                                         : (resultHover.hovered ? Config.Appearance.hover : "transparent") }
                             }
 
                             Row {
@@ -1406,8 +1401,8 @@ Variants {
                     radius: asDock ? Config.Appearance.rTile : Config.Appearance.rSm
                     color: asDock || startHover.hovered ? Config.Appearance.accent
                                                         : Config.Appearance.sel
-                    scale: startTap.pressed ? 0.9 : 1
-                    Behavior on scale { Spring { ms: 300; bounce: 1.3 } }
+                    scale: scaleSpring.value
+                    Spring { id: scaleSpring; to: startTap.pressed ? 0.9 : 1; response: 260 }
 
                     MonoIcon {
                         anchors.centerIn: parent

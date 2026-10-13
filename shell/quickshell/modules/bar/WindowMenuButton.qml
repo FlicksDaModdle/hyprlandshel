@@ -31,9 +31,9 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: Config.Appearance.rSm
-        color: root.open ? Config.Appearance.sel
-             : (hover.hovered && root.hasClient ? Config.Appearance.hover : "transparent")
-        Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+        color: tint1.value
+        ColorSpring { id: tint1; to: root.open ? Config.Appearance.sel
+                 : (hover.hovered && root.hasClient ? Config.Appearance.hover : "transparent") }
     }
 
     StyledText {

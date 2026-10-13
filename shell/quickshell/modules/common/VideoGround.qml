@@ -13,8 +13,8 @@ Item {
 
     readonly property bool playing: player.playbackState === MediaPlayer.PlayingState && player.hasVideo
 
-    opacity: playing ? 1 : 0
-    Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
+    opacity: opacitySpring.value
+    Spring { id: opacitySpring; to: vg.playing ? 1 : 0; response: 640; bounce: 0 }
 
     MediaPlayer {
         id: player

@@ -86,10 +86,10 @@ Column {
                 id: badge
                 width: 30; height: 30; radius: 15
                 anchors.verticalCenter: parent.verticalCenter
-                color: lv.muted ? root.ap.div : badgeHover.hovered ? root.ap.sel : root.ap.hover
-                scale: badgeTap.pressed ? 0.88 : 1
-                Behavior on scale { SpringAnimation { spring: 5; damping: 0.32; epsilon: 0.002 } }
-                Behavior on color { ColorAnimation { duration: root.ap.anim(140) } }
+                color: tint1.value
+                scale: badgeScale.value
+                Spring { id: badgeScale; to: badgeTap.pressed ? 0.88 : 1; response: 260 }
+                ColorSpring { id: tint1; to: lv.muted ? root.ap.div : badgeHover.hovered ? root.ap.sel : root.ap.hover }
                 MonoIcon {
                     anchors.centerIn: parent
                     name: lv.muted ? "volumeX" : lv.icon
@@ -136,10 +136,10 @@ Column {
                 width: eqText.implicitWidth + 16
                 height: 22
                 radius: 11
-                color: lv.eqOn ? root.ap.accent : eqHover.hovered ? root.ap.sel : "transparent"
+                color: tint2.value
                 border.width: lv.eqOn ? 0 : 1
                 border.color: root.ap.rule
-                Behavior on color { ColorAnimation { duration: root.ap.anim(140) } }
+                ColorSpring { id: tint2; to: lv.eqOn ? root.ap.accent : eqHover.hovered ? root.ap.sel : "transparent" }
                 StyledText {
                     id: eqText
                     anchors.centerIn: parent

@@ -120,11 +120,11 @@ Rectangle {
                     Rectangle {
                         anchors.fill: parent
                         radius: Config.Appearance.rTile
-                        color: thumb.hot ? Config.Appearance.sel
-                             : (thumb.current ? Config.Appearance.hover : "transparent")
+                        color: tint1.value
                         border.width: thumb.current ? 1 : 0
                         border.color: Config.Appearance.seam
-                        Behavior on color { ColorAnimation { duration: Config.Appearance.anim(110) } }
+                        ColorSpring { id: tint1; to: thumb.hot ? Config.Appearance.sel
+                                 : (thumb.current ? Config.Appearance.hover : "transparent") }
                     }
 
                     // ── title ───────────────────────────────────────────

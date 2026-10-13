@@ -66,9 +66,9 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: Config.Appearance.rCap
-                    color: task.modelData.active ? Config.Appearance.sel
-                         : (taskHover.hovered ? Config.Appearance.hover : "transparent")
-                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                    color: tint1.value
+                    ColorSpring { id: tint1; to: task.modelData.active ? Config.Appearance.sel
+                             : (taskHover.hovered ? Config.Appearance.hover : "transparent") }
                 }
 
                 Row {

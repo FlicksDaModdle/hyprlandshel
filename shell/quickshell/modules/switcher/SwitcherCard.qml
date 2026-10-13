@@ -114,11 +114,11 @@ Rectangle {
                 Rectangle {
                     anchors.fill: parent
                     radius: Config.Appearance.rTile
-                    color: tile.selected ? Config.Appearance.sel
-                         : (tileMouse.containsMouse ? Config.Appearance.hover : "transparent")
+                    color: tint1.value
                     border.width: tile.selected ? 2 : 0
                     border.color: Config.Appearance.accent
-                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(90) } }
+                    ColorSpring { id: tint1; to: tile.selected ? Config.Appearance.sel
+                             : (tileMouse.containsMouse ? Config.Appearance.hover : "transparent") }
                 }
 
                 // ── thumbnails ──────────────────────────────────────────

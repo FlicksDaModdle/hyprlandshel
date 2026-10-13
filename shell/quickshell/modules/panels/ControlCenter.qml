@@ -20,10 +20,10 @@ PanelSurface {
     readonly property bool mixerPane: Config.UiState.ccExpanded === "Mixer"
 
     implicitWidth: 384
-    implicitHeight: mixerPane ? mixerView.implicitHeight
-                  : expanded ? expandedView.implicitHeight : mainView.implicitHeight
+    implicitHeight: implicitHeightSpring.value
 
-    Behavior on implicitHeight { Spring { ms: 420; bounce: 0.5 } }
+    Spring { id: implicitHeightSpring; to: root.mixerPane ? mixerView.implicitHeight
+        : root.expanded ? expandedView.implicitHeight : mainView.implicitHeight; response: 360; bounce: 0.5 }
 
     // ── main ──────────────────────────────────────────────────────────────
     Column {
@@ -85,8 +85,8 @@ PanelSurface {
                 width: themeRow.implicitWidth + 24
                 height: 30
                 radius: 9
-                color: themeHover.hovered ? Config.Appearance.sel : Config.Appearance.hover
-                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                color: tint1.value
+                ColorSpring { id: tint1; to: themeHover.hovered ? Config.Appearance.sel : Config.Appearance.hover }
 
                 Row {
                     id: themeRow
@@ -134,8 +134,8 @@ PanelSurface {
                         required property var modelData
                         width: (tileGrid.width - tileGrid.spacing * 2) / 3
                         height: 88
-                        scale: tileArea.pressed ? 0.94 : 1
-                        Behavior on scale { Spring { ms: 340; bounce: 1.3 } }
+                        scale: scaleSpring.value
+                        Spring { id: scaleSpring; to: tileArea.pressed ? 0.94 : 1; response: 290 }
 
                         MouseArea {
                             id: tileArea
@@ -150,9 +150,9 @@ PanelSurface {
                             anchors.fill: parent
                             radius: Config.Appearance.rCard
                             clip: true
-                            color: tile.modelData.on ? Config.Appearance.accent
-                                 : (tileArea.containsMouse ? Config.Appearance.sel : Config.Appearance.hover)
-                            Behavior on color { ColorAnimation { duration: Config.Appearance.anim(140) } }
+                            color: tint2.value
+                            ColorSpring { id: tint2; to: tile.modelData.on ? Config.Appearance.accent
+                                     : (tileArea.containsMouse ? Config.Appearance.sel : Config.Appearance.hover) }
 
                             // Bottom rail, brighter when the tile is on.
                             Rectangle {
@@ -462,10 +462,8 @@ PanelSurface {
                             // below the row is a field taller.
                             readonly property bool wantsUser:
                                 entry.modelData.wantsUser === true
-                            height: asking ? 44 + (wantsUser ? 78 : 40) : 44
-                            Behavior on height {
-                                NumberAnimation { duration: Config.Appearance.anim(140); easing.type: Easing.OutCubic }
-                            }
+                            height: rowGrow.value
+                            Spring { id: rowGrow; to: entry.asking ? 44 + (entry.wantsUser ? 78 : 40) : 44; response: 300; bounce: 0.6 }
                             clip: true
 
                             Rectangle {
@@ -474,9 +472,9 @@ PanelSurface {
                                 anchors.top: parent.top
                                 height: 44
                                 radius: Config.Appearance.rSm
-                                color: entry.modelData.current ? Config.Appearance.sel
-                                     : (entryHover.hovered ? Config.Appearance.hover : "transparent")
-                                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                                color: tint3.value
+                                ColorSpring { id: tint3; to: entry.modelData.current ? Config.Appearance.sel
+                                         : (entryHover.hovered ? Config.Appearance.hover : "transparent") }
                             }
 
                             Row {

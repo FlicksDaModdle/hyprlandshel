@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Services.Pipewire
 import "../../config" as Config
+import "../common"
 
 // A live level meter for one device: what the microphone is hearing, or
 // what an output is playing.
@@ -42,6 +43,7 @@ Item {
     }
 
     Rectangle {
+        id: meterTrack
         anchors.fill: parent
         radius: height / 2
         color: Config.Appearance.hover
@@ -50,11 +52,11 @@ Item {
         clip: true
 
         Rectangle {
-            width: parent.width * root.level
+            width: widthSpring.value
             height: parent.height
             radius: parent.radius
             color: root.level > 0.94 ? "#d93a2b" : Config.Appearance.accent
-            Behavior on width { NumberAnimation { duration: 60 } }
+            Spring { id: widthSpring; to: meterTrack.width * root.level; response: 90; bounce: 0 }
         }
         Rectangle {
             visible: root.hold > 0.02

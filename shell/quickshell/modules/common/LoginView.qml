@@ -68,7 +68,12 @@ Item {
     // Escape on an empty field — the greeter's preview uses it to leave.
     signal escapeOnEmpty()
 
-    function shake() { shakeAnim.restart(); }
+    // A sideways flick on a loose spring: it swings out, back past the
+    // middle, and settles — the standard "no" of a password field.
+    function shake() {
+        shakeSpring.velocity = 480;
+        shakeSpring.wake();
+    }
 
     property bool reveal: false
 
@@ -112,12 +117,10 @@ Item {
     }
 
     // ── coming in ─────────────────────────────────────────────────────────
-    property real shown: 0
-    NumberAnimation on shown {
-        from: 0; to: 1
-        duration: Config.Appearance.anim(620)
-        easing.type: Easing.OutCubic
-    }
+    readonly property real shown: arrive.value
+    property bool started: false
+    Spring { id: arrive; to: view.started ? 1 : 0; response: 620; bounce: 0.5 }
+    Component.onCompleted: Qt.callLater(() => view.started = true)
 
     Timer {
         id: tick
@@ -212,14 +215,8 @@ Item {
         readonly property real radius: view.ap.rPanel
 
         // A refused password nudges the card, the standard cue.
-        transform: Translate { id: shakeShift }
-        SequentialAnimation {
-            id: shakeAnim
-            NumberAnimation { target: shakeShift; property: "x"; to: 10;  duration: Config.Appearance.anim(45) }
-            NumberAnimation { target: shakeShift; property: "x"; to: -10; duration: Config.Appearance.anim(70) }
-            NumberAnimation { target: shakeShift; property: "x"; to: 6;   duration: Config.Appearance.anim(60) }
-            NumberAnimation { target: shakeShift; property: "x"; to: 0;   duration: Config.Appearance.anim(50) }
-        }
+        transform: Translate { id: shakeShift; x: shakeSpring.value }
+        Spring { id: shakeSpring; to: 0; response: 300; bounce: 2.2 }
 
         // Frosted the way the shell's panels are: the wallpaper behind it
         // blurred about as strongly as Hyprland blurs behind them
@@ -364,11 +361,11 @@ Item {
                 radius: height / 2
                 color: view.ap.hover
                 border.width: 1.5
-                border.color: view.auth.failed ? view.ap.accent
-                    : (keys.activeFocus && view.auth.entered.length > 0)
-                      ? Qt.rgba(view.ap.accent.r, view.ap.accent.g, view.ap.accent.b, 0.55)
-                      : view.ap.edge
-                Behavior on border.color { ColorAnimation { duration: Config.Appearance.anim(160) } }
+                border.color: tint1.value
+                ColorSpring { id: tint1; to: view.auth.failed ? view.ap.accent
+                        : (keys.activeFocus && view.auth.entered.length > 0)
+                          ? Qt.rgba(view.ap.accent.r, view.ap.accent.g, view.ap.accent.b, 0.55)
+                          : view.ap.edge }
 
                 readonly property bool shown: view.reveal || (!!view.auth.prompt && !!view.auth.promptEcho)
 
@@ -457,10 +454,10 @@ Item {
                     height: 38
                     radius: 19
                     color: view.ap.accent
-                    opacity: view.auth.entered.length > 0 && !view.auth.busy ? 1 : 0.45
-                    scale: submitHover.hovered && opacity === 1 ? 1.06 : 1
-                    Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(140) } }
-                    Behavior on scale { NumberAnimation { duration: Config.Appearance.anim(120) } }
+                    opacity: opacitySpring.value
+                    scale: scaleSpring.value
+                    Spring { id: opacitySpring; to: view.auth.entered.length > 0 && !view.auth.busy ? 1 : 0.45; response: 220; bounce: 0 }
+                    Spring { id: scaleSpring; to: submitHover.hovered && view.auth.entered.length > 0 && !view.auth.busy ? 1.06 : 1; response: 190; bounce: 0 }
 
                     MonoIcon {
                         anchors.centerIn: parent
@@ -609,8 +606,8 @@ Item {
                     width: 40
                     height: 40
                     radius: 20
-                    color: hover.hovered ? view.pillHover : "transparent"
-                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                    color: tint2.value
+                    ColorSpring { id: tint2; to: hover.hovered ? view.pillHover : "transparent" }
                     MonoIcon {
                         anchors.centerIn: parent
                         name: powerBtn.modelData.icon

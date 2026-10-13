@@ -60,29 +60,29 @@ Item {
                 readonly property bool urgent: modelData.urgent
                 readonly property bool expanded: focused || hovered || urgent
 
-                width: root.w(expanded ? 26 : 16)
+                width: widthSpring.value
                 height: root.w(22)
-                Behavior on width { Spring { ms: 360; bounce: 1.1 } }
+                Spring { id: widthSpring; to: root.w(pill.expanded ? 26 : 16); response: 310 }
 
                 Rectangle {
                     anchors.fill: parent
                     radius: Config.Appearance.rCap
-                    color: pill.focused ? Config.Appearance.accent
-                         : (pill.hovered ? Config.Appearance.sel : "transparent")
-                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(160) } }
+                    color: tint1.value
+                    ColorSpring { id: tint1; to: pill.focused ? Config.Appearance.accent
+                             : (pill.hovered ? Config.Appearance.sel : "transparent") }
                 }
 
                 StyledText {
                     anchors.centerIn: parent
                     visible: pill.expanded
-                    opacity: pill.expanded ? 1 : 0
+                    opacity: opacitySpring.value
                     text: pill.modelData.id
                     font.pixelSize: Config.Appearance.fs(root.w(11))
                     font.weight: Font.Bold
                     font.letterSpacing: 0.2
                     color: pill.focused ? Config.Appearance.inkOnAccent
                          : (pill.urgent ? Config.Appearance.accent : Config.Appearance.ink2)
-                    Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(80) } }
+                    Spring { id: opacitySpring; to: pill.expanded ? 1 : 0; response: 140; bounce: 0 }
                 }
 
                 // Bead for the collapsed state: solid when the workspace has
@@ -90,13 +90,13 @@ Item {
                 Rectangle {
                     anchors.centerIn: parent
                     visible: !pill.expanded
-                    width: root.w(pill.occupied ? 7 : 5)
+                    width: widthSpring2.value
                     height: width
                     radius: 2.5
                     color: pill.occupied ? Config.Appearance.ink2 : "transparent"
                     border.width: pill.occupied ? 0 : 1.5
                     border.color: Config.Appearance.div
-                    Behavior on width { Spring { ms: 260 } }
+                    Spring { id: widthSpring2; to: root.w(pill.occupied ? 7 : 5); response: 220 }
                 }
 
                 // MouseArea rather than Hover/Tap handlers: it grabs the

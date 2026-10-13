@@ -198,9 +198,10 @@ Singleton {
             // them off outright rather than making them very fast, since
             // "instant" is what people who turn animations down want.
             property int animSpeed: 100               // 0-250 %
-            // How things move: "springy" lands with a little overshoot, the
-            // way macOS does; "smooth" eases straight in. Windows too —
-            // services/Devices.qml sends Hyprland the matching curves.
+            // How things move. Everything is a spring (modules/common/
+            // Spring.qml); "springy" (Liquid) settles with a touch of give,
+            // "smooth" (Calm) is critically damped. Windows too —
+            // services/Devices.qml sends Hyprland the matching springs.
             property string motionStyle: "springy"
             // How much things overshoot and settle, as a share of the house
             // amount (0 lands without overshooting at all).

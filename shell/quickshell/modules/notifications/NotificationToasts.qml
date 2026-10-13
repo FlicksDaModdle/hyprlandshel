@@ -56,14 +56,14 @@ PanelWindow {
                 property bool shown: false
                 Component.onCompleted: shown = true
 
-                opacity: shown ? 1 : 0
-                x: shown ? 0 : 56
+                opacity: opacitySpring.value
+                x: slide.value
                 // Grows out of the screen's edge rather than fading in.
-                scale: shown ? 1 : 0.82
+                scale: scaleSpring.value
                 transformOrigin: Item.Right
-                Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(80) } }
-                Behavior on x { Spring { ms: 460; bounce: slot.shown ? 0.9 : 0 } }
-                Behavior on scale { Spring { ms: 420 } }
+                Spring { id: opacitySpring; to: slot.shown ? 1 : 0; response: 160; bounce: 0 }
+                Spring { id: slide; to: slot.shown ? 0 : 56; response: 380; bounce: slot.shown ? 0.8 : 0 }
+                Spring { id: scaleSpring; to: slot.shown ? 1 : 0.92; response: 360 }
 
                 NotificationRow {
                     id: card

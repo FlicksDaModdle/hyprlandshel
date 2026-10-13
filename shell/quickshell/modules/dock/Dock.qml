@@ -220,9 +220,14 @@ Variants {
         readonly property real pillShownPos: headroom
         readonly property real pillHiddenPos: headroom + panelBreadth + 20
 
-        property real pillPos: revealed ? pillShownPos : pillHiddenPos
+        readonly property real pillPos: pillSpring.value
         // Rises with a little spring; drops away plainly.
-        Behavior on pillPos { Spring { ms: dock.revealed ? 440 : 240; bounce: dock.revealed ? 0.7 : 0 } }
+        Spring {
+            id: pillSpring
+            to: dock.revealed ? dock.pillShownPos : dock.pillHiddenPos
+            response: dock.revealed ? 380 : 260
+            bounce: dock.revealed ? 0.7 : 0
+        }
 
         // The surface spans the whole edge and the pill is centred inside
         // it, rather than the surface being cut to the pill.
@@ -662,10 +667,10 @@ Variants {
             // While the launcher is out, it *is* this pill — it starts at
             // exactly this rectangle and grows. Two of them on screen at
             // once would give the trick away, so this one steps aside.
-            opacity: (Config.Appearance.launcherMorph
-                      && Config.UiState.launcherOpen && dock.onFocusedScreen) ? 0 : 1
+            opacity: opacitySpring.value
             visible: opacity > 0.01
-            Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(90) } }
+            Spring { id: opacitySpring; to: (Config.Appearance.launcherMorph
+                && Config.UiState.launcherOpen && dock.onFocusedScreen) ? 0 : 1; response: 140; bounce: 0 }
 
             // The mockup's `inset 0 1px 0 var(--gloss)` reads as a soft
             // highlight on a translucent panel over a darker backdrop. Drawn
@@ -899,21 +904,13 @@ Variants {
             y: Math.round(pill.y - height - dock.previewGap)
 
             visible: opacity > 0.01
-            opacity: shown ? 1 : 0
+            opacity: previewFade.value
             // Fades in and is gone at once on the way out: its pictures are
             // released the moment it closes, and an empty card fading away
             // would be the last thing it showed.
-            Behavior on opacity {
-                enabled: preview.shown
-                NumberAnimation { duration: Config.Appearance.anim(130); easing.type: Easing.OutCubic }
-            }
-            transform: Translate {
-                y: preview.shown ? 0 : dock.u(6)
-                Behavior on y {
-                    enabled: preview.shown
-                    Spring { ms: 340 }
-                }
-            }
+            Spring { id: previewFade; to: preview.shown ? 1 : 0; response: 200; bounce: 0; enabled: preview.shown }
+            Spring { id: previewRise; to: preview.shown ? 0 : dock.u(6); response: 300; enabled: preview.shown }
+            transform: Translate { y: previewRise.value }
 
             onPicked: address => {
                 dock.closePreview();

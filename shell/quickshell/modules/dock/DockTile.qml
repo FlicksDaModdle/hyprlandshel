@@ -50,56 +50,62 @@ Item {
 
     z: dragging ? 10 : 0
     // Lifted a little while carried, so it reads as picked up.
-    scale: dragging ? 1.08 : 1
-    Behavior on scale { Spring { ms: 300 } }
+    scale: scaleSpring.value
+    Spring { id: scaleSpring; to: root.dragging ? 1.08 : 1; response: 260 }
     transform: Translate {
-        x: root.vertical ? 0 : root.slide
-        y: root.vertical ? root.slide : 0
-        Behavior on x { enabled: root.slideAnimated; Spring { ms: 320; bounce: 0.7 } }
-        Behavior on y { enabled: root.slideAnimated; Spring { ms: 320; bounce: 0.7 } }
+        x: xSpring.value
+        y: ySpring.value
     }
+    Spring { id: xSpring; to: root.vertical ? 0 : root.slide; response: 270; bounce: 0.7; enabled: root.slideAnimated }
+    Spring { id: ySpring; to: root.vertical ? root.slide : 0; response: 270; bounce: 0.7; enabled: root.slideAnimated }
 
     readonly property bool hovered: hoverHandler.hovered
     readonly property bool accentFilled: highlight && active
 
-    implicitWidth: showLabel ? Math.round(tileSize + labelText.implicitWidth + 21) : tileSize
+    implicitWidth: implicitWidthSpring.value
     implicitHeight: tileSize
     // Matches the label's fade, and eases out of the same curve the rest of
     // the dock uses. Until the surface stopped being resized to the pill on
     // every frame of this, no easing here could have looked smooth.
-    Behavior on implicitWidth { Spring { ms: 360; bounce: 0.6 } }
+    Spring { id: implicitWidthSpring; to: root.showLabel ? Math.round(root.tileSize + labelText.implicitWidth + 21) : root.tileSize; response: 310; bounce: 0.6 }
 
     Rectangle {
         anchors.fill: parent
         radius: Config.Appearance.rTile
-        color: root.accentFilled ? Config.Appearance.accent
-             : (root.active ? Config.Appearance.sel
-             : (root.hovered ? Config.Appearance.hover : "transparent"))
+        color: tint1.value
         border.width: root.active && !root.accentFilled ? 1 : 0
         border.color: Config.Appearance.seam
-        Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+        ColorSpring { id: tint1; to: root.accentFilled ? Config.Appearance.accent
+                 : (root.active ? Config.Appearance.sel
+                 : (root.hovered ? Config.Appearance.hover : "transparent")) }
     }
 
     // ── launching ─────────────────────────────────────────────────────────
     // An app tile that isn't running bounces when clicked, until its window
     // turns up — or a few hops, if it is slow or never shows one.
     property bool bounceOnLaunch: false
-    property real hop: 0
+    // The hop is a flick upwards on a spring that pulls the icon back
+    // down: it rises, comes back, and settles with a small rebound.
+    readonly property real hop: hopSpring.value
     property int hopCount: 0
+    Spring { id: hopSpring; to: 0; response: 420 }
     function launchBounce() {
         if (!bounceOnLaunch || running || !Config.Appearance.animated) return;
         hopCount = 0;
         hops.restart();
     }
-    SequentialAnimation {
+    Timer {
         id: hops
-        loops: Animation.Infinite
-        onStopped: root.hop = 0
-        NumberAnimation { target: root; property: "hop"; to: -Math.round(root.tileSize * 0.38); duration: Config.Appearance.anim(260); easing.type: Easing.OutQuad }
-        NumberAnimation { target: root; property: "hop"; to: 0; duration: Config.Appearance.anim(300); easing.type: Easing.OutBounce }
-        PauseAnimation { duration: Config.Appearance.anim(120) }
-        // Landed: again only while there is still nothing to show for it.
-        ScriptAction { script: { root.hopCount++; if (root.running || root.hopCount >= 3) hops.stop(); } }
+        interval: Math.max(1, Config.Appearance.anim(640))
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: {
+            // Again only while there is still nothing to show for it.
+            if (root.running || root.hopCount >= 3) { stop(); return; }
+            root.hopCount++;
+            hopSpring.velocity = -root.tileSize * hopSpring.omega * 0.95;
+            hopSpring.wake();
+        }
     }
 
     Row {
@@ -109,8 +115,8 @@ Item {
         // Lifts a little under the pointer and gives under a press; the
         // launch hop rides on top.
         transform: Translate { y: root.hop * (root.vertical ? 0 : 1); x: root.hop * (root.vertical ? -1 : 0) }
-        scale: tapper.pressed ? 0.86 : (root.hovered && !root.dragging && !root.showLabel ? 1.12 : 1)
-        Behavior on scale { Spring { ms: 320; bounce: 1.2 } }
+        scale: scaleSpring2.value
+        Spring { id: scaleSpring2; to: tapper.pressed ? 0.86 : (root.hovered && !root.dragging && !root.showLabel ? 1.12 : 1); response: 270 }
 
         MonoIcon {
             anchors.verticalCenter: parent.verticalCenter
@@ -129,8 +135,8 @@ Item {
             // closing over it. Kept in the layout until the fade is done,
             // or the Row would reflow the glyph sideways halfway through.
             visible: root.showLabel || opacity > 0.01
-            opacity: root.showLabel ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(90) } }
+            opacity: opacitySpring.value
+            Spring { id: opacitySpring; to: root.showLabel ? 1 : 0; response: 140; bounce: 0 }
             text: root.label
             font.pixelSize: Config.Appearance.fs(Config.Appearance.dockLabelSize)
             font.weight: Font.DemiBold
@@ -150,11 +156,11 @@ Item {
 
             Rectangle {
                 required property int index
-                width: root.active && index === 0 ? 14 : 6
+                width: widthSpring.value
                 height: 2.5
                 radius: 1.25
                 color: root.active ? Config.Appearance.accent : Config.Appearance.ink3
-                Behavior on width { Spring { ms: 300 } }
+                Spring { id: widthSpring; to: root.active && index === 0 ? 14 : 6; response: 260 }
             }
         }
     }

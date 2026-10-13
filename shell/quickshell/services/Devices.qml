@@ -172,50 +172,63 @@ Singleton {
     }
 
     // ── window motion ─────────────────────────────────────────────────────
-    // Hyprland's animations, matched to the shell's Motion style. Springy:
-    // windows pop in from a little smaller on hyprland.lua's spring and
-    // settle, workspaces slide a touch past and back. Smooth: the same
-    // movements eased straight in. Settings → Hyprland → Speed scales them
-    // all; Hyprland's speeds are durations in tenths of a second, so a
-    // faster setting divides them.
-    //
-    // Each call is guarded (pcall), so one Hyprland doesn't accept leaves
-    // the others as they were rather than abandoning the rest; the spring
-    // falls back to the overshooting curve when hyprland.lua's "easy"
-    // spring isn't there.
+    // Hyprland's animations, matched to the shell's Motion style: windows
+    // pop in from a little smaller and settle, workspaces slide, all on
+    // springs. Each call is guarded (pcall), so a leaf one Hyprland
+    // doesn't accept is left as it was rather than abandoning the rest.
+    // Hyprland's own motion — windows opening, closing and moving, and
+    // workspaces — as springs, the same physics as the shell's
+    // (modules/common/Spring.qml). Each spring is given by how long one
+    // swing takes and how damped it is; Window speed makes them stiffer
+    // rather than playing a curve faster, so a quicker spring still lands
+    // the same way. The damping follows Settings → Animation: the house
+    // bounce settles with a touch of give, Smooth is critically damped.
+    // A Hyprland that refuses springs gets the nearest curve instead.
     function motionLua() {
-        const k = 100 / Math.max(25, prefs.hyprAnimSpeed);
-        const sp = v => Math.max(0.5, Math.round(v * k * 10) / 10);
-        const opts = (leaf, speed, style) => 'leaf = "' + leaf + '", enabled = true, speed = ' + sp(speed)
-            + (style ? ', style = "' + style + '"' : '');
-        const curve = (leaf, speed, name, style) => 'pcall(hl.animation, { ' + opts(leaf, speed, style) + ', bezier = "' + name + '" }) ';
-        const spring = (leaf, speed, style) => 'if not pcall(hl.animation, { ' + opts(leaf, speed, style) + ', spring = "easy" }) then '
-            + curve(leaf, speed, "hsOvershot", style) + 'end ';
-        let lua = 'pcall(hl.curve, "hsOvershot", { type = "bezier", points = { {0.05, 0.9}, {0.1, 1.08} } }) '
-                + 'pcall(hl.curve, "hsSmooth", { type = "bezier", points = { {0.23, 1}, {0.32, 1} } }) ';
-        if (prefs.springy) {
-            lua += spring("windows", 4.5, "popin 78%")
-                 + curve("windowsOut", 2.6, "hsSmooth", "popin 88%")
-                 + spring("windowsMove", 4.5, "")
-                 + curve("workspaces", 4, "hsOvershot", "slide")
-                 + curve("specialWorkspace", 4, "hsOvershot", "slidevert");
-        } else {
-            lua += curve("windows", 4, "hsSmooth", "popin 95%")
-                 + curve("windowsOut", 2.6, "hsSmooth", "popin 95%")
-                 + curve("windowsMove", 4, "hsSmooth", "")
-                 + curve("workspaces", 3, "hsSmooth", "slide")
-                 + curve("specialWorkspace", 3, "hsSmooth", "slidevert");
-        }
-        // Short fades: the movement says where things come from.
-        lua += curve("fade", prefs.springy ? 1.8 : 3, "hsSmooth", "")
-             + curve("border", 5, "hsSmooth", "")
-             + curve("layers", prefs.springy ? 2 : 3.5, "hsSmooth", "fade");
-        return lua;
+        const speed = Math.max(25, prefs.hyprAnimSpeed) / 100;
+        const amount = prefs.springy ? prefs.motionBounce / 100 : 0;
+        const settle = Math.max(0.5, 1 - 0.22 * amount);
+        // stiffness and damping for a unit mass from response (s) and ratio
+        const spring = (name, response, zeta) => {
+            const w = 2 * Math.PI / response * speed;
+            const k = Math.round(w * w * 100) / 100, c = Math.round(2 * zeta * w * 100) / 100;
+            const body = 'type = "spring", mass = 1, stiffness = ' + k;
+            // The third field is `dampening` on Hyprland 0.55 and `damping`
+            // later; whichever this one takes.
+            return 'if not pcall(hl.curve, "' + name + '", { ' + body + ', dampening = ' + c + ' }) then '
+                 + 'pcall(hl.curve, "' + name + '", { ' + body + ', damping = ' + c + ' }) end ';
+        };
+        // `speed` is the curve's length in tenths of a second. The springs
+        // are given the house value and made quicker by their stiffness;
+        // only the fallback curve is shortened by it.
+        const leaf = (name, curve, style, tenths) => {
+            const st = style ? ', style = "' + style + '"' : '';
+            const head = 'pcall(hl.animation, { leaf = "' + name + '", enabled = true, speed = ';
+            return 'if not ' + head + tenths + st + ', spring = "' + curve + '" }) then '
+                 + head + Math.max(0.5, Math.round(tenths / speed * 10) / 10) + st + ', bezier = "hsSmooth" }) end ';
+        };
+        return 'pcall(hl.curve, "hsSmooth", { type = "bezier", points = { {0.23, 1}, {0.32, 1} } }) '
+             + spring("hsArrive", 0.42, settle)        // opening, moving, workspaces
+             + spring("hsLeave", 0.30, 1)              // closing: no swing
+             + spring("hsFade", 0.30, 1)               // fades and layers
+             + spring("hsBorder", 0.40, 1)
+             + leaf("windows", "hsArrive", prefs.springy ? "popin 86%" : "popin 94%", 4.5)
+             + leaf("windowsOut", "hsLeave", prefs.springy ? "popin 90%" : "popin 96%", 2.6)
+             + leaf("windowsMove", "hsArrive", "", 4.5)
+             + leaf("workspaces", "hsArrive", "slide", 4)
+             + leaf("specialWorkspace", "hsArrive", "slidevert", 4)
+             + leaf("fade", "hsFade", "", 2.5)
+             + leaf("border", "hsBorder", "", 5)
+             + leaf("layers", "hsFade", "fade", 2.5);
     }
     Connections {
         target: root.prefs
         function onMotionStyleChanged() { if (root.applied) root.applyFrame(); }
+        function onMotionBounceChanged() { if (root.applied) motionApply.restart(); }
     }
+    // The Bounce slider sends a value per step of the drag; the springs are
+    // re-sent once it rests.
+    Timer { id: motionApply; interval: 300; onTriggered: Services.Compositor.evalLua(root.motionLua()) }
 
     // The blur rules for the shell's own surfaces (hyprland.lua has them
     // too). xray blurs the wallpaper, which Hyprland blurs once and keeps;

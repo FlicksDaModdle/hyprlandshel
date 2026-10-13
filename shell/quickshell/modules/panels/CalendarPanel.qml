@@ -155,9 +155,9 @@ PanelSurface {
                 width: parent.cellWidth
                 height: 34
                 radius: 9
-                color: modelData.today ? Config.Appearance.accent
-                     : (modelData.day > 0 && cellHover.hovered ? Config.Appearance.hover : "transparent")
-                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                color: tint1.value
+                ColorSpring { id: tint1; to: modelData.today ? Config.Appearance.accent
+                         : (modelData.day > 0 && cellHover.hovered ? Config.Appearance.hover : "transparent") }
 
                 StyledText {
                     anchors.centerIn: parent

@@ -23,16 +23,23 @@ Item {
     readonly property real knobBase: height - 4
     // Squashed while it travels and while it is held, the way a physical
     // control gives a little.
-    readonly property bool busy: xAnim.running || press.pressed
+    readonly property bool busy: pos.moving || press.pressed
     readonly property real knobW: root.busy ? Math.round(knobBase * 1.35) : knobBase
+
+    // Where the knob is, 0 off to 1 on: a spring, so it leans a little
+    // past and settles, and a second click mid-throw turns it round.
+    Spring { id: pos; to: root.checked ? 1 : 0; response: 300 }
+    Spring { id: stretch; to: root.knobW; response: 200; bounce: 0 }
+    Spring { id: fill; to: root.checked ? 1 : 0; response: 300; bounce: 0 }
+    ColorSpring { id: trackCol; to: root.checked ? Config.Appearance.accent : Config.Appearance.sel }
+    ColorSpring { id: knobCol; to: root.checked ? Config.Appearance.inkOnAccent : Config.Appearance.ink2 }
 
     Rectangle {
         id: track
         anchors.fill: parent
         radius: height / 2
-        color: root.checked ? Config.Appearance.accent : Config.Appearance.sel
+        color: trackCol.value
         opacity: root.enabled ? 1 : 0.45
-        Behavior on color { ColorAnimation { duration: Config.Appearance.anim(220) } }
 
         // The accent arriving as a fill that grows from the knob's side,
         // rather than the whole track changing colour at once. Only drawn
@@ -42,38 +49,20 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             anchors.right: parent.right
             height: parent.height
-            width: root.checked ? parent.width : 0
+            width: parent.width * Math.max(0, fill.value)
             radius: height / 2
             color: Config.Appearance.accent
-            visible: width > 0.5
-            Behavior on width {
-                NumberAnimation {
-                    duration: Config.Appearance.anim(260)
-                    easing.type: Easing.OutQuint
-                }
-            }
+            visible: width > 0.5 && root.checked
         }
 
         Rectangle {
             id: knob
             height: root.knobBase
-            width: root.knobW
+            width: stretch.value
             radius: height / 2
             y: 2
-            x: root.checked ? parent.width - width - 2 : 2
-            color: root.checked ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
-
-            Behavior on x {
-                // A little past, then back.
-                Spring { id: xAnim; ms: 340; bounce: 1.2 }
-            }
-            Behavior on width {
-                NumberAnimation {
-                    duration: Config.Appearance.anim(180)
-                    easing.type: Easing.OutCubic
-                }
-            }
-            Behavior on color { ColorAnimation { duration: Config.Appearance.anim(220) } }
+            x: 2 + pos.value * (parent.width - width - 4)
+            color: knobCol.value
         }
     }
 

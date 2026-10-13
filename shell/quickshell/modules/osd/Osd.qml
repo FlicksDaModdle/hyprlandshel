@@ -57,15 +57,13 @@ PanelWindow {
         height: 54
 
         // Rise into place, matching the dock's own reveal easing.
-        opacity: osd.visible ? 1 : 0
+        opacity: opacitySpring.value
         // Pops out of the bottom edge like a drop, rather than fading up.
-        scale: osd.visible ? 1 : 0.6
-        transform: Translate {
-            y: osd.visible ? 0 : 24
-            Behavior on y { Spring { ms: 420 } }
-        }
-        Behavior on opacity { NumberAnimation { duration: Config.Appearance.anim(70) } }
-        Behavior on scale { Spring { ms: 420; bounce: 1.1 } }
+        scale: scaleSpring.value
+        transform: Translate { y: ySpring.value }
+        Spring { id: ySpring; to: osd.visible ? 0 : 24; response: 340 }
+        Spring { id: opacitySpring; to: osd.visible ? 1 : 0; response: 160; bounce: 0 }
+        Spring { id: scaleSpring; to: osd.visible ? 1 : 0.86; response: 340 }
 
         Row {
             anchors.fill: parent
@@ -87,17 +85,18 @@ PanelWindow {
                 height: 8
 
                 Rectangle {
+                    id: levelTrack
                     anchors.fill: parent
                     radius: 4
                     color: Config.Appearance.sel
                     clip: true
 
                     Rectangle {
-                        width: parent.width * Math.max(0, Math.min(1, osd.muted ? 0 : osd.value))
+                        width: widthSpring.value
                         height: parent.height
                         radius: 4
                         color: Config.Appearance.accent
-                        Behavior on width { NumberAnimation { duration: Config.Appearance.anim(90) } }
+                        Spring { id: widthSpring; to: levelTrack.width * Math.max(0, Math.min(1, osd.muted ? 0 : osd.value)); response: 180; bounce: 0 }
                     }
                 }
             }

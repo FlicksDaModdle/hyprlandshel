@@ -39,8 +39,8 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 radius: Config.Appearance.rCap
-                color: arrowHover.hovered ? Config.Appearance.hover : "transparent"
-                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                color: tint1.value
+                ColorSpring { id: tint1; to: arrowHover.hovered ? Config.Appearance.hover : "transparent" }
             }
 
             MonoIcon {
@@ -68,8 +68,8 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: Config.Appearance.rCap
-                    color: entryHover.hovered ? Config.Appearance.hover : "transparent"
-                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+                    color: tint2.value
+                    ColorSpring { id: tint2; to: entryHover.hovered ? Config.Appearance.hover : "transparent" }
                 }
 
                 IconImage {

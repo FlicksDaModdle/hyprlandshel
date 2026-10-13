@@ -41,17 +41,17 @@ Item {
     Rectangle {
         id: thumb
         visible: root.activeItem !== null
-        x: track.x + (root.activeItem ? root.activeItem.x : 0)
+        x: xSpring.value
         y: track.y
-        width: root.activeItem ? root.activeItem.width : 0
+        width: widthSpring.value
         height: track.height
         radius: Config.Appearance.rSm
         color: Config.Appearance.accent
         // Not on the first placing: only a change of choice slides.
         property bool ready: false
         Component.onCompleted: Qt.callLater(() => thumb.ready = true)
-        Behavior on x { enabled: thumb.ready; Spring { ms: 360 } }
-        Behavior on width { enabled: thumb.ready; Spring { ms: 360 } }
+        Spring { id: xSpring; to: track.x + (root.activeItem ? root.activeItem.x : 0); response: 310; enabled: thumb.ready }
+        Spring { id: widthSpring; to: root.activeItem ? root.activeItem.width : 0; response: 310; enabled: thumb.ready }
     }
 
     Row {
@@ -69,10 +69,10 @@ Item {
                 readonly property bool active: root.valueOf(modelData) === root.value
 
                 radius: Config.Appearance.rSm
-                color: !active && segHover.hovered ? Config.Appearance.sel : "transparent"
+                color: tint1.value
                 implicitWidth: segLabel.implicitWidth + root.segmentPadding * 2
                 implicitHeight: 26
-                Behavior on color { ColorAnimation { duration: Config.Appearance.anim(140) } }
+                ColorSpring { id: tint1; to: !seg.active && segHover.hovered ? Config.Appearance.sel : "transparent" }
 
                 StyledText {
                     id: segLabel
@@ -80,8 +80,8 @@ Item {
                     text: root.labelOf(seg.modelData)
                     font.pixelSize: Config.Appearance.fs(12)
                     font.weight: Font.DemiBold
-                    color: seg.active ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
-                    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(160) } }
+                    color: tint2.value
+                    ColorSpring { id: tint2; to: seg.active ? Config.Appearance.inkOnAccent : Config.Appearance.ink2 }
                 }
 
                 HoverHandler { id: segHover; cursorShape: Qt.PointingHandCursor }

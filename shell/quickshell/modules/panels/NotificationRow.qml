@@ -25,8 +25,8 @@ Rectangle {
         notification ? Config.Apps.themeIcon(notification.appIcon) : ""
 
     radius: Config.Appearance.rCard
-    color: hover.hovered ? Config.Appearance.sel : Config.Appearance.hover
-    Behavior on color { ColorAnimation { duration: Config.Appearance.anim(120) } }
+    color: tint1.value
+    ColorSpring { id: tint1; to: hover.hovered ? Config.Appearance.sel : Config.Appearance.hover }
 
     implicitHeight: body.implicitHeight + 24
 

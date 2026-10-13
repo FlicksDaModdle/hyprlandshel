@@ -150,12 +150,12 @@ Rectangle {
                     height: 30
                     width: chipRow.implicitWidth + 20
                     radius: 15
-                    color: chosen ? Qt.rgba(root.ap.accent.r, root.ap.accent.g, root.ap.accent.b, 0.16)
-                         : chipHover.hovered ? root.ap.sel : root.ap.ground
+                    color: tint1.value
                     border.width: 1
                     border.color: chosen ? root.ap.accent : root.ap.rule
                     opacity: modelData.live ? 1 : 0.7
-                    Behavior on color { ColorAnimation { duration: root.ap.anim(140) } }
+                    ColorSpring { id: tint1; to: chip.chosen ? Qt.rgba(root.ap.accent.r, root.ap.accent.g, root.ap.accent.b, 0.16)
+                             : chipHover.hovered ? root.ap.sel : root.ap.ground }
                     Row {
                         id: chipRow
                         anchors.centerIn: parent
