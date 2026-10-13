@@ -353,8 +353,10 @@ export component Field inherits Rectangle {
         Rectangle {
             clip: true;
             input := TextInput {
-                y: (parent.height - self.height) / 2;
+                y: 0;
                 width: parent.width;
+                height: parent.height;
+                vertical-alignment: center;
                 text <=> root.text;
                 single-line: true;
                 read-only: root.read-only;
@@ -473,6 +475,10 @@ export component Scroll inherits Rectangle {
     in-out property <length> viewport-y <=> f.content-y;
     out property <length> viewport-height: f.content-height;
     in property <length> pad: 0px;
+    // As tall as it's given: its content can be shorter, and then it
+    // shouldn't float in the middle of the space.
+    max-height: 100000px;
+    max-width: 100000px;
     clip: true;
     f := Flickable {
         width: parent.width;

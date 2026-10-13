@@ -1,0 +1,20 @@
+[package]
+name = "hyprshell-music"
+version = "0.1.0"
+edition = "2021"
+description = "Music for Hyprshell: your library, played in pure Rust"
+
+[dependencies]
+hyprshell-kit = { workspace = true }
+slint = { workspace = true }
+symphonia = { version = "0.5", default-features = false, features = ["mp3", "flac", "ogg", "vorbis", "wav", "pcm", "aac", "isomp4", "alac"] }
+pulseaudio = "0.3"
+futures = { version = "0.3", default-features = false, features = ["executor"] }
+lofty = "0.22"
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+[build-dependencies]
+slint-build = { workspace = true }
