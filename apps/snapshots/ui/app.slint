@@ -1,0 +1,544 @@
+// Snapshots: the system's btrfs snapshots, through snapper — what each one
+// is, what changed since, single files put back, or the whole system
+// rolled back.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Sidebar, NavItem, Card, Caption, Label, Dim, Heading,
+         Button, IconButton, Seg, Field, Scroll, Empty, Toast, Rule, Icon, Dialog, Badge, Spinner,
+         Switch, Slider, KeyValue } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct Config { name: string, label: string, subvolume: string }
+
+export struct Snap {
+    number: int,
+    // "single", or "pair" for a before-and-after pair (pre and post).
+    kind: string,
+    post: int,
+    title: string,
+    when: string,
+    group: string,        // Today, Yesterday, This week, …
+    user: string,
+    cleanup: string,      // timeline, number, "" (kept)
+    size: string,
+    is-default: bool,
+    is-active: bool,
+    first-in-group: bool,
+}
+
+export struct Change { path: string, status: string, what: string, picked: bool }
+
+export struct DiffLine { text: string, kind: string }  // "+", "-", "@", " "
+
+export global Snapper {
+    in property <bool> ready;
+    // "", "missing" (no snapper), "no-config" (nothing set up), "error"
+    in property <string> problem;
+    in property <string> detail;
+    in property <bool> can-set-up;        // / is btrfs
+    in property <bool> allowed: true;     // ALLOW_USERS has us
+    in property <string> user;
+    in property <[Config]> configs;
+    in-out property <string> config;
+    in property <[Snap]> snaps;
+    in-out property <int> picked: -1;     // index into snaps
+    in property <bool> busy;
+
+    // compare
+    in property <bool> comparing;
+    in property <string> compare-title;
+    in property <[Change]> changes;
+    in property <bool> changes-loading;
+    in-out property <string> filter;
+    in property <int> picked-count;
+    in-out property <int> change-picked: -1;
+    in property <[DiffLine]> diff;
+    in property <bool> diff-loading;
+
+    // settings
+    in property <bool> timeline;
+    in property <int> keep-hourly;
+    in property <int> keep-daily;
+    in property <int> keep-weekly;
+    in property <int> keep-monthly;
+    in property <int> keep-yearly;
+    in property <int> keep-number;
+
+    callback pick-config(string);
+    callback refresh();
+    callback create(string);
+    callback delete(int, int);
+    callback compare(int);
+    callback close-compare();
+    callback filtered(string);
+    callback pick-change(int);
+    callback toggle-change(int);
+    callback restore-picked();
+    callback rollback(int);
+    callback open-files(int);
+    callback allow-me();
+    callback set-up();
+    callback set-config(string, string);
+
+    in property <string> toast;
+    in property <bool> toast-bad;
+}
+
+component SnapRow inherits Rectangle {
+    in property <Snap> s;
+    in property <bool> chosen;
+    callback clicked();
+    height: 58px;
+    border-radius: Theme.r-sm;
+    background: chosen ? Theme.sel : ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: Theme.t(180); easing: spring(0); }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 14px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 34px;
+                height: 34px;
+                border-radius: Theme.r-sm;
+                background: root.s.is-active ? Theme.accent : Theme.hover;
+                Icon {
+                    x: 8px;
+                    y: 8px;
+                    name: root.s.kind == "pair" ? "compare" : root.s.cleanup == "timeline" ? "clock" : "camera";
+                    size: 18px;
+                    ink: root.s.is-active ? Theme.ink-on-accent : Theme.ink2;
+                    acc: root.s.is-active ? Theme.ink-on-accent : Theme.accent;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.s.title;
+                color: Theme.ink;
+                font-size: Theme.fs(13);
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: "#" + root.s.number + (root.s.kind == "pair" ? "–" + root.s.post : "") + "  ·  " + root.s.when
+                      + (root.s.user != "root" && root.s.user != "" ? "  ·  " + root.s.user : "");
+                color: Theme.ink3;
+                font-size: Theme.fs(11.5);
+                overflow: elide;
+            }
+        }
+        if root.s.is-active: VerticalLayout { alignment: center; Badge { text: "Running"; } }
+        if root.s.is-default && !root.s.is-active: VerticalLayout { alignment: center; Badge { text: "Next boot"; tint: Theme.warn; } }
+        if root.s.cleanup == "": VerticalLayout { alignment: center; Badge { text: "Kept"; tint: Theme.ok; } }
+        if root.s.size != "": Text { text: root.s.size; color: Theme.ink3; font-size: Theme.fs(11.5); vertical-alignment: center; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component StatusDot inherits Rectangle {
+    in property <string> status;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: status == "+" ? Theme.ok.transparentize(0.75) : status == "-" ? Theme.danger.transparentize(0.75) : Theme.warn.transparentize(0.75);
+    Text {
+        text: root.status == "+" ? "+" : root.status == "-" ? "−" : "~";
+        color: root.status == "+" ? Theme.ok : root.status == "-" ? Theme.danger : Theme.warn;
+        font-weight: 700;
+        font-size: Theme.fs(12);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Snapshots";
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    in-out property <string> page: "list";    // list, settings
+    property <bool> asking-create;
+    property <string> new-description;
+    property <bool> asking-delete;
+    property <bool> asking-rollback;
+    property <bool> asking-restore;
+    property <Snap> cur: Snapper.picked >= 0 && Snapper.picked < Snapper.snaps.length ? Snapper.snaps[Snapper.picked] : { number: -1 };
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Snapshots";
+            app-icon: "history";
+            subtitle: Snapper.config == "root" ? "System" : Snapper.config == "home" ? "Home" : Snapper.config;
+            if Snapper.busy: VerticalLayout { alignment: center; Spinner {} }
+        }
+        Rule {}
+        HorizontalLayout {
+            Sidebar {
+                width: 200px;
+                for c in Snapper.configs: NavItem {
+                    icon: c.subvolume == "/" ? "disk" : c.subvolume == "/home" ? "home" : "folder";
+                    text: c.label;
+                    selected: root.page == "list" && Snapper.config == c.name;
+                    clicked => { root.page = "list"; Snapper.pick-config(c.name); }
+                }
+                if Snapper.configs.length > 0: NavItem {
+                    icon: "settings";
+                    text: "Schedule";
+                    selected: root.page == "settings";
+                    clicked => { root.page = "settings"; }
+                }
+                Rectangle { vertical-stretch: 1; }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                if !Snapper.ready: VerticalLayout { alignment: center; HorizontalLayout { alignment: center; Spinner {} } }
+                if Snapper.ready && Snapper.problem == "missing": Empty {
+                    icon: "history";
+                    title: "Snapper isn't installed";
+                    text: "Snapshots works through snapper. Install it (sudo pacman -S snapper) and open this again.";
+                }
+                if Snapper.ready && Snapper.problem == "no-config": VerticalLayout {
+                    alignment: center;
+                    spacing: 16px;
+                    Empty {
+                        icon: "history";
+                        title: "No snapshots set up";
+                        text: Snapper.can-set-up
+                            ? "Snapper can keep snapshots of the system on its own: every hour, kept for a while, and before and after each update with snap-pac."
+                            : "Snapshots need the system on btrfs, and / is not.";
+                    }
+                    if Snapper.can-set-up: HorizontalLayout {
+                        alignment: center;
+                        Button { text: "Set up snapshots of the system"; kind: "primary"; icon: "history"; clicked => { Snapper.set-up(); } }
+                    }
+                }
+                if Snapper.ready && Snapper.problem == "error": Empty {
+                    icon: "alert";
+                    title: "Snapper didn't answer";
+                    text: Snapper.detail;
+                }
+                // ── the list ────────────────────────────────────────────
+                if Snapper.ready && Snapper.problem == "" && root.page == "list" && !Snapper.comparing: HorizontalLayout {
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        if !Snapper.allowed: Rectangle {
+                            height: 56px;
+                            background: Theme.accent.transparentize(0.88);
+                            HorizontalLayout {
+                                padding-left: 20px;
+                                padding-right: 16px;
+                                spacing: 12px;
+                                VerticalLayout { alignment: center; Icon { name: "lock"; size: 18px; } }
+                                Text {
+                                    text: "Changing snapshots asks for your password each time. Allow your account to manage them, once:";
+                                    color: Theme.ink;
+                                    wrap: word-wrap;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                VerticalLayout { alignment: center; Button { small: true; text: "Allow " + Snapper.user; kind: "primary"; clicked => { Snapper.allow-me(); } } }
+                            }
+                        }
+                        HorizontalLayout {
+                            padding: 16px;
+                            padding-left: 20px;
+                            spacing: 8px;
+                            height: 64px;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Heading { text: Snapper.snaps.length + (Snapper.snaps.length == 1 ? " snapshot" : " snapshots"); }
+                            }
+                            VerticalLayout { alignment: center; IconButton { icon: "refresh"; clicked => { Snapper.refresh(); } } }
+                            VerticalLayout { alignment: center; Button { text: "Take a snapshot"; icon: "camera"; kind: "primary"; clicked => { root.new-description = ""; root.asking-create = true; } } }
+                        }
+                        if Snapper.snaps.length == 0: Empty {
+                            icon: "camera";
+                            title: "No snapshots yet";
+                            text: "Take one now, or wait for the hourly one.";
+                        }
+                        Scroll {
+                            vertical-stretch: 1;
+                            visible: Snapper.snaps.length > 0;
+                            VerticalLayout {
+                                alignment: start;
+                                padding-left: 12px;
+                                padding-right: 14px;
+                                padding-bottom: 12px;
+                                for s[i] in Snapper.snaps: VerticalLayout {
+                                    if s.first-in-group: Caption {
+                                        text: s.group;
+                                        height: 30px;
+                                        vertical-alignment: bottom;
+                                        x: 10px;
+                                    }
+                                    SnapRow {
+                                        s: s;
+                                        chosen: Snapper.picked == i;
+                                        clicked => { Snapper.picked = i; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // The one picked.
+                    if root.cur.number >= 0: Rectangle {
+                        width: 330px;
+                        Rectangle { width: 1px; x: 0; background: Theme.rule; }
+                        VerticalLayout {
+                            padding: 20px;
+                            spacing: 12px;
+                            alignment: start;
+                            Heading { text: root.cur.title; wrap: word-wrap; }
+                            KeyValue { key: "Number"; value: "#" + root.cur.number + (root.cur.kind == "pair" ? " and #" + root.cur.post : ""); }
+                            KeyValue { key: "Taken"; value: root.cur.when; }
+                            KeyValue { key: "By"; value: root.cur.user; }
+                            KeyValue {
+                                key: "Kept until";
+                                value: root.cur.cleanup == "timeline" ? "the hourly schedule lets it go"
+                                     : root.cur.cleanup == "number" ? "enough newer ones exist"
+                                     : "you delete it";
+                            }
+                            if root.cur.size != "": KeyValue { key: "Space it holds"; value: root.cur.size; }
+                            Rule {}
+                            Button {
+                                icon: "compare";
+                                text: root.cur.kind == "pair" ? "What changed in between" : "Compare with now";
+                                clicked => { Snapper.compare(Snapper.picked); }
+                            }
+                            Button {
+                                icon: "folderOpen";
+                                text: "Browse its files";
+                                clicked => { Snapper.open-files(root.cur.number); }
+                            }
+                            if Snapper.config == "root": Button {
+                                icon: "restore";
+                                text: "Roll the system back to it…";
+                                clicked => { root.asking-rollback = true; }
+                            }
+                            Button {
+                                icon: "trash";
+                                text: "Delete";
+                                kind: "danger";
+                                enabled: !root.cur.is-active && !root.cur.is-default;
+                                clicked => { root.asking-delete = true; }
+                            }
+                        }
+                    }
+                }
+                // ── comparing ───────────────────────────────────────────
+                if Snapper.ready && Snapper.comparing: VerticalLayout {
+                    HorizontalLayout {
+                        padding: 14px;
+                        padding-left: 20px;
+                        spacing: 10px;
+                        height: 64px;
+                        VerticalLayout { alignment: center; IconButton { icon: "chevronLeft"; clicked => { Snapper.close-compare(); } } }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Heading { text: Snapper.compare-title; font-size: Theme.fs(15); overflow: elide; }
+                            Dim { text: Snapper.changes-loading ? "Looking…" : Snapper.changes.length + " changed"; }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Field { width: 240px; icon: "search"; placeholder: "Filter paths"; text <=> Snapper.filter; edited(t) => { Snapper.filtered(t); } }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Button {
+                                icon: "restore";
+                                kind: "primary";
+                                text: Snapper.picked-count > 0 ? "Put back " + Snapper.picked-count : "Put back…";
+                                enabled: Snapper.picked-count > 0;
+                                clicked => { root.asking-restore = true; }
+                            }
+                        }
+                    }
+                    Rule {}
+                    HorizontalLayout {
+                        vertical-stretch: 1;
+                        Scroll {
+                            width: 46%;
+                            VerticalLayout {
+                                alignment: start;
+                                padding: 8px;
+                                for c[i] in Snapper.changes: Rectangle {
+                                    height: 32px;
+                                    border-radius: Theme.r-sm - 2px;
+                                    background: Snapper.change-picked == i ? Theme.sel : cta.has-hover ? Theme.hover : transparent;
+                                    cta := TouchArea { clicked => { Snapper.pick-change(i); } }
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        padding-right: 8px;
+                                        spacing: 8px;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Rectangle {
+                                                width: 16px;
+                                                height: 16px;
+                                                border-radius: 4px;
+                                                border-width: c.picked ? 0px : 1.5px;
+                                                border-color: Theme.ink3;
+                                                background: c.picked ? Theme.accent : transparent;
+                                                if c.picked: Icon { x: 1px; y: 1px; name: "check"; size: 14px; ink: Theme.ink-on-accent; acc: Theme.ink-on-accent; }
+                                                TouchArea { mouse-cursor: pointer; clicked => { Snapper.toggle-change(i); } }
+                                            }
+                                        }
+                                        VerticalLayout { alignment: center; StatusDot { status: c.status; } }
+                                        Text {
+                                            text: c.path;
+                                            color: Theme.ink;
+                                            font-size: Theme.fs(12);
+                                            font-family: "monospace";
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                            horizontal-stretch: 1;
+                                        }
+                                        Text { text: c.what; color: Theme.ink3; font-size: Theme.fs(11); vertical-alignment: center; }
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle { width: 1px; background: Theme.rule; }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            if Snapper.change-picked < 0: Empty {
+                                icon: "file";
+                                title: "Pick a file";
+                                text: "Its changes show here, line by line.";
+                            }
+                            if Snapper.change-picked >= 0 && Snapper.diff-loading: VerticalLayout { alignment: center; HorizontalLayout { alignment: center; Spinner {} } }
+                            if Snapper.change-picked >= 0 && !Snapper.diff-loading: Scroll {
+                                VerticalLayout {
+                                    alignment: start;
+                                    padding: 12px;
+                                    for d in Snapper.diff: Rectangle {
+                                        height: line.preferred-height + 2px;
+                                        background: d.kind == "+" ? Theme.ok.transparentize(0.86) : d.kind == "-" ? Theme.danger.transparentize(0.86) : transparent;
+                                        line := Text {
+                                            x: 6px;
+                                            width: parent.width - 12px;
+                                            text: d.text;
+                                            wrap: word-wrap;
+                                            font-family: "monospace";
+                                            font-size: Theme.fs(12);
+                                            color: d.kind == "@" ? Theme.accent : d.kind == "+" ? Theme.ok : d.kind == "-" ? Theme.danger : Theme.ink2;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // ── schedule ────────────────────────────────────────────
+                if Snapper.ready && Snapper.problem == "" && root.page == "settings": Scroll {
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 24px;
+                        spacing: 14px;
+                        Heading { text: "Schedule for " + Snapper.config; }
+                        Text {
+                            text: "Snapper takes one every hour and thins them out as they age: how many of each to keep is up to you.";
+                            color: Theme.ink3;
+                            wrap: word-wrap;
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 14px;
+                                HorizontalLayout {
+                                    Text { text: "Hourly snapshots"; color: Theme.ink; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+                                    Switch { on: Snapper.timeline; toggled(v) => { Snapper.set-config("TIMELINE_CREATE", v ? "yes" : "no"); } }
+                                }
+                                for k in [
+                                    { key: "TIMELINE_LIMIT_HOURLY", label: "Hourly ones to keep", max: 48 },
+                                    { key: "TIMELINE_LIMIT_DAILY", label: "Daily", max: 31 },
+                                    { key: "TIMELINE_LIMIT_WEEKLY", label: "Weekly", max: 12 },
+                                    { key: "TIMELINE_LIMIT_MONTHLY", label: "Monthly", max: 24 },
+                                    { key: "TIMELINE_LIMIT_YEARLY", label: "Yearly", max: 10 },
+                                    { key: "NUMBER_LIMIT", label: "Before-and-after pairs (updates)", max: 100 },
+                                ]: HorizontalLayout {
+                                    spacing: 12px;
+                                    property <int> v: k.key == "TIMELINE_LIMIT_HOURLY" ? Snapper.keep-hourly
+                                        : k.key == "TIMELINE_LIMIT_DAILY" ? Snapper.keep-daily
+                                        : k.key == "TIMELINE_LIMIT_WEEKLY" ? Snapper.keep-weekly
+                                        : k.key == "TIMELINE_LIMIT_MONTHLY" ? Snapper.keep-monthly
+                                        : k.key == "TIMELINE_LIMIT_YEARLY" ? Snapper.keep-yearly : Snapper.keep-number;
+                                    Text { text: k.label; color: Theme.ink2; vertical-alignment: center; width: 240px; }
+                                    Slider {
+                                        horizontal-stretch: 1;
+                                        minimum: 0;
+                                        maximum: k.max;
+                                        value: parent.v;
+                                        released(x) => { Snapper.set-config(k.key, round(x)); }
+                                    }
+                                    Text { text: parent.v; color: Theme.ink; font-weight: 600; vertical-alignment: center; width: 36px; horizontal-alignment: right; }
+                                }
+                            }
+                        }
+                    }
+                }
+                Toast { text: Snapper.toast; bad: Snapper.toast-bad; }
+            }
+        }
+    }
+
+    Dialog {
+        open: root.asking-create;
+        title: "Take a snapshot";
+        text: "Of " + Snapper.config + ", as it is now. A few words to tell it by later:";
+        dismissed => { root.asking-create = false; }
+        Field {
+            placeholder: "Before trying the new driver";
+            text <=> root.new-description;
+            accepted(t) => { Snapper.create(t); root.asking-create = false; }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-create = false; } }
+            Button { text: "Take it"; kind: "primary"; clicked => { Snapper.create(root.new-description); root.asking-create = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-delete;
+        title: "Delete " + root.cur.title + "?";
+        text: "It can't be brought back, and neither can anything only it still holds.";
+        dismissed => { root.asking-delete = false; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-delete = false; } }
+            Button { text: "Delete"; kind: "danger"; clicked => { Snapper.delete(root.cur.number, root.cur.kind == "pair" ? root.cur.post : -1); root.asking-delete = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-rollback;
+        title: "Roll the system back to #" + root.cur.number + "?";
+        text: "The system goes back to how it was then at the next restart: programs, settings and updates since are undone. Your home folder isn't touched. The system as it is now is kept as a snapshot, so this can be undone too.";
+        dismissed => { root.asking-rollback = false; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-rollback = false; } }
+            Button { text: "Roll back"; kind: "danger"; clicked => { Snapper.rollback(root.cur.number); root.asking-rollback = false; } }
+        }
+    }
+    Dialog {
+        open: root.asking-restore;
+        title: "Put back " + Snapper.picked-count + (Snapper.picked-count == 1 ? " file?" : " files?");
+        text: "Each goes back to how it was in the snapshot: changed files get their old contents, new ones are removed, removed ones return.";
+        dismissed => { root.asking-restore = false; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-restore = false; } }
+            Button { text: "Put back"; kind: "primary"; clicked => { Snapper.restore-picked(); root.asking-restore = false; } }
+        }
+    }
+}

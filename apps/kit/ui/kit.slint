@@ -539,12 +539,13 @@ export component KeyValue inherits HorizontalLayout {
     in property <bool> mono: false;
     spacing: 12px;
     min-height: 26px;
+    in property <length> key-width: 120px;
     Text {
         text: root.key;
         color: Theme.ink3;
         font-size: Theme.fs(12.5);
         vertical-alignment: center;
-        width: 150px;
+        width: root.key-width;
         overflow: elide;
     }
     Text {
@@ -554,7 +555,7 @@ export component KeyValue inherits HorizontalLayout {
         font-family: root.mono ? "monospace" : Theme.font-family;
         vertical-alignment: center;
         horizontal-stretch: 1;
-        overflow: elide;
+        wrap: word-wrap;
     }
 }
 

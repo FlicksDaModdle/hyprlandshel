@@ -40,16 +40,38 @@ pub fn home() -> PathBuf {
 }
 
 /// Run `work` on a thread of its own and hand what it returns to `done`
-/// back on the UI thread.
+/// back on the UI thread. `done` stays on the UI thread the whole time, so
+/// it may hold the app's own state (an Rc, a window handle); only the
+/// result crosses over.
 pub fn spawn<T, W, D>(work: W, done: D)
 where
     T: Send + 'static,
     W: FnOnce() -> T + Send + 'static,
-    D: FnOnce(T) + Send + 'static,
+    D: FnOnce(T) + 'static,
 {
+    use std::any::Any;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    thread_local! {
+        static PENDING: std::cell::RefCell<std::collections::HashMap<u64, Box<dyn FnOnce(Box<dyn Any>)>>> =
+            std::cell::RefCell::new(std::collections::HashMap::new());
+    }
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    PENDING.with(|p| {
+        p.borrow_mut().insert(id, Box::new(move |out: Box<dyn Any>| {
+            if let Ok(v) = out.downcast::<T>() {
+                done(*v);
+            }
+        }))
+    });
     std::thread::spawn(move || {
         let out = work();
-        let _ = slint::invoke_from_event_loop(move || done(out));
+        let _ = slint::invoke_from_event_loop(move || {
+            let f = PENDING.with(|p| p.borrow_mut().remove(&id));
+            if let Some(f) = f {
+                f(Box::new(out));
+            }
+        });
     });
 }
 

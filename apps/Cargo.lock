@@ -1554,6 +1554,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyprshell-snapshots"
+version = "0.1.0"
+dependencies = [
+ "hyprshell-kit",
+ "serde_json",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "i-slint-backend-linuxkms"
 version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
