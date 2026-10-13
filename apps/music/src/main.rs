@@ -10,10 +10,10 @@ slint::include_modules!();
 
 mod engine;
 mod library;
-mod mpris;
 
 use engine::{Cmd, Engine, Event};
 use hyprshell_kit as kit;
+use kit::mpris;
 use library::Song;
 use slint::{Color, ComponentHandle, Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
 use std::cell::{Cell, RefCell};
@@ -30,6 +30,13 @@ const TILE: u32 = 288;
 const BIG: u32 = 560;
 /// Tile pictures kept in memory at once.
 const KEEP: usize = 96;
+
+const BUS: mpris::Info = mpris::Info {
+    name: "hyprshell_music",
+    identity: "Music",
+    desktop_entry: "hyprshell-music",
+    mime_types: &["audio/mpeg", "audio/flac", "audio/ogg", "audio/x-vorbis+ogg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/aac", "audio/x-m4a"],
+};
 
 // ── what's kept between runs ────────────────────────────────────────────
 
@@ -1265,7 +1272,7 @@ fn main() {
         .map(|p| format!("file://{}", p.display()))
         .collect();
     // One Music at a time: a second launch hands over and leaves.
-    if mpris::hand_over(&uris) {
+    if mpris::hand_over(BUS, &uris) {
         return;
     }
 
@@ -1377,6 +1384,7 @@ fn main() {
 
     // The bus.
     let tx = mpris::serve(
+        BUS,
         |r| {
             let _ = slint::invoke_from_event_loop(move || {
                 APP.with(|a| {

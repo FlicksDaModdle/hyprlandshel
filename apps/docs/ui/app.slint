@@ -134,7 +134,7 @@ export component AppWindow inherits KitWindow {
                 IconButton { icon: "zoomOut"; size: 30px; glyph: 16px; clicked => { Docs.text-size = max(12, Docs.text-size - 1); } }
                 IconButton { icon: "zoomIn"; size: 30px; glyph: 16px; clicked => { Docs.text-size = min(30, Docs.text-size + 1); } }
             }
-            IconButton { icon: "folderOpen"; size: 30px; glyph: 16px; clicked => { Docs.open-dialog(); } }
+            IconButton { icon: "openFolder"; size: 30px; glyph: 16px; clicked => { Docs.open-dialog(); } }
         }
         Rule {}
         Rectangle {
@@ -146,7 +146,7 @@ export component AppWindow inherits KitWindow {
                 spacing: 18px;
                 HorizontalLayout {
                     Heading { text: "Documents"; horizontal-stretch: 1; }
-                    Button { text: "Open…"; icon: "folderOpen"; kind: "primary"; clicked => { Docs.open-dialog(); } }
+                    Button { text: "Open…"; icon: "openFolder"; kind: "primary"; clicked => { Docs.open-dialog(); } }
                 }
                 Dim { text: "PDFs, comic books (CBZ) and e-books (EPUB). Each opens where you left it."; }
                 if Docs.recents.length == 0: Empty { icon: "book"; title: "Nothing opened yet"; text: "Open a document, or open one from Files."; }

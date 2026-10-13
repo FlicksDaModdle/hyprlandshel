@@ -2209,6 +2209,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyprshell-video"
+version = "0.1.0"
+dependencies = [
+ "glow",
+ "hyprshell-kit",
+ "libloading",
+ "serde",
+ "serde_json",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "i-slint-backend-linuxkms"
 version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

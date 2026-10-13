@@ -287,8 +287,8 @@ export component AppWindow inherits KitWindow {
                                 spacing: 8px;
                                 alignment: start;
                                 if root.sel.free: Button { icon: "plus"; text: "New partition…"; kind: "primary"; clicked => { root.label = ""; root.fs-choice = 0; root.create-frac = 1; root.asking-create = true; } }
-                                if root.sel.can-mount && !root.sel.mounted: Button { icon: "folderOpen"; text: "Mount"; kind: "primary"; clicked => { Disks.mount(root.sel.path); } }
-                                if root.sel.mounted: Button { icon: "folderOpen"; text: "Open"; clicked => { Disks.open(root.sel.mount); } }
+                                if root.sel.can-mount && !root.sel.mounted: Button { icon: "openFolder"; text: "Mount"; kind: "primary"; clicked => { Disks.mount(root.sel.path); } }
+                                if root.sel.mounted: Button { icon: "openFolder"; text: "Open"; clicked => { Disks.open(root.sel.mount); } }
                                 if root.sel.mounted && !root.sel.system: Button { icon: "eject"; text: "Unmount"; clicked => { Disks.unmount(root.sel.path); } }
                                 if root.sel.locked: Button { icon: "unlock"; text: "Unlock…"; kind: "primary"; clicked => { root.pass = ""; root.asking-unlock = true; } }
                                 if root.sel.unlocked && !root.sel.system: Button { icon: "lock"; text: "Lock"; clicked => { Disks.lock(root.sel.path); } }

@@ -1,0 +1,409 @@
+// Videos: the picture edge to edge; the controls over it, gone while you watch.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Caption, Dim, Heading, Button, IconButton,
+         Empty, Toast, Icon, Spinner, Slider, Menu, MenuEntry } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct Recent { path: string, name: string, sub: string, progress: float }
+
+export global Video {
+    in property <string> mode: "start";        // start, video, error
+    in property <string> error;
+    in property <image> frame;
+    in property <bool> paused: true;
+    in property <bool> buffering;
+    in property <bool> audio-only;
+    in property <float> pos;
+    in property <float> dur;
+    in property <string> pos-text: "0:00";
+    in property <string> dur-text: "0:00";
+    in-out property <float> volume: 100;
+    in property <bool> muted;
+    in property <string> title;
+    in property <bool> controls: true;
+    in property <bool> fullscreen;
+    in property <[Recent]> recents;
+    in property <[MenuEntry]> subs;
+    in property <[MenuEntry]> audios;
+    in property <string> speed-text: "1×";
+    in property <bool> playlist;
+    in property <string> toast;
+
+    callback open-dialog();
+    callback open-recent(string);
+    callback forget-recent(string);
+    callback toggle();
+    callback seek(float);
+    callback seek-by(float);
+    callback set-volume(float);
+    callback toggle-mute();
+    callback toggle-fullscreen();
+    callback poke();
+    callback over-controls(bool);
+    callback pick-sub(int);
+    callback pick-audio(int);
+    callback pick-speed(int);
+    callback next();
+    callback prev();
+    callback close-video();
+}
+
+// Where the film is, and where to go in it; the time under the pointer.
+component SeekBar inherits Rectangle {
+    in property <float> pos;
+    in property <float> dur;
+    callback seek(float);
+    property <bool> dragging;
+    property <float> drag-frac;
+    property <float> frac: dragging ? drag-frac : dur > 0 ? max(0, min(1, pos / dur)) : 0;
+    property <float> hover-frac: max(0, min(1, ta.mouse-x / max(1px, root.width)));
+    pure function clock(s: float) -> string {
+        let t = floor(max(0, s));
+        let h = floor(t / 3600);
+        let m = floor(mod(t, 3600) / 60);
+        let sec = mod(t, 60);
+        return (h > 0 ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (sec < 10 ? "0" : "") + sec;
+    }
+    height: 22px;
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: ta.has-hover || dragging ? 6px : 4px;
+        border-radius: self.height / 2;
+        background: #ffffff38;
+        animate height { duration: 120ms; }
+        Rectangle {
+            x: 0;
+            width: parent.width * root.frac;
+            border-radius: parent.border-radius;
+            background: Theme.accent;
+        }
+    }
+    if ta.has-hover || dragging: Rectangle {
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        y: (parent.height - self.height) / 2;
+        x: root.frac * root.width - self.width / 2;
+        background: #ffffff;
+        drop-shadow-blur: 4px;
+        drop-shadow-color: #00000070;
+    }
+    if (ta.has-hover || dragging) && root.dur > 0: Rectangle {
+        property <float> f: dragging ? root.drag-frac : root.hover-frac;
+        y: -30px;
+        height: 24px;
+        width: tip.preferred-width + 16px;
+        x: max(0, min(root.width - self.width, f * root.width - self.width / 2));
+        border-radius: 6px;
+        background: #000000c0;
+        tip := Text { text: root.clock(parent.f * root.dur); color: #ffffff; font-size: Theme.fs(11.5); }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        enabled: root.dur > 0;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.dragging = true;
+                root.drag-frac = max(0, min(1, self.mouse-x / root.width));
+            }
+            if (e.kind == PointerEventKind.up && root.dragging) {
+                root.dragging = false;
+                root.seek(root.drag-frac * root.dur);
+            }
+        }
+        moved => {
+            if (self.pressed) { root.drag-frac = max(0, min(1, self.mouse-x / root.width)); }
+        }
+    }
+}
+
+// A round button over the picture: white glyph, a disc when pointed at.
+component OverButton inherits Rectangle {
+    in property <string> icon;
+    in property <length> size: 38px;
+    in property <length> glyph: 20px;
+    in property <bool> checked;
+    in property <string> label;
+    callback clicked(length, length);
+    width: label != "" ? max(size, lt.preferred-width + 20px) : size;
+    height: size;
+    border-radius: size / 2;
+    background: ta.pressed ? #ffffff40 : ta.has-hover ? #ffffff26 : checked ? #ffffff1a : transparent;
+    if root.label == "": Icon { name: root.icon; size: root.glyph; ink: #ffffff; acc: root.checked ? Theme.accent : #ffffff; }
+    lt := Text { visible: root.label != ""; text: root.label; color: #ffffff; font-size: Theme.fs(12.5); font-weight: 600; }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(self.absolute-position.x, self.absolute-position.y); }
+    }
+}
+
+export component AppWindow inherits KitWindow {
+    title: Video.title != "" ? Video.title : "Videos";
+    preferred-width: 1120px;
+    preferred-height: 700px;
+    min-width: 480px;
+    min-height: 300px;
+    // The picture's size, for main.rs to draw it at.
+    out property <length> area-width: area.width;
+    out property <length> area-height: area.height;
+    property <length> menu-x;
+    property <length> menu-y;
+    property <bool> show: Video.controls || Video.paused || Video.mode != "video";
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.modifiers.control && e.text == "o") { Video.open-dialog(); return accept; }
+            if (Video.mode != "video") { return reject; }
+            if (e.text == " " || e.text == "k") { Video.toggle(); return accept; }
+            if (e.text == Key.RightArrow || e.text == "l") { Video.seek-by(e.modifiers.shift ? 60 : e.text == "l" ? 10 : 5); return accept; }
+            if (e.text == Key.LeftArrow || e.text == "j") { Video.seek-by(e.modifiers.shift ? -60 : e.text == "j" ? -10 : -5); return accept; }
+            if (e.text == Key.UpArrow) { Video.set-volume(min(130, Video.volume + 5)); return accept; }
+            if (e.text == Key.DownArrow) { Video.set-volume(max(0, Video.volume - 5)); return accept; }
+            if (e.text == "f" || e.text == Key.F11) { Video.toggle-fullscreen(); return accept; }
+            if (e.text == Key.Escape && Video.fullscreen) { Video.toggle-fullscreen(); return accept; }
+            if (e.text == "m") { Video.toggle-mute(); return accept; }
+            if (e.text == "c") { Video.pick-sub(-2); return accept; }       // next subtitle
+            if (e.text == "]") { Video.pick-speed(-2); return accept; }     // faster
+            if (e.text == "[") { Video.pick-speed(-3); return accept; }     // slower
+            if (e.text == "n" && Video.playlist) { Video.next(); return accept; }
+            if (e.text == "p" && Video.playlist) { Video.prev(); return accept; }
+            Video.poke();
+            reject
+        }
+    }
+
+    area := Rectangle {
+        background: Video.mode == "video" ? #000000 : transparent;
+
+        if Video.mode == "video" && !Video.audio-only: Image {
+            width: parent.width;
+            height: parent.height;
+            source: Video.frame;
+            image-fit: fill;
+        }
+        if Video.mode == "video" && Video.audio-only: VerticalLayout {
+            alignment: center;
+            spacing: 12px;
+            HorizontalLayout { alignment: center; Icon { name: "music"; size: 64px; ink: #ffffff90; acc: #ffffff90; } }
+            Text { text: Video.title; color: #ffffffd0; font-size: Theme.fs(16); horizontal-alignment: center; }
+        }
+        if Video.mode == "video" && Video.buffering: Spinner { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+
+        // The picture itself: a click plays or pauses, two make it fill the screen.
+        if Video.mode == "video": TouchArea {
+            mouse-cursor: root.show ? MouseCursor.default : MouseCursor.none;
+            clicked => { Video.toggle(); keys.focus(); }
+            double-clicked => { Video.toggle(); Video.toggle-fullscreen(); }
+            pointer-event(e) => { if (e.kind == PointerEventKind.move) { Video.poke(); } }
+            scroll-event(e) => {
+                Video.set-volume(max(0, min(130, Video.volume + (e.delta-y > 0 ? 5 : -5))));
+                accept
+            }
+        }
+
+        // Nothing open: what's been watched, and a way to open more.
+        if Video.mode == "start": VerticalLayout {
+            padding: 40px;
+            padding-top: 72px;
+            spacing: 18px;
+            alignment: start;
+            HorizontalLayout {
+                Heading { text: "Videos"; horizontal-stretch: 1; vertical-alignment: center; }
+                Button { text: "Open…"; icon: "openFolder"; kind: "primary"; clicked => { Video.open-dialog(); } }
+            }
+            Dim { text: "Films and clips play here, and pick up where you stopped."; }
+            if Video.recents.length == 0: Empty { icon: "film"; title: "Nothing watched yet"; text: "Open a video, or open one from Files."; }
+            for r in Video.recents: Rectangle {
+                height: 60px;
+                border-radius: Theme.r-sm;
+                background: ra.has-hover ? Theme.hover : transparent;
+                ra := TouchArea { mouse-cursor: pointer; clicked => { Video.open-recent(r.path); } }
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 8px;
+                    spacing: 14px;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 44px;
+                            height: 44px;
+                            border-radius: 10px;
+                            background: Theme.sel;
+                            Icon { name: "film"; size: 20px; }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        Text { text: r.name; color: Theme.ink; font-weight: 600; overflow: elide; }
+                        HorizontalLayout {
+                            spacing: 10px;
+                            if r.progress > 0: VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 80px;
+                                    height: 4px;
+                                    border-radius: 2px;
+                                    background: Theme.sel;
+                                    Rectangle { x: 0; width: parent.width * r.progress; border-radius: 2px; background: Theme.accent; }
+                                }
+                            }
+                            Text { text: r.sub; color: Theme.ink3; font-size: Theme.fs(11.5); overflow: elide; }
+                        }
+                    }
+                    VerticalLayout { alignment: center; IconButton { icon: "x"; size: 28px; glyph: 14px; clicked => { Video.forget-recent(r.path); } } }
+                }
+            }
+        }
+        if Video.mode == "error": VerticalLayout {
+            alignment: center;
+            spacing: 16px;
+            Empty { icon: "alert"; title: "Couldn't play it"; text: Video.error; }
+            HorizontalLayout { alignment: center; Button { text: "Open another…"; icon: "openFolder"; clicked => { Video.open-dialog(); } } }
+        }
+
+        // The top. Away from a video: the app's own title bar.
+        if Video.mode != "video": TitleBar {
+            y: 0;
+            app-name: "Videos";
+            app-icon: "film";
+        }
+        // Over a video: its name and the window's buttons, white on a shade.
+        if Video.mode == "video" && (!Video.fullscreen || root.show): Rectangle {
+            y: 0;
+            height: 96px;
+            opacity: root.show ? 1 : 0;
+            animate opacity { duration: Theme.t(220); }
+            background: @linear-gradient(180deg, #000000b0 0%, #00000000 100%);
+            TouchArea {
+                height: 52px;
+                y: 0;
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left && !Video.fullscreen) { Win.move(); }
+                    if (e.kind == PointerEventKind.move) { Video.poke(); }
+                }
+                double-clicked => { Video.toggle-fullscreen(); }
+                changed has-hover => { Video.over-controls(self.has-hover); }
+            }
+            HorizontalLayout {
+                y: 0;
+                height: 52px;
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 4px;
+                VerticalLayout { alignment: center; OverButton { icon: "chevronLeft"; size: 34px; glyph: 18px; clicked => { Video.close-video(); } } }
+                Text {
+                    text: Video.title;
+                    color: #ffffff;
+                    font-size: Theme.fs(14);
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                VerticalLayout { alignment: center; OverButton { icon: "openFolder"; size: 34px; glyph: 18px; clicked => { Video.open-dialog(); } } }
+                if !Video.fullscreen: VerticalLayout { alignment: center; OverButton { icon: "minus"; size: 34px; glyph: 16px; clicked => { Win.minimize(); } } }
+                if !Video.fullscreen: VerticalLayout { alignment: center; OverButton { icon: "square"; size: 34px; glyph: 14px; clicked => { Win.toggle-maximize(); } } }
+                VerticalLayout { alignment: center; OverButton { icon: "x"; size: 34px; glyph: 16px; clicked => { Win.close(); } } }
+            }
+        }
+
+        // The bottom: time, the bar, and the buttons.
+        if Video.mode == "video": Rectangle {
+            y: parent.height - self.height;
+            height: 112px;
+            opacity: root.show ? 1 : 0;
+            animate opacity { duration: Theme.t(220); }
+            background: @linear-gradient(0deg, #000000d0 0%, #00000000 100%);
+            TouchArea {
+                changed has-hover => { Video.over-controls(self.has-hover); }
+                pointer-event(e) => { if (e.kind == PointerEventKind.move) { Video.poke(); } }
+            }
+            VerticalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                padding-bottom: 12px;
+                alignment: end;
+                spacing: 6px;
+                SeekBar { pos: Video.pos; dur: Video.dur; seek(t) => { Video.seek(t); } }
+                HorizontalLayout {
+                    spacing: 4px;
+                    if Video.playlist: OverButton { icon: "skipBack"; clicked => { Video.prev(); } }
+                    OverButton { icon: Video.paused ? "play" : "pause"; size: 42px; glyph: 22px; clicked => { Video.toggle(); } }
+                    if Video.playlist: OverButton { icon: "skipForward"; clicked => { Video.next(); } }
+                    OverButton { icon: "rotateCw"; label: "−10"; clicked => { Video.seek-by(-10); } }
+                    OverButton { icon: "forward"; label: "+10"; clicked => { Video.seek-by(10); } }
+                    Text {
+                        text: Video.pos-text + "  /  " + Video.dur-text;
+                        color: #ffffffe0;
+                        font-size: Theme.fs(12.5);
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    if Video.subs.length > 1: OverButton {
+                        icon: "subtitles";
+                        clicked(x, y) => { root.menu-x = x - 150px; root.menu-y = y - 12px - 36px * Video.subs.length; subs.show(); }
+                    }
+                    if Video.audios.length > 1: OverButton {
+                        icon: "audioTrack";
+                        clicked(x, y) => { root.menu-x = x - 150px; root.menu-y = y - 12px - 36px * Video.audios.length; audios.show(); }
+                    }
+                    OverButton {
+                        label: Video.speed-text;
+                        clicked(x, y) => { root.menu-x = x - 80px; root.menu-y = y - 12px - 36px * 7; speeds.show(); }
+                    }
+                    OverButton {
+                        icon: Video.muted || Video.volume == 0 ? "volumeX" : Video.volume < 50 ? "volumeLow" : "volume";
+                        clicked => { Video.toggle-mute(); }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Slider {
+                            width: 100px;
+                            minimum: 0;
+                            maximum: 130;
+                            step: 5;
+                            value <=> Video.volume;
+                            moved(v) => { Video.set-volume(v); }
+                        }
+                    }
+                    OverButton { icon: Video.fullscreen ? "minus" : "fullscreen"; clicked => { Video.toggle-fullscreen(); } }
+                }
+            }
+        }
+        Toast { text: Video.toast; }
+    }
+
+    subs := Menu {
+        x: root.menu-x;
+        y: root.menu-y;
+        menu-width: 240px;
+        entries: Video.subs;
+        chosen(i) => { Video.pick-sub(i); }
+    }
+    audios := Menu {
+        x: root.menu-x;
+        y: root.menu-y;
+        menu-width: 240px;
+        entries: Video.audios;
+        chosen(i) => { Video.pick-audio(i); }
+    }
+    speeds := Menu {
+        x: root.menu-x;
+        y: root.menu-y;
+        menu-width: 140px;
+        entries: [
+            { text: "0.5×", checked: Video.speed-text == "0.5×" },
+            { text: "0.75×", checked: Video.speed-text == "0.75×" },
+            { text: "Normal", checked: Video.speed-text == "1×" },
+            { text: "1.25×", checked: Video.speed-text == "1.25×" },
+            { text: "1.5×", checked: Video.speed-text == "1.5×" },
+            { text: "2×", checked: Video.speed-text == "2×" },
+        ];
+        chosen(i) => { Video.pick-speed(i); }
+    }
+}

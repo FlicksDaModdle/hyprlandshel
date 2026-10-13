@@ -1,5 +1,6 @@
 //! MPRIS on the session bus, so the shell's media pill, the lock screen and
-//! the media keys see Music and can drive it. Also how a second launch
+//! the media keys see an app's playback and can drive it (and the shell
+//! keeps the screen awake while it says Playing). Also how a second launch
 //! hands its files to the first: OpenUri, then it leaves.
 
 use std::collections::HashMap;
@@ -9,8 +10,23 @@ use zbus::interface;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 
-pub const NAME: &str = "org.mpris.MediaPlayer2.hyprshell_music";
 const PATH: &str = "/org/mpris/MediaPlayer2";
+
+/// Who the player is, on the bus.
+#[derive(Clone, Copy)]
+pub struct Info {
+    /// The bus name, org.mpris.MediaPlayer2.<this>.
+    pub name: &'static str,
+    pub identity: &'static str,
+    pub desktop_entry: &'static str,
+    pub mime_types: &'static [&'static str],
+}
+
+impl Info {
+    fn bus(&self) -> String {
+        format!("org.mpris.MediaPlayer2.{}", self.name)
+    }
+}
 
 /// What the bus asks of the app.
 pub enum Remote {
@@ -58,6 +74,7 @@ type Ask = Arc<dyn Fn(Remote) + Send + Sync>;
 
 struct Root {
     ask: Ask,
+    info: Info,
 }
 
 #[interface(name = "org.mpris.MediaPlayer2")]
@@ -82,11 +99,11 @@ impl Root {
     }
     #[zbus(property)]
     fn identity(&self) -> String {
-        "Music".into()
+        self.info.identity.into()
     }
     #[zbus(property)]
     fn desktop_entry(&self) -> String {
-        "hyprshell-music".into()
+        self.info.desktop_entry.into()
     }
     #[zbus(property)]
     fn supported_uri_schemes(&self) -> Vec<String> {
@@ -94,10 +111,7 @@ impl Root {
     }
     #[zbus(property)]
     fn supported_mime_types(&self) -> Vec<String> {
-        ["audio/mpeg", "audio/flac", "audio/ogg", "audio/x-vorbis+ogg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/aac", "audio/x-m4a"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
+        self.info.mime_types.iter().map(|s| s.to_string()).collect()
     }
 }
 
@@ -242,26 +256,28 @@ fn track_path(id: u64) -> ObjectPath<'static> {
     if id == 0 {
         ObjectPath::from_static_str_unchecked("/org/mpris/MediaPlayer2/TrackList/NoTrack")
     } else {
-        ObjectPath::try_from(format!("/org/hyprshell/music/track/{id}")).unwrap()
+        ObjectPath::try_from(format!("/org/hyprshell/track/{id}")).unwrap()
     }
 }
 
-/// Another Music already has the name: hand it these files (or just ask it
-/// to come forward) and say so.
-pub fn hand_over(uris: &[String]) -> bool {
+/// Another of this app already has the name: hand it these files (or just
+/// ask it to come forward) and say so.
+pub fn hand_over(info: Info, uris: &[String]) -> bool {
+    let bus = info.bus();
+    let name_str = bus.as_str();
     let Ok(c) = zbus::blocking::Connection::session() else { return false };
     let Ok(dbus) = zbus::blocking::fdo::DBusProxy::new(&c) else { return false };
-    let Ok(name) = zbus::names::BusName::try_from(NAME) else { return false };
+    let Ok(name) = zbus::names::BusName::try_from(name_str) else { return false };
     if !dbus.name_has_owner(name.clone()).unwrap_or(false) {
         return false;
     }
     if uris.is_empty() {
-        let _ = c.call_method(Some(NAME), PATH, Some("org.mpris.MediaPlayer2"), "Raise", &());
+        let _ = c.call_method(Some(name_str), PATH, Some("org.mpris.MediaPlayer2"), "Raise", &());
     } else {
         for (i, u) in uris.iter().enumerate() {
             // The first plays; the rest queue after it.
             let u = if i == 0 { u.clone() } else { format!("{u}#queue") };
-            let _ = c.call_method(Some(NAME), PATH, Some("org.mpris.MediaPlayer2.Player"), "OpenUri", &(u,));
+            let _ = c.call_method(Some(name_str), PATH, Some("org.mpris.MediaPlayer2.Player"), "OpenUri", &(u,));
         }
     }
     true
@@ -269,18 +285,22 @@ pub fn hand_over(uris: &[String]) -> bool {
 
 /// Serve the bus on a thread of its own. `ask` is called from that thread;
 /// `position` too. Updates go in through the returned sender.
-pub fn serve(ask: impl Fn(Remote) + Send + Sync + 'static, position: impl Fn() -> f64 + Send + Sync + 'static) -> Option<Sender<Update>> {
+pub fn serve(
+    info: Info,
+    ask: impl Fn(Remote) + Send + Sync + 'static,
+    position: impl Fn() -> f64 + Send + Sync + 'static,
+) -> Option<Sender<Update>> {
     let (tx, rx) = channel::<Update>();
     let ask: Ask = Arc::new(ask);
     let position: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(position);
     let started = Arc::new(Mutex::new(None::<bool>));
     let st = started.clone();
     std::thread::Builder::new()
-        .name("music-mpris".into())
+        .name("mpris".into())
         .spawn(move || {
             let conn = zbus::blocking::connection::Builder::session()
-                .and_then(|b| b.name(NAME))
-                .and_then(|b| b.serve_at(PATH, Root { ask: ask.clone() }))
+                .and_then(|b| b.name(info.bus()))
+                .and_then(|b| b.serve_at(PATH, Root { ask: ask.clone(), info }))
                 .and_then(|b| b.serve_at(PATH, Player { ask, state: State::default(), position }))
                 .and_then(|b| b.build());
             let conn = match conn {
@@ -289,7 +309,7 @@ pub fn serve(ask: impl Fn(Remote) + Send + Sync + 'static, position: impl Fn() -
                     c
                 }
                 Err(e) => {
-                    eprintln!("music: no MPRIS ({e})");
+                    eprintln!("{}: no MPRIS ({e})", info.name);
                     *st.lock().unwrap() = Some(false);
                     return;
                 }

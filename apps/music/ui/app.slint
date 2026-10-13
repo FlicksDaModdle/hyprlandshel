@@ -404,7 +404,7 @@ export component AppWindow inherits KitWindow {
                         Caption { text: "Library"; }
                         Text { text: Music.folder; color: Theme.ink3; font-size: Theme.fs(11.5); overflow: elide; }
                     }
-                    VerticalLayout { alignment: center; IconButton { icon: "folderOpen"; size: 28px; glyph: 15px; tip: "Choose the music folder"; clicked => { Music.pick-folder(); } } }
+                    VerticalLayout { alignment: center; IconButton { icon: "openFolder"; size: 28px; glyph: 15px; tip: "Choose the music folder"; clicked => { Music.pick-folder(); } } }
                     VerticalLayout { alignment: center; IconButton { icon: "refresh"; size: 28px; glyph: 15px; tip: "Look for new music"; enabled: !Music.scanning; clicked => { Music.rescan(); } } }
                 }
             }
@@ -418,7 +418,7 @@ export component AppWindow inherits KitWindow {
                     HorizontalLayout {
                         alignment: center;
                         spacing: 8px;
-                        Button { text: "Choose folder…"; icon: "folderOpen"; kind: "primary"; clicked => { Music.pick-folder(); } }
+                        Button { text: "Choose folder…"; icon: "openFolder"; kind: "primary"; clicked => { Music.pick-folder(); } }
                         Button { text: "Open files…"; icon: "music"; clicked => { Music.open-files(); } }
                     }
                 }

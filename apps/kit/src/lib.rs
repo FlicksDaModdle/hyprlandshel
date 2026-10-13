@@ -9,6 +9,7 @@
 
 pub mod icons;
 pub mod portal;
+pub mod mpris;
 pub mod theme;
 
 pub use slint;
