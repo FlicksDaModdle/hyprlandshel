@@ -202,7 +202,7 @@ PanelSurface {
         Flickable {
             id: railFlick
             anchors.fill: parent
-            anchors.bottomMargin: 46
+            anchors.bottomMargin: 50
             contentHeight: railCol.implicitHeight + 16
             boundsBehavior: Flickable.StopAtBounds
             clip: true
@@ -258,9 +258,35 @@ PanelSurface {
                 }
             }
         }
+        // When the list is longer than the rail it scrolls, and fades out
+        // into the divider above Settings rather than being cut off in the
+        // middle of a row.
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.rightMargin: 1
+            anchors.bottom: railFlick.bottom
+            height: 28
+            visible: railFlick.contentHeight > railFlick.height
+                     && railFlick.contentY < railFlick.contentHeight - railFlick.height - 1
+            gradient: Gradient {
+                GradientStop { position: 0; color: Qt.rgba(Appearance.sheet.r, Appearance.sheet.g, Appearance.sheet.b, 0) }
+                GradientStop { position: 1; color: Appearance.sheet }
+            }
+        }
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 14
+            anchors.rightMargin: 14
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 47
+            height: 1
+            color: Appearance.rule
+        }
         Column {
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 6
+            anchors.bottomMargin: 7
             width: parent.width
             NavRow {
                 width: parent.width

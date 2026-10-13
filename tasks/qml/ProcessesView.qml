@@ -28,9 +28,25 @@ Item {
         { k: "power",   t: "Power usage",  w: 104, num: false },
         { k: "threads", t: "Threads",      w: 72,  num: true }
     ]
-    readonly property var columns: allColumns.filter(c => Tasks.settings.columns.indexOf(c.k) >= 0)
+    // The columns chosen, less whichever do not fit: a narrow window drops
+    // the least useful first (power, then the GPU's, then threads, user,
+    // PID and status) rather than pushing the rest off its right edge.
+    readonly property real minName: 240
+    readonly property var dropOrder: ["power", "gpumem", "threads", "user", "pid", "gpu", "status", "disk"]
+    readonly property var columns: {
+        let cols = allColumns.filter(c => Tasks.settings.columns.indexOf(c.k) >= 0);
+        let sum = cols.reduce((a, c) => a + c.w, 0);
+        // The scroll bar sits over the right edge: leave it its own room.
+        const room = list.width - view.minName - 14;
+        for (const k of view.dropOrder) {
+            if (sum <= room) break;
+            const c = cols.find(x => x.k === k);
+            if (c) { cols = cols.filter(x => x !== c); sum -= c.w; }
+        }
+        return cols;
+    }
     readonly property real fixedWidth: columns.reduce((a, c) => a + c.w, 0)
-    readonly property real nameWidth: Math.max(220, list.width - fixedWidth)
+    readonly property real nameWidth: Math.max(view.minName, list.width - 14 - fixedWidth)
 
     Component.onCompleted: {
         if (Tasks.focusKey !== "") {
@@ -103,8 +119,12 @@ Item {
 
     function optionsMenu() {
         const p = view.model;
+        const r = view.current();
+        const eff = !!r && r.status === "Efficiency mode";
         return [
-            { n: "Show kernel threads", checked: p.showKernel, run: () => { p.showKernel = !p.showKernel; Tasks.set("showKernel", p.showKernel); } },
+            { n: "Efficiency mode", icon: "zap", checked: eff, active: !!r && r.kind > 0,
+              run: () => view.act(admin => view.model.setEfficiency(r.pids, !eff, admin)) },
+            { n: "Show kernel threads", rule: true, checked: p.showKernel, run: () => { p.showKernel = !p.showKernel; Tasks.set("showKernel", p.showKernel); } },
             { n: "Show other users' processes", checked: p.showOtherUsers, run: () => { p.showOtherUsers = !p.showOtherUsers; Tasks.set("showOthers", p.showOtherUsers); } },
             { n: "CPU as % of one core", checked: p.perCore, run: () => { p.perCore = !p.perCore; Tasks.set("perCore", p.perCore); } },
             { n: "Expand all", icon: "chevronDown", rule: true, run: () => p.expandAll(true) },
@@ -143,13 +163,6 @@ Item {
             icon: "plus"
             text: "Run new task"
             onClicked: runDialog.open = true
-        }
-        ToolButton {
-            anchors.verticalCenter: parent.verticalCenter
-            icon: "zap"
-            text: "Efficiency mode"
-            active: view.current() !== null && view.current().kind > 0
-            onClicked: { const r = view.current(); const on = r.status !== "Efficiency mode"; view.act(admin => view.model.setEfficiency(r.pids, on, admin)); }
         }
         ToolButton {
             anchors.verticalCenter: parent.verticalCenter
@@ -443,7 +456,9 @@ Item {
                                 color: row.dead ? Appearance.ink3 : cell.modelData.k === "status" && row.status === "Suspended" ? Appearance.accent : Appearance.ink
                                 text: {
                                     switch (cell.modelData.k) {
-                                    case "status": return row.status;
+                                    // Only what is worth noticing: a column of
+                                    // "Sleeping" on every row says nothing.
+                                    case "status": return row.status === "Sleeping" || row.status === "Running" ? "" : row.status;
                                     case "pid": return row.kind === 1 ? "" : String(row.pid);
                                     case "user": return row.user;
                                     case "cpu": return Tasks.pct(row.cpu, 1);

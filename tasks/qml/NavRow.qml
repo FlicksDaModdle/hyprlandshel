@@ -12,7 +12,7 @@ Item {
     property string badge: ""
     readonly property bool current: Tasks.view === row.viewId
     signal picked()
-    implicitHeight: 34
+    implicitHeight: 32
     height: implicitHeight
     Rectangle {
         anchors.fill: parent

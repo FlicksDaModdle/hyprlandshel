@@ -7,6 +7,9 @@ import Hyprshell
 //   columns  [{ k, t, w, num, fmt: row => text, sort: row => value,
 //               glyph: row => icon name, dim: row => bool, alert: row => bool }]
 //            a column without `w` takes what is left.
+//            Columns are listed most important first: when the table is too
+//            narrow for all of them, the last ones are left out rather than
+//            run off the right edge (a column with `keep: true` stays).
 //   rows     plain objects; `keyField` names the one that identifies a row.
 Item {
     id: table
@@ -24,8 +27,17 @@ Item {
     signal activated(var row)
     signal contextMenu(var row, real x, real y)
 
-    readonly property real fixed: columns.reduce((a, c) => a + (c.w || 0), 0)
-    readonly property real flexW: Math.max(140, (list.width - fixed) / Math.max(1, columns.filter(c => !c.w).length))
+    // Room for the scroll bar on the right, so it never sits on a figure.
+    readonly property real usable: list.width - 14
+    readonly property var shown: {
+        let cols = table.columns.slice();
+        const need = cs => cs.reduce((a, c) => a + (c.w || 140), 0);
+        for (let i = cols.length - 1; i > 0 && need(cols) > table.usable; i--)
+            if (!cols[i].keep) cols.splice(i, 1);
+        return cols;
+    }
+    readonly property real fixed: shown.reduce((a, c) => a + (c.w || 0), 0)
+    readonly property real flexW: Math.max(140, (usable - fixed) / Math.max(1, shown.filter(c => !c.w).length))
 
     readonly property var sorted: {
         const c = table.columns.find(x => x.k === table.sortKey);
@@ -51,7 +63,7 @@ Item {
         Row {
             height: parent.height
             Repeater {
-                model: table.columns
+                model: table.shown
                 Item {
                     id: hc
                     required property var modelData
@@ -112,7 +124,7 @@ Item {
             Row {
                 height: parent.height
                 Repeater {
-                    model: table.columns
+                    model: table.shown
                     Item {
                         id: cell
                         required property var modelData
