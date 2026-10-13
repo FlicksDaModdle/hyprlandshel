@@ -39,6 +39,16 @@ Singleton {
     // timer is longer than any local read and does no harm when the
     // signal has already done the job.
     property bool settingsReady: false
+    // One-off moves of saved settings to new defaults, once they are read.
+    onSettingsReadyChanged: if (settingsReady && !readOnly) migrate()
+    function migrate() {
+        // Icons drawn as shared images instead of per-icon layers: the
+        // old default "layer" cost an offscreen texture for every icon.
+        if (!prefs.iconImageMigrated) {
+            if (prefs.iconSmoothing === "layer") prefs.iconSmoothing = "image";
+            prefs.iconImageMigrated = true;
+        }
+    }
 
     // Another theme file to show, read only — the greeter's: the person
     // picked at the login screen's own copy of their theme, kept up to date
@@ -467,7 +477,10 @@ Singleton {
             property int barIcon: 100                 // 60-180 % of the bar's glyphs
             property int dockGap: 16                  // 0-40 px around the dock
             // "off" | "layer" | "curve" — see MonoIcon.
-            property string iconSmoothing: "layer"
+            property string iconSmoothing: "image"
+            // Set once the move to "image" has been made, so a later
+            // choice of "layer" by hand is kept.
+            property bool iconImageMigrated: false
             // The launcher grows out of the dock's pill rather than
             // appearing above it.
             property bool launcherMorph: true

@@ -112,8 +112,13 @@ Variants {
             shown: Config.UiState.controlCenterOpen
             x: layer.panelRight - width
             y: layer.panelTop
-            ControlCenter {
-                id: cc
+            LazyPanel {
+                wanted: Config.UiState.controlCenterOpen
+                sourceComponent: Component {
+                    ControlCenter {
+                        id: cc
+                    }
+                }
             }
         }
 
@@ -121,14 +126,24 @@ Variants {
             shown: Config.UiState.notificationsOpen
             x: layer.panelRight - width
             y: layer.panelTop
-            NotificationCenter {}
+            LazyPanel {
+                wanted: Config.UiState.notificationsOpen
+                sourceComponent: Component {
+                    NotificationCenter {}
+                }
+            }
         }
 
         Entrance {
             shown: Config.UiState.calendarOpen
             x: layer.panelRight - width
             y: layer.panelTop
-            CalendarPanel {}
+            LazyPanel {
+                wanted: Config.UiState.calendarOpen
+                sourceComponent: Component {
+                    CalendarPanel {}
+                }
+            }
         }
 
         // Centred under the bar, where its pill is, rather than at the
@@ -137,7 +152,12 @@ Variants {
             shown: Config.UiState.mediaOpen
             x: Math.round((layer.width - width) / 2)
             y: layer.panelTop
-            MediaPanel {}
+            LazyPanel {
+                wanted: Config.UiState.mediaOpen
+                sourceComponent: Component {
+                    MediaPanel {}
+                }
+            }
         }
 
         // Centred on the screen, like a dialog: it is reached from the
@@ -146,8 +166,13 @@ Variants {
             shown: Config.UiState.clipboardOpen
             x: Math.round((layer.width - width) / 2)
             y: Math.round(layer.height * 0.22)
-            ClipboardPanel {
-                visible: Config.UiState.clipboardOpen
+            LazyPanel {
+                wanted: Config.UiState.clipboardOpen
+                sourceComponent: Component {
+                    ClipboardPanel {
+                        visible: Config.UiState.clipboardOpen
+                    }
+                }
             }
         }
 
@@ -155,28 +180,48 @@ Variants {
             shown: Config.UiState.drivesOpen
             x: layer.panelRight - width
             y: layer.panelTop
-            DrivesPanel {}
+            LazyPanel {
+                wanted: Config.UiState.drivesOpen
+                sourceComponent: Component {
+                    DrivesPanel {}
+                }
+            }
         }
 
         Entrance {
             shown: Config.UiState.timersOpen
             x: layer.panelRight - width
             y: layer.panelTop
-            TimersPanel {}
+            LazyPanel {
+                wanted: Config.UiState.timersOpen
+                sourceComponent: Component {
+                    TimersPanel {}
+                }
+            }
         }
 
         Entrance {
             shown: Config.UiState.privacyOpen
             x: layer.panelRight - width
             y: layer.panelTop
-            PrivacyPanel {}
+            LazyPanel {
+                wanted: Config.UiState.privacyOpen
+                sourceComponent: Component {
+                    PrivacyPanel {}
+                }
+            }
         }
 
         Entrance {
             shown: Config.UiState.updatesOpen
             x: layer.panelRight - width
             y: layer.panelTop
-            UpdatesPanel {}
+            LazyPanel {
+                wanted: Config.UiState.updatesOpen
+                sourceComponent: Component {
+                    UpdatesPanel {}
+                }
+            }
         }
 
         // The capture toolbar sits low and in the middle, out of the way
@@ -186,14 +231,24 @@ Variants {
             fromY: 12
             x: Math.round((layer.width - width) / 2)
             y: layer.height - height - 110
-            CapturePanel {}
+            LazyPanel {
+                wanted: Config.UiState.captureOpen
+                sourceComponent: Component {
+                    CapturePanel {}
+                }
+            }
         }
 
         Entrance {
             shown: Config.UiState.powerOpen
             x: layer.panelRight - width
             y: layer.panelTop
-            PowerMenu {}
+            LazyPanel {
+                wanted: Config.UiState.powerOpen
+                sourceComponent: Component {
+                    PowerMenu {}
+                }
+            }
         }
 
         // A tray icon's menu, under the icon, drawn as the shell's own.
@@ -237,9 +292,14 @@ Variants {
             shown: Config.UiState.iconPickerOpen
             x: Math.round((layer.width - width) / 2)
             y: Math.round((layer.height - height) / 2)
-            IconPicker {
-                id: iconPick
-                visible: Config.UiState.iconPickerOpen
+            LazyPanel {
+                wanted: Config.UiState.iconPickerOpen
+                sourceComponent: Component {
+                    IconPicker {
+                        id: iconPick
+                        visible: Config.UiState.iconPickerOpen
+                    }
+                }
             }
         }
 

@@ -31,7 +31,7 @@ PanelSurface {
         root.close();
     }
 
-    onVisibleChanged: {
+    function syncShown() {
         Config.UiState.panelWantsKeyboard = visible;
         if (visible) {
             root.query = "";
@@ -41,6 +41,10 @@ PanelSurface {
             search.forceActiveFocus();
         }
     }
+    onVisibleChanged: syncShown()
+    // Built on demand, so it is usually born already on screen, and a
+    // visibility that never changes never calls the handler above.
+    Component.onCompleted: Qt.callLater(syncShown)
 
     implicitWidth: 440
     implicitHeight: header.height + body.height + 34

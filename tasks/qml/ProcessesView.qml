@@ -49,6 +49,7 @@ Item {
     readonly property real nameWidth: Math.max(view.minName, list.width - 14 - fixedWidth)
 
     Component.onCompleted: {
+        view.readShell();
         if (Tasks.focusKey !== "") {
             view.select(Tasks.focusKey);
             Tasks.focusKey = "";
@@ -127,6 +128,8 @@ Item {
             { n: "Show kernel threads", rule: true, checked: p.showKernel, run: () => { p.showKernel = !p.showKernel; Tasks.set("showKernel", p.showKernel); } },
             { n: "Show other users' processes", checked: p.showOtherUsers, run: () => { p.showOtherUsers = !p.showOtherUsers; Tasks.set("showOthers", p.showOtherUsers); } },
             { n: "CPU as % of one core", checked: p.perCore, run: () => { p.perCore = !p.perCore; Tasks.set("perCore", p.perCore); } },
+            { n: "Show shell memory", icon: "monitor", checked: Tasks.settings.shellMemory,
+              run: () => { Tasks.set("shellMemory", !Tasks.settings.shellMemory); view.readShell(); } },
             { n: "Expand all", icon: "chevronDown", rule: true, run: () => p.expandAll(true) },
             { n: "Collapse all", icon: "chevronUp", run: () => p.expandAll(false) },
             { n: "Columns", icon: "list", rule: true, sub: view.allColumns.map(c => ({
@@ -183,10 +186,145 @@ Item {
         }
     }
 
+    // ── the shell's own use ───────────────────────────────────────────────
+    // What hyprshell itself costs, in one place: the shell, its background
+    // services, and (apart, since they are apps you chose to open) its own
+    // apps. Read each sample while it is shown, and not at all otherwise.
+    property var shellUse: ({ mem: 0, pss: 0, gpuMem: 0, cpu: 0, appMem: 0, parts: [] })
+    function readShell() { if (Tasks.settings.shellMemory) view.shellUse = view.model.shellUsage(); }
+    Connections {
+        target: Monitor
+        enabled: Tasks.settings.shellMemory
+        function onUpdated() { view.readShell(); }
+    }
+    function shellGlyph(key) {
+        const own = { shell: "monitor", "hyprshell-daemon": "settings", "hyprshell-maild": "stickyNote",
+                      "hyprshell-agent": "wifi", helpers: "package" };
+        return own[key] || Tasks.glyph(key);
+    }
+
+    Card {
+        id: shellStrip
+        visible: Tasks.settings.shellMemory
+        anchors.top: head.bottom
+        anchors.topMargin: 6
+        anchors.left: parent.left
+        anchors.right: details.left
+        anchors.leftMargin: 16
+        anchors.rightMargin: 16
+        height: visible ? Math.max(summary.implicitHeight, chips.implicitHeight) + 24 : 0
+
+        Column {
+            id: summary
+            x: 16
+            anchors.verticalCenter: parent.verticalCenter
+            width: 168
+            spacing: 2
+            StyledText {
+                text: "Hyprshell"
+                font.pixelSize: Appearance.fs(11)
+                font.weight: Font.DemiBold
+                color: Appearance.ink3
+            }
+            StyledText {
+                text: Tasks.bytes(view.shellUse.mem)
+                font.pixelSize: Appearance.fs(22)
+                font.weight: Font.DemiBold
+                color: Appearance.ink
+            }
+            StyledText {
+                width: parent.width
+                elide: Text.ElideRight
+                text: "Proportional " + Tasks.bytes(view.shellUse.pss)
+                      + (view.shellUse.gpuMem > 0 ? " · video " + Tasks.bytes(view.shellUse.gpuMem) : "")
+                font.pixelSize: Appearance.fs(11)
+                color: Appearance.ink3
+            }
+        }
+        Rectangle {
+            id: split
+            anchors.left: summary.right
+            anchors.leftMargin: 8
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.margins: 12
+            width: 1
+            color: Appearance.rule
+        }
+        Flow {
+            id: chips
+            anchors.left: split.right
+            anchors.leftMargin: 14
+            anchors.right: parent.right
+            anchors.rightMargin: 14
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 6
+            Repeater {
+                model: view.shellUse.parts
+                Rectangle {
+                    id: chip
+                    required property var modelData
+                    readonly property bool app: modelData.role === "app"
+                    width: chipRow.implicitWidth + 20
+                    height: 30
+                    radius: Appearance.rSm
+                    color: chipArea.containsMouse ? Appearance.hover : "transparent"
+                    border.width: 1
+                    border.color: Appearance.rule
+                    opacity: app ? 0.75 : 1
+                    Row {
+                        id: chipRow
+                        anchors.centerIn: parent
+                        spacing: 7
+                        MonoIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            name: view.shellGlyph(chip.modelData.key)
+                            size: 14
+                            inkColor: Appearance.ink2
+                            accentColor: Appearance.accent
+                        }
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: chip.modelData.label + (chip.app ? " (app)" : "")
+                            font.pixelSize: Appearance.fs(12)
+                            color: Appearance.ink2
+                        }
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: Tasks.bytes(chip.modelData.mem)
+                            font.pixelSize: Appearance.fs(12)
+                            font.weight: Font.DemiBold
+                            color: Appearance.ink
+                        }
+                    }
+                    MouseArea {
+                        id: chipArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            view.select("p:" + chip.modelData.pids[0]);
+                            view.selectedPid = chip.modelData.pids[0];
+                            view.detailsOpen = true;
+                        }
+                    }
+                }
+            }
+            StyledText {
+                visible: view.shellUse.parts.length === 0
+                height: 30
+                verticalAlignment: Text.AlignVCenter
+                text: "The shell isn't running."
+                font.pixelSize: Appearance.fs(12)
+                color: Appearance.ink3
+            }
+        }
+    }
+
     // ── table ─────────────────────────────────────────────────────────────
     Item {
         id: table
-        anchors.top: head.bottom
+        anchors.top: shellStrip.visible ? shellStrip.bottom : head.bottom
         anchors.topMargin: 6
         anchors.left: parent.left
         anchors.right: details.left

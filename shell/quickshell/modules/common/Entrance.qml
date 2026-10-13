@@ -40,9 +40,12 @@ Item {
     readonly property real startLift: grows ? fromY * 0.4 : fromY * 1.2
     readonly property real startShift: grows ? fromX * 0.4 : fromX * 1.2
 
-    // Where across it to grow from, fixed when it opens so leaving goes
-    // back to the same place.
-    property real originX: width / 2
+    // Where across it to grow from: the button that opened it, as a screen
+    // position fixed when it opens (so leaving goes back to the same place),
+    // turned into a point across the panel as it is laid out — a panel
+    // built only as it opens (LazyPanel) has no width at that moment yet.
+    property real originAbs: -1
+    readonly property real originX: originAbs >= 0 ? Math.max(0, Math.min(width, originAbs - x)) : width / 2
 
     Spring { id: sx; to: root.shown ? 1 : root.startX; response: root.shown ? 340 : 230; bounce: root.shown ? 0.9 : 0 }
     Spring { id: sy; to: root.shown ? 1 : root.startY; response: root.shown ? 400 : 210; bounce: root.shown ? 0.8 : 0 }
@@ -70,7 +73,7 @@ Item {
         // whatever the last closing left behind.
         const ui = Config.UiState;
         const fresh = ui.panelOriginX >= 0 && Date.now() - ui.panelOriginAt < 700;
-        originX = fresh ? Math.max(0, Math.min(width, ui.panelOriginX - x)) : width / 2;
+        originAbs = fresh ? ui.panelOriginX : -1;
         sx.snap(startX); sy.snap(startY); lift.snap(startLift); shift.snap(startShift);
         inner.snap(-0.45);
         sx.wake(); sy.wake(); lift.wake(); shift.wake(); inner.wake();

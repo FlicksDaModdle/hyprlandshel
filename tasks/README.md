@@ -21,7 +21,10 @@ Open it with **Ctrl+Shift+Esc** (the shell's Hyprland config), or type
   tinted; ended processes linger briefly so you see what just quit. End,
   kill, suspend, priority, CPU affinity, efficiency mode, open the file
   location, go to the window — "as administrator" through polkit when the
-  process is someone else's.
+  process is someone else's. **Show shell memory** (in the ⋯ menu) puts
+  what hyprshell itself is using above the list: the shell, its background
+  services, and any of its own apps that are open, each a click from its
+  details.
 - **Performance** — processor (per core), memory, each disk, each network
   interface, each GPU (a sleeping NVIDIA card is read without waking it),
   battery.

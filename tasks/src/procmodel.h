@@ -100,6 +100,12 @@ public:
     Q_INVOKABLE QVariantList users() const;
     // Per-app totals since this started, for App history.
     Q_INVOKABLE QVariantList appTotals() const;
+    // What hyprshell itself is using: the shell (Quickshell), its
+    // background services, and apart from those the shell's own apps
+    // that happen to be open. { mem, pss, gpuMem, cpu, parts: [...] },
+    // each part { key, label, role: "core" | "app", pids, mem, pss, rss,
+    // gpuMem, cpu }. Your own processes only.
+    Q_INVOKABLE QVariantMap shellUsage() const;
 
     // ── actions ───────────────────────────────────────────────────────────
     // Each answers with actionDone(ok, message). Where the kernel says no

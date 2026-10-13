@@ -40,6 +40,9 @@ PanelSurface {
         else Services.Media.unwatch();
     }
     onVisibleChanged: root.setWatch(root.visible)
+    // Built on demand, so it is usually born already on screen, and a
+    // visibility that never changes never calls the handler above.
+    Component.onCompleted: Qt.callLater(() => root.setWatch(root.visible))
     Component.onDestruction: root.setWatch(false)
 
     // Clicks that land on the panel's own background stay on the panel.

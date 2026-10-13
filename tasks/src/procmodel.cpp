@@ -6,8 +6,10 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QMap>
 #include <QProcess>
 
+#include <algorithm>
 #include <functional>
 
 #include <cerrno>
@@ -906,6 +908,98 @@ QVariantList ProcessModel::users() const {
         return a.toMap().value("cpu").toDouble() > b.toMap().value("cpu").toDouble();
     });
     return out;
+}
+
+namespace {
+// smaps_rollup's figures for one process, in bytes: Pss shares each page
+// out among the processes mapping it, so a library the shell has in
+// common with everything else counts for its share and no more.
+void rollup(int pid, qint64 &pss, qint64 &rss) {
+    QFile f(QString("/proc/%1/smaps_rollup").arg(pid));
+    if (!f.open(QIODevice::ReadOnly)) return;
+    for (const QByteArray &line : f.readAll().split('\n')) {
+        if (line.startsWith("Pss:")) pss += line.mid(4).simplified().split(' ').value(0).toLongLong() * 1024;
+        else if (line.startsWith("Rss:")) rss += line.mid(4).simplified().split(' ').value(0).toLongLong() * 1024;
+    }
+}
+}
+
+QVariantMap ProcessModel::shellUsage() const {
+    struct Kind { const char *key, *label; bool app; };
+    // The shell's own programs, by name. Anything else called hyprshell-*
+    // is one of its helpers, and counts as the shell.
+    static const Kind known[] = {
+        {"hyprshell-daemon", "Background service", false},
+        {"hyprshell-maild", "Mail sync", false},
+        {"hyprshell-agent", "Network & Bluetooth agent", false},
+        {"hyprshell-files", "Files", true},
+        {"hyprshell-images", "Images", true},
+        {"hyprshell-term", "Terminal", true},
+        {"hyprshell-mail", "Mail", true},
+        {"hyprshell-tasks", "Task Manager", true},
+        {"hyprshell-browser", "Browser", true},
+    };
+    QMap<QString, QVariantMap> parts;
+    auto add = [&](const QString &key, const QString &label, bool app, const Proc &p) {
+        QVariantMap &m = parts[key];
+        m["key"] = key;
+        m["label"] = label;
+        m["role"] = app ? "app" : "core";
+        QVariantList pids = m.value("pids").toList();
+        pids << p.pid;
+        m["pids"] = pids;
+        qint64 pss = 0, rss = 0;
+        rollup(p.pid, pss, rss);
+        m["mem"] = m.value("mem").toDouble() + double(p.mem + p.shmem);
+        m["pss"] = m.value("pss").toDouble() + double(pss);
+        m["rss"] = m.value("rss").toDouble() + double(rss);
+        m["gpuMem"] = m.value("gpuMem").toDouble() + double(p.gpuMem);
+        m["cpu"] = m.value("cpu").toDouble() + cpuShown(p.cpu);
+    };
+    for (const Proc &p : m_procs) {
+        if (p.dead || p.kernel || p.uid != m_myUid) continue;
+        const QString exe = QFileInfo(p.exe).fileName();
+        // Quickshell, running this shell's config: `qs -c hyprshell`, or
+        // started from the config's path. Another Quickshell config is
+        // somebody else's shell.
+        const bool qs = p.name == "qs" || p.name == "quickshell" || exe == "qs" || exe == "quickshell"
+                        || exe.startsWith(".quickshell");
+        if (qs) {
+            if (p.cmd.contains("hyprshell") || !(p.cmd.contains(" -c ") || p.cmd.contains(" -p ")))
+                add("shell", "Shell (Quickshell)", false, p);
+            continue;
+        }
+        const QString name = p.name.startsWith("hyprshell-") ? p.name : exe;
+        if (!name.startsWith("hyprshell-") || name == "hyprshell-greeter") continue;
+        const Kind *k = nullptr;
+        for (const Kind &c : known) if (name == QLatin1String(c.key)) { k = &c; break; }
+        if (k) add(k->key, k->label, k->app, p);
+        else add("helpers", "Helpers", false, p);
+    }
+
+    QVariantList list;
+    double mem = 0, pss = 0, gpu = 0, cpu = 0, appMem = 0;
+    for (const QVariantMap &m : parts) {
+        list << m;
+        if (m.value("role").toString() == "core") {
+            mem += m.value("mem").toDouble();
+            pss += m.value("pss").toDouble();
+            gpu += m.value("gpuMem").toDouble();
+            cpu += m.value("cpu").toDouble();
+        } else {
+            appMem += m.value("mem").toDouble();
+        }
+    }
+    // The shell first, then its services, then its apps; biggest first
+    // within each.
+    std::sort(list.begin(), list.end(), [](const QVariant &a, const QVariant &b) {
+        const QVariantMap x = a.toMap(), y = b.toMap();
+        const int rx = x.value("key").toString() == "shell" ? 0 : x.value("role").toString() == "core" ? 1 : 2;
+        const int ry = y.value("key").toString() == "shell" ? 0 : y.value("role").toString() == "core" ? 1 : 2;
+        if (rx != ry) return rx < ry;
+        return x.value("mem").toDouble() > y.value("mem").toDouble();
+    });
+    return {{"mem", mem}, {"pss", pss}, {"gpuMem", gpu}, {"cpu", cpu}, {"appMem", appMem}, {"parts", list}};
 }
 
 QVariantList ProcessModel::appTotals() const {

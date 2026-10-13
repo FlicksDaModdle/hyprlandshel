@@ -50,7 +50,7 @@ PanelSurface {
     // The panel layer holds the keyboard only while something on it can
     // be typed into, so the search field has to ask — otherwise it draws
     // a cursor that never receives a key.
-    onVisibleChanged: {
+    function syncShown() {
         Config.UiState.panelWantsKeyboard = visible;
         if (visible) {
             root.query = "";
@@ -58,6 +58,10 @@ PanelSurface {
             search.forceActiveFocus();
         }
     }
+    onVisibleChanged: syncShown()
+    // Built on demand, so it is usually born already on screen, and a
+    // visibility that never changes never calls the handler above.
+    Component.onCompleted: Qt.callLater(syncShown)
 
     implicitWidth: root.columns * root.cell + 28
     implicitHeight: header.height + grid.height + 30

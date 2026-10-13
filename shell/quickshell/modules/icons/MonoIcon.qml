@@ -29,8 +29,17 @@ Item {
     // the launcher's selected row, where the whole tile inverts).
     property bool monochrome: false
 
-    // How the edges are smoothed. Three settings because the two things
-    // that can do it have different costs and different risks:
+    // How the glyph is drawn and its edges smoothed:
+    //
+    //   "image"   the glyph written out as SVG and rasterised once into an
+    //             image, which Qt caches and shares: every bar, dock and
+    //             menu icon of the same name, size and colours is one
+    //             texture between them. Antialiased by the SVG renderer.
+    //             The default — the others cost up to four vector shapes
+    //             per icon, and "layer" an offscreen texture each on top,
+    //             which across the hundreds of icons in the shell was a
+    //             large part of its memory. Falls back to the shapes when
+    //             this Qt cannot read SVG.
     //
     //   "off"     Shape's geometry renderer, raw. Triangulated, no
     //             antialiasing of its own — this is what the glyphs looked
@@ -54,6 +63,8 @@ Item {
     readonly property int renderer: smoothing === "curve"
                                     ? Shape.CurveRenderer : Shape.GeometryRenderer
     readonly property bool multisample: smoothing === "layer"
+    property bool imageFailed: false
+    readonly property bool asImage: smoothing === "image" && !imageFailed
 
     // A glyph handed over directly, for something that is being drawn
     // and has no name yet. The icon maker's previews are the real
@@ -89,136 +100,182 @@ Item {
     implicitWidth: drawSize
     implicitHeight: drawSize
 
-    Item {
-        width: 24
-        height: 24
-        scale: root.drawSize / 24
-        transformOrigin: Item.TopLeft
-        antialiasing: true
-        // Supersampled, not just multisampled. `layer.samples` asks the
-        // GPU for MSAA and is ignored by backends that have none, which
-        // leaves a layer resolved at 1:1 and looking softer than no layer
-        // at all. Rendering the layer at twice the size and letting it
-        // scale down is antialiasing that does not depend on the backend
-        // having anything in particular, and the samples request rides
-        // along for the hardware that does honour it.
-        layer.enabled: root.multisample
-        layer.samples: 4
-        layer.smooth: true
-        // An invalid size, not undefined, for the case where the layer
-        // is off.
-        //
-        // textureSize is a QSize and undefined is not one: assigning it
-        // printed a warning per glyph per frame, which on a desktop with
-        // a dock, a launcher and a settings window open is a wall of
-        // them. Qt's own default for this property is a default-
-        // constructed QSize, which is invalid and means "use the item's
-        // size" — Qt.size(-1, -1) is that, said out loud.
-        layer.textureSize: root.multisample
-                           ? Qt.size(Math.ceil(width * 2), Math.ceil(height * 2))
-                           : Qt.size(-1, -1)
+    // ── as one shared image ──────────────────────────────────────────────
+    function hex(c) {
+        const h = v => ("0" + Math.round(v * 255).toString(16)).slice(-2);
+        return "#" + h(c.r) + h(c.g) + h(c.b);
+    }
+    function paint(c, kind) {
+        return kind + '="' + hex(c) + '"' + (c.a < 0.999 ? " " + kind + '-opacity="' + c.a.toFixed(3) + '"' : "");
+    }
+    readonly property string svgSource: {
+        if (!root.asImage) return "";
+        const sp = root.spec;
+        const ink = root.inkColor, acc = root.accent;
+        const line = (d, c, w) => d ? '<path d="' + d + '" fill="none" ' + paint(c, "stroke") + ' stroke-width="' + w
+                                      + '" stroke-linecap="round" stroke-linejoin="round"/>' : "";
+        const area = (d, c) => d ? '<path d="' + d + '" ' + paint(c, "fill") + ' fill-rule="evenodd"/>' : "";
+        let out = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
+            + area(sp.fillInk, ink) + area(sp.fill, acc)
+            + line(sp.ink, ink, root.stroke) + line(sp.acc, acc, root.stroke)
+            + line(sp.inkW, ink, root.strokeW) + line(sp.accW, acc, root.strokeW);
+        for (const d of (sp.dots || []))
+            out += '<circle cx="' + d.cx + '" cy="' + d.cy + '" r="' + d.r + '" ' + paint(d.c === "acc" ? acc : ink, "fill") + '/>';
+        return "data:image/svg+xml;utf8," + encodeURIComponent(out + "</svg>");
+    }
+    Image {
+        visible: root.asImage
+        width: root.drawSize
+        height: root.drawSize
+        source: root.svgSource
+        // The logical size: Qt renders a scalable image at this times the
+        // screen's pixel ratio, so it is sharp on a HiDPI display.
+        sourceSize: Qt.size(Math.ceil(root.drawSize), Math.ceil(root.drawSize))
+        cache: true
+        smooth: true
+        asynchronous: false
+        onStatusChanged: if (status === Image.Error) root.imageFailed = true
+    }
 
-        // Filled regions. Two of them, because a fill used to be accent
-        // and nothing else — which was fine while the only one in the
-        // pack was palette's half-disc, and wrong the moment a logo
-        // traced from an image wanted to be a plain ink silhouette.
-        //
-        // Odd-even, stated rather than left to the default: a traced
-        // shape carries its holes as further subpaths, and under a
-        // winding rule the hole in a letter O fills in.
-        Shape {
-            visible: !!root.spec.fillInk
-            anchors.fill: parent
-            preferredRendererType: root.renderer
-            ShapePath {
-                fillColor: root.inkColor
-                fillRule: ShapePath.OddEvenFill
-                strokeWidth: 0
-                strokeColor: "transparent"
-                PathSvg { path: root.spec.fillInk || "" }
+    // ── as vector shapes ─────────────────────────────────────────────────
+    // Only built when they are what is drawn.
+    Loader {
+        active: !root.asImage
+        sourceComponent: shapes
+    }
+    Component {
+        id: shapes
+        Item {
+            width: 24
+            height: 24
+            scale: root.drawSize / 24
+            transformOrigin: Item.TopLeft
+            antialiasing: true
+            // Supersampled, not just multisampled. `layer.samples` asks the
+            // GPU for MSAA and is ignored by backends that have none, which
+            // leaves a layer resolved at 1:1 and looking softer than no layer
+            // at all. Rendering the layer at twice the size and letting it
+            // scale down is antialiasing that does not depend on the backend
+            // having anything in particular, and the samples request rides
+            // along for the hardware that does honour it.
+            layer.enabled: root.multisample
+            layer.samples: 4
+            layer.smooth: true
+            // An invalid size, not undefined, for the case where the layer
+            // is off.
+            //
+            // textureSize is a QSize and undefined is not one: assigning it
+            // printed a warning per glyph per frame, which on a desktop with
+            // a dock, a launcher and a settings window open is a wall of
+            // them. Qt's own default for this property is a default-
+            // constructed QSize, which is invalid and means "use the item's
+            // size" — Qt.size(-1, -1) is that, said out loud.
+            layer.textureSize: root.multisample
+                               ? Qt.size(Math.ceil(width * 2), Math.ceil(height * 2))
+                               : Qt.size(-1, -1)
+
+            // Filled regions. Two of them, because a fill used to be accent
+            // and nothing else — which was fine while the only one in the
+            // pack was palette's half-disc, and wrong the moment a logo
+            // traced from an image wanted to be a plain ink silhouette.
+            //
+            // Odd-even, stated rather than left to the default: a traced
+            // shape carries its holes as further subpaths, and under a
+            // winding rule the hole in a letter O fills in.
+            Shape {
+                visible: !!root.spec.fillInk
+                anchors.fill: parent
+                preferredRendererType: root.renderer
+                ShapePath {
+                    fillColor: root.inkColor
+                    fillRule: ShapePath.OddEvenFill
+                    strokeWidth: 0
+                    strokeColor: "transparent"
+                    PathSvg { path: root.spec.fillInk || "" }
+                }
             }
-        }
 
-        Shape {
-            visible: !!root.spec.fill
-            anchors.fill: parent
-            preferredRendererType: root.renderer
-            ShapePath {
-                fillColor: root.accent
-                fillRule: ShapePath.OddEvenFill
-                strokeWidth: 0
-                strokeColor: "transparent"
-                PathSvg { path: root.spec.fill || "" }
+            Shape {
+                visible: !!root.spec.fill
+                anchors.fill: parent
+                preferredRendererType: root.renderer
+                ShapePath {
+                    fillColor: root.accent
+                    fillRule: ShapePath.OddEvenFill
+                    strokeWidth: 0
+                    strokeColor: "transparent"
+                    PathSvg { path: root.spec.fill || "" }
+                }
             }
-        }
 
-        Shape {
-            visible: !!root.spec.ink
-            anchors.fill: parent
-            preferredRendererType: root.renderer
-            ShapePath {
-                strokeColor: root.inkColor
-                strokeWidth: root.stroke
-                fillColor: "transparent"
-                capStyle: ShapePath.RoundCap
-                joinStyle: ShapePath.RoundJoin
-                PathSvg { path: root.spec.ink || "" }
+            Shape {
+                visible: !!root.spec.ink
+                anchors.fill: parent
+                preferredRendererType: root.renderer
+                ShapePath {
+                    strokeColor: root.inkColor
+                    strokeWidth: root.stroke
+                    fillColor: "transparent"
+                    capStyle: ShapePath.RoundCap
+                    joinStyle: ShapePath.RoundJoin
+                    PathSvg { path: root.spec.ink || "" }
+                }
             }
-        }
 
-        Shape {
-            visible: !!root.spec.acc
-            anchors.fill: parent
-            preferredRendererType: root.renderer
-            ShapePath {
-                strokeColor: root.accent
-                strokeWidth: root.stroke
-                fillColor: "transparent"
-                capStyle: ShapePath.RoundCap
-                joinStyle: ShapePath.RoundJoin
-                PathSvg { path: root.spec.acc || "" }
+            Shape {
+                visible: !!root.spec.acc
+                anchors.fill: parent
+                preferredRendererType: root.renderer
+                ShapePath {
+                    strokeColor: root.accent
+                    strokeWidth: root.stroke
+                    fillColor: "transparent"
+                    capStyle: ShapePath.RoundCap
+                    joinStyle: ShapePath.RoundJoin
+                    PathSvg { path: root.spec.acc || "" }
+                }
             }
-        }
 
-        Shape {
-            visible: !!root.spec.inkW
-            anchors.fill: parent
-            preferredRendererType: root.renderer
-            ShapePath {
-                strokeColor: root.inkColor
-                strokeWidth: root.strokeW
-                fillColor: "transparent"
-                capStyle: ShapePath.RoundCap
-                joinStyle: ShapePath.RoundJoin
-                PathSvg { path: root.spec.inkW || "" }
+            Shape {
+                visible: !!root.spec.inkW
+                anchors.fill: parent
+                preferredRendererType: root.renderer
+                ShapePath {
+                    strokeColor: root.inkColor
+                    strokeWidth: root.strokeW
+                    fillColor: "transparent"
+                    capStyle: ShapePath.RoundCap
+                    joinStyle: ShapePath.RoundJoin
+                    PathSvg { path: root.spec.inkW || "" }
+                }
             }
-        }
 
-        Shape {
-            visible: !!root.spec.accW
-            anchors.fill: parent
-            preferredRendererType: root.renderer
-            ShapePath {
-                strokeColor: root.accent
-                strokeWidth: root.strokeW
-                fillColor: "transparent"
-                capStyle: ShapePath.RoundCap
-                joinStyle: ShapePath.RoundJoin
-                PathSvg { path: root.spec.accW || "" }
+            Shape {
+                visible: !!root.spec.accW
+                anchors.fill: parent
+                preferredRendererType: root.renderer
+                ShapePath {
+                    strokeColor: root.accent
+                    strokeWidth: root.strokeW
+                    fillColor: "transparent"
+                    capStyle: ShapePath.RoundCap
+                    joinStyle: ShapePath.RoundJoin
+                    PathSvg { path: root.spec.accW || "" }
+                }
             }
-        }
 
-        Repeater {
-            model: root.spec.dots || []
-            Rectangle {
-                required property var modelData
-                x: modelData.cx - modelData.r
-                y: modelData.cy - modelData.r
-                width: modelData.r * 2
-                height: modelData.r * 2
-                radius: modelData.r
-                antialiasing: true
-                color: modelData.c === "acc" ? root.accent : root.inkColor
+            Repeater {
+                model: root.spec.dots || []
+                Rectangle {
+                    required property var modelData
+                    x: modelData.cx - modelData.r
+                    y: modelData.cy - modelData.r
+                    width: modelData.r * 2
+                    height: modelData.r * 2
+                    radius: modelData.r
+                    antialiasing: true
+                    color: modelData.c === "acc" ? root.accent : root.inkColor
+                }
             }
         }
     }

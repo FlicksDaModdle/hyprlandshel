@@ -38,7 +38,13 @@ Scope {
             else coolDown.restart();
         }
     }
-    Timer { id: coolDown; interval: 60000; onTriggered: root.warm = false }
+    // The collector runs once the panes are gone, rather than whenever
+    // the engine next gets round to it, so the memory comes back now.
+    Timer {
+        id: coolDown
+        interval: 60000
+        onTriggered: { root.warm = false; Qt.callLater(() => gc()); }
+    }
 
     // Floating and centred, wherever Hyprland would otherwise tile it, and
     // in front: a floating window is above the tiled ones, and a newly
@@ -417,12 +423,16 @@ Scope {
               s: "The bar's own glyphs and the tray's, kept in proportion. 100% is 16 and 14 px",
               type: "slider", min: 60, max: 180, unit: "%",
               value: A.barIconPct, set: v => A.barIconPct = v },
-            { n: "Icon edge smoothing",
-              s: "Multisampled is the safe default. Analytic draws the cleanest curves but drops glyphs on some drivers. Off is the raw edge",
+            { n: "Icon rendering",
+              s: A.iconSmoothing === "image" ? "Each icon drawn once and shared — light on memory, smooth edges. The default"
+                 : A.iconSmoothing === "layer" ? "An offscreen layer per icon: smooth, but costly in memory"
+                 : A.iconSmoothing === "curve" ? "Analytic curves on the GPU: crisp, but drops glyphs on some drivers"
+                 : "Raw vector edges, no smoothing",
               type: "seg",
-              options: [{ label: "Off",          value: "off" },
+              options: [{ label: "Shared",       value: "image" },
                         { label: "Multisampled", value: "layer" },
-                        { label: "Analytic",     value: "curve" }],
+                        { label: "Analytic",     value: "curve" },
+                        { label: "Off",          value: "off" }],
               value: A.iconSmoothing, set: v => A.iconSmoothing = v },
             { n: "File manager icons",
               s: "Set in the file manager itself: Ctrl + and Ctrl −, or Ctrl 0 to reset",
