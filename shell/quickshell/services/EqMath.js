@@ -243,6 +243,13 @@ var PRESETS = [
     { name: "Laptop speakers", group: "Device", bands: [B("lowcut", 120, 0, 0.71, 24), B("bell", 200, 3, 1.0), B("bell", 900, -2, 1.0), B("bell", 3000, 2, 1.0), B("highshelf", 9000, 3, 0.6)] },
     { name: "Headphones", group: "Device", bands: [B("lowshelf", 105, 4, 0.7), B("bell", 2900, 2, 1.4), B("bell", 6500, -2, 3.0), B("highshelf", 10000, -1, 0.6)] },
     { name: "Earbuds", group: "Device", bands: [B("lowshelf", 120, 3, 0.7), B("bell", 1500, -1.5, 1.0), B("bell", 5500, -3, 2.0), B("highshelf", 11000, 2, 0.6)] },
+    // The Harman research targets, as the difference each makes to a
+    // neutral (diffuse-field) response: the bass shelf below 105 Hz that
+    // listeners preferred, the ear-gain region a little lower, and the top
+    // octaves eased off. The preamp comes down by the shelf's height, as
+    // with every preset, so nothing clips.
+    { name: "Harman (over-ear)", group: "Target curves", bands: [B("lowshelf", 105, 6, 0.71), B("bell", 2900, -2.5, 1.0), B("highshelf", 8000, -2, 0.6)] },
+    { name: "Harman (in-ear)", group: "Target curves", bands: [B("lowshelf", 105, 8, 0.71), B("bell", 2900, -2, 1.0), B("highshelf", 9000, -3, 0.6)] },
     { name: "Rumble filter", group: "Tools", bands: [B("lowcut", 35, 0, 0.71, 48)] },
     { name: "Hum notch", group: "Tools", bands: [B("notch", 60, 0, 12), B("notch", 120, 0, 12), B("notch", 180, 0, 12)] },
     { name: "Telephone", group: "Tools", bands: [B("lowcut", 300, 0, 0.71, 24), B("highcut", 3400, 0, 0.71, 24), B("bell", 1500, 3, 1.0)] }

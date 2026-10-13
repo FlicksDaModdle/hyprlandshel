@@ -277,7 +277,7 @@ Rectangle {
             width: parent.width
             spacing: 10
             Repeater {
-                model: ["Basics", "Character", "Voice", "Device", "Tools", "Yours"]
+                model: ["Basics", "Character", "Voice", "Device", "Target curves", "Tools", "Yours"]
                 Column {
                     id: group
                     required property string modelData
