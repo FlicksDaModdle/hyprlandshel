@@ -30,22 +30,22 @@ function svg(body) {
          + '<g transform="scale(' + S + ')">' + body + '</g></svg>';
 }
 
-const OUTLINE = 1.3;
+const OUTLINE = 1.15;
 // The accent keyline, between the body and the outline.
-const RIM = 0.65;
+const RIM = 0.5;
 
 // A shadow under some geometry: offset down a little, built from widening
 // strokes that fade, which reads as a soft edge at cursor sizes.
 function shadow(fills, lines, lineWidth) {
-    let out = '<g transform="translate(0 0.9)" stroke-linecap="round" stroke-linejoin="round">';
-    const layers = [[3.4, 0.05], [2.4, 0.07], [1.4, 0.1]];
+    let out = '<g transform="translate(0 0.8)" stroke-linecap="round" stroke-linejoin="round">';
+    const layers = [[4.2, 0.03], [3.0, 0.045], [1.8, 0.065], [0.8, 0.08]];
     for (const [w, o] of layers) {
         out += '<g stroke="#000" stroke-opacity="' + o + '" fill="none">';
         for (const f of fills) out += '<path d="' + f + '" stroke-width="' + (OUTLINE + RIM + w) + '"/>';
         for (const l of lines) out += '<path d="' + l + '" stroke-width="' + (lineWidth + 2 * OUTLINE + w) + '"/>';
         out += '</g>';
     }
-    out += '<g fill="#000" fill-opacity="0.18" fill-rule="evenodd">';
+    out += '<g fill="#000" fill-opacity="0.14" fill-rule="evenodd">';
     for (const f of fills) out += '<path d="' + f + '"/>';
     out += '</g></g>';
     return out;
@@ -77,12 +77,19 @@ function draw(sh, c) {
     out += ring(c.ink, OUTLINE, true);
     out += ring(c.acc, RIM, false);
     // body
-    for (const f of fills) out += '<path d="' + f + '" fill="' + c.base + '" fill-rule="evenodd"/>';
+    // The body carries a quiet sheen — a shade lighter at the top, a shade
+    // deeper at the bottom — the way a well-made pointer catches the light.
+    if (fills.length) {
+        out += '<defs><linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">'
+             + '<stop offset="0" stop-color="' + c.top + '"/><stop offset="1" stop-color="' + c.bottom + '"/>'
+             + '</linearGradient></defs>';
+        for (const f of fills) out += '<path d="' + f + '" fill="url(#sheen)" fill-rule="evenodd"/>';
+    }
     for (const l of lines)
         out += '<path d="' + l + '" fill="none" stroke="' + c.base + '" stroke-width="' + lw
              + '" stroke-linecap="round" stroke-linejoin="round"/>';
     for (const d of details)
-        out += '<path d="' + d + '" fill="none" stroke="' + c.ink + '" stroke-width="1" stroke-linecap="round"/>';
+        out += '<path d="' + d + '" fill="none" stroke="' + c.ink + '" stroke-opacity="0.7" stroke-width="0.75" stroke-linecap="round"/>';
     for (const a of (sh.accent || []))
         out += '<path d="' + a + '" fill="none" stroke="' + c.acc + '" stroke-width="' + (sh.accentWidth || 2)
              + '" stroke-linecap="round"/>';
@@ -98,23 +105,23 @@ function g(transform, body) { return '<g transform="' + transform + '">' + body 
 // ── the arrow ───────────────────────────────────────────────────────────
 // Classic proportions: a straight left edge, the tail kinked out to the
 // lower right, the wing level with where the tail leaves.
-const ARROW = "M5.5 2.8 L5.5 19.4 L9.4 15.7 L11.9 21.5 L14.7 20.3 L12.2 14.6 L17.6 14.6 Z";
-const ARROW_HOT = [5.5 / 24, 2.8 / 24];
+const ARROW = "M5.6 2.6 L5.6 19.1 L9.3 15.6 L11.7 21.1 L14.0 20.1 L11.7 14.8 L16.8 14.8 Z";
+const ARROW_HOT = [5.6 / 24, 2.6 / 24];
 function arrow(c) { return draw({ fills: [ARROW] }, c); }
 
 // Smaller, up in the corner, leaving room for a badge below right.
 const SMALL = "translate(0.4 0.2) scale(0.84)";
-const SMALL_HOT = [(0.4 + 5.5 * 0.84) / 24, (0.2 + 2.8 * 0.84) / 24];
+const SMALL_HOT = [(0.4 + 5.6 * 0.84) / 24, (0.2 + 2.6 * 0.84) / 24];
 function smallArrow(c) { return g(SMALL, arrow(c)); }
 
 // A badge: a disc in the accent with a white mark, outlined like the rest.
 function badge(c, mark, dot) {
-    const cx = 17.6, cy = 17.6, r = 4.5;
+    const cx = 17.6, cy = 17.6, r = 4.1;
     let out = shadow([circle(cx, cy, r)], [], 0);
     out += '<path d="' + circle(cx, cy, r + OUTLINE * 0.75) + '" fill="' + c.ink + '"/>';
     out += '<path d="' + circle(cx, cy, r) + '" fill="' + c.acc + '"/>';
-    if (mark) out += '<path d="' + mark + '" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
-    if (dot) out += '<circle cx="' + dot[0] + '" cy="' + dot[1] + '" r="0.8" fill="#fff"/>';
+    if (mark) out += '<path d="' + mark + '" fill="none" stroke="#fff" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>';
+    if (dot) out += '<circle cx="' + dot[0] + '" cy="' + dot[1] + '" r="0.7" fill="#fff"/>';
     return out;
 }
 
@@ -160,9 +167,9 @@ function arcPath(cx, cy, r, f, n, sweep) {
 function spinnerAt(c, cx, cy, r, f, n) {
     let out = draw({ fills: [circle(cx, cy, r)] }, c);
     const tr = r * 0.62;
-    out += '<path d="' + circle(cx, cy, tr) + '" fill="none" stroke="' + c.ink + '" stroke-opacity="0.22" stroke-width="' + (r * 0.3).toFixed(2) + '"/>';
+    out += '<path d="' + circle(cx, cy, tr) + '" fill="none" stroke="' + c.ink + '" stroke-opacity="0.18" stroke-width="' + (r * 0.22).toFixed(2) + '"/>';
     out += '<path d="' + arcPath(cx, cy, tr, f, n, 0.55) + '" fill="none" stroke="' + c.acc
-         + '" stroke-width="' + (r * 0.3).toFixed(2) + '" stroke-linecap="round"/>';
+         + '" stroke-width="' + (r * 0.24).toFixed(2) + '" stroke-linecap="round"/>';
     return out;
 }
 function spinner(c, f, n) { return spinnerAt(c, 12, 12, 7.2, f, n); }
@@ -170,7 +177,7 @@ function progress(c, f, n) { return smallArrow(c) + spinnerAt(c, 17.6, 17.6, 4.6
 
 // ── resizing and moving ─────────────────────────────────────────────────
 // Solid double arrows: a slim shaft between two broad heads.
-const NS = "M12 3.4 L16.4 8.4 H13.15 V15.6 H16.4 L12 20.6 L7.6 15.6 H10.85 V8.4 H7.6 Z";
+const NS = "M12 3.6 L15.9 8.2 H12.95 V15.8 H15.9 L12 20.4 L8.1 15.8 H11.05 V8.2 H8.1 Z";
 // Column / row splitters: two bars with a head pointing out from each.
 const SPLIT = ["M10.6 5 V19 H13.4 V5 Z",
                "M3.2 12 L7.9 7.6 V16.4 Z",
@@ -200,8 +207,21 @@ const CENTER = [0.5, 0.5];
 
 // [{ name, aliases, hot, delay, frames }], with { base, ink, acc } colours:
 // base the body, ink the outline and details, acc the accent.
+// A colour moved towards white (t > 0) or black (t < 0).
+function shade(hex, t) {
+    const v = parseInt(String(hex).replace("#", ""), 16);
+    const ch = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map(x =>
+        Math.round(t > 0 ? x + (255 - x) * t : x * (1 + t)));
+    return "#" + ch.map(x => ("0" + x.toString(16)).slice(-2)).join("");
+}
+
 function shapes(base, ink, acc) {
-    const c = { base: base, ink: ink, acc: acc };
+    // A dark body is lit from above (lighter top); a white one keeps its
+    // white at the top and settles to a pale grey.
+    const dark = parseInt(String(base).replace("#", ""), 16) < 0x808080;
+    const c = { base: base, ink: ink, acc: acc,
+                top: dark ? shade(base, 0.12) : base,
+                bottom: dark ? shade(base, -0.35) : shade(base, -0.09) };
     const spinFrames = [], progFrames = [];
     const n = 20;
     for (let f = 0; f < n; f++) {
