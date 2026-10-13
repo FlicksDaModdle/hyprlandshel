@@ -508,10 +508,46 @@ Item {
         }
     }
 
+    // The pills' frost: the same blurred wallpaper the card stands on,
+    // under the pill's tint and edge, so what shows through them is blurred
+    // rather than sharp. A lock surface is the shell's own drawing, which
+    // Hyprland's blur never reaches, so it is done here as for the card.
+    // (An inline component cannot see this file's ids, so what it needs
+    // is handed to it.)
+    component PillFrost: Item {
+        id: frost
+        required property Item pill
+        required property Item backdrop
+        required property real blurRadius
+        required property color tint
+        required property color edge
+        anchors.fill: parent
+        Loader {
+            anchors.fill: parent
+            active: frost.blurRadius > 0
+            source: "BlurBackdrop.qml"
+            onLoaded: {
+                item.sourceItem = frost.backdrop;
+                item.radius = Qt.binding(() => frost.pill.radius);
+                item.blurMax = 64;
+                item.amount = Qt.binding(() => Math.min(1, frost.blurRadius / 64));
+                item.sampleRect = Qt.binding(() => Qt.rect(frost.pill.x, frost.pill.y, frost.pill.width, frost.pill.height));
+            }
+        }
+        Rectangle {
+            anchors.fill: parent
+            radius: frost.pill.radius
+            color: frost.tint
+            border.width: 1
+            border.color: frost.edge
+        }
+    }
+
     // ── session ───────────────────────────────────────────────────────────
     // What you are logging into, under the card — the greeter's. Click, or
     // Tab, for the next one.
     Rectangle {
+        id: sessionPill
         visible: view.primary && view.sessionName !== ""
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: card.bottom
@@ -520,9 +556,14 @@ Item {
         height: 34
         width: sessionRow.implicitWidth + 30
         radius: height / 2
-        color: sessionHover.hovered ? Qt.tint(view.pill, view.pillHover) : view.pill
-        border.width: 1
-        border.color: view.pillEdge
+        color: "transparent"
+        PillFrost {
+            pill: sessionPill
+            backdrop: ground
+            blurRadius: card.blurRadius
+            tint: sessionHover.hovered ? Qt.tint(view.pill, view.pillHover) : view.pill
+            edge: view.pillEdge
+        }
 
         Row {
             id: sessionRow
@@ -577,6 +618,7 @@ Item {
     // Sleep, restart, shut down: round buttons on a dark pill, so they
     // read on any wallpaper.
     Rectangle {
+        id: powerPill
         visible: view.primary && view.showPower
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -586,9 +628,14 @@ Item {
         width: powerRow.implicitWidth + 12
         height: 52
         radius: height / 2
-        color: view.pill
-        border.width: 1
-        border.color: view.pillEdge
+        color: "transparent"
+        PillFrost {
+            pill: powerPill
+            backdrop: ground
+            blurRadius: card.blurRadius
+            tint: view.pill
+            edge: view.pillEdge
+        }
 
         Row {
             id: powerRow
