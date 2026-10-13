@@ -87,17 +87,16 @@ Variants {
             // look empty before it starts shrinking, not shrink around
             // text that is still legible. Not when the panel is leaving
             // whole — there the contents should still be in it.
-            fadeDelay.stop();
-            if (wanted) fadeDelay.restart();
-            else if (!launcher.exitAway) fadeSpring.to = 0;
-        }
-        // Opening, the fade waits for the shape to be most of the way
-        // there. A Timer rather than a longer easing because the delay
-        // should not stretch the fade itself.
-        Timer {
-            id: fadeDelay
-            interval: launcher.grows || launcher.morphing ? 60 : 110
-            onTriggered: fadeSpring.to = 1
+            //
+            // Opening, the contents wait for the shape to be most of the
+            // way up: their spring starts below zero, so it is a moment
+            // before anything shows, with no timer to fall out of step
+            // with a quick close and reopen.
+            if (wanted) {
+                if (fadeSpring.value < 0.05) fadeSpring.snap(-0.55);
+                fadeSpring.to = 1;
+                fadeSpring.wake();
+            } else if (!launcher.exitAway) fadeSpring.to = 0;
         }
         Timer {
             id: linger
@@ -206,32 +205,32 @@ Variants {
         readonly property bool morphing: Config.Appearance.launcherMorph
                                          && Config.UiState.dockPillWidth > 0
         // With no pill to grow out of — the morph off, the dock hidden, or
-        // opened from the keyboard — it grows out of the edge it sits on
-        // instead, the way the panels grow out of the bar: wide first,
-        // then up, a little past and back. Smooth motion rises it instead.
+        // opened from the keyboard — it swells up out of the middle of the
+        // edge it sits on instead, a little past and back. Calm motion
+        // rises it instead.
         readonly property bool grows: !morphing && Config.Appearance.animated
                                       && Config.Appearance.springy && Config.Appearance.panelsGrow
         readonly property bool rises: !morphing && !grows && Config.Appearance.animated
 
-        // Three numbers, not one, all chasing the same 0-or-1 target at
-        // different rates. A single number moves every edge in lockstep,
-        // which is a box being scaled; letting the width arrive first and
-        // the height follow means the shape stretches wide, then rises,
-        // and settles — the thing that reads as liquid rather than as a
-        // rectangle interpolating. The content's own fade is third, and
-        // slowest, so it arrives into a shape that has already stopped.
-        readonly property real morph: morphSpring.value      // width, and the lead
-        readonly property real morphY: morphYSpring.value    // height, half a beat behind
-        readonly property real morphFade: fadeSpring.value   // the contents
+        // Three numbers: the width, the height and the contents. The first
+        // two now move together, so the panel rises straight out of the
+        // dock; the contents come last, into a shape that has nearly
+        // stopped.
+        readonly property real morph: morphSpring.value      // width
+        readonly property real morphY: morphYSpring.value    // height
+        readonly property real morphFade: Math.max(0, Math.min(1, fadeSpring.value))   // the contents
 
         // Springs, so opening it again while it is still closing turns it
         // round from where it is. Opening, each lands with a touch of give;
         // closing goes straight into the dock: an overshoot below 0 would
         // turn the shape inside out. The same springs as the bar's panels —
         // the height a beat behind the width.
-        Spring { id: morphSpring; to: 0; response: launcher.wanted ? 340 : 230; bounce: launcher.wanted ? 0.9 : 0 }
-        Spring { id: morphYSpring; to: 0; response: launcher.wanted ? 400 : 240; bounce: launcher.wanted ? 0.8 : 0 }
-        Spring { id: fadeSpring; to: 0; response: launcher.wanted ? 240 : 150; bounce: 0 }
+        // One rise, straight up: the width (already the dock's) and the
+        // height move together on the same spring, so nothing leads off to
+        // one side.
+        Spring { id: morphSpring; to: 0; response: launcher.wanted ? 420 : 260; bounce: launcher.wanted ? 0.7 : 0 }
+        Spring { id: morphYSpring; to: 0; response: launcher.wanted ? 420 : 260; bounce: launcher.wanted ? 0.7 : 0 }
+        Spring { id: fadeSpring; to: 0; response: launcher.wanted ? 300 : 150; bounce: 0 }
         Component.onCompleted: {
             const v = wanted ? 1 : 0;
             for (const sp of [morphSpring, morphYSpring, fadeSpring]) { sp.to = v; sp.snap(); }
@@ -582,8 +581,10 @@ Variants {
             id: panel
 
             readonly property real targetWidth: launcher.panelWidth
+            // Not rounded while it moves: whole-pixel steps are what make a
+            // slow settle look like it is ticking rather than flowing.
             width: launcher.morphing
-                   ? Math.round(launcher.lerp(launcher.pillW, targetWidth))
+                   ? launcher.lerp(launcher.pillW, targetWidth)
                    : targetWidth
             // The content is laid out at the finished size throughout and
             // this clips it, so the panel opens like a shutter rather than
@@ -597,7 +598,7 @@ Variants {
             // is a window, and a radius that snaps between them at either
             // end is the one hard edge in an otherwise soft movement.
             radius: launcher.morphing
-                    ? Math.round(launcher.lerpY(Math.min(launcher.pillH / 2, 24),
+                    ? (launcher.lerpY(Math.min(launcher.pillH / 2, 24),
                                                 Config.Appearance.rPanel))
                     : Config.Appearance.rPanel
             // As tall as what is in it, and no taller.
@@ -641,8 +642,8 @@ Variants {
                          Math.min(launcher.panelHeight,
                                   launcher.height - launcher.nearEdge - 24))
             height: launcher.morphing
-                    ? Math.round(launcher.lerpY(launcher.pillH, targetHeight))
-                    : targetHeight
+                    ? launcher.lerpY(launcher.pillH, Math.round(targetHeight))
+                    : Math.round(targetHeight)
 
             // Latched rather than computed: the resting layout is not on
             // screen while you are searching, so its height cannot be asked
@@ -668,24 +669,22 @@ Variants {
                              Math.round(launcher.height / 2 - targetHeight / 2)))
                : launcher.height - targetHeight - launcher.nearEdge
 
-            x: launcher.morphing ? Math.round(launcher.lerp(launcher.pillX, targetX))
-                                 : targetX
+            x: launcher.morphing ? launcher.lerp(launcher.pillX, targetX) : targetX
+            // Straight up out of the dock, centred: it is the dock's width
+            // already, so it only rises — no sideways squeeze, nothing
+            // pulled towards the Start tile in the corner. Without a pill
+            // to rise out of it swells from the middle of its bottom edge.
             transform: Scale {
-                origin.x: launcher.isLeft ? 0 : (launcher.morphing ? startTile.x + startTile.width / 2 : panel.width / 2)
+                origin.x: panel.width / 2
                 origin.y: launcher.isLeft ? panel.height / 2 : panel.height
-                // Growing out of the dock it is already the dock's width, so
-                // the stretch is a gel's: a little narrow, a little past,
-                // settled — from the Start tile.
-                xScale: launcher.grows ? 0.74 + 0.26 * launcher.morph
-                      : launcher.morphing && Config.Appearance.springy ? 0.9 + 0.1 * launcher.morph : 1
-                yScale: launcher.grows ? 0.5 + 0.5 * launcher.morphY : 1
+                xScale: launcher.grows ? 0.92 + 0.08 * launcher.morph : 1
+                yScale: launcher.grows ? 0.6 + 0.4 * launcher.morphY : 1
             }
             // The exit slides it towards the edge it came from, so it
             // leaves the way a dock does rather than dissolving in place.
-            y: (launcher.morphing ? Math.round(launcher.lerpY(launcher.pillY, targetY))
-                                  : targetY)
-               + (launcher.rises && !launcher.isLeft ? Math.round((1 - launcher.morphY) * launcher.z(24)) : 0)
-               + (launcher.isLeft ? 0 : Math.round(launcher.exit * launcher.z(56)))
+            y: (launcher.morphing ? launcher.lerpY(launcher.pillY, targetY) : targetY)
+               + (launcher.rises && !launcher.isLeft ? (1 - launcher.morphY) * launcher.z(24) : 0)
+               + (launcher.isLeft ? 0 : launcher.exit * launcher.z(56))
             opacity: (1 - launcher.exit) * (launcher.rises ? Math.min(1, launcher.morphY * 4) : 1)
 
             // Swallow clicks so they don't reach the catcher behind.

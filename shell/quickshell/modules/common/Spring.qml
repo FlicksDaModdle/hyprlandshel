@@ -43,7 +43,8 @@ QtObject {
     readonly property real amount: Config.Appearance.springy
         ? Math.max(0, bounce) * Config.Appearance.motionBounce / 100 : 0
     // The damping ratio: 1 critically damped, below it a settle.
-    readonly property real zeta: Math.max(0.5, 1 - 0.22 * amount)
+    // House: 0.8, a settle of about 1.5% — felt as give, not seen as bounce.
+    readonly property real zeta: Math.max(0.5, 1 - 0.2 * amount)
     readonly property real omega: 2 * Math.PI / Math.max(0.02, response / 1000)
     readonly property bool live: enabled && Config.Appearance.animated
 
@@ -111,6 +112,10 @@ QtObject {
     }
 
     property FrameAnimation driver: FrameAnimation {
-        onTriggered: root.step(frameTime)
+        // The smoothed frame time once it is moving: the raw one jitters
+        // with when the frame callback happened to run, and a spring
+        // stepped by it carries that jitter into every position. The first
+        // frame takes the raw one, since the average is from the last run.
+        onTriggered: root.step(root.fresh || !(smoothFrameTime > 0) ? frameTime : smoothFrameTime)
     }
 }

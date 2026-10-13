@@ -207,9 +207,31 @@ Scope {
         // cannot be opened again for the rest of the session. The X
         // button never had this because it clears the flag itself.
         onVisibleChanged: {
-            if (visible) { root.placedOnce = false; frontSoon.tries = 0; frontSoon.restart(); }
-            else if (Config.UiState.settingsOpen) Config.UiState.closeSettings();
+            if (visible) {
+                root.placedOnce = false; frontSoon.tries = 0; frontSoon.restart();
+                unlockSize.restart();
+            } else {
+                unlockSize.stop();
+                toplevel.lockSize(true);
+                if (Config.UiState.settingsOpen) Config.UiState.closeSettings();
+            }
         }
+
+        // Opening floating, whatever the rules say. Hyprland floats a
+        // window that asks for a fixed size — its minimum and maximum the
+        // same — at the moment it maps, before any rule or dispatch could
+        // be too late or spelled differently (Window rules matched on the
+        // title missed it; that is the only thing this relies on). So it
+        // maps fixed at 900×620, and a moment later is made resizable
+        // again: it stays floating, and drags out like any window.
+        readonly property size fixedSize: Qt.size(900, 620)
+        function lockSize(on) {
+            if (toplevel.minimumSize === undefined) return;
+            toplevel.minimumSize = on ? toplevel.fixedSize : Qt.size(640, 420);
+            toplevel.maximumSize = on ? toplevel.fixedSize : Qt.size(16777215, 16777215);
+        }
+        Component.onCompleted: lockSize(true)
+        Timer { id: unlockSize; interval: 700; onTriggered: toplevel.lockSize(false) }
         title: "Settings"
         // Clear: the frame inside is the sheet. Painting it here as well
         // laid it twice, so tiled Settings let through much less of the
