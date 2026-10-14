@@ -88,6 +88,75 @@ Singleton {
 
     function isPinned(key) { return pinned.some(e => e.key === key); }
 
+    // What right-clicking an application offers, wherever it was clicked:
+    // the dock's tiles (fromDock), the launcher's grid, or a search result
+    // (entry: its desktop entry). Entries are MenuList rows.
+    //
+    //   a pinned tile      open a new window, move it, change its icon,
+    //                      re-point it at a different application, unpin
+    //   anything else      open it (and the desktop entry's own actions —
+    //                      a private window, a new document), pin it
+    //
+    // `stay` marks a row whose result shows where it was clicked (the
+    // launcher keeps itself open for those).
+    function menuFor(o) {
+        const key = o.key || "";
+        const cls = o.cls || "";
+        const entry = o.entry || null;
+        const isPin = key !== "" && root.isPinned(key);
+        const tile = isPin ? root.pinned.find(e => e.key === key) : null;
+        const out = [];
+        if (entry) {
+            out.push({ n: isPin ? "Open new window" : "Open", icon: "plus", run: () => root.launchEntry(entry) });
+            const acts = entry.actions ? Array.from(entry.actions) : [];
+            for (let i = 0; i < Math.min(acts.length, 5); i++) {
+                const a = acts[i];
+                out.push({ n: a.name, icon: "chevronRight", run: () => {
+                    const c = a.command ? Array.from(a.command) : [];
+                    if (c.length > 0) root.launch(c, entry.workingDirectory || "");
+                    else a.execute();
+                } });
+            }
+        } else if (tile && tile.exec && tile.exec.length > 0) {
+            out.push({ n: "Open new window", icon: "plus", run: () => root.launch(root.commandFor(tile)) });
+        } else if (cls !== "") {
+            out.push({ n: "Open new window", icon: "plus", run: () => root.launch(root.commandFor({ exec: [cls] })) });
+        }
+        // One place along, for when a drag is fiddly. Named for the way the
+        // dock runs; the menu stays open, so a tile can be walked along.
+        if (isPin && o.fromDock) {
+            const at = root.indexOf(key);
+            const last = root.pinned.length - 1;
+            const side = Config.Appearance.dockLeft;
+            if (at > 0)
+                out.push({ n: side ? "Move up" : "Move left", icon: side ? "chevronUp" : "chevronLeft",
+                           rule: out.length > 0, keepOpen: true, run: () => root.move(key, at - 1) });
+            if (at >= 0 && at < last)
+                out.push({ n: side ? "Move down" : "Move right", icon: side ? "chevronDown" : "chevronRight",
+                           rule: out.length > 0 && at === 0, keepOpen: true, run: () => root.move(key, at + 1) });
+        }
+        if (isPin) {
+            out.push({ n: "Change icon…", icon: "palette", rule: out.length > 0,
+                       run: () => Config.UiState.openIconPicker(key) });
+            if (!root.isShellTile(key))
+                out.push({ n: "Choose application…", icon: "grid", run: () => Config.UiState.pickAppFor(key) });
+            out.push({ n: "Unpin from dock", icon: "minus", stay: true, run: () => root.unpin(key) });
+        } else if (cls !== "") {
+            out.push({ n: "Pin to dock", icon: "plus", rule: out.length > 0, stay: true,
+                       run: () => root.pinClass(cls, o.label || "", o.icon || root.iconFor(cls)) });
+        }
+        out.push({ n: "Dock settings", icon: "settings", rule: out.length > 0,
+                   run: () => Config.UiState.openSettings("Dock") });
+        return out;
+    }
+
+    // A desktop entry's window class: what it declares, else its id.
+    function classOfEntry(e) {
+        let cls = (e && (e.startupClass || e.id)) || "";
+        if (cls.endsWith(".desktop")) cls = cls.slice(0, -8);
+        return cls;
+    }
+
     // Any tile, the shell's own included — Settings is in the launcher and
     // the bar, Files and the terminal in the launcher. Unpinning the last
     // leaves the dock with running apps only; "Reset pinned apps" in

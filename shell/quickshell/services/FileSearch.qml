@@ -75,6 +75,44 @@ Singleton {
         else Config.Apps.launch(["xdg-open", root.absolute(r.path)]);
     }
 
+    // What right-clicking a file or folder in the launcher offers. Entries
+    // are MenuList rows (modules/common/MenuList.qml).
+    function menuFor(r) {
+        const path = root.absolute(r.path);
+        const dir = r.dir === "" ? root.home : root.absolute(r.dir);
+        const out = [];
+        if (r.isDir) {
+            out.push({ n: "Open in Files", icon: "folderOpen", run: () => Config.Apps.launchFiles(path) });
+        } else {
+            out.push({ n: "Open", icon: root.icon(r), run: () => root.open(r) });
+            out.push({ n: "Show in Files", icon: "folderOpen", run: () => Config.Apps.launchFiles(dir) });
+        }
+        out.push({ n: "Open in Terminal", icon: "terminal",
+                   run: () => Config.Apps.launch(Config.Apps.termCommand(), r.isDir ? path : dir) });
+        out.push({ n: "Copy path", icon: "clipboard", rule: true,
+                   run: () => Quickshell.execDetached(["wl-copy", "--", path]) });
+        // As a file, for pasting into Files or a chat: the same text/uri-list
+        // a file manager puts on the clipboard.
+        out.push({ n: r.isDir ? "Copy folder" : "Copy file", icon: "file",
+                   run: () => Quickshell.execDetached(["wl-copy", "--type", "text/uri-list", "--", root.uri(path)]) });
+        out.push({ n: "Move to Trash", icon: "trash", rule: true, danger: true, stay: true, run: () => root.trash(r) });
+        return out;
+    }
+
+    // file:// with the path percent-encoded, slashes kept.
+    function uri(path) {
+        return "file://" + path.split("/").map(encodeURIComponent).join("/");
+    }
+
+    // Into the desktop's trash (gio, which Files uses too), so it can come
+    // back; out of the results at once, without waiting for a re-index.
+    function trash(r) {
+        Quickshell.execDetached(["sh", "-c",
+            'gio trash -- "$1" 2>/dev/null || notify-send "Move to Trash" "Could not move $(basename "$1") to the trash" 2>/dev/null',
+            "trash", root.absolute(r.path)]);
+        root.results = root.results.filter(x => x.path !== r.path);
+    }
+
     // The pack's glyph for a kind of file.
     function icon(r) {
         if (r.isDir) return "folder";

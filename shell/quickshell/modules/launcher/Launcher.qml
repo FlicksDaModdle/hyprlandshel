@@ -540,6 +540,7 @@ Variants {
         // what tells Escape ("put this back") apart from Super and the
         // Start tile ("I am done with the dock too").
         function close(intoDock) {
+            menuOpen = false;
             Config.UiState.holdDockAfterLauncher = intoDock === true;
             Config.UiState.launcherOpen = false;
         }
@@ -557,6 +558,7 @@ Variants {
         // never made it invisible — so a close and a quick reopen kept
         // the old search, which is the one case this is meant to catch.
         function resetInput() {
+            menuOpen = false;
             searchInput.text = "";
             query = "";
             showAll = false;
@@ -567,7 +569,7 @@ Variants {
 
         onVisibleChanged: if (visible) { resetInput(); Services.FileSearch.warm(); }
 
-        onQueryChanged: { selectedIndex = 0; Services.FileSearch.search(query); Services.Calc.ask(query); }
+        onQueryChanged: { menuOpen = false; selectedIndex = 0; Services.FileSearch.search(query); Services.Calc.ask(query); }
         onShowAllChanged: selectedIndex = 0;
 
         // Click-away catcher — no scrim, so the desktop behind stays sharp.
@@ -776,7 +778,8 @@ Variants {
                             // half on its own. The compositor's binding
                             // is the one that toggles.
                             Keys.onEscapePressed: {
-                                if (launcher.query !== "") { launcher.query = ""; text = ""; }
+                                if (launcher.menuOpen) launcher.closeMenu();
+                                else if (launcher.query !== "") { launcher.query = ""; text = ""; }
                                 else if (launcher.showAll) launcher.showAll = false;
                                 else launcher.close(true);
                             }
@@ -978,14 +981,9 @@ Variants {
                                 TapHandler {
                                     acceptedButtons: Qt.RightButton
                                     gesturePolicy: TapHandler.ReleaseWithinBounds
-                                    onTapped: {
-                                        if (gridItem.modelData.kind !== "app") return;
-                                        const p = gridItem.mapToItem(null,
-                                                      gridItem.width / 2, 0);
-                                        Config.UiState.openAppMenu(
-                                            p.x, p.y, gridItem.modelData.key, "",
-                                            gridItem.modelData.label,
-                                            gridItem.modelData.icon);
+                                    onTapped: (point) => {
+                                        const p = gridItem.mapToItem(null, point.position.x, point.position.y);
+                                        launcher.openMenu(gridItem.modelData, p);
                                     }
                                 }
                             }
@@ -1333,6 +1331,15 @@ Variants {
                                 onHoveredChanged: if (hovered) launcher.selectedIndex = resultRow.index;
                             }
                             TapHandler { onTapped: launcher.run(resultRow.modelData) }
+                            TapHandler {
+                                acceptedButtons: Qt.RightButton
+                                gesturePolicy: TapHandler.ReleaseWithinBounds
+                                onTapped: (point) => {
+                                    launcher.selectedIndex = resultRow.index;
+                                    const p = resultRow.mapToItem(null, point.position.x, point.position.y);
+                                    launcher.openMenu(resultRow.modelData, p);
+                                }
+                            }
                         }
                     }
 
@@ -1491,6 +1498,83 @@ Variants {
                     TapHandler { onTapped: { launcher.close(); Config.UiState.togglePower(); } }
                 }
             }
+            }
+        }
+
+        // ── right-click menu ──────────────────────────────────────────────────
+        // For a search result or a grid tile. Drawn inside the launcher, so
+        // the launcher stays up behind it — the dock's own menu is a panel
+        // of its own, and opening it closes everything else. Apps get the
+        // dock tile's menu (Config.Apps.menuFor), files and folders the
+        // file menu (Services.FileSearch.menuFor).
+        property var menuEntries: []
+        property bool menuOpen: false
+        property point menuAt: Qt.point(0, 0)
+
+        function openMenu(item, at) {
+            let entries = [];
+            if (item.kind === "desktop" && item.entry) {
+                const cls = Config.Apps.classOfEntry(item.entry);
+                const pin = Config.Apps.pinnedFor(cls);
+                entries = Config.Apps.menuFor({ key: pin ? pin.key : "", cls: cls, entry: item.entry,
+                                                label: item.label, icon: Config.Apps.iconFor(cls) });
+            } else if (item.kind === "app") {
+                entries = Config.Apps.menuFor({ key: item.key, label: item.label, icon: item.icon });
+                // The shell's own tiles (Terminal, Files) have no command
+                // for the menu to offer: open it the way clicking does.
+                if (!entries.some(e => e.n.indexOf("Open") === 0))
+                    entries.unshift({ n: "Open", icon: "plus", run: () => launcher.run(item) });
+            } else if (item.kind === "file" && item.file) {
+                entries = Services.FileSearch.menuFor(item.file);
+            }
+            if (entries.length === 0) return;
+            // What a row does, and then the launcher goes — first, so a row
+            // that opens the launcher again (Choose application…) keeps it.
+            // Rows marked `stay` change something you can see from here
+            // (pinned, trashed) and leave it open.
+            menuEntries = entries.map(e => Object.assign({}, e, {
+                run: () => { if (e.stay !== true) launcher.close(); if (e.run) e.run(); }
+            }));
+            menuAt = at;
+            menuOpen = true;
+        }
+        function closeMenu() {
+            if (!menuOpen) return;
+            menuOpen = false;
+            searchInput.forceActiveFocus();
+        }
+
+        // Anywhere else closes it, without also doing what was under it.
+        MouseArea {
+            anchors.fill: parent
+            visible: launcher.menuOpen
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: launcher.closeMenu()
+        }
+        PanelSurface {
+            id: menu
+            visible: launcher.menuOpen
+            showSeam: false
+            // Solid: it sits over the launcher's own rows, inside the same
+            // surface, where the compositor's blur can't reach to soften
+            // what shows through.
+            color: Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g, Config.Appearance.panel.b, 1)
+            width: 232
+            height: menuList.implicitHeight + 12
+            // At the pointer, kept on the screen: above it when there is no
+            // room below.
+            x: Math.max(8, Math.min(launcher.width - width - 8, launcher.menuAt.x))
+            y: launcher.menuAt.y + height + 8 > launcher.height
+               ? Math.max(8, launcher.menuAt.y - height) : launcher.menuAt.y
+
+            MenuList {
+                id: menuList
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 6
+                entries: launcher.menuEntries
+                onDone: keepOpen => { if (!keepOpen) launcher.closeMenu(); }
             }
         }
 

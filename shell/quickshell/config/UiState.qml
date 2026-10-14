@@ -63,6 +63,9 @@ Singleton {
     property string appMenuClass: ""
     property string appMenuLabel: ""
     property string appMenuIcon: ""
+    // The application's desktop entry, when it was right-clicked in the
+    // launcher's search: its own actions, and how to start it.
+    property var appMenuEntry: null
     // Opened from the dock rather than the launcher: only there does
     // moving the tile left or right mean anything you can see.
     property bool appMenuFromDock: false
@@ -244,6 +247,7 @@ Singleton {
         appMenuClass = cls || "";
         appMenuLabel = label || "";
         appMenuIcon = icon || "";
+        appMenuEntry = null;
         appMenuOpen = true;
     }
 
