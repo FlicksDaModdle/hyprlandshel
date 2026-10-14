@@ -22,9 +22,10 @@
 #   --mail         Hyprshell Mail and its background service
 #   --tasks        the task manager
 #   --browser      Hyprshell Browser (Firefox underneath, its own profile)
-#   --chats        Chats, a WhatsApp client in the shell's colours (Electron)
 #   --apps         the Rust apps: ROG Control Center, Notes, Snapshots, Disks,
-#                  Passwords and Keys, Documents, Music, Videos, Sound Recorder
+#                  Passwords and Keys, Documents, Music, Videos, Sound
+#                  Recorder, Chats (WhatsApp)
+#   --chats-web    Chats Web: WhatsApp Web in a window, for calls (Electron)
 #   --greeter      the login screen (greetd; asks for sudo)
 #   --all          all of the above except --shell-only
 #   --monitors     let the shell set external monitors' brightness over
@@ -71,8 +72,8 @@ PARTS=(
     "mail|mail|Mail|mail app and background service|3–5 minutes (Rust + Qt)"
     "tasks|tasks|Task manager|processes, performance, startup apps|1–2 minutes"
     "browser|browser|Browser|Firefox underneath, its own look and profile|a minute (uses your Firefox)"
-    "chats|chats|Chats|WhatsApp in the shell's colours (Electron)|seconds (uses your Electron)"
-    "apps|apps|Apps|ROG, Notes, Disks, Music, Videos and more (Rust)|3–6 minutes (Rust)"
+    "apps|apps|Apps|ROG, Notes, Disks, Music, Videos, Chats and more|3–6 minutes (Rust, Go)"
+    "chatsweb|chats-web|Chats Web|WhatsApp Web in a window, for calls (Electron)|seconds (uses your Electron)"
     "greeter|greeter|Login screen|greetd greeter in the shell's design (sudo)|seconds"
 )
 part_field() { local n=$2 IFS='|'; local f=($1); printf '%s' "${f[$((n - 1))]}"; }
@@ -93,7 +94,7 @@ installed() {
         mail)     command -v hyprshell-mail >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-mail" ] ;;
         tasks)    command -v hyprshell-tasks >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-tasks" ] ;;
         browser)  command -v hyprshell-browser >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-browser" ] ;;
-        chats)    command -v hyprshell-chats >/dev/null 2>&1 || [ -x "$HOME/.local/bin/hyprshell-chats" ] ;;
+        chatsweb) command -v hyprshell-chats-web >/dev/null 2>&1 || [ -x "$HOME/.local/bin/hyprshell-chats-web" ] ;;
         apps)     command -v hyprshell-music >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-music" ] ;;
         greeter)  [ -d /usr/share/hyprshell-greeter ] ;;
         *) return 1 ;;
@@ -118,7 +119,7 @@ while [ $# -gt 0 ]; do
         --mail)       WANT[mail]=1; picked_any=1 ;;
         --tasks)      WANT[tasks]=1; picked_any=1 ;;
         --browser)    WANT[browser]=1; picked_any=1 ;;
-        --chats)      WANT[chats]=1; picked_any=1 ;;
+        --chats-web)  WANT[chatsweb]=1; picked_any=1 ;;
         --greeter)    WANT[greeter]=1; picked_any=1 ;;
         --apps)       WANT[apps]=1; picked_any=1 ;;
         --monitors)   MONITORS=1 ;;
@@ -259,8 +260,8 @@ pkgs_for() {
         mail)     echo "base-devel cmake rust qt6-base qt6-declarative qt6-webengine gnome-keyring libnotify xdg-utils" ;;
         tasks)    echo "base-devel cmake qt6-base qt6-declarative" ;;
         browser)  echo "firefox" ;;
-        chats)    echo "electron libnotify" ;;
-        apps)     echo "rust base-devel mpv pipewire-pulse udisks2 gnome-keyring xdg-utils" ;;
+        chatsweb) echo "electron libnotify" ;;
+        apps)     echo "rust base-devel go mpv pipewire-pulse udisks2 gnome-keyring xdg-utils opus noto-fonts-emoji wl-clipboard" ;;
         greeter)  echo "greetd gnome-keyring" ;;
     esac
 }
@@ -316,7 +317,7 @@ run_part() {
                 note "nothing to check before it is installed"; return 0
             fi
             [ "$DEFAULT_BROWSER" = 1 ] && args+=(--default) ;;
-        chats)
+        chatsweb)
             # Always ~/.local: it is a few scripts and a desktop entry.
             [ "$CHECK" = 1 ] && args+=(--check) ;;
         greeter)

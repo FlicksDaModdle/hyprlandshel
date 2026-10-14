@@ -1,9 +1,9 @@
 {
-  "name": "hyprshell-chats",
+  "name": "hyprshell-chats-web",
   "version": "1.0.0",
   "description": "WhatsApp Web in a window of its own, in Hyprshell's colours",
   "main": "main.js",
-  "desktopName": "hyprshell-chats.desktop",
+  "desktopName": "hyprshell-chats-web.desktop",
   "private": true,
   "license": "MIT"
 }

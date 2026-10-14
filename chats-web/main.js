@@ -1,5 +1,7 @@
 'use strict';
-// Chats: WhatsApp Web in a window of its own, dressed as a Hyprshell app.
+// Chats Web: WhatsApp Web in a window of its own, dressed as a Hyprshell app.
+// (Chats, in apps/chats, is the native client; this is for what it can't
+// do, calls above all.)
 //
 // The window is the kit apps' frame (a title row with the accent tick, the
 // glyph, the name and the window's buttons) over WhatsApp Web, which runs
@@ -23,8 +25,8 @@ const HOME = process.env.HYPRSHELL_CHATS_URL || 'https://web.whatsapp.com/';
 const ORIGIN = new URL(HOME).origin;
 const BAR = 46;
 
-app.setName('hyprshell-chats');
-app.setDesktopName('hyprshell-chats.desktop');
+app.setName('hyprshell-chats-web');
+app.setDesktopName('hyprshell-chats-web.desktop');
 // WhatsApp Web only serves browsers it knows: the Chrome this Electron is
 // built on, without the "Electron/…" that would give it away.
 const UA = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
@@ -85,7 +87,7 @@ function uiPrefs() {
 function create() {
     win = new BaseWindow({
         width: settings.width, height: settings.height, minWidth: 640, minHeight: 460,
-        frame: false, title: 'Chats', show: false, backgroundColor: P.ground,
+        frame: false, title: 'Chats Web', show: false, backgroundColor: P.ground,
         icon: nativeImage.createFromBuffer(icon.draw(128, P.accent, P.inkOnAccent, P.ink, false)),
     });
     bar = new WebContentsView({ webPreferences: uiPrefs() });
@@ -278,7 +280,7 @@ function state() {
 function sendState() {
     const s = state();
     for (const v of [bar, off]) if (v && !v.webContents.isDestroyed()) v.webContents.send('chats:state', s);
-    if (win) win.setTitle(unread > 0 ? `(${unread}) Chats` : 'Chats');
+    if (win) win.setTitle(unread > 0 ? `(${unread}) Chats Web` : 'Chats Web');
     updateTray();
 }
 function sendPalette() {
@@ -372,7 +374,7 @@ function updateTray(force) {
         trayKey = key;
         tray.setImage(nativeImage.createFromBuffer(icon.draw(64, P.accent, P.inkOnAccent, P.ink, unread > 0)));
     }
-    tray.setToolTip(unread > 0 ? `Chats — ${unread} unread` : 'Chats');
+    tray.setToolTip(unread > 0 ? `Chats Web — ${unread} unread` : 'Chats Web');
 }
 
 function createTray() {
@@ -380,7 +382,7 @@ function createTray() {
         tray = new Tray(nativeImage.createFromBuffer(icon.draw(64, P.accent, P.inkOnAccent, P.ink, false)));
     } catch { tray = null; return; }
     tray.setContextMenu(Menu.buildFromTemplate([
-        { label: 'Show Chats', click: show },
+        { label: 'Show Chats Web', click: show },
         { type: 'separator' },
         { label: 'Quit', click: quit },
     ]));

@@ -1,0 +1,19 @@
+[package]
+name = "hyprshell-chats"
+version = "0.1.0"
+edition = "2021"
+description = "Chats for Hyprshell: WhatsApp, as a linked device, in the shell's own window"
+
+[dependencies]
+hyprshell-kit = { workspace = true }
+hyprshell-audio = { path = "../audio" }
+slint = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
+qrcode = { version = "0.14", default-features = false }
+ogg = "0.9"
+libloading = "0.8"
+
+[build-dependencies]
+slint-build = { workspace = true }

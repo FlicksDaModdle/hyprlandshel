@@ -51,7 +51,7 @@ the command line:
     ./install.sh --shell-only          the shell, keeping your Hyprland config
     ./install.sh --terminal --files    any mix: --shell --terminal --files
                                        --images --mail --tasks --browser
-                                       --chats --apps --greeter
+                                       --apps --chats-web --greeter
     ./install.sh --check --all         what each part is missing, changing nothing
     ./install.sh --list                what is installed already
 
@@ -61,12 +61,14 @@ others; the summary at the end says how each went.
 
 `--apps` builds the Rust apps (in `apps/`, Slint for the windows): ROG
 Control Center, Notes, Snapshots, Disks, Passwords and Keys, Documents (PDF,
-CBZ, EPUB), Music, Videos (mpv underneath, loaded at run time) and Sound
-Recorder. `apps/install.sh --only music,video` installs just some of them.
+CBZ, EPUB), Music, Videos (mpv underneath, loaded at run time), Sound
+Recorder and Chats. `apps/install.sh --only music,video` installs just some
+of them.
 
-`--chats` installs Chats, a WhatsApp client: WhatsApp Web in a window of its
-own on the system's Electron, recoloured into the shell's palette and
-following it live. See `chats/README.md`.
+Chats is a WhatsApp client: a native window in the shell's design, with a
+small Go service (whatsmeow) that is a linked device, like WhatsApp Web. See
+`apps/chats/README.md`. `--chats-web` adds Chats Web, WhatsApp Web itself in
+a recoloured window, for calls (`chats-web/README.md`).
 
 Each part also has its own README and its own `install.sh`, which still work
 on their own. The shell works without the file manager; the file manager
