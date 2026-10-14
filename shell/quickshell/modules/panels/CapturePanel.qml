@@ -53,89 +53,6 @@ PanelSurface {
         ? [["region", "lasso", "Region"], ["screen", "monitor", "Screen"]]
         : [["region", "lasso", "Region"], ["window", "square", "Window"], ["screen", "monitor", "Screen"], ["all", "grid", "All screens"]]
 
-    // A choice of what to take: a card that lights up in the accent.
-    component ModeCard: Rectangle {
-        id: card
-        property string icon: ""
-        property string label: ""
-        property bool on: false
-        signal clicked
-        height: 74
-        radius: Config.Appearance.rSm
-        color: tint.value
-        border.width: 1.5
-        border.color: edge.value
-        ColorSpring {
-            id: tint
-            to: card.on ? Qt.rgba(Config.Appearance.accent.r, Config.Appearance.accent.g, Config.Appearance.accent.b, 0.14)
-                        : (cardHover.hovered ? Config.Appearance.sel : Config.Appearance.hover)
-        }
-        ColorSpring { id: edge; to: card.on ? Config.Appearance.accent : Config.Appearance.rule }
-        scale: press.value
-        Spring { id: press; to: cardTap.pressed ? 0.95 : 1; response: 260 }
-        Column {
-            anchors.centerIn: parent
-            spacing: 7
-            MonoIcon {
-                anchors.horizontalCenter: parent.horizontalCenter
-                name: card.icon
-                size: 22
-                inkColor: card.on ? Config.Appearance.accent : Config.Appearance.ink
-                accentColor: Config.Appearance.accent
-            }
-            StyledText {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: card.label
-                font.pixelSize: Config.Appearance.fs(12)
-                font.weight: Font.DemiBold
-                color: card.on ? Config.Appearance.ink : Config.Appearance.ink2
-            }
-        }
-        HoverHandler { id: cardHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { id: cardTap; onTapped: card.clicked() }
-    }
-
-    // A settings-style row: what it is on the left, its control on the right.
-    component OptionRow: Item {
-        id: optRow
-        property string label: ""
-        property string hint: ""
-        default property alias control: slot.data
-        width: parent ? parent.width : 0
-        height: 44
-        Column {
-            anchors.left: parent.left
-            anchors.leftMargin: 14
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.right: slot.left
-            anchors.rightMargin: 10
-            spacing: 1
-            StyledText {
-                text: optRow.label
-                font.pixelSize: Config.Appearance.fs(13)
-                color: Config.Appearance.ink
-                elide: Text.ElideRight
-                width: parent.width
-            }
-            StyledText {
-                visible: optRow.hint !== ""
-                text: optRow.hint
-                font.pixelSize: Config.Appearance.fs(11)
-                color: Config.Appearance.ink3
-                elide: Text.ElideRight
-                width: parent.width
-            }
-        }
-        Item {
-            id: slot
-            anchors.right: parent.right
-            anchors.rightMargin: 12
-            anchors.verticalCenter: parent.verticalCenter
-            width: childrenRect.width
-            height: childrenRect.height
-        }
-    }
-
     Column {
         id: col
         x: 16; y: 16
@@ -180,7 +97,7 @@ PanelSurface {
             spacing: 8
             Repeater {
                 model: root.modes
-                ModeCard {
+                CaptureModeCard {
                     required property var modelData
                     width: (modeRow.width - modeRow.spacing * (root.modes.length - 1)) / root.modes.length
                     icon: modelData[1]
@@ -203,7 +120,7 @@ PanelSurface {
                 id: opts
                 width: parent.width
 
-                OptionRow {
+                CaptureOptionRow {
                     visible: !root.video
                     label: "Delay"
                     Segmented {
@@ -213,7 +130,7 @@ PanelSurface {
                         onSelected: v => root.ap.captureDelay = parseInt(v)
                     }
                 }
-                OptionRow {
+                CaptureOptionRow {
                     visible: root.video
                     label: "Sound"
                     Segmented {
@@ -224,19 +141,19 @@ PanelSurface {
                     }
                 }
                 Rectangle { width: parent.width - 28; x: 14; height: 1; color: Config.Appearance.rule }
-                OptionRow {
+                CaptureOptionRow {
                     label: "Show the pointer"
                     Toggle { checked: root.ap.capturePointer; onToggled: c => root.ap.capturePointer = c }
                 }
                 Rectangle { visible: !root.video; width: parent.width - 28; x: 14; height: 1; color: Config.Appearance.rule }
-                OptionRow {
+                CaptureOptionRow {
                     visible: !root.video
                     label: "Freeze the screen"
                     hint: "Menus and video hold still while you choose"
                     Toggle { checked: root.ap.captureFreeze; onToggled: c => root.ap.captureFreeze = c }
                 }
                 Rectangle { visible: !root.video; width: parent.width - 28; x: 14; height: 1; color: Config.Appearance.rule }
-                OptionRow {
+                CaptureOptionRow {
                     visible: !root.video
                     label: "Open the editor afterwards"
                     Toggle {
