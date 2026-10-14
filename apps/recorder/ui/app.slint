@@ -1,0 +1,399 @@
+// Sound Recorder: a big button, the sound as it comes in, and what's been kept.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Card, Caption, Dim, Heading, Button, IconButton, Seg,
+         Field, Scroll, Empty, Toast, Rule, Icon, Spinner, Menu, MenuEntry, Dialog } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct Rec { path: string, name: string, sub: string }
+
+export global Recorder {
+    in property <string> state: "idle";      // idle, recording, paused, saving
+    in property <string> elapsed: "0:00.0";
+    in property <[float]> levels;            // the last few seconds, newest last
+    in property <[Rec]> recs;
+    in property <string> input-label;
+    in property <bool> input-monitor;
+    in property <[MenuEntry]> inputs;
+    in property <int> format: 0;             // 0 FLAC, 1 WAV
+    in property <bool> stereo;
+    in property <string> folder;
+    in property <string> toast;
+    in property <string> error;
+    // The recording being listened to.
+    in property <string> playing-path;
+    in property <bool> playing;
+    in property <float> play-pos;
+    in property <float> play-dur;
+    in property <string> play-pos-text;
+    in property <string> play-dur-text;
+    in property <[float]> wave;
+
+    callback record();
+    callback pause();
+    callback resume();
+    callback stop();
+    callback cancel();
+    callback play(string);
+    callback seek(float);
+    callback rename(string, string);
+    callback delete(string);
+    callback show(string);
+    callback pick-input(int);
+    callback refresh-inputs();
+    callback set-format(int);
+    callback set-stereo(bool);
+    callback open-folder();
+}
+
+// Bars, loudest tallest, mirrored about the middle.
+component Bars inherits Rectangle {
+    in property <[float]> values;
+    in property <color> ink: Theme.accent;
+    in property <float> progress: -1;      // played so far, 0–1; -1: all one colour
+    in property <length> bar: 3px;
+    in property <length> gap: 2px;
+    // Spread across the width (a whole file), rather than newest at the right (live).
+    in property <bool> fill;
+    callback seek(float);
+    property <length> pitch: root.fill && values.length > 0 ? root.width / values.length : root.bar + root.gap;
+    for v[i] in values: Rectangle {
+        property <length> h: max(2px, min(1, sqrt(v)) * root.height);
+        x: root.fill ? i * root.pitch : root.width - (values.length - i) * root.pitch;
+        visible: self.x >= 0;
+        y: (root.height - h) / 2;
+        width: root.fill ? max(1px, root.pitch - root.gap) : root.bar;
+        height: h;
+        border-radius: root.bar / 2;
+        background: root.progress < 0 ? root.ink
+            : (i + 0.5) / values.length <= root.progress ? root.ink : Theme.sel;
+    }
+    if root.progress >= 0: TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.seek(self.mouse-x / root.width); }
+    }
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Sound Recorder";
+    preferred-width: 760px;
+    preferred-height: 720px;
+    min-width: 480px;
+    min-height: 520px;
+    property <string> menu-path;
+    property <length> menu-x;
+    property <length> menu-y;
+    property <bool> renaming;
+    property <string> rename-to;
+    property <bool> deleting;
+    // How many bars fit the meter: main.rs keeps that many.
+    out property <int> meter-bars: floor(meter.width / 5px);
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == Key.Return) {
+                if (Recorder.state == "idle") { Recorder.record(); }
+                else if (Recorder.state == "recording") { Recorder.pause(); }
+                else if (Recorder.state == "paused") { Recorder.resume(); }
+                return accept;
+            }
+            if (e.text == Key.Escape && (Recorder.state == "recording" || Recorder.state == "paused")) { Recorder.stop(); return accept; }
+            reject
+        }
+    }
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Sound Recorder";
+            app-icon: "mic";
+            Rectangle {
+                height: 30px;
+                width: pick.preferred-width + 24px;
+                border-radius: 15px;
+                background: pta.has-hover ? Theme.hover : Theme.sel.transparentize(0.5);
+                pick := HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 7px;
+                    VerticalLayout { alignment: center; Icon { name: Recorder.input-monitor ? "speaker" : "mic"; size: 15px; } }
+                    Text { text: Recorder.input-label; color: Theme.ink2; font-size: Theme.fs(12); vertical-alignment: center; overflow: elide; max-width: 280px; }
+                    VerticalLayout { alignment: center; Icon { name: "chevronDown"; size: 13px; ink: Theme.ink3; } }
+                }
+                pta := TouchArea {
+                    mouse-cursor: pointer;
+                    enabled: Recorder.state == "idle";
+                    clicked => {
+                        Recorder.refresh-inputs();
+                        root.menu-x = self.absolute-position.x;
+                        root.menu-y = self.absolute-position.y + 36px;
+                        inputs.show();
+                    }
+                }
+            }
+        }
+        Rule {}
+        Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding: 22px;
+                spacing: 18px;
+
+                // The recorder.
+                Card {
+                    vertical-stretch: 0;
+                    height: rec-lay.preferred-height;
+                    rec-lay := VerticalLayout {
+                        padding: 22px;
+                        spacing: 14px;
+                        meter := Rectangle {
+                            height: 96px;
+                            if Recorder.state == "idle" && Recorder.error == "": Text {
+                                text: "Ready to record from " + Recorder.input-label;
+                                color: Theme.ink3;
+                                font-size: Theme.fs(13);
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                                overflow: elide;
+                            }
+                            if Recorder.state == "idle" && Recorder.error != "": Text {
+                                text: Recorder.error;
+                                color: Theme.danger;
+                                font-size: Theme.fs(13);
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                                wrap: word-wrap;
+                            }
+                            if Recorder.state != "idle": Bars {
+                                width: parent.width;
+                                height: parent.height;
+                                values: Recorder.levels;
+                                ink: Recorder.state == "paused" ? Theme.ink3 : Theme.accent;
+                            }
+                            // The middle line.
+                            if Recorder.state != "idle": Rectangle {
+                                y: parent.height / 2;
+                                height: 1px;
+                                background: Theme.rule;
+                            }
+                        }
+                        Text {
+                            text: Recorder.elapsed;
+                            color: Recorder.state == "paused" ? Theme.ink3 : Theme.ink;
+                            font-size: Theme.fs(34);
+                            font-weight: 300;
+                            horizontal-alignment: center;
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 22px;
+                            if Recorder.state == "recording" || Recorder.state == "paused": VerticalLayout {
+                                alignment: center;
+                                IconButton { icon: "x"; size: 44px; glyph: 20px; tip: "Throw it away"; clicked => { Recorder.cancel(); } }
+                            }
+                            // The button: red to start; pause and resume while going.
+                            Rectangle {
+                                width: 68px;
+                                height: 68px;
+                                border-radius: 34px;
+                                background: Recorder.state == "idle" ? (rta.pressed ? #d9362b : rta.has-hover ? #ff5f52 : #ef4438) : rta.has-hover ? Theme.hover : Theme.sel;
+                                drop-shadow-blur: Recorder.state == "idle" ? 14px : 0px;
+                                drop-shadow-color: #ef443860;
+                                animate background { duration: Theme.t(160); }
+                                if Recorder.state == "idle": Rectangle { width: 24px; height: 24px; border-radius: 12px; background: #ffffff; }
+                                if Recorder.state == "recording": Icon { name: "pause"; size: 28px; ink: Theme.ink; acc: Theme.ink; }
+                                if Recorder.state == "paused": Rectangle { width: 22px; height: 22px; border-radius: 11px; background: #ef4438; }
+                                if Recorder.state == "saving": Spinner {}
+                                rta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    enabled: Recorder.state != "saving";
+                                    clicked => {
+                                        if (Recorder.state == "idle") { Recorder.record(); }
+                                        else if (Recorder.state == "recording") { Recorder.pause(); }
+                                        else if (Recorder.state == "paused") { Recorder.resume(); }
+                                        keys.focus();
+                                    }
+                                }
+                            }
+                            if Recorder.state == "recording" || Recorder.state == "paused": VerticalLayout {
+                                alignment: center;
+                                IconButton { icon: "check"; size: 44px; glyph: 22px; tip: "Keep it"; clicked => { Recorder.stop(); } }
+                            }
+                        }
+                        if Recorder.state == "idle": HorizontalLayout {
+                            alignment: center;
+                            spacing: 10px;
+                            Seg { width: 140px; options: ["FLAC", "WAV"]; current: Recorder.format; picked(i) => { Recorder.set-format(i); } }
+                            Seg { width: 150px; options: ["Mono", "Stereo"]; current: Recorder.stereo ? 1 : 0; picked(i) => { Recorder.set-stereo(i == 1); } }
+                        }
+                        if Recorder.state != "idle": Dim {
+                            height: 34px;
+                            vertical-alignment: center;
+                            text: Recorder.state == "saving" ? "Saving…" : Recorder.state == "paused" ? "Paused — the button carries on; the tick keeps it" : "Recording — Space to pause";
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+
+                // What's been kept.
+                HorizontalLayout {
+                    spacing: 8px;
+                    Heading { text: "Recordings"; vertical-alignment: center; }
+                    Dim { text: Recorder.recs.length > 0 ? Recorder.recs.length : ""; vertical-alignment: center; horizontal-stretch: 1; }
+                    Button { text: "Open folder"; icon: "openFolder"; small: true; clicked => { Recorder.open-folder(); } }
+                }
+                if Recorder.recs.length == 0: Empty {
+                    icon: "waveform";
+                    title: "Nothing recorded yet";
+                    text: "Recordings are kept in " + Recorder.folder + ".";
+                    vertical-stretch: 1;
+                }
+                if Recorder.recs.length > 0: Scroll {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        alignment: start;
+                        spacing: 4px;
+                        for r in Recorder.recs: Rectangle {
+                            property <bool> open: r.path == Recorder.playing-path;
+                            height: open ? 112px : 58px;
+                            border-radius: Theme.r-sm;
+                            background: open ? Theme.hover : ra.has-hover ? Theme.hover.transparentize(0.4) : transparent;
+                            animate height { duration: Theme.t(260); easing: spring(0.15); }
+                            clip: true;
+                            ra := TouchArea {
+                                pointer-event(e) => {
+                                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                                        root.menu-path = r.path;
+                                        root.menu-x = self.absolute-position.x + self.mouse-x;
+                                        root.menu-y = self.absolute-position.y + self.mouse-y;
+                                        rmenu.show();
+                                    }
+                                }
+                                double-clicked => { Recorder.play(r.path); }
+                            }
+                            HorizontalLayout {
+                                y: 0;
+                                height: 58px;
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                spacing: 12px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 38px;
+                                        height: 38px;
+                                        border-radius: 19px;
+                                        background: pba.has-hover ? Theme.accent.brighter(0.1) : Theme.accent;
+                                        Icon {
+                                            name: open && Recorder.playing ? "pause" : "play";
+                                            size: 16px;
+                                            ink: Theme.ink-on-accent;
+                                            acc: Theme.ink-on-accent;
+                                        }
+                                        pba := TouchArea { mouse-cursor: pointer; clicked => { Recorder.play(r.path); } }
+                                    }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    spacing: 2px;
+                                    horizontal-stretch: 1;
+                                    Text { text: r.name; color: Theme.ink; font-weight: 600; overflow: elide; }
+                                    Text { text: r.sub; color: Theme.ink3; font-size: Theme.fs(11.5); overflow: elide; }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    IconButton {
+                                        icon: "moreHorizontal";
+                                        size: 30px;
+                                        glyph: 16px;
+                                        clicked => {
+                                            root.menu-path = r.path;
+                                            root.menu-x = self.absolute-position.x - 180px;
+                                            root.menu-y = self.absolute-position.y + 32px;
+                                            rmenu.show();
+                                        }
+                                    }
+                                }
+                            }
+                            if open: HorizontalLayout {
+                                y: 58px;
+                                height: 48px;
+                                padding-left: 58px;
+                                padding-right: 16px;
+                                spacing: 12px;
+                                Text { text: Recorder.play-pos-text; color: Theme.ink3; font-size: Theme.fs(11); vertical-alignment: center; width: 36px; }
+                                Bars {
+                                    horizontal-stretch: 1;
+                                    values: Recorder.wave;
+                                    fill: true;
+                                    bar: 2px;
+                                    gap: 2px;
+                                    progress: Recorder.play-dur > 0 ? Recorder.play-pos / Recorder.play-dur : 0;
+                                    seek(f) => { Recorder.seek(f * Recorder.play-dur); }
+                                }
+                                Text { text: Recorder.play-dur-text; color: Theme.ink3; font-size: Theme.fs(11); vertical-alignment: center; width: 36px; horizontal-alignment: right; }
+                            }
+                        }
+                    }
+                }
+            }
+            Toast { text: Recorder.toast; }
+        }
+    }
+
+    inputs := Menu {
+        x: root.menu-x;
+        y: root.menu-y;
+        menu-width: 340px;
+        entries: Recorder.inputs;
+        chosen(i) => { Recorder.pick-input(i); }
+    }
+    rmenu := Menu {
+        x: root.menu-x;
+        y: root.menu-y;
+        menu-width: 200px;
+        entries: [
+            { text: "Rename…", icon: "pencil" },
+            { text: "Show in Files", icon: "openFolder" },
+            { text: "Move to Trash", icon: "trash", danger: true, rule: true },
+        ];
+        chosen(i) => {
+            if (i == 0) { root.rename-to = ""; root.renaming = true; }
+            if (i == 1) { Recorder.show(root.menu-path); }
+            if (i == 2) { root.deleting = true; }
+        }
+    }
+    Dialog {
+        open: root.renaming;
+        title: "Rename recording";
+        dismissed => { root.renaming = false; }
+        Field {
+            placeholder: "New name";
+            text <=> root.rename-to;
+            accepted(t) => { Recorder.rename(root.menu-path, t); root.renaming = false; }
+            escape => { root.renaming = false; }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.renaming = false; } }
+            Button { text: "Rename"; kind: "primary"; clicked => { Recorder.rename(root.menu-path, root.rename-to); root.renaming = false; } }
+        }
+    }
+    Dialog {
+        open: root.deleting;
+        title: "Move this recording to the Trash?";
+        text: "It can be put back from the Trash in Files.";
+        dismissed => { root.deleting = false; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.deleting = false; } }
+            Button { text: "Move to Trash"; kind: "danger"; clicked => { Recorder.delete(root.menu-path); root.deleting = false; } }
+        }
+    }
+}

@@ -1,6 +1,6 @@
 # Hyprshell's Rust apps, built with Slint. `kit` is what they share.
 [workspace]
-members = ["kit", "rog", "notes", "snapshots", "disks", "keys", "docs", "music", "video"]
+members = ["kit", "rog", "notes", "snapshots", "disks", "keys", "docs", "music", "video", "audio", "recorder"]
 resolver = "2"
 
 [workspace.dependencies]

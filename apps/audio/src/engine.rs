@@ -70,13 +70,21 @@ impl Shared {
     }
 }
 
+/// Who is playing, as the sound server (and the shell's mixer) sees it.
+#[derive(Clone, Copy)]
+pub struct Who {
+    pub name: &'static std::ffi::CStr,
+    pub id: &'static std::ffi::CStr,
+    pub role: &'static std::ffi::CStr,
+}
+
 pub struct Engine {
     tx: Sender<Cmd>,
     shared: Arc<Mutex<Shared>>,
 }
 
 impl Engine {
-    pub fn new(notify: impl Fn(Event) + Send + Sync + 'static) -> Engine {
+    pub fn new(who: Who, notify: impl Fn(Event) + Send + Sync + 'static) -> Engine {
         let shared = Arc::new(Mutex::new(Shared { volume: 1.0, ..Default::default() }));
         let (tx, rx) = channel::<Cmd>();
         let sh = shared.clone();
@@ -84,7 +92,7 @@ impl Engine {
         std::thread::Builder::new()
             .name("music-engine".into())
             .spawn(move || {
-                let mut out = Output { client: None, stream: None, shared: sh.clone(), notify: notify.clone() };
+                let mut out = Output { who, client: None, stream: None, shared: sh.clone(), notify: notify.clone() };
                 let mut track: Option<Track> = None;
                 let mut chunk: Vec<f32> = Vec::new();
                 loop {
@@ -209,6 +217,7 @@ impl Engine {
 // ── the sound server ────────────────────────────────────────────────────
 
 struct Output {
+    who: Who,
     client: Option<Client>,
     stream: Option<(PlaybackStream, u32)>,
     shared: Arc<Mutex<Shared>>,
@@ -228,7 +237,7 @@ impl Output {
         }
         for attempt in 0..2 {
             if self.client.is_none() {
-                self.client = Some(connect().ok_or_else(|| "There's no sound server to play to".to_string())?);
+                self.client = Some(connect(self.who.name).ok_or_else(|| "There's no sound server to play to".to_string())?);
             }
             let client = self.client.clone().unwrap();
             match futures::executor::block_on(client.create_playback_stream(self.params(rate), self.source())) {
@@ -251,10 +260,10 @@ impl Output {
 
     fn params(&self, rate: u32) -> protocol::PlaybackStreamParams {
         let mut props = protocol::Props::new();
-        props.set(protocol::Prop::MediaRole, c"music");
-        props.set(protocol::Prop::ApplicationIconName, c"hyprshell-music");
-        props.set(protocol::Prop::ApplicationId, c"hyprshell-music");
-        props.set(protocol::Prop::MediaName, c"Music");
+        props.set(protocol::Prop::MediaRole, self.who.role);
+        props.set(protocol::Prop::ApplicationIconName, self.who.id);
+        props.set(protocol::Prop::ApplicationId, self.who.id);
+        props.set(protocol::Prop::MediaName, self.who.name);
         let bytes_per_sec = rate * 2 * 4;
         protocol::PlaybackStreamParams {
             sample_spec: protocol::SampleSpec { format: protocol::SampleFormat::Float32Le, channels: 2, sample_rate: rate },
@@ -325,7 +334,7 @@ impl Output {
 /// cookie from ~/.config/pulse/cookie — made, as libpulse makes it, when
 /// it isn't there yet (a fresh PipeWire system often has none, and the
 /// server turns an empty one away).
-fn connect() -> Option<Client> {
+pub fn connect(name: &std::ffi::CStr) -> Option<Client> {
     let mut socks: Vec<PathBuf> = Vec::new();
     if let Ok(s) = std::env::var("PULSE_SERVER") {
         if let Some(p) = s.strip_prefix("unix:") {
@@ -340,7 +349,7 @@ fn connect() -> Option<Client> {
     }
     let sock = socks.into_iter().find(|p| p.exists())?;
     let stream = std::os::unix::net::UnixStream::connect(sock).ok()?;
-    Client::new_unix(c"Music", stream, Some(cookie())).ok()
+    Client::new_unix(name, stream, Some(cookie())).ok()
 }
 
 fn cookie() -> Vec<u8> {
@@ -483,4 +492,48 @@ impl Track {
             }
         }
     }
+}
+
+/// A file's loudness in `bins` slices (0–1, the peak of each), for drawing
+/// its waveform; and its length in seconds.
+pub fn peaks(path: &Path, bins: usize) -> Option<(Vec<f32>, f64)> {
+    let mut t = Track::open(path).ok()?;
+    let rate = t.rate as f64;
+    let mut all: Vec<f32> = Vec::new();
+    let mut chunk = Vec::new();
+    // One peak per hundredth of a second first; folded into bins after.
+    let step = (t.rate as usize / 100).max(1) * 2;
+    let mut acc = 0f32;
+    let mut n = 0usize;
+    let mut frames = 0u64;
+    loop {
+        chunk.clear();
+        if !t.next(&mut chunk) {
+            break;
+        }
+        frames += chunk.len() as u64 / 2;
+        for &x in &chunk {
+            acc = acc.max(x.abs());
+            n += 1;
+            if n >= step {
+                all.push(acc);
+                acc = 0.0;
+                n = 0;
+            }
+        }
+    }
+    if n > 0 {
+        all.push(acc);
+    }
+    if all.is_empty() {
+        return Some((vec![0.0; bins], 0.0));
+    }
+    let out = (0..bins)
+        .map(|b| {
+            let lo = b * all.len() / bins;
+            let hi = ((b + 1) * all.len() / bins).max(lo + 1).min(all.len());
+            all[lo.min(all.len() - 1)..hi].iter().copied().fold(0.0, f32::max)
+        })
+        .collect();
+    Some((out, frames as f64 / rate))
 }

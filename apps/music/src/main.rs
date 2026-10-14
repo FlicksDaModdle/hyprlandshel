@@ -8,10 +8,9 @@
 
 slint::include_modules!();
 
-mod engine;
 mod library;
 
-use engine::{Cmd, Engine, Event};
+use hyprshell_audio::engine::{Cmd, Engine, Event};
 use hyprshell_kit as kit;
 use kit::mpris;
 use library::Song;
@@ -1290,7 +1289,7 @@ fn main() {
         library::root()
     };
 
-    let engine = Engine::new(|e| {
+    let engine = Engine::new(hyprshell_audio::engine::Who { name: c"Music", id: c"hyprshell-music", role: c"music" }, |e| {
         let _ = slint::invoke_from_event_loop(move || {
             APP.with(|a| {
                 let Some(a) = a.borrow().as_ref().cloned() else { return };

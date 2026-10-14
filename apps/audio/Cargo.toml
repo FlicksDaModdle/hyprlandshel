@@ -1,0 +1,10 @@
+[package]
+name = "hyprshell-audio"
+version = "0.1.0"
+edition = "2021"
+description = "Sound for Hyprshell's Rust apps: playback and recording over PulseAudio, decoding with symphonia"
+
+[dependencies]
+symphonia = { version = "0.5", default-features = false, features = ["mp3", "flac", "ogg", "vorbis", "wav", "pcm", "aac", "isomp4", "alac"] }
+pulseaudio = "0.3"
+futures = { version = "0.3", default-features = false, features = ["executor"] }
