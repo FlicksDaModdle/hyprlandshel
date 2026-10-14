@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<title>Chats</title>
+<!-- The kit apps' title row (apps/kit/ui/kit.slint, TitleBar): a tick of
+     accent, the glyph, the name, what's going on, and the window's buttons. -->
+<style>
+:root { --ground: #201e1d; --ink: #f8f4f4; --ink2: #bab6b6; --ink3: #8a8686; --accent: #ff563c;
+        --on-accent: #fff; --hover: rgba(248,244,244,.09); --sel: rgba(248,244,244,.14);
+        --rule: rgba(248,244,244,.10); --danger: #ff6b61; --rsm: 9px; --fs: 1; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ground); color: var(--ink);
+             font-family: "Inter", "Noto Sans", system-ui, sans-serif; user-select: none; cursor: default; }
+.bar { height: 46px; display: flex; align-items: center; gap: 11px; padding: 0 8px 0 14px;
+       -webkit-app-region: drag; border-bottom: 1px solid var(--rule); }
+.tick { width: 3px; height: 16px; border-radius: 2px; background: var(--accent); flex: none; }
+.glyph { width: 20px; height: 20px; flex: none; }
+.name { font-size: calc(13px * var(--fs)); font-weight: 600; }
+.pill { display: none; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent);
+        color: var(--on-accent); font-size: calc(11px * var(--fs)); font-weight: 700; line-height: 18px; text-align: center; }
+.pill.on { display: inline-block; }
+.sub { font-size: calc(12px * var(--fs)); color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.space { flex: 1; }
+.btns { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+button { -webkit-app-region: no-drag; width: 30px; height: 30px; border: 0; padding: 0; border-radius: var(--rsm);
+         background: transparent; color: var(--ink2); display: grid; place-items: center; transition: background .16s; }
+button:hover { background: var(--hover); }
+button:active { background: var(--sel); }
+button.danger:hover { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+button svg { width: 16px; height: 16px; }
+button.small svg { width: 14px; height: 14px; }
+.chip { -webkit-app-region: no-drag; display: none; height: 24px; padding: 0 9px; border-radius: 12px; border: 0;
+        background: var(--hover); color: var(--ink2); font: inherit; font-size: calc(11.5px * var(--fs)); font-weight: 600; width: auto; }
+.chip.on { display: inline-block; }
+svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <div class="tick"></div>
+  <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true">
+    <path style="stroke: var(--ink)" d="M12 3.5a8.5 8.5 0 0 1 0 17c-1.5 0-2.9-.4-4.1-1L3.5 20.5l1.1-4.2A8.5 8.5 0 0 1 12 3.5z"/>
+    <circle cx="8.3" cy="12" r="1.1" style="fill: var(--accent); stroke: none"/>
+    <circle cx="12" cy="12" r="1.1" style="fill: var(--accent); stroke: none"/>
+    <circle cx="15.7" cy="12" r="1.1" style="fill: var(--accent); stroke: none"/>
+  </svg>
+  <div class="name">Chats</div>
+  <div class="pill" id="pill"></div>
+  <div class="sub" id="sub"></div>
+  <div class="space"></div>
+  <button class="chip" id="zoom" title="Reset zoom (Ctrl+0)"></button>
+  <div class="btns">
+    <button id="reload" title="Reload (Ctrl+R)"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9 M20 3.5V9h-5.5"/></svg></button>
+    <button id="min" title="Minimize"><svg viewBox="0 0 24 24"><path d="M5 12H19"/></svg></button>
+    <button id="max" class="small" title="Maximize"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button>
+    <button id="close" class="danger" title="Close"><svg viewBox="0 0 24 24"><path d="M5.5 5.5L18.5 18.5 M18.5 5.5L5.5 18.5"/></svg></button>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const css = document.documentElement.style;
+chats.onPalette(p => {
+  const set = (k, v) => css.setProperty(k, v);
+  set('--ground', p.ground); set('--ink', p.ink); set('--ink2', p.ink2); set('--ink3', p.ink3);
+  set('--accent', p.accent); set('--on-accent', p.inkOnAccent); set('--hover', p.hover); set('--sel', p.sel);
+  set('--rule', p.rule); set('--danger', p.danger); set('--rsm', p.rSm + 'px'); set('--fs', p.fontScale);
+});
+chats.onState(s => {
+  $('pill').textContent = s.unread > 99 ? '99+' : String(s.unread);
+  $('pill').classList.toggle('on', s.unread > 0);
+  $('sub').textContent = s.offline ? 'Offline' : '';
+  $('zoom').textContent = s.zoom + '%';
+  $('zoom').classList.toggle('on', s.zoom !== 100);
+  $('max').title = s.maximized ? 'Restore' : 'Maximize';
+});
+$('reload').onclick = () => chats.act('reload');
+$('min').onclick = () => chats.act('minimize');
+$('max').onclick = () => chats.act('maximize');
+$('close').onclick = () => chats.act('close');
+$('zoom').onclick = () => chats.act('zoom-reset');
+chats.ready();
+</script>
+</body>
+</html>

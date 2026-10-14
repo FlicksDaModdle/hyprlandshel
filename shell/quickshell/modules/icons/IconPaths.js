@@ -470,6 +470,10 @@ var icons = {
     },
 
     // Mail (mail/), in the bar and the calendar: the same glyphs as the app.
+    chat: {
+        ink: "M12 3.5a8.5 8.5 0 0 1 0 17c-1.5 0-2.9-.4-4.1-1L3.5 20.5l1.1-4.2A8.5 8.5 0 0 1 12 3.5z",
+        dots: [{ cx: 8.3, cy: 12, r: 1.2, c: "acc" }, { cx: 12, cy: 12, r: 1.2, c: "acc" }, { cx: 15.7, cy: 12, r: 1.2, c: "acc" }]
+    },
     mail: {
         ink: rrect(3.5, 5.5, 17, 13, 2),
         acc: "M4.5 7.5L12 13L19.5 7.5"

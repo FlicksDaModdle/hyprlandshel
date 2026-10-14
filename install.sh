@@ -22,6 +22,7 @@
 #   --mail         Hyprshell Mail and its background service
 #   --tasks        the task manager
 #   --browser      Hyprshell Browser (Firefox underneath, its own profile)
+#   --chats        Chats, a WhatsApp client in the shell's colours (Electron)
 #   --apps         the Rust apps: ROG Control Center, Notes, Snapshots, Disks,
 #                  Passwords and Keys, Documents, Music, Videos, Sound Recorder
 #   --greeter      the login screen (greetd; asks for sudo)
@@ -70,6 +71,7 @@ PARTS=(
     "mail|mail|Mail|mail app and background service|3–5 minutes (Rust + Qt)"
     "tasks|tasks|Task manager|processes, performance, startup apps|1–2 minutes"
     "browser|browser|Browser|Firefox underneath, its own look and profile|a minute (uses your Firefox)"
+    "chats|chats|Chats|WhatsApp in the shell's colours (Electron)|seconds (uses your Electron)"
     "apps|apps|Apps|ROG, Notes, Disks, Music, Videos and more (Rust)|3–6 minutes (Rust)"
     "greeter|greeter|Login screen|greetd greeter in the shell's design (sudo)|seconds"
 )
@@ -91,6 +93,7 @@ installed() {
         mail)     command -v hyprshell-mail >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-mail" ] ;;
         tasks)    command -v hyprshell-tasks >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-tasks" ] ;;
         browser)  command -v hyprshell-browser >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-browser" ] ;;
+        chats)    command -v hyprshell-chats >/dev/null 2>&1 || [ -x "$HOME/.local/bin/hyprshell-chats" ] ;;
         apps)     command -v hyprshell-music >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-music" ] ;;
         greeter)  [ -d /usr/share/hyprshell-greeter ] ;;
         *) return 1 ;;
@@ -102,7 +105,7 @@ PREFIX="$HOME/.local"
 CHECK=0; DEPS=0; YES=0; LIST=0; SHELL_ONLY=0; DEFAULT_BROWSER=0; MONITORS=0
 declare -A WANT=()
 picked_any=0
-usage() { sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -115,6 +118,7 @@ while [ $# -gt 0 ]; do
         --mail)       WANT[mail]=1; picked_any=1 ;;
         --tasks)      WANT[tasks]=1; picked_any=1 ;;
         --browser)    WANT[browser]=1; picked_any=1 ;;
+        --chats)      WANT[chats]=1; picked_any=1 ;;
         --greeter)    WANT[greeter]=1; picked_any=1 ;;
         --apps)       WANT[apps]=1; picked_any=1 ;;
         --monitors)   MONITORS=1 ;;
@@ -255,6 +259,7 @@ pkgs_for() {
         mail)     echo "base-devel cmake rust qt6-base qt6-declarative qt6-webengine gnome-keyring libnotify xdg-utils" ;;
         tasks)    echo "base-devel cmake qt6-base qt6-declarative" ;;
         browser)  echo "firefox" ;;
+        chats)    echo "electron libnotify" ;;
         apps)     echo "rust base-devel mpv pipewire-pulse udisks2 gnome-keyring xdg-utils" ;;
         greeter)  echo "greetd gnome-keyring" ;;
     esac
@@ -311,6 +316,9 @@ run_part() {
                 note "nothing to check before it is installed"; return 0
             fi
             [ "$DEFAULT_BROWSER" = 1 ] && args+=(--default) ;;
+        chats)
+            # Always ~/.local: it is a few scripts and a desktop entry.
+            [ "$CHECK" = 1 ] && args+=(--check) ;;
         greeter)
             if [ "$CHECK" = 1 ]; then (cd "$dir" && sh ./install.sh --status); return $?; fi
             (cd "$dir" && sudo sh ./install.sh); return $? ;;

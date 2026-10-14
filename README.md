@@ -51,7 +51,7 @@ the command line:
     ./install.sh --shell-only          the shell, keeping your Hyprland config
     ./install.sh --terminal --files    any mix: --shell --terminal --files
                                        --images --mail --tasks --browser
-                                       --apps --greeter
+                                       --chats --apps --greeter
     ./install.sh --check --all         what each part is missing, changing nothing
     ./install.sh --list                what is installed already
 
@@ -63,6 +63,10 @@ others; the summary at the end says how each went.
 Control Center, Notes, Snapshots, Disks, Passwords and Keys, Documents (PDF,
 CBZ, EPUB), Music, Videos (mpv underneath, loaded at run time) and Sound
 Recorder. `apps/install.sh --only music,video` installs just some of them.
+
+`--chats` installs Chats, a WhatsApp client: WhatsApp Web in a window of its
+own on the system's Electron, recoloured into the shell's palette and
+following it live. See `chats/README.md`.
 
 Each part also has its own README and its own `install.sh`, which still work
 on their own. The shell works without the file manager; the file manager

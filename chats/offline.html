@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<title>Offline</title>
+<style>
+:root { --ground: #201e1d; --ink: #f8f4f4; --ink2: #bab6b6; --ink3: #8a8686; --accent: #ff563c; --on-accent: #fff;
+        --hover: rgba(248,244,244,.09); --edge: rgba(248,244,244,.16); --r: 14px; --fs: 1; }
+html, body { margin: 0; height: 100%; background: var(--ground); color: var(--ink);
+             font-family: "Inter", "Noto Sans", system-ui, sans-serif; user-select: none; cursor: default; }
+body { display: grid; place-items: center; }
+.card { text-align: center; max-width: 380px; padding: 28px; }
+.glyph { width: 56px; height: 56px; margin: 0 auto 18px; border-radius: var(--r); background: var(--hover);
+         border: 1px solid var(--edge); display: grid; place-items: center; }
+svg { width: 28px; height: 28px; fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+h1 { font-size: calc(17px * var(--fs)); font-weight: 600; margin: 0 0 8px; }
+p { font-size: calc(12.5px * var(--fs)); color: var(--ink2); margin: 0 0 6px; line-height: 1.5; }
+.err { color: var(--ink3); font-size: calc(11.5px * var(--fs)); margin-bottom: 20px; }
+button { border: 0; height: 38px; padding: 0 20px; border-radius: 19px; background: var(--accent); color: var(--on-accent);
+         font: inherit; font-size: calc(13px * var(--fs)); font-weight: 600; cursor: pointer; transition: transform .12s, filter .16s; }
+button:hover { filter: brightness(1.08); }
+button:active { transform: scale(.96); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="glyph">
+    <svg viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 4.2-2.7 M10.7 5.1A15 15 0 0 1 22 8.8 M5 12.6a10 10 0 0 1 5.2-2.6 M15.5 10.6a10 10 0 0 1 3.5 2 M8.5 16.4a5 5 0 0 1 7 0 M12 20h.01 M3 3l18 18"/></svg>
+  </div>
+  <h1>Can't reach WhatsApp</h1>
+  <p>Check that you're online. Chats tries again by itself when the connection is back.</p>
+  <div class="err" id="err"></div>
+  <button id="retry">Try again</button>
+</div>
+<script>
+const css = document.documentElement.style;
+chats.onPalette(p => {
+  for (const [k, v] of [['--ground', p.ground], ['--ink', p.ink], ['--ink2', p.ink2], ['--ink3', p.ink3], ['--accent', p.accent],
+                        ['--on-accent', p.inkOnAccent], ['--hover', p.hover], ['--edge', p.edge], ['--r', p.r + 'px'], ['--fs', p.fontScale]])
+    css.setProperty(k, v);
+});
+chats.onState(s => { document.getElementById('err').textContent = s.offline || ''; });
+document.getElementById('retry').onclick = () => chats.act('retry');
+chats.ready();
+</script>
+</body>
+</html>
