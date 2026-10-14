@@ -853,10 +853,15 @@ Variants {
                     }
                 }
 
-                DockDivider { isLeft: dock.isLeft; tileSize: dock.tileSize }
+                DockDivider {
+                    visible: Config.Appearance.dockSettingsTile || Config.Appearance.dockDesktopTile
+                    isLeft: dock.isLeft; tileSize: dock.tileSize
+                }
 
                 // ── Settings + show desktop ───────────────────────────────
+                // Each can be switched off in Settings → Dock.
                 DockTile {
+                    visible: Config.Appearance.dockSettingsTile
                     width: dock.tileSize
                     height: dock.tileSize
                     tileSize: dock.tileSize
@@ -869,6 +874,7 @@ Variants {
                 }
 
                 DockTile {
+                    visible: Config.Appearance.dockDesktopTile
                     width: dock.tileSize
                     height: dock.tileSize
                     tileSize: dock.tileSize

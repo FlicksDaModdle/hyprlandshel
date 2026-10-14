@@ -397,6 +397,9 @@ Singleton {
             property int altTabSize: 100              // % of the default picture size
             property bool altTabWorkspaceTags: true   // workspace number on each entry
             property bool dockHide: false
+            // The Settings and Show desktop buttons at the dock's end.
+            property bool dockSettingsTile: true
+            property bool dockDesktopTile: true
             // Over a fullscreen app: out when the pointer reaches the edge.
             property bool dockOverFullscreen: true
             // The pinned apps, as a JSON array of
@@ -714,6 +717,8 @@ Singleton {
     property alias altTabSize: prefs.altTabSize
     property alias altTabWorkspaceTags: prefs.altTabWorkspaceTags
     property alias dockAutoHide: prefs.dockHide
+    property alias dockSettingsTile: prefs.dockSettingsTile
+    property alias dockDesktopTile: prefs.dockDesktopTile
     property alias dockOverFullscreen: prefs.dockOverFullscreen
     property alias barAutoHide: prefs.barHide
     property alias barRevealDelay: prefs.barRevealDelay
