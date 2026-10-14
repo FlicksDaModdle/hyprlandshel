@@ -70,13 +70,21 @@ impl Palette {
         };
         const PRESETS: [(&str, &str); 4] =
             [("#ec3013", "#ff563c"), ("#ae1800", "#e8452b"), ("#2d2b2b", "#d7d3d3"), ("#7c1405", "#c94b39")];
-        let accent = match v.get("accent").and_then(|a| a.as_i64()) {
+        // From the wallpaper, when the shell has worked one out (Settings →
+        // Appearance), as Appearance.qml does; else the chosen one.
+        let wall = |k: &str| v.get(k).and_then(|c| c.as_str()).and_then(hex);
+        let from_wall = v.get("accentFromWallpaper").and_then(|b| b.as_bool()).unwrap_or(false);
+        let wall_accent = match (wall("wallAccentLight"), wall("wallAccentDark")) {
+            (Some(l), Some(d)) if from_wall => Some(if dark { d } else { l }),
+            _ => None,
+        };
+        let accent = if let Some(a) = wall_accent { a } else { match v.get("accent").and_then(|a| a.as_i64()) {
             Some(-1) => v.get("customAccent").and_then(|c| c.as_str()).and_then(hex).unwrap_or(hex("#ec3013").unwrap()),
             idx => {
                 let n = idx.unwrap_or(0).clamp(0, PRESETS.len() as i64 - 1) as usize;
                 hex(if dark { PRESETS[n].1 } else { PRESETS[n].0 }).unwrap()
             }
-        };
+        } };
         let lum = 0.2126 * accent.red() as f32 / 255.0 + 0.7152 * accent.green() as f32 / 255.0 + 0.0722 * accent.blue() as f32 / 255.0;
         let num = |k: &str, d: f64| v.get(k).and_then(|x| x.as_f64()).unwrap_or(d);
         let translucency = num("translucency", 50.0).clamp(0.0, 100.0) as f32 / 100.0;
