@@ -120,19 +120,44 @@ Variants {
             try { cut(r); }
             catch (e) { cap.trace("take failed", e); cap.snipFailed("Could not cut the picture: " + e); }
         }
+        // The choice in the picture's own pixels, kept inside it: rounding
+        // each edge at a fractional scale could otherwise ask for a pixel
+        // past the last one.
+        function pixels(r) {
+            const W = still.sourceSize.width, H = still.sourceSize.height;
+            const x0 = Math.max(0, Math.min(W - 1, Math.round(r.x * ratio)));
+            const y0 = Math.max(0, Math.min(H - 1, Math.round(r.y * ratio)));
+            const x1 = Math.max(x0 + 1, Math.min(W, Math.round((r.x + r.width) * ratio)));
+            const y1 = Math.max(y0 + 1, Math.min(H, Math.round((r.y + r.height) * ratio)));
+            return Qt.rect(x0, y0, x1 - x0, y1 - y0);
+        }
         function cut(r) {
+            if (cutImg.status !== Image.Ready || still.sourceSize.width <= 0) {
+                win.cap.trace("cut: picture not ready", cutImg.status, still.status);
+                win.cap.snipFailed("The frozen screen wasn't ready yet — try again");
+                return;
+            }
             taking = true;
-            const pr = Qt.rect(Math.round(r.x * ratio), Math.round(r.y * ratio),
-                               Math.max(1, Math.round(r.width * ratio)), Math.max(1, Math.round(r.height * ratio)));
-            cutter.width = r.width;
-            cutter.height = r.height;
-            cutter.want = Qt.size(pr.width, pr.height);
-            cutter.sourceClipRect = pr;
+            const pr = pixels(r);
+            cutBox.width = pr.width;
+            cutBox.height = pr.height;
+            cutImg.x = -pr.x;
+            cutImg.y = -pr.y;
             cap.trace("take", Math.round(r.x) + "," + Math.round(r.y), Math.round(r.width) + "x" + Math.round(r.height),
                       "-> pixels", pr.x + "," + pr.y, pr.width + "x" + pr.height);
-            cutter.source = "";
-            cutter.source = "file://" + file;
             cutWatch.restart();
+            // A frame for the new geometry, then the grab.
+            Qt.callLater(() => {
+                const target = win.cap.snipTarget();
+                const ok = cutBox.grabToImage(res => {
+                    win.cap.trace("grabbed", res.image ? "image" : "nothing", "saving to", target);
+                    cutWatch.stop();
+                    if (res.saveToFile(target)) win.cap.snipSaved(target);
+                    else win.cap.snipFailed("Could not write " + target);
+                }, Qt.size(pr.width, pr.height));
+                win.cap.trace("grab started", ok);
+                if (!ok) { cutWatch.stop(); win.cap.snipFailed("Could not cut the picture"); }
+            });
         }
         // A cut that never comes back must not leave the screen frozen.
         Timer {
@@ -141,32 +166,24 @@ Variants {
             onTriggered: if (win.taking) win.cap.snipFailed("The picture could not be cut out (timed out)")
         }
 
-        // The cut: the picture again, clipped to the choice at full
-        // resolution, behind everything — grabbed, never seen.
-        Image {
-            id: cutter
+        // The cut: the same picture — the same decoded pixels, from Qt's
+        // cache, not read from disk again — at one item unit to a pixel,
+        // shifted so the choice sits at the corner of a box its size, and
+        // grabbed from there. Behind everything; never seen.
+        Item {
+            id: cutBox
             z: -10
-            property size want: Qt.size(0, 0)
-            asynchronous: false
-            cache: false
-            smooth: true
-            fillMode: Image.Stretch
-            onStatusChanged: {
-                if (!win.taking) return;
-                win.cap.trace("cut image status", status, "size", sourceSize.width + "x" + sourceSize.height);
-                if (status === Image.Error) { win.cap.snipFailed("Could not read the frozen screen"); return; }
-                if (status !== Image.Ready) return;
-                Qt.callLater(() => {
-                    const target = win.cap.snipTarget();
-                    const ok = cutter.grabToImage(res => {
-                        win.cap.trace("grabbed", res.image ? "image" : "nothing", "saving to", target);
-                        cutWatch.stop();
-                        if (res.saveToFile(target)) win.cap.snipSaved(target);
-                        else win.cap.snipFailed("Could not write " + target);
-                    }, cutter.want);
-                    win.cap.trace("grab started", ok);
-                    if (!ok) win.cap.snipFailed("Could not cut the picture");
-                });
+            clip: true
+            width: 1
+            height: 1
+            Image {
+                id: cutImg
+                source: still.source
+                asynchronous: false
+                cache: true
+                smooth: false
+                width: still.sourceSize.width
+                height: still.sourceSize.height
             }
         }
 
@@ -176,7 +193,9 @@ Variants {
             anchors.fill: parent
             source: win.file !== "" ? "file://" + win.file : ""
             asynchronous: false
-            cache: false
+            // Cached, so the cut below reuses these pixels instead of
+            // reading the file again (each freeze has its own file name).
+            cache: true
             smooth: true
             fillMode: Image.Stretch
         }
