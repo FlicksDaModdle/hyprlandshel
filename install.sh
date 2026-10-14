@@ -22,6 +22,8 @@
 #   --mail         Hyprshell Mail and its background service
 #   --tasks        the task manager
 #   --browser      Hyprshell Browser (Firefox underneath, its own profile)
+#   --apps         the Rust apps: ROG Control Center, Notes, Snapshots, Disks,
+#                  Passwords and Keys, Documents, Music, Videos, Sound Recorder
 #   --greeter      the login screen (greetd; asks for sudo)
 #   --all          all of the above except --shell-only
 #   --monitors     let the shell set external monitors' brightness over
@@ -68,6 +70,7 @@ PARTS=(
     "mail|mail|Mail|mail app and background service|3–5 minutes (Rust + Qt)"
     "tasks|tasks|Task manager|processes, performance, startup apps|1–2 minutes"
     "browser|browser|Browser|Firefox underneath, its own look and profile|a minute (uses your Firefox)"
+    "apps|apps|Apps|ROG, Notes, Disks, Music, Videos and more (Rust)|3–6 minutes (Rust)"
     "greeter|greeter|Login screen|greetd greeter in the shell's design (sudo)|seconds"
 )
 part_field() { local n=$2 IFS='|'; local f=($1); printf '%s' "${f[$((n - 1))]}"; }
@@ -88,6 +91,7 @@ installed() {
         mail)     command -v hyprshell-mail >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-mail" ] ;;
         tasks)    command -v hyprshell-tasks >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-tasks" ] ;;
         browser)  command -v hyprshell-browser >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-browser" ] ;;
+        apps)     command -v hyprshell-music >/dev/null 2>&1 || [ -x "$PREFIX/bin/hyprshell-music" ] ;;
         greeter)  [ -d /usr/share/hyprshell-greeter ] ;;
         *) return 1 ;;
     esac
@@ -112,6 +116,7 @@ while [ $# -gt 0 ]; do
         --tasks)      WANT[tasks]=1; picked_any=1 ;;
         --browser)    WANT[browser]=1; picked_any=1 ;;
         --greeter)    WANT[greeter]=1; picked_any=1 ;;
+        --apps)       WANT[apps]=1; picked_any=1 ;;
         --monitors)   MONITORS=1 ;;
         --deps)       DEPS=1 ;;
         --check)      CHECK=1 ;;
@@ -250,6 +255,7 @@ pkgs_for() {
         mail)     echo "base-devel cmake rust qt6-base qt6-declarative qt6-webengine gnome-keyring libnotify xdg-utils" ;;
         tasks)    echo "base-devel cmake qt6-base qt6-declarative" ;;
         browser)  echo "firefox" ;;
+        apps)     echo "rust base-devel mpv pipewire-pulse udisks2 gnome-keyring xdg-utils" ;;
         greeter)  echo "greetd gnome-keyring" ;;
     esac
 }

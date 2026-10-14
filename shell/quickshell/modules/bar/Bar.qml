@@ -140,13 +140,15 @@ Variants {
                                          || launcherHere
                                          || launcherOverFullscreen
 
-        // Where the bar sits inside its surface. Hidden is one bar-height
-        // up, which is out.
+        // Where the bar sits inside its surface. Hidden is a little more
+        // than one bar-height up: the accent seam hangs a pixel below the
+        // bar, and at exactly one bar-height it was left behind as a faint
+        // line along the top of the screen.
         readonly property real barPos: barSpring.value
         // Drops in with the dock's spring; goes back up plainly.
         Spring {
             id: barSpring
-            to: bar.revealed ? 0 : -bar.barH
+            to: bar.revealed ? 0 : -bar.barH - 4
             response: bar.revealed ? 340 : 260
             bounce: bar.revealed ? 0.6 : 0
         }
@@ -218,6 +220,8 @@ Variants {
             Rectangle {
                 anchors.fill: parent
                 color: Config.Appearance.panel
+                // Nothing at all once it is away.
+                visible: strip.y > -bar.barH
 
                 // Hairline edge plus the accent seam glow the mockup puts under
                 // the bar.

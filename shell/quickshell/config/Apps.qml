@@ -375,6 +375,17 @@ Singleton {
     // that isn't one of the pinned apps, so an unpinned running app still
     // gets a sensible icon instead of a generic block.
     readonly property var glyphHints: [
+        // Hyprshell's own apps first: their ids would match the general
+        // hints below wrongly (hyprshell-docs is no code editor).
+        { re: /hyprshell-rog/i,                                         icon: "zap" },
+        { re: /hyprshell-notes/i,                                       icon: "stickyNote" },
+        { re: /hyprshell-snapshots/i,                                   icon: "rotateCw" },
+        { re: /hyprshell-disks/i,                                       icon: "drive" },
+        { re: /hyprshell-keys/i,                                        icon: "lock" },
+        { re: /hyprshell-docs/i,                                        icon: "file" },
+        { re: /hyprshell-music/i,                                       icon: "music" },
+        { re: /hyprshell-video/i,                                       icon: "film" },
+        { re: /hyprshell-recorder/i,                                    icon: "mic" },
         { re: /term|foot|kitty|alacritty|wezterm|konsole|tmux/i,        icon: "terminal" },
         { re: /nautilus|thunar|dolphin|nemo|pcmanfm|files|ranger/i,     icon: "folder" },
         { re: /firefox|chrom|brave|epiphany|zen|browser|webkit/i,       icon: "globe" },

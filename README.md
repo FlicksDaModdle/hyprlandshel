@@ -51,13 +51,18 @@ the command line:
     ./install.sh --shell-only          the shell, keeping your Hyprland config
     ./install.sh --terminal --files    any mix: --shell --terminal --files
                                        --images --mail --tasks --browser
-                                       --greeter
+                                       --apps --greeter
     ./install.sh --check --all         what each part is missing, changing nothing
     ./install.sh --list                what is installed already
 
 `--deps` uses pacman on Arch and CachyOS, and paru or yay for anything (such
 as quickshell) that is only in the AUR. A part that fails does not stop the
 others; the summary at the end says how each went.
+
+`--apps` builds the Rust apps (in `apps/`, Slint for the windows): ROG
+Control Center, Notes, Snapshots, Disks, Passwords and Keys, Documents (PDF,
+CBZ, EPUB), Music, Videos (mpv underneath, loaded at run time) and Sound
+Recorder. `apps/install.sh --only music,video` installs just some of them.
 
 Each part also has its own README and its own `install.sh`, which still work
 on their own. The shell works without the file manager; the file manager
