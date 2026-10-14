@@ -225,6 +225,27 @@ Scope {
         Greetd.createSession(g.user.name);
     }
 
+    // Never stuck checking. If greetd or a PAM module stops answering (a
+    // fingerprint reader waiting for a finger, a session that fails to
+    // start after the password was accepted), the field would stay busy
+    // and deaf to every key, and the only way out would be to restart the
+    // machine. After twenty seconds the attempt is called off and the
+    // field takes keys again.
+    Timer {
+        interval: 20000
+        running: g.busy
+        onTriggered: {
+            if (!g.preview && Greetd.state !== GreetdState.Inactive) Greetd.cancelSession();
+            g.busy = false;
+            g.failed = true;
+            g.prompt = "";
+            g.passwordSent = false;
+            g.entered = "";
+            g.status = "That took too long. Try again.";
+            g.rejected();
+        }
+    }
+
     Connections {
         target: Greetd
 

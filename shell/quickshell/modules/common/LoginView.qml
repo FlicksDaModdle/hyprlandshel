@@ -134,11 +134,49 @@ Item {
 
     // ── typing ────────────────────────────────────────────────────────────
     // Keys go straight to the password: there is no field to click first.
+    //
+    // And the keyboard is taken back whenever it could have gone astray,
+    // because a login screen that stops listening can only be got out of by
+    // restarting the machine: on any click or tap anywhere on the screen,
+    // when the window becomes active again (the compositor handed the
+    // keyboard elsewhere and back), a moment after focus slips away inside
+    // the window, and, failing all of those, by a watchdog that checks
+    // twice a second.
+    function takeKeys() {
+        if (!view.primary) return;
+        if (!keys.activeFocus) keys.forceActiveFocus();
+        const w = view.Window.window;
+        if (w && !w.active && typeof w.requestActivate === "function") w.requestActivate();
+    }
+
+    readonly property bool windowActive: Window.active
+    onWindowActiveChanged: if (windowActive) takeKeys()
+    onVisibleChanged: if (visible) takeKeys()
+
+    // Passive: it sees every press without taking it from the buttons.
+    PointHandler {
+        acceptedButtons: Qt.AllButtons
+        onActiveChanged: if (active) view.takeKeys()
+    }
+
+    Timer {
+        id: refocus
+        interval: 120
+        onTriggered: view.takeKeys()
+    }
+    Timer {
+        interval: 500
+        repeat: true
+        running: view.primary && view.visible && !keys.activeFocus
+        onTriggered: view.takeKeys()
+    }
+
     FocusScope {
         id: keys
         anchors.fill: parent
         focus: view.primary
         Component.onCompleted: if (view.primary) forceActiveFocus()
+        onActiveFocusChanged: if (!activeFocus && view.primary) refocus.restart()
         // The greeter's card moves to whichever screen you point at, and
         // the typing comes with it.
         Connections {
