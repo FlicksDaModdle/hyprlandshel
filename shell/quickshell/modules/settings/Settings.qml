@@ -899,10 +899,18 @@ Scope {
             if (mons.length > 1) {
                 const isMain = Services.Devices.mainDisplay === m.name;
                 rows.push({ n: "Main display",
-                    s: isMain ? "Workspace 1, the pointer at login and the login screen are here"
+                    s: isMain ? "Workspace 1, the pointer at login and the login screen are here — and again whenever this monitor is plugged back in"
                               : "Make this the screen workspace 1 and the login screen go to",
                     type: "toggle", value: isMain,
                     set: v => Services.Devices.setMainDisplay(v ? m.name : "") });
+            }
+
+            // The laptop's own screen and its lid.
+            if (Services.Devices.isBuiltIn(m.name) && Services.Devices.lidPresent) {
+                rows.push({ n: "Turn off when the lid is closed",
+                    s: "While another monitor is plugged in, as a docked laptop does; it comes back when the lid opens or the other monitor is unplugged",
+                    type: "toggle", value: Config.Appearance.lidScreenOff,
+                    set: v => Config.Appearance.lidScreenOff = v });
             }
 
             // Its brightness: the monitor's own backlight over DDC/CI, or

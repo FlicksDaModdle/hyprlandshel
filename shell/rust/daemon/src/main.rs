@@ -51,6 +51,7 @@ mod camera;
 mod clip;
 mod cmds;
 mod ddc;
+mod lid;
 mod fsearch;
 mod gamma;
 mod idle;
@@ -85,6 +86,7 @@ fn main() {
     let idle = idle::start();
     let usb = usb::start();
     let ddc = ddc::start();
+    let lid = lid::start();
     let camera = camera::start();
     let nhist = nhist::start();
     #[cfg(feature = "pulse")]
@@ -95,7 +97,7 @@ fn main() {
     out::emit(json!({
         "ev": "ready",
         "version": env!("CARGO_PKG_VERSION"),
-        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "usb": true, "nhist": true, "camera": true, "ddc": true, "pulse": pulse.is_some() }
+        "modules": { "net": true, "backlight": true, "nightlight": true, "agent": true, "fx": fx::available(), "clip": true, "files": true, "accent": true, "rog": true, "cmds": true, "calc": true, "gamma": true, "idle": true, "usb": true, "nhist": true, "camera": true, "ddc": true, "lid": true, "pulse": pulse.is_some() }
     }));
 
     let stdin = std::io::stdin();
@@ -123,6 +125,8 @@ fn main() {
             Some(&gamma)
         } else if name.starts_with("ddc-") {
             Some(&ddc)
+        } else if name.starts_with("lid-") {
+            Some(&lid)
         } else if name == "calc" {
             Some(&calc)
         } else if name.starts_with("cmd-") {

@@ -590,8 +590,18 @@ Singleton {
             // External monitors dimmed in software (those that take no
             // brightness over DDC/CI), by output: {"HDMI-A-1": 0.6}.
             property string monitorDims: "{}"
-            // The main display, by output name ("" is the first one).
+            // The main display, by output name ("" is the first one), and
+            // by the monitor itself (make, model, serial), so it is main
+            // again when it comes back on another port.
             property string mainDisplay: ""
+            property string mainDisplayId: ""
+            // A closed lid turns the built-in screen off while another
+            // monitor is plugged in.
+            property bool lidScreenOff: true
+            // The built-in screen's output, and whether the lid turned it
+            // off — so a restarted shell still knows to turn it back on.
+            property string lidPanel: ""
+            property bool lidPanelOff: false
 
             // Notifications
             property bool dnd: false
@@ -907,6 +917,10 @@ Singleton {
     property alias windowMode: prefs.windowMode
     property alias monitorDims: prefs.monitorDims
     property alias mainDisplay: prefs.mainDisplay
+    property alias mainDisplayId: prefs.mainDisplayId
+    property alias lidScreenOff: prefs.lidScreenOff
+    property alias lidPanel: prefs.lidPanel
+    property alias lidPanelOff: prefs.lidPanelOff
     property alias dnd: prefs.dnd
     property alias badges: prefs.badges
     property alias grouping: prefs.grouping

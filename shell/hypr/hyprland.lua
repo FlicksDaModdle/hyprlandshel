@@ -156,9 +156,13 @@ do
     if not state or state == "" then state = (os.getenv("HOME") or "") .. "/.local/state" end
     local f = io.open(state .. "/hyprshell/main-display", "r")
     if f then
-        local main = (f:read("*l") or ""):gsub("%s", "")
+        -- An output name ("DP-1"), or the monitor itself ("desc:Dell Inc.
+        -- DELL U2720Q 1A2B3C"), which follows it from port to port.
+        local main = (f:read("*l") or ""):gsub("^%s+", ""):gsub("%s+$", "")
         f:close()
-        if main:match("^[%w_.:-]+$") then
+        local ok = main:match("^[%w_.:-]+$")
+            or (main:match("^desc:[%w%s_.,:()/+-]+$") and #main < 200)
+        if ok then
             pcall(hl.workspace_rule, { workspace = "1", monitor = main, default = true })
         end
     end

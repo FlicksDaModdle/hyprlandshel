@@ -623,23 +623,118 @@ Singleton {
     // Settings → Display → Main display. The one workspace 1 lives on (so
     // the desktop you log in to is there), where the pointer starts, and
     // where the login screen puts its card. "" is Hyprland's first output.
+    //
+    // Kept by name and by the monitor itself (its make, model and serial):
+    // a monitor plugged into another port, or a dock that renames its
+    // outputs, is still the one chosen; and when it is plugged back in it
+    // becomes the main display again.
+    function descOf(m) {
+        const ipc = m && m.lastIpcObject ? m.lastIpcObject : ({});
+        return String(ipc.description || m.description || "").trim();
+    }
     readonly property string mainDisplay: {
+        const mons = (Services.Compositor.monitors || []).filter(m => !!m);
+        const id = Config.Appearance.mainDisplayId;
+        const byId = id !== "" ? mons.find(m => root.descOf(m) === id) : null;
+        if (byId) return byId.name;
         const want = Config.Appearance.mainDisplay;
-        const mons = Services.Compositor.monitors || [];
-        if (want !== "" && mons.some(m => m && m.name === want)) return want;
-        return mons.length > 0 && mons[0] ? mons[0].name : "";
+        if (want !== "" && mons.some(m => m.name === want)) return want;
+        return mons.length > 0 ? mons[0].name : "";
+    }
+    // Hyprland's selector for it: by description when known, so the rule
+    // follows the monitor rather than the port.
+    function mainSelector() {
+        const id = Config.Appearance.mainDisplayId;
+        return id !== "" ? "desc:" + id : Config.Appearance.mainDisplay;
     }
 
     function setMainDisplay(name) {
+        const m = (Services.Compositor.monitors || []).find(o => o && o.name === name);
         Config.Appearance.mainDisplay = name;
+        Config.Appearance.mainDisplayId = name !== "" && m ? root.descOf(m) : "";
         root.writeMainDisplay();
-        if (name === "") return;
+        if (name !== "") root.makeMain(name);
+    }
+
+    // Live, as hyprland.lua does it at login: the rule, workspace 1 moved
+    // over now, and the focus with it.
+    function makeMain(name) {
         const sel = Services.Compositor.luaSel(name);
-        // Live, as hyprland.lua will do it at the next login: the rule,
-        // workspace 1 moved over now, and the focus with it.
-        Services.Compositor.evalLua("hl.workspace_rule({ workspace = \"1\", monitor = " + sel + ", default = true })");
+        Services.Compositor.evalLua("hl.workspace_rule({ workspace = \"1\", monitor = "
+                                    + Services.Compositor.luaSel(root.mainSelector()) + ", default = true })");
         Services.Compositor.dispatch("hl.dsp.workspace.move({ workspace = 1, monitor = " + sel + " })");
         Services.Compositor.dispatch("hl.dsp.focus({ monitor = " + sel + " })");
+    }
+
+    // The chosen monitor plugged back in: main again. Only on its coming
+    // back — not on every change, which would pull workspace 1 about.
+    property bool mainWasHere: true
+    function checkMainBack() {
+        const id = Config.Appearance.mainDisplayId;
+        if (id === "") return;
+        const m = (Services.Compositor.monitors || []).find(o => o && root.descOf(o) === id);
+        if (m && !root.mainWasHere) {
+            if (Config.Appearance.mainDisplay !== m.name) {
+                Config.Appearance.mainDisplay = m.name;
+                root.writeMainDisplay();
+            }
+            root.makeMain(m.name);
+        }
+        root.mainWasHere = !!m;
+    }
+    Timer { id: mainBack; interval: 900; onTriggered: root.checkMainBack() }
+
+    // ── the lid ───────────────────────────────────────────────────────────
+    // Closed, with another monitor plugged in: the built-in screen goes
+    // off, its windows and workspaces move to the others, and the main
+    // display (or the first other monitor) takes over — the way a docked
+    // laptop works anywhere else. Opened, or the last other monitor
+    // unplugged: it comes back, as it was set up. Re-checked after a config
+    // reload, which would otherwise switch it back on with the lid shut.
+    property bool lidPresent: false
+    property bool lidClosed: false
+    function isBuiltIn(name) { return /^(eDP|LVDS|DSI)/.test(String(name || "")); }
+    function applyLid() {
+        const mons = (Services.Compositor.monitors || []).filter(m => !!m);
+        const panel = mons.find(m => root.isBuiltIn(m.name));
+        const others = mons.filter(m => !root.isBuiltIn(m.name));
+        if (panel) Config.Appearance.lidPanel = panel.name;
+        const name = Config.Appearance.lidPanel;
+        const off = Config.Appearance.lidScreenOff && root.lidPresent && root.lidClosed && others.length > 0;
+        if (off && panel) {
+            Services.Compositor.evalLua("hl.monitor({ output = " + Services.Compositor.luaSel(panel.name) + ", disabled = true })");
+            Config.Appearance.lidPanelOff = true;
+            // The main display if it is one of the others, else the first.
+            const to = others.find(m => m.name === root.mainDisplay) || others[0];
+            Services.Compositor.dispatch("hl.dsp.focus({ monitor = " + Services.Compositor.luaSel(to.name) + " })");
+        } else if (!off && !panel && Config.Appearance.lidPanelOff && name !== "") {
+            const want = root.displayMap()[name] || ({});
+            const spec = { output: name, mode: want.mode || "preferred", position: want.position || "auto", scale: want.scale || "auto" };
+            for (const k of root.monitorFields) if (want[k] !== undefined) spec[k] = want[k];
+            Services.Compositor.setMonitor(spec);
+            Config.Appearance.lidPanelOff = false;
+        } else if (panel && !off) {
+            Config.Appearance.lidPanelOff = false;
+        }
+    }
+    Timer { id: lidSettle; interval: 700; onTriggered: root.applyLid() }
+    Connections {
+        target: Services.Daemon
+        function onEvent(ev) {
+            if (ev.ev !== "lid") return;
+            root.lidPresent = !!ev.present;
+            root.lidClosed = !!ev.closed;
+            lidSettle.restart();
+        }
+    }
+    Connections {
+        target: Services.Compositor
+        function onOutputsChanged() { lidSettle.restart(); mainBack.restart(); }
+        function onConfigReloaded() { lidSettle.restart(); }
+    }
+    Connections {
+        target: Config.Appearance
+        function onLidScreenOffChanged() { lidSettle.restart(); }
     }
 
     // Where hyprland.lua reads it at login. Written on every start too, so
@@ -649,7 +744,7 @@ Singleton {
         mainProc.command = ["sh", "-c",
             'd="${XDG_STATE_HOME:-$HOME/.local/state}/hyprshell"; mkdir -p "$d" || exit 0; '
           + 'if [ -n "$1" ]; then printf "%s\\n" "$1" > "$d/main-display"; else rm -f "$d/main-display"; fi',
-            "sh", Config.Appearance.mainDisplay];
+            "sh", Config.Appearance.mainDisplay === "" ? "" : root.mainSelector()];
         mainProc.running = true;
     }
     Process { id: mainProc }

@@ -470,7 +470,7 @@ PanelSurface {
             StyledText {
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: frame.app.paneMeta[frame.app.pane].note
+                text: (frame.app.paneMeta[frame.app.pane] || ({})).note || ""
                 font.pixelSize: Config.Appearance.fs(13)
                 font.weight: Font.Normal
                 color: Config.Appearance.ink3
