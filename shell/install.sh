@@ -739,6 +739,8 @@ if [ "$MODE" = shell-only ]; then
       layerrule = blur, ^(quickshell:panel)\$
       layerrule = blur, ^(quickshell:launcher)\$
       layerrule = noanim, ^(quickshell:launcher)\$
+      layerrule = blur, ^(quickshell:polkit)\$
+      layerrule = ignorealpha 0.38, ^(quickshell:polkit)\$
       layerrule = blur, ^(quickshell:overview)\$
 EOF
 fi

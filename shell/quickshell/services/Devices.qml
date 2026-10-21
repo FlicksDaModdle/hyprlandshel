@@ -263,6 +263,9 @@ Singleton {
             lua += 'hl.layer_rule({ name = "blur-quickshell-' + n + '", match = { namespace = "^quickshell:' + n + '$" }, '
                  + 'blur = true, ignore_alpha = 0.15, xray = ' + xray + ' }) ';
         }
+        // The password prompt's card (hyprland.lua says why it differs).
+        lua += 'hl.layer_rule({ name = "blur-quickshell-polkit", match = { namespace = "^quickshell:polkit$" }, '
+             + 'blur = true, ignore_alpha = 0.38 }) ';
         Services.Compositor.evalLua(lua);
         // The launcher animates itself (hyprland.lua says why); sent on its
         // own, so a Hyprland without the field still gets the blur above.

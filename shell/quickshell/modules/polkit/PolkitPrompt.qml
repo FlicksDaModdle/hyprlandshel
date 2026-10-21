@@ -74,7 +74,7 @@ Scope {
             anchors { top: true; bottom: true; left: true; right: true }
             exclusionMode: ExclusionMode.Ignore
             color: "transparent"
-            WlrLayershell.namespace: "hyprshell-polkit"
+            WlrLayershell.namespace: "quickshell:polkit"
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
@@ -82,17 +82,18 @@ Scope {
 
             Rectangle {
                 anchors.fill: parent
-                color: Qt.rgba(0, 0, 0, 0.45)
+                // Under 0.38 (the blur rule's ignore_alpha), so only the
+                // card, never under 0.44 opaque, is blurred.
+                color: Qt.rgba(0, 0, 0, 0.3)
                 MouseArea { anchors.fill: parent }    // a click outside is not "cancel"
             }
 
             PanelSurface {
                 id: card
                 anchors.centerIn: parent
-                // Opaque: this layer has no compositor blur behind it, so the
-                // translucent panel colour showed whatever was under the
-                // prompt, sharp, through its text.
-                color: Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g, Config.Appearance.panel.b, 1)
+                // The panel's own glass: Hyprland blurs behind the card
+                // (the "polkit" layer rule in hyprland.lua) and not behind
+                // the dimming, which is kept below the rule's cut-off.
                 width: 420
                 height: body.implicitHeight + 44
 

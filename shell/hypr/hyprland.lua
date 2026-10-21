@@ -418,6 +418,15 @@ for name, xray in pairs(shell_layers) do
     })
 end
 
+-- The password prompt: blurred behind its card only. The dimming around it
+-- is drawn at 0.3 alpha, under this cut-off; the card never goes below 0.44.
+hl.layer_rule({
+    name         = "blur-quickshell-polkit",
+    match        = { namespace = "^quickshell:polkit$" },
+    blur         = true,
+    ignore_alpha = 0.38,
+})
+
 -- The launcher draws its own opening and closing, out of the dock and
 -- back into it; a compositor fade on top of that is a second movement
 -- over the first, and the dock flickers at both ends.
