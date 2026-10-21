@@ -161,22 +161,36 @@ Singleton {
     function setCamera(path) { run(["--camera", path], "Switching camera…", "Howdy uses " + path); }
     // The camera can be open in one place at a time: the preview lets go
     // before Howdy takes it, and comes back when Howdy is done.
+    // Windows Hello's way: the webcam shows you while the infrared camera
+    // records. With only the one camera, or a laptop whose two can't
+    // stream at once (Howdy fails to open its camera while the webcam
+    // runs), Howdy records alone.
     function addFace(alt) {
         if (root.busy) return;
-        // Windows Hello's way: the ordinary camera shows you while the
-        // infrared one records. With only the one camera, it has to let go.
-        if (root.previewShared) {
-            root.resumePreview = root.previewing;
-            root.stopPreview();
-        } else {
-            root.startPreview();
-        }
+        root.addAlt = alt;
+        root.addingAlone = root.previewShared || root.previewDevice === "";
         root.addFailed = false;
-        runProc.adding = true;
-        run(alt ? ["--add-face", "--alt"] : ["--add-face"],
-            "Hold still and look at the camera…",
-            alt ? "Your alternative look is added" : "Your face is added");
+        root.justAdded = false;
+        root.startAdding();
     }
+    function startAdding() {
+        if (root.addingAlone) root.stopPreview();
+        else root.startPreview();
+        runProc.adding = true;
+        run(root.addAlt ? ["--add-face", "--alt"] : ["--add-face"],
+            "Hold still and look at the camera…",
+            root.addAlt ? "Your alternative look is added" : "Your face is added");
+    }
+    property bool addAlt: false
+    property bool addingAlone: false
+    // Tried alone once per add, no more.
+    property bool retriedAlone: false
+    Timer {
+        id: retryAlone
+        interval: 500
+        onTriggered: { root.busy = false; root.startAdding(); }
+    }
+
     function removeLook(id) { run(["--remove-face", String(id)], "Removing that look…", "That look is removed"); }
     function clearFaces() { run(["--clear-faces"], "Removing your faces…", "Your faces are removed"); }
 
@@ -189,10 +203,25 @@ Singleton {
         onExited: code => {
             root.busy = false;
             root.refresh();
-            if (root.resumePreview) { root.resumePreview = false; root.startPreview(); }
             const adding = runProc.adding;
             runProc.adding = false;
-            if (adding && code !== 0) { root.addFailed = true; addFailedClear.restart(); }
+            const said = (runErr.text.trim() || runOut.text.trim()).split("\n").filter(l => l.trim() !== "");
+            // The webcam in Howdy's way: again, with the webcam off.
+            if (adding && code !== 0 && code !== 126 && code !== 127 && !root.addingAlone && !root.retriedAlone
+                    && /camera|device|video|frame|open/i.test(said.join(" "))) {
+                root.retriedAlone = true;
+                root.addingAlone = true;
+                root.stopPreview();
+                root.busy = true;
+                runProc.adding = true;
+                root.status = "Trying again with the webcam off…";
+                retryAlone.restart();
+                return;
+            }
+            if (adding) {
+                root.retriedAlone = false;
+                if (code !== 0) { root.addFailed = true; addFailedClear.restart(); }
+            }
             if (code === 0) {
                 root.status = runProc.done;
                 if (adding) { root.justAdded = true; justAddedClear.restart(); }
@@ -201,7 +230,6 @@ Singleton {
             root.failed = true;
             // pkexec: 126 a dismissed or wrong password, 127 not allowed.
             if (code === 126 || code === 127) { root.status = "Not changed: the password wasn't given"; return; }
-            const said = (runErr.text.trim() || runOut.text.trim()).split("\n").filter(l => l.trim() !== "");
             root.status = (said.length ? said[said.length - 1] : "That didn't work").replace(/^howdy-setup\.sh: /, "");
         }
     }
@@ -224,12 +252,11 @@ Singleton {
                                           || !!root.cameras.find(c => c.ir && c.path === root.previewDevice)
     readonly property bool adding: root.busy && runProc.adding
     property bool addFailed: false
-    Timer { id: addFailedClear; interval: 2500; onTriggered: root.addFailed = false }
+    Timer { id: addFailedClear; interval: 4000; onTriggered: { root.addFailed = false; if (!root.busy) root.stopPreview(); } }
     readonly property bool previewing: previewProc.running
-    property bool resumePreview: false
     // A look was just added: the panel's frame shows the tick a moment.
     property bool justAdded: false
-    Timer { id: justAddedClear; interval: 2500; onTriggered: root.justAdded = false }
+    Timer { id: justAddedClear; interval: 2500; onTriggered: { root.justAdded = false; if (!root.busy) root.stopPreview(); } }
     property int previewFrame: 0
     property string previewError: ""
     // Small and compressed first (MJPEG, 640 × 480): the webcam and the
@@ -270,7 +297,7 @@ Singleton {
             }
             // Lost while Howdy records (the camera busy a moment): back as
             // soon as it can be.
-            if (root.adding && !root.previewShared) { previewKeep.restart(); return; }
+            if (root.adding && !root.addingAlone) { previewKeep.restart(); return; }
             if (code !== 0 && previewErr.text.trim() !== "")
                 root.previewError = previewErr.text.trim().split("\n").pop();
         }
@@ -278,7 +305,7 @@ Singleton {
     Timer {
         id: previewKeep
         interval: 700
-        onTriggered: if (root.adding || root.justAdded) root.startPreview()
+        onTriggered: if (root.adding && !root.addingAlone) root.startPreview()
     }
     // A new frame to show, while it runs.
     Timer { interval: 90; repeat: true; running: previewProc.running; onTriggered: root.previewFrame++ }

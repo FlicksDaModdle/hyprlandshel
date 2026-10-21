@@ -100,6 +100,9 @@ ShellRoot {
 
     // And Battery saver, which has no surface and acts on its own.
     readonly property bool powerSaverStarted: Services.PowerSaver.active || true
+    // Opens the keyring after a login with your face, if its password is
+    // sealed for that (Settings → Login screen → Keyring).
+    readonly property bool faceKeyringStarted: Services.FaceKeyring.stored || true
 
     // Shell shortcuts, registered with the compositor over
     // hyprland-global-shortcuts-v1, so anything on the session can dispatch

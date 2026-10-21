@@ -2025,7 +2025,7 @@ Scope {
                         set: v => { const k = labels.indexOf(v); if (k >= 0) F.setCamera(F.cameras[k].path); } });
         }
         rows.push({ type: "header", n: "Your face",
-                    s: "See yourself through the webcam while Howdy learns your face through the infrared camera, "
+                    s: "Howdy learns your face through the infrared camera while the webcam shows you, "
                        + "and the looks it knows you by" });
         rows.push({ type: "panel", panel: "face" });
         if (F.faces !== 0)
@@ -2037,15 +2037,58 @@ Scope {
         if (F.status !== "")
             rows.push({ n: F.busy ? "Working…" : (F.failed ? "That didn't work" : "Done"), s: F.status,
                         type: "info", value: "" });
-        rows.push({ n: "Keyring",
-                    s: "A face login can't unlock the keyring, which needs the password itself: the first app "
-                       + "that wants it afterwards asks for your password once",
-                    type: "info", value: "" });
+        for (const r of root.keyringRows()) rows.push(r);
         rows.push({ type: "header", n: "Login screen" });
         rows.push({ n: "Hyprshell's login screen",
                     s: F.greeterInstalled ? "Installed; it follows your theme, wallpaper, screens and pointer"
                                           : "Not installed: sudo greeter/install.sh in Hyprshell's folder",
                     type: "info", value: F.greeterInstalled ? "Installed" : "Not installed" });
+        return rows;
+    }
+
+    // Settings → Login screen → Keyring: its password sealed with the TPM,
+    // to open it after a face login (services/FaceKeyring.qml).
+    property bool keyringAsking: false
+    Connections {
+        target: Services.FaceKeyring
+        function onStoredChanged() { if (Services.FaceKeyring.stored) root.keyringAsking = false; }
+    }
+    function keyringRows() {
+        const K = Services.FaceKeyring;
+        const rows = [{ type: "header", n: "Keyring",
+                        s: "Your saved passwords. A face login has no password to open them with, "
+                           + "unless the laptop keeps it for you, sealed with its TPM" }];
+        if (!K.probed) return rows;
+        if (!K.available) {
+            rows.push({ n: "Unlock the keyring with my face", type: "info", value: "Not available",
+                        s: !K.keyringInstalled ? "GNOME Keyring isn't installed"
+                           : !K.tpm ? "This needs a TPM, and none was found: is it turned on in the firmware?"
+                           : "This needs systemd 256 or newer (this is " + K.credsVersion + ")" });
+            return rows;
+        }
+        rows.push({ n: "Unlock the keyring with my face",
+                    s: K.stored ? "Its password is sealed with this laptop's TPM, and opens it after a face login"
+                       : root.keyringAsking ? "Type the keyring's password below to turn it on"
+                       : "Off: after a face login, the first app that needs the keyring asks for your password",
+                    type: "toggle", value: K.stored || root.keyringAsking,
+                    set: v => {
+                        if (v) { root.keyringAsking = true; return; }
+                        root.keyringAsking = false;
+                        if (K.stored) K.forget();
+                    } });
+        if (root.keyringAsking && !K.stored)
+            rows.push({ n: "Your keyring's password",
+                        s: "Usually your login password. The keyring checks it first; then it's sealed with the TPM, "
+                           + "never stored readable",
+                        type: "text", secret: true, placeholder: "Password",
+                        label: K.busy ? "Checking…" : "Store", set: v => K.store(v) });
+        if (K.status !== "")
+            rows.push({ n: K.busy ? "Working…" : (K.failed ? "That didn't work" : "Done"), s: K.status,
+                        type: "info", value: "" });
+        rows.push({ n: "How safe it is", type: "info", value: "",
+                    s: "The sealed password opens only on this laptop, never from a copied disk or a backup. "
+                       + "Programs running as you could unseal it, but they can already read an open keyring. "
+                       + "It makes your saved passwords as safe as Howdy, which is easier to fool than a password" });
         return rows;
     }
 

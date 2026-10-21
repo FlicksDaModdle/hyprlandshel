@@ -58,13 +58,6 @@ Column {
                 asynchronous: false
                 source: root.face.previewing ? "file://" + root.face.previewFile + "?" + root.face.previewFrame : ""
             }
-            // Howdy has the only camera: the picture holds still, dimmed.
-            Rectangle {
-                anchors.fill: parent
-                visible: root.seeing
-                color: "black"
-                opacity: root.face.adding && root.face.previewShared ? 0.45 : 0
-            }
         }
 
         // The lens around the circle: still while nothing happens, turning
@@ -92,7 +85,6 @@ Column {
                 text: root.face.justAdded ? "All set"
                     : root.face.addFailed ? "Howdy didn't get a good look"
                     : root.face.adding ? "Keep looking at the camera"
-                    : root.face.previewing ? "Centre your face in the circle"
                     : root.face.faces > 0 ? "Howdy knows your face" : "Set up your face"
                 font.pixelSize: Config.Appearance.fs(16)
                 font.weight: Font.DemiBold
@@ -105,26 +97,16 @@ Column {
                 maximumLineCount: 2
                 elide: Text.ElideRight
                 text: root.face.addFailed ? root.face.status
-                    : root.face.adding ? (root.face.previewShared
-                        ? "The infrared camera is recording: the picture waits until it's done"
-                        : "The infrared camera beside it is learning your face. Hold still, an arm's length away")
-                    : root.face.previewError !== "" ? root.face.previewError
-                    : root.face.previewing ? "Then add your face: it takes a few seconds"
+                    : root.face.adding ? (root.face.addingAlone
+                        ? "The infrared camera is learning your face. The webcam can't run beside it on this laptop"
+                        : root.seeing ? "The infrared camera is learning your face. Hold still, an arm's length away"
+                        : root.face.previewError !== "" ? root.face.previewError
+                        : "Starting the webcam…")
                     : root.face.faces > 0 ? "It unlocks for you at a glance. Wear glasses sometimes? Add that as an alternative look"
                     : "Add your face and Howdy unlocks for you at a glance"
                 font.pixelSize: Config.Appearance.fs(12)
                 color: Qt.rgba(1, 1, 1, 0.7)
             }
-        }
-
-        // The camera, on and off.
-        NetButton {
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 12
-            visible: !root.face.adding && root.face.previewDevice !== ""
-            label: root.face.previewing ? "Hide the camera" : "Show the camera"
-            onClicked: root.face.previewing ? root.face.stopPreview() : root.face.startPreview()
         }
     }
 
