@@ -72,6 +72,11 @@ Scope {
                 anchors.fill: parent
 
                 auth: lockAuth
+            // Another monitor's surface has the keys: typing works there.
+            keyboardElsewhere: lockAuth.keyboardSomewhere && !windowActive
+            onWindowActiveChanged: lockAuth.setKeyboard(screenName, windowActive)
+            Component.onCompleted: lockAuth.setKeyboard(screenName, windowActive)
+            Component.onDestruction: lockAuth.setKeyboard(screenName, false)
                 screen: surface.screen
                 // The desktop's wallpaper, carried on from where it is now — the
                 // same settings are read from the theme; this is the moment.

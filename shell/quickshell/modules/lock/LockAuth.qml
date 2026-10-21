@@ -23,6 +23,17 @@ Scope {
 
     signal rejected()
 
+    // Which monitors' lock surfaces the compositor has given the keyboard,
+    // by screen name; each surface reports its own.
+    property var keyboardOn: ({})
+    readonly property bool keyboardSomewhere: Object.keys(keyboardOn).some(k => keyboardOn[k])
+    function setKeyboard(screen, has) {
+        const next = Object.assign({}, keyboardOn);
+        next[screen] = has;
+        keyboardOn = next;
+    }
+    onBusyChanged: console.info("lock: " + (busy ? "checking the password" : "done checking"))
+
     function reset() {
         entered = "";
         status = "";

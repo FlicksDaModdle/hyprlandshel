@@ -150,7 +150,37 @@ Item {
     }
 
     readonly property bool windowActive: Window.active
-    onWindowActiveChanged: if (windowActive) takeKeys()
+    onWindowActiveChanged: {
+        console.info("login view: window " + (windowActive ? "has" : "lost") + " the keyboard (" + view.screenName + ")");
+        if (windowActive) takeKeys();
+    }
+    readonly property string screenName: view.screen ? String(view.screen.name) : "?"
+
+    // When the compositor never gives this screen the keyboard, nothing in
+    // here can take it: Wayland decides which surface keys go to. Rather
+    // than a field that silently ignores you, it says so, and how to get it
+    // back. The lock screen sets keyboardElsewhere when another monitor's
+    // surface has the keys (typing still works there: they share one
+    // password).
+    property bool keyboardElsewhere: false
+    readonly property bool keyboardAbsent: view.primary && view.visible && !view.windowActive && !view.keyboardElsewhere
+    // The compositor's word can lag behind its keys (and keys are the
+    // proof): any key that arrives clears it, and it waits three seconds
+    // without one before saying anything.
+    property bool keyboardMissing: false
+    property double lastKey: 0
+    Timer {
+        interval: 3000
+        repeat: true
+        running: view.keyboardAbsent && !view.keyboardMissing
+        onTriggered: {
+            if (Date.now() - view.lastKey < interval) return;
+            view.keyboardMissing = true;
+            console.warn("login view: no keyboard reached the screen for 3 s (" + view.screenName + ")");
+        }
+    }
+    onKeyboardAbsentChanged: if (!keyboardAbsent) keyboardMissing = false
+    readonly property string keyboardHint: "Your keyboard isn't reaching this screen. Press Ctrl+Alt+F3, then Ctrl+Alt+F1, to hand it back."
     onVisibleChanged: if (visible) takeKeys()
 
     // Passive: it sees every press without taking it from the buttons.
@@ -176,7 +206,10 @@ Item {
         anchors.fill: parent
         focus: view.primary
         Component.onCompleted: if (view.primary) forceActiveFocus()
-        onActiveFocusChanged: if (!activeFocus && view.primary) refocus.restart()
+        onActiveFocusChanged: {
+            console.info("login view: password " + (activeFocus ? "has" : "lost") + " the keys (" + view.screenName + ")");
+            if (!activeFocus && view.primary) refocus.restart();
+        }
         // The greeter's card moves to whichever screen you point at, and
         // the typing comes with it.
         Connections {
@@ -187,7 +220,12 @@ Item {
         Keys.onPressed: event => {
             const a = view.auth;
             event.accepted = true;
-            if (a.busy) return;
+            view.lastKey = Date.now();
+            view.keyboardMissing = false;
+            if (a.busy) {
+                console.info("login view: a key while checking the password, ignored");
+                return;
+            }
             if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) a.submit();
             else if (event.key === Qt.Key_Backspace) { a.entered = a.entered.slice(0, -1); a.status = ""; }
             else if (event.key === Qt.Key_Escape) {
@@ -545,9 +583,9 @@ Item {
                 height: Math.max(16, implicitHeight)
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
-                text: view.statusText
+                text: view.keyboardMissing ? view.keyboardHint : view.statusText
                 font.pixelSize: view.ap.fs(12)
-                color: view.auth.failed ? view.ap.accent : view.ap.ink3
+                color: view.auth.failed || view.keyboardMissing ? view.ap.accent : view.ap.ink3
             }
         }
     }
