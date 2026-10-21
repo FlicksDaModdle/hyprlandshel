@@ -133,7 +133,10 @@ Item {
     }
 
     // ── typing ────────────────────────────────────────────────────────────
-    // Keys go straight to the password: there is no field to click first.
+    // The password is a real text field (`keys`, in the card below): a
+    // cursor you can move, selection with the mouse or Shift, Ctrl+A,
+    // Ctrl+Backspace, Home/End, paste. It has the keyboard from the start,
+    // so there is still nothing to click first.
     //
     // And the keyboard is taken back whenever it could have gone astray,
     // because a login screen that stops listening can only be got out of by
@@ -201,47 +204,11 @@ Item {
         onTriggered: view.takeKeys()
     }
 
-    FocusScope {
-        id: keys
-        anchors.fill: parent
-        focus: view.primary
-        Component.onCompleted: if (view.primary) forceActiveFocus()
-        onActiveFocusChanged: {
-            console.info("login view: password " + (activeFocus ? "has" : "lost") + " the keys (" + view.screenName + ")");
-            if (!activeFocus && view.primary) refocus.restart();
-        }
-        // The greeter's card moves to whichever screen you point at, and
-        // the typing comes with it.
-        Connections {
-            target: view
-            function onPrimaryChanged() { if (view.primary) keys.forceActiveFocus(); }
-        }
-
-        Keys.onPressed: event => {
-            const a = view.auth;
-            event.accepted = true;
-            view.lastKey = Date.now();
-            view.keyboardMissing = false;
-            if (a.busy) {
-                console.info("login view: a key while checking the password, ignored");
-                return;
-            }
-            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) a.submit();
-            else if (event.key === Qt.Key_Backspace) { a.entered = a.entered.slice(0, -1); a.status = ""; }
-            else if (event.key === Qt.Key_Escape) {
-                if (a.entered === "") view.escapeOnEmpty();
-                a.entered = ""; a.status = "";
-            }
-            else if (event.key === Qt.Key_Up && view.canStepUser) view.stepUser(-1);
-            else if (event.key === Qt.Key_Down && view.canStepUser) view.stepUser(1);
-            else if (event.key === Qt.Key_Tab && view.canStepSession)
-                view.stepSession(event.modifiers & Qt.ShiftModifier ? -1 : 1);
-            else if (event.text.length > 0 && event.text.charCodeAt(0) >= 32) {
-                a.entered += event.text;
-                a.failed = false;
-                a.status = "";
-            } else event.accepted = false;
-        }
+    // The greeter's card moves to whichever screen you point at, and the
+    // typing comes with it.
+    Connections {
+        target: view
+        function onPrimaryChanged() { if (view.primary) keys.forceActiveFocus(); }
     }
 
     // ── clock ─────────────────────────────────────────────────────────────
@@ -451,60 +418,128 @@ Item {
 
                 readonly property bool shown: view.reveal || (!!view.auth.prompt && !!view.auth.promptEcho)
 
-                StyledText {
-                    id: typed
+                TextInput {
+                    id: keys
                     anchors.left: parent.left
                     anchors.leftMargin: 20
                     anchors.right: eye.left
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
-                    elide: Text.ElideLeft
-                    text: field.shown ? view.auth.entered
-                          : "•".repeat(Math.min(view.auth.entered.length, 22))
+                    height: 30
+                    verticalAlignment: TextInput.AlignVCenter
+                    clip: true
+                    focus: view.primary
+                    enabled: view.primary
+                    readOnly: view.auth.busy
+                    echoMode: field.shown ? TextInput.Normal : TextInput.Password
+                    passwordCharacter: "•"
+                    passwordMaskDelay: 0
+                    inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+                                      | Qt.ImhNoAutoUppercase | (field.shown ? 0 : Qt.ImhHiddenText)
+                    selectByMouse: true
+                    // Kept if the window loses the keyboard for a moment.
+                    persistentSelection: true
+                    mouseSelectionMode: TextInput.SelectCharacters
+                    font.family: view.ap.fontFamily
                     font.pixelSize: view.ap.fs(field.shown ? 14 : 18)
-                    font.letterSpacing: field.shown ? 0 : 5
+                    font.letterSpacing: field.shown ? 0 : 3
                     color: view.ap.ink
+                    selectionColor: Qt.rgba(view.ap.accent.r, view.ap.accent.g, view.ap.accent.b, 0.45)
+                    selectedTextColor: view.ap.ink
+
+                    Component.onCompleted: {
+                        text = view.auth.entered;
+                        if (view.primary) forceActiveFocus();
+                    }
+                    // Both ways: typed here, it is the password; cleared
+                    // or set by the caller (a refused attempt, another
+                    // monitor's field), it shows here.
+                    onTextEdited: {
+                        view.auth.entered = text;
+                        view.auth.failed = false;
+                        view.auth.status = "";
+                    }
+                    Connections {
+                        target: view.auth
+                        function onEnteredChanged() {
+                            if (keys.text !== view.auth.entered) keys.text = view.auth.entered;
+                        }
+                    }
+
+                    onActiveFocusChanged: {
+                        console.info("login view: password " + (activeFocus ? "has" : "lost") + " the keys (" + view.screenName + ")");
+                        if (!activeFocus && view.primary) refocus.restart();
+                    }
+
+                    // What the screen does with a key, before the field
+                    // does its own editing with it.
+                    Keys.onPressed: event => {
+                        const a = view.auth;
+                        view.lastKey = Date.now();
+                        view.keyboardMissing = false;
+                        if (a.busy) {
+                            console.info("login view: a key while checking the password, ignored");
+                            event.accepted = true;
+                            return;
+                        }
+                        const plain = !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier));
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) a.submit();
+                        else if (event.key === Qt.Key_Escape) {
+                            if (keys.selectedText.length > 0) keys.deselect();
+                            else {
+                                if (a.entered === "") view.escapeOnEmpty();
+                                a.entered = ""; a.status = "";
+                            }
+                        }
+                        else if (plain && event.key === Qt.Key_Up && view.canStepUser) view.stepUser(-1);
+                        else if (plain && event.key === Qt.Key_Down && view.canStepUser) view.stepUser(1);
+                        else if (event.key === Qt.Key_Tab && view.canStepSession) view.stepSession(1);
+                        else if (event.key === Qt.Key_Backtab && view.canStepSession) view.stepSession(-1);
+                        // Said here, not left to the field: over some
+                        // keyboard layouts and virtual keyboards Qt doesn't
+                        // match Ctrl+A to Select All in a password field.
+                        else if (event.matches(StandardKey.SelectAll)
+                                 || (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)))
+                            keys.selectAll();
+                        else { event.accepted = false; return; }
+                        event.accepted = true;
+                    }
+
+                    // The text cursor: the accent's, blinking, solid again
+                    // whenever it moves; hidden while there is a selection
+                    // or a check is under way.
+                    cursorDelegate: Rectangle {
+                        id: caret
+                        width: 2
+                        radius: 1
+                        color: view.ap.accent
+                        visible: keys.activeFocus && !view.auth.busy && keys.selectedText.length === 0
+                        SequentialAnimation on opacity {
+                            id: blink
+                            running: caret.visible
+                            loops: Animation.Infinite
+                            PropertyAction { value: 1 }
+                            PauseAnimation { duration: 530 }
+                            PropertyAction { value: 0 }
+                            PauseAnimation { duration: 530 }
+                        }
+                        Connections {
+                            target: keys
+                            function onCursorPositionChanged() { if (caret.visible) blink.restart(); }
+                            function onTextChanged() { if (caret.visible) blink.restart(); }
+                        }
+                    }
                 }
                 StyledText {
                     anchors.left: parent.left
                     anchors.leftMargin: 22
                     anchors.right: eye.left
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: view.auth.entered.length === 0
+                    visible: keys.text.length === 0
                     elide: Text.ElideRight
                     text: view.auth.busy ? "Checking…" : (view.auth.prompt || "Password")
                     font.pixelSize: view.ap.fs(13.5)
                     color: view.ap.ink3
-                }
-
-                // The text cursor: after what has been typed, blinking, and
-                // solid again at every key — while the field has the
-                // keyboard and is not busy checking.
-                Rectangle {
-                    id: caret
-                    readonly property real after: typed.text.length === 0 ? 0
-                        : typed.contentWidth - (field.shown ? 0 : typed.font.letterSpacing) + 2
-                    x: Math.min(typed.x + after, eye.x - 6)
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 2
-                    height: 20
-                    radius: 1
-                    color: view.ap.accent
-                    visible: keys.activeFocus && !view.auth.busy
-
-                    SequentialAnimation on opacity {
-                        id: blink
-                        running: caret.visible
-                        loops: Animation.Infinite
-                        PropertyAction { value: 1 }
-                        PauseAnimation { duration: 530 }
-                        PropertyAction { value: 0 }
-                        PauseAnimation { duration: 530 }
-                    }
-                    Connections {
-                        target: typed
-                        function onTextChanged() { if (caret.visible) blink.restart(); }
-                    }
                 }
 
                 // Show what was typed — a password typed blind is the
