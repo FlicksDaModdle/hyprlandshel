@@ -60,6 +60,13 @@ Singleton {
         return { w: Math.round(w * k / 2) * 2, h: Math.round(h * k / 2) * 2 };
     }
 
+    // The main display's native mode, for the boot menu to run at.
+    readonly property string resolution: {
+        const o = root.monitor ? (root.monitor.lastIpcObject || ({})) : ({});
+        const w = Math.round(Number(o.width) || 0), h = Math.round(Number(o.height) || 0);
+        return w > 0 && h > 0 ? w + "x" + h : "";
+    }
+
     function hex(c) {
         const two = v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0");
         return two(c.r) + two(c.g) + two(c.b);
@@ -197,9 +204,10 @@ Singleton {
         console.log("BootTheme: colours", root.hex(c.accent), root.hex(c.background), root.hex(c.foreground));
         // Dark ground and light text whatever the desktop's mode: the menu
         // is read over a picture, at boot, often in the dark.
-        runProc.command = ["sh", "-c", 'exec pkexec "$1" --accent "$2" --background "$3" --foreground "$4" < "$5"',
+        runProc.command = ["sh", "-c",
+                           'exec pkexec "$1" --accent "$2" --background "$3" --foreground "$4" ${6:+--resolution "$6"} < "$5"',
                            "boot-theme", root.helper, root.hex(c.accent), root.hex(Qt.color(c.background)),
-                           root.hex(Qt.color(c.foreground)), root.still];
+                           root.hex(Qt.color(c.foreground)), root.still, root.resolution];
         runProc.running = true;
     }
     function remove() {

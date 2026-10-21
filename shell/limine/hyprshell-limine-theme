@@ -2,7 +2,8 @@
 # hyprshell-limine-theme — your desktop's wallpaper and colours in the Limine
 # boot menu.
 #
-#   hyprshell-limine-theme --accent RRGGBB --background RRGGBB --foreground RRGGBB < still.png
+#   hyprshell-limine-theme --accent RRGGBB --background RRGGBB --foreground RRGGBB \
+#                          [--resolution WIDTHxHEIGHT] < still.png
 #   hyprshell-limine-theme --remove
 #   hyprshell-limine-theme --check
 #
@@ -28,12 +29,13 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 die() { printf 'hyprshell-limine-theme: %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "needs to run as root"
 
-mode=apply accent="" background="" foreground=""
+mode=apply accent="" background="" foreground="" resolution=""
 while [ $# -gt 0 ]; do
     case $1 in
         --accent)     [ $# -ge 2 ] || die "--accent needs a colour"; accent=$2; shift ;;
         --background) [ $# -ge 2 ] || die "--background needs a colour"; background=$2; shift ;;
         --foreground) [ $# -ge 2 ] || die "--foreground needs a colour"; foreground=$2; shift ;;
+        --resolution) [ $# -ge 2 ] || die "--resolution needs WIDTHxHEIGHT"; resolution=$2; shift ;;
         --remove)     mode=remove ;;
         --check)      mode=check ;;
         *)            die "unknown option: $1" ;;
@@ -86,6 +88,9 @@ awk '/^# >>> hyprshell/ { skip = 1; next }
 
 if [ "$mode" = apply ]; then
     colour "$accent"; colour "$background"; colour "$foreground"
+    if [ -n "$resolution" ]; then
+        [[ $resolution =~ ^[1-9][0-9]{2,4}x[1-9][0-9]{2,4}$ ]] || die "not a resolution (WIDTHxHEIGHT): $resolution"
+    fi
     # The picture: at most 16 MB, and a PNG (Limine reads PNG; the shell
     # converts whatever the wallpaper was).
     head -c $((16 * 1024 * 1024 + 1)) > "$work/wallpaper.png"
@@ -104,6 +109,10 @@ if [ "$mode" = apply ]; then
         echo "# >>> hyprshell: written by hyprshell-limine-theme (Settings → Wallpaper → Boot menu); replaced on every change"
         echo "wallpaper: boot():/hyprshell/wallpaper.png"
         echo "wallpaper_style: stretched"
+        # The screen's own resolution, so the menu fills it instead of
+        # sitting at the firmware's default with a black band beside it.
+        # (Limine falls back to its default if the firmware can't do it.)
+        [ -n "$resolution" ] && echo "interface_resolution: $resolution"
         echo "backdrop: $b"
         # No box behind the menu's text: fully transparent (the first two
         # digits are its transparency). The picture is blurred and darkened
