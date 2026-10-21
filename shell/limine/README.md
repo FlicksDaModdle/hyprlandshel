@@ -19,8 +19,13 @@ filled to the main display's size (at most 2560 wide). It goes to
 
 - writes it to `<boot partition>/hyprshell/wallpaper.png`;
 - puts a block of global options at the top of `limine.conf`, between
-  `# >>> hyprshell` and `# <<< hyprshell`: the wallpaper, a dark veil
-  behind the menu's text, and your accent for the title and highlights;
+  `# >>> hyprshell` and `# <<< hyprshell`: the wallpaper (blurred lightly
+  and darkened a touch, so the menu's text reads over it with no box
+  behind), colours taken from the wallpaper, and the font below;
+- writes the font, `fonts/hyprshell-boot-8x16.bin`, beside the picture:
+  Terminus Font's bold 16-pixel glyphs, reordered into the PC character
+  set Limine draws its menu with (`fonts/build.py` makes it; licence in
+  `fonts/OFL.txt`);
 - keeps `limine.conf` as it was before the first change beside it, as
   `limine.conf.hyprshell-orig`.
 

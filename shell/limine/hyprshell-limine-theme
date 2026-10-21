@@ -96,22 +96,33 @@ if [ "$mode" = apply ]; then
         || die "the picture isn't a PNG"
 
     a=${accent,,} b=${background,,} f=${foreground,,}
+    # The menu's font (install.sh puts it here; Terminus, see fonts/OFL.txt).
+    font=/usr/local/share/hyprshell/limine/hyprshell-boot-8x16.bin
+    usefont=0
+    [ -f "$font" ] && [ ! -L "$font" ] && [ "$(stat -c %s "$font")" -eq 4096 ] && usefont=1
     {
         echo "# >>> hyprshell: written by hyprshell-limine-theme (Settings → Wallpaper → Boot menu); replaced on every change"
         echo "wallpaper: boot():/hyprshell/wallpaper.png"
         echo "wallpaper_style: stretched"
         echo "backdrop: $b"
-        # A dark veil behind the menu's text, so it reads over any picture;
-        # the first two digits are its transparency.
-        echo "term_background: 60$b"
+        # No box behind the menu's text: fully transparent (the first two
+        # digits are its transparency). The picture is blurred and darkened
+        # a little instead, so the text reads over it.
+        echo "term_background: ff$b"
         echo "term_foreground: $f"
-        echo "term_background_bright: 60$b"
+        echo "term_background_bright: ff$b"
         echo "term_foreground_bright: $f"
-        # black red green brown blue magenta cyan grey: the accent in blue
-        # and cyan, which the menu uses for its title and highlights.
-        echo "term_palette: $b;e5534b;6bc46d;d6a24c;$a;c06fd6;$a;$f"
-        echo "term_palette_bright: $b;f47067;8ddb8c;e3b341;$a;dcbdfb;$a;ffffff"
+        echo "term_margin_gradient: 0"
+        # black red green brown blue magenta cyan grey. The menu draws its
+        # key hints in green, the kernel line in red and its title in cyan:
+        # all the accent here, so the menu is one colour and the text.
+        echo "term_palette: $b;$a;$a;d6a24c;$a;c06fd6;$a;$f"
+        echo "term_palette_bright: $b;$a;$a;e3b341;$a;dcbdfb;$a;ffffff"
         echo "interface_branding_colour: 6"
+        if [ "$usefont" = 1 ]; then
+            echo "term_font: boot():/hyprshell/font.bin"
+            echo "term_font_size: 8x16"
+        fi
         echo "# <<< hyprshell"
         cat "$work/rest"
     } > "$work/conf"
@@ -127,6 +138,10 @@ if [ "$mode" = apply ]; then
     mkdir -p "$dir"
     install -m 644 "$work/wallpaper.png" "$dir/wallpaper.png.new"
     mv -f "$dir/wallpaper.png.new" "$dir/wallpaper.png"
+    if [ "$usefont" = 1 ]; then
+        install -m 644 "$font" "$dir/font.bin.new"
+        mv -f "$dir/font.bin.new" "$dir/font.bin"
+    fi
 fi
 install -m "$(stat -c %a "$conf")" "$work/conf" "$conf.new"
 sync -f "$conf.new" 2>/dev/null || sync
@@ -141,7 +156,7 @@ if [ "$enrolled" = 1 ] && ! limine-enroll-config >/dev/null 2>&1; then
 fi
 
 if [ "$mode" = remove ] && [ -d "$dir" ]; then
-    rm -f -- "$dir/wallpaper.png" "$dir/wallpaper.png.new"
+    rm -f -- "$dir/wallpaper.png" "$dir/wallpaper.png.new" "$dir/font.bin" "$dir/font.bin.new"
     rmdir -- "$dir" 2>/dev/null || true
 fi
 echo "hyprshell-limine-theme: $mode done ($conf)"

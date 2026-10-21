@@ -114,11 +114,15 @@ Singleton {
         id: convertProc
         // Filled and cropped to the screen, the way the desktop shows it;
         // a frame a couple of seconds in for a video, past any fade-in.
+        // Then blurred lightly and darkened a touch: Limine can't blur, and
+        // its menu has no box behind it, so this is what lets the text read
+        // over a busy picture.
         readonly property string script: `
             src=$1 out=$2 w=$3 h=$4 seek=$5
+            sig=$((w / 640)); [ "$sig" -lt 2 ] && sig=2
             mkdir -p "\${out%/*}"
             ffmpeg -nostdin -loglevel error -y \${seek:+-ss "$seek"} -i "$src" -frames:v 1 \\
-                -vf "scale=$w:$h:force_original_aspect_ratio=increase,crop=$w:$h" \\
+                -vf "scale=$w:$h:force_original_aspect_ratio=increase,crop=$w:$h,gblur=sigma=$sig,eq=brightness=-0.05" \\
                 -pix_fmt rgb24 "$out.tmp.png" && mv -f "$out.tmp.png" "$out"`
         stderr: StdioCollector { id: convertErr }
         onExited: code => {

@@ -13,6 +13,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 helper=/usr/local/libexec/hyprshell-limine-theme
 policy=/usr/share/polkit-1/actions/org.hyprshell.limine-theme.policy
+fontdir=/usr/local/share/hyprshell/limine
 
 [ "$(id -u)" -eq 0 ] || { echo "Run it with sudo: sudo $0 $*" >&2; exit 1; }
 
@@ -23,6 +24,7 @@ case ${1:-} in
     --uninstall)
         [ -x "$helper" ] && "$helper" --remove || true
         rm -f "$helper" "$policy"
+        rm -rf -- "${fontdir:?}"
         echo "Removed. limine.conf as it was before the first change: limine.conf.hyprshell-orig beside it."
         ;;
     "")
@@ -31,6 +33,8 @@ case ${1:-} in
         bash "$here/hyprshell-limine-theme" --check
         command -v pkexec >/dev/null 2>&1 || { echo "pkexec (polkit) is needed: sudo pacman -S polkit" >&2; exit 1; }
         install -D -m 755 -o root -g root "$here/hyprshell-limine-theme" "$helper"
+        install -D -m 644 -o root -g root "$here/fonts/hyprshell-boot-8x16.bin" "$fontdir/hyprshell-boot-8x16.bin"
+        install -D -m 644 -o root -g root "$here/fonts/OFL.txt" "$fontdir/OFL.txt"
         install -D -m 644 -o root -g root "$here/org.hyprshell.limine-theme.policy" "$policy"
         echo "Installed. Then Settings → Wallpaper → Boot menu → Update."
         ;;
