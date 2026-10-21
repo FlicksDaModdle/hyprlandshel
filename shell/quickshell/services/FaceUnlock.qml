@@ -70,7 +70,14 @@ Singleton {
                 [ -e "$v/name" ] || continue
                 # Capture nodes only; each camera has a metadata node too.
                 [ "$(cat "$v/index" 2>/dev/null || echo 0)" = 0 ] || continue
-                printf 'cam\\t/dev/%s\\t%s\\n' "\${v##*/}" "$(cat "$v/name")"
+                # Greyscale only is an infrared camera, whatever its name
+                # says (the kernel cuts names at 32 characters).
+                ir=0
+                if command -v v4l2-ctl >/dev/null 2>&1; then
+                    f=$(v4l2-ctl -d "/dev/\${v##*/}" --list-formats 2>/dev/null)
+                    printf '%s' "$f" | grep -q "'GREY'" && ! printf '%s' "$f" | grep -qE "'(YUYV|MJPG|NV12|RGB3)'" && ir=1
+                fi
+                printf 'cam\\t/dev/%s\\t%s\\t%s\\n' "\${v##*/}" "$(cat "$v/name")" "$ir"
             done
             for c in /etc/howdy/config.ini /usr/lib/security/howdy/config.ini /lib/security/howdy/config.ini; do
                 [ -r "$c" ] || continue
@@ -91,7 +98,7 @@ Singleton {
                     else if (t[0] === "pam") pam = true;
                     else if (t[0] === "greeter") greeter = true;
                     else if (t[0] === "cam" && t.length >= 3)
-                        cams.push({ path: t[1], name: t[2].trim(), ir: /\bIR\b|infrared/i.test(t[2]) });
+                        cams.push({ path: t[1], name: t[2].trim(), ir: t[3] === "1" || /\bIR\b|infrared/i.test(t[2]) });
                     else if (t[0] === "device") device = (t[1] || "").trim();
                     else if (t[0] === "faces") faces = parseInt(t[1], 10);
                 }
@@ -153,10 +160,15 @@ Singleton {
         id: testPam
         config: "hyprshell-lock"
         user: Services.SysInfo.user
+        // What Howdy said on the way, so a failure says why.
+        property string said: ""
+        onPamMessage: if (message && message.trim() !== "") said = message.trim()
+        onActiveChanged: if (active) said = ""
         onResponseRequiredChanged: if (responseRequired) abort()
         onCompleted: result => {
             root.failed = result !== PamResult.Success;
-            root.status = result === PamResult.Success ? "Recognised you" : "Didn't recognise you";
+            root.status = result === PamResult.Success ? "Recognised you"
+                : "Didn't recognise you" + (testPam.said !== "" ? " · Howdy says: " + testPam.said : "");
         }
         onError: err => { root.failed = true; root.status = "The face check couldn't run"; }
     }
