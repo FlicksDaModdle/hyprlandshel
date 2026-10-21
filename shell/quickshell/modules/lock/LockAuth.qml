@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Services.Pam
 import "../../config" as Config
 import "../../services" as Services
@@ -9,6 +10,12 @@ import "../../services" as Services
 // keyboard to is its business (the focused monitor, the one under the
 // pointer): with one shared state, what you type lands in the field
 // whichever screen has the keys, and every screen's card shows it.
+//
+// Your face, too, when Howdy is set up (Settings → Login screen, or scripts/howdy-setup.sh): the moment
+// the screen locks, a face-only PAM service (/etc/pam.d/hyprshell-lock)
+// looks for you, and unlocks if it finds you. The password works all the
+// while beside it, through `login` as before: pressing Enter stops the
+// face attempt and checks what was typed.
 //
 // LoginView's `auth` (see its header).
 Scope {
@@ -22,6 +29,54 @@ Scope {
     readonly property string pamMessage: pam.message && pam.messageIsError ? pam.message : ""
 
     signal rejected()
+
+    // ── your face ─────────────────────────────────────────────────────────
+    // There once setup.sh has written the service; read, not just looked
+    // for, so a file that is there but unreadable counts as not set up.
+    property bool faceEnabled: false
+    FileView {
+        path: "/etc/pam.d/hyprshell-lock"
+        printErrors: false
+        onLoaded: root.faceEnabled = text().indexOf("pam_howdy") >= 0
+        onLoadFailed: root.faceEnabled = false
+    }
+    // What the face attempt is doing, for the line under the field.
+    property string info: ""
+    readonly property bool faceLooking: face.active
+    readonly property bool canRetryFace: faceEnabled && !face.active && !pam.active
+    function retryFace() {
+        if (!root.canRetryFace) return;
+        root.info = "Looking for you…";
+        if (!face.start()) root.info = "";
+    }
+    // When the screen locks, and when it is woken.
+    function begin() {
+        root.reset();
+        root.retryFace();
+    }
+    function stop() {
+        if (face.active) face.abort();
+        root.info = "";
+    }
+
+    PamContext {
+        id: face
+        config: "hyprshell-lock"
+        user: Services.SysInfo.user
+        // A face-only service asks nothing; anything it does ask is not
+        // for us to answer with a password.
+        onResponseRequiredChanged: if (responseRequired) abort()
+        onCompleted: result => {
+            if (result === PamResult.Success) {
+                root.info = "";
+                root.reset();
+                Config.UiState.locked = false;
+            } else {
+                root.info = "Face not recognised · type your password";
+            }
+        }
+        onError: err => { root.info = ""; }
+    }
 
     // Which monitors' lock surfaces the compositor has given the keyboard,
     // by screen name; each surface reports its own.
@@ -41,7 +96,11 @@ Scope {
     }
 
     function submit() {
-        if (pam.active || entered.length === 0) return;
+        // Enter on an empty field tries your face again.
+        if (entered.length === 0) { retryFace(); return; }
+        if (pam.active) return;
+        if (face.active) face.abort();
+        info = "";
         status = "Checking…";
         failed = false;
         if (!pam.start()) {

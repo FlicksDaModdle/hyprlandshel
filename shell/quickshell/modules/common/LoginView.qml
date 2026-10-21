@@ -22,6 +22,8 @@ import "../icons"
 //   submit()           Enter
 //   prompt, promptEcho  optional: a further question from PAM, asked in
 //                       the field, shown in clear when promptEcho is set
+//   info               optional: what your face (Howdy) is doing
+//   canRetryFace, retryFace()  optional: offer to look for your face again
 //
 // — the lock screen's surface and the greeter's GreeterState both are.
 Item {
@@ -54,7 +56,7 @@ Item {
     signal stepSession(int delta)
 
     // The line under the field; the caller may add to auth.status.
-    property string statusText: auth.status || ""
+    property string statusText: auth.status || auth.info || ""
 
     // Bottom left: a line of text, or a component in its place. A
     // component should colour itself with view.fg3, which reads on any
@@ -647,6 +649,38 @@ Item {
                     text: view.keyboardMissing ? view.keyboardHint : view.statusText
                     font.pixelSize: view.ap.fs(12)
                     color: view.auth.failed || view.keyboardMissing ? view.ap.accent : view.ap.ink3
+                }
+
+                // Your face again, once the last look didn't find you
+                // (Howdy; `auth.canRetryFace` and `auth.retryFace()`).
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: view.auth.canRetryFace === true && !view.auth.busy
+                    width: faceRow.implicitWidth + 22
+                    height: 28
+                    radius: 14
+                    color: faceHover.hovered ? view.ap.sel : "transparent"
+                    Row {
+                        id: faceRow
+                        anchors.centerIn: parent
+                        spacing: 7
+                        MonoIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            name: "user"
+                            size: 13
+                            monochrome: true
+                            inkColor: view.ap.accent
+                        }
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Try your face again"
+                            font.pixelSize: view.ap.fs(12)
+                            font.weight: Font.DemiBold
+                            color: view.ap.accent
+                        }
+                    }
+                    HoverHandler { id: faceHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { view.auth.retryFace(); view.takeKeys(); } }
                 }
             }
         }

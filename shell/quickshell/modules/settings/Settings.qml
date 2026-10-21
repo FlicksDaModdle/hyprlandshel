@@ -171,6 +171,7 @@ Scope {
         "Power":         { icon: "battery",   group: "System", note: "Power profile, idle timing and battery care." },
         "Laptop":        { icon: "zap",       group: "System", note: "This ASUS laptop's own controls, through asusd: performance, charge limit, keyboard light, graphics and panel." },
         "Hyprland":      { icon: "grid",      group: "System", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
+        "Login screen":  { icon: "lock",      group: "System", note: "Unlocking with your face, at the lock screen and when you log in." },
         "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
         "Appearance":    { icon: "palette",   group: "Shell",  note: "How the shell looks and moves. Every change shows at once — in the preview, and everywhere else." },
         "Wallpaper":     { icon: "image",     group: "Shell",  note: "The desktop's ground — a tint, an image, or a live wallpaper." },
@@ -193,7 +194,7 @@ Scope {
         { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
                                    "Network", "Bluetooth", "Sound", "Power"]
                                   .concat(Services.Rog.available ? ["Laptop"] : [])
-                                  .concat(["Hyprland", "About"]) },
+                                  .concat(["Hyprland", "Login screen", "About"]) },
         { label: "Shell",  items: ["Appearance", "Wallpaper", "Icons", "Fonts",
                                    "App theming", "Bar", "Dock", "Alt+Tab", "Launcher",
                                    "Notifications", "Clipboard", "Keybinds"] }
@@ -404,6 +405,7 @@ Scope {
         ]).concat(root.cursorRows());
 
         case "Wallpaper": return root.wallpaperRows();
+        case "Login screen": return root.loginRows();
 
 
         case "Icons": return [
@@ -1993,6 +1995,59 @@ Scope {
             return rows.concat(root.liveWallpaperRows()).concat(root.bootRows());
         }
         return rows.concat(root.bootRows());
+    }
+
+    // Settings → Login screen: face unlock with Howdy (services/FaceUnlock.qml).
+    function loginRows() {
+        const F = Services.FaceUnlock;
+        const rows = [{ type: "header", n: "Face unlock",
+                        s: "Your face, through the IR camera, at the lock screen and when you log in — with Howdy" }];
+        if (!F.installed) {
+            rows.push({ n: "Howdy isn't installed",
+                        s: "Install it, then check again: paru -S howdy-git — and linux-enable-ir-emitter if the "
+                           + "camera's infrared light doesn't come on (sudo linux-enable-ir-emitter configure)",
+                        type: "buttons", buttons: [{ label: "Check again", set: () => F.refresh() }] });
+            return rows;
+        }
+        rows.push({ n: "Unlock with my face",
+                    s: F.lockOn && F.greeterOn ? "At the lock screen and when you log in; the password always works too"
+                       : F.lockOn ? "At the lock screen (the login screen isn't set up: is greetd installed?)"
+                       : "Off: your password only. Turning it on asks for your password",
+                    type: "toggle", value: F.on, set: v => v ? F.enable() : F.disable() });
+        if (F.cameras.length > 0) {
+            const labels = F.cameras.map(c => F.cameraLabel(c));
+            const cur = F.cameras.find(c => c.path === F.camera);
+            rows.push({ n: "Camera",
+                        s: cur ? (cur.ir ? "The infrared camera: works in the dark, and isn't fooled by a photo"
+                                         : "Not an infrared camera: pick the IR one if there is one")
+                               : "Which camera Howdy looks through",
+                        type: "menu", options: labels, value: cur ? F.cameraLabel(cur) : "",
+                        set: v => { const k = labels.indexOf(v); if (k >= 0) F.setCamera(F.cameras[k].path); } });
+        }
+        rows.push({ n: "Your face",
+                    s: F.faces > 0 ? (F.faces + (F.faces === 1 ? " face enrolled" : " faces enrolled")
+                                      + " · adding another, in different light or with glasses, helps")
+                       : F.faces === 0 ? "None enrolled yet: add yours, looking at the camera"
+                       : "Add your face, looking at the camera",
+                    type: "buttons",
+                    buttons: [{ label: "Add my face", set: () => F.addFace() }]
+                             .concat(F.faces !== 0 ? [{ label: "Remove all", quiet: true, set: () => F.clearFaces() }] : []) });
+        if (F.lockOn)
+            rows.push({ n: "Try it", s: F.testing ? "Look at the camera…" : "Checks your face the way the lock screen does",
+                        type: "buttons", buttons: [{ label: F.testing ? "Looking…" : "Try it", set: () => F.test() }] });
+        if (F.status !== "")
+            rows.push({ n: F.busy ? "Working…" : (F.failed ? "That didn't work" : "Done"), s: F.status,
+                        type: "info", value: "" });
+        rows.push({ n: "Keyring",
+                    s: "A face login can't unlock the keyring, which needs the password itself: the first app "
+                       + "that wants it afterwards asks for your password once",
+                    type: "info", value: "" });
+        rows.push({ type: "header", n: "Login screen" });
+        rows.push({ n: "Hyprshell's login screen",
+                    s: F.greeterInstalled ? "Installed; it follows your theme, wallpaper, screens and pointer"
+                                          : "Not installed: sudo greeter/install.sh in Hyprshell's folder",
+                    type: "info", value: F.greeterInstalled ? "Installed" : "Not installed" });
+        return rows;
     }
 
     // Settings → Wallpaper → Boot menu: a still of this wallpaper, and the

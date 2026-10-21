@@ -190,6 +190,48 @@ Scope {
     property bool passwordSent: false
     signal rejected()
 
+    // ── your face ─────────────────────────────────────────────────────────
+    // With Howdy in greetd's PAM file (Settings → Login screen, or scripts/howdy-setup.sh), the session
+    // is opened the moment a person is picked, so Howdy is looking before
+    // anything is typed; if it finds them, greetd says ready and they are
+    // in. If it doesn't, PAM goes on to ask for the password, which is
+    // answered as soon as one has been typed and Enter pressed.
+    property bool faceEnabled: false
+    FileView {
+        path: "/etc/pam.d/greetd"
+        printErrors: false
+        onLoaded: g.faceEnabled = text().indexOf("pam_howdy") >= 0
+        onLoadFailed: g.faceEnabled = false
+    }
+    property string info: ""
+    // A session is open for the face attempt (and what follows it).
+    property bool faceStarted: false
+    // PAM has asked for the password, and none has been sent.
+    property bool awaitingPassword: false
+    // Enter was pressed before PAM asked.
+    property bool pending: false
+    readonly property bool canRetryFace: faceEnabled && !g.preview && !faceStarted && !g.busy
+    function beginFace() {
+        if (!g.faceEnabled || g.preview || !g.user || !g.session || g.faceStarted || g.busy) return;
+        g.faceStarted = true;
+        g.awaitingPassword = false;
+        g.pending = false;
+        g.passwordSent = false;
+        g.info = "Looking for you…";
+        Greetd.createSession(g.user.name);
+    }
+    function retryFace() { g.beginFace(); }
+    // A moment after a person is picked (or the greeter comes up), so the
+    // screen is there before the camera's light comes on.
+    Timer { id: faceSoon; interval: 400; onTriggered: g.beginFace() }
+    onUserChanged: if (g.user) faceSoon.restart()
+    onFaceEnabledChanged: if (g.faceEnabled) faceSoon.restart()
+    function faceDone() {
+        g.faceStarted = false;
+        g.awaitingPassword = false;
+        g.pending = false;
+    }
+
     function pickUser(i) {
         if (i === g.userIndex) return;
         g.reset();
@@ -200,6 +242,7 @@ Scope {
         if (!g.preview && Greetd.state !== GreetdState.Inactive) Greetd.cancelSession();
         g.entered = ""; g.status = ""; g.failed = false; g.busy = false;
         g.prompt = ""; g.passwordSent = false;
+        g.faceDone(); g.info = "";
     }
 
     function submit() {
@@ -211,7 +254,8 @@ Scope {
             Greetd.respond(answer);
             return;
         }
-        if (g.entered.length === 0) return;
+        // Enter on an empty field looks for your face again.
+        if (g.entered.length === 0) { if (g.canRetryFace) g.beginFace(); return; }
         if (g.preview) {
             g.failed = true;
             g.status = "Preview — greetd isn't running, so nothing can log in";
@@ -221,6 +265,20 @@ Scope {
         g.failed = false;
         g.status = "";
         g.busy = true;
+        // The face attempt's session is already open: answer PAM now if it
+        // has asked, or as soon as it does.
+        if (g.faceStarted) {
+            if (g.awaitingPassword) {
+                g.awaitingPassword = false;
+                g.passwordSent = true;
+                g.info = "";
+                Greetd.respond(g.entered);
+            } else {
+                g.pending = true;
+                g.info = "Trying your face first…";
+            }
+            return;
+        }
         g.passwordSent = false;
         Greetd.createSession(g.user.name);
     }
@@ -240,6 +298,7 @@ Scope {
             g.failed = true;
             g.prompt = "";
             g.passwordSent = false;
+            g.faceDone(); g.info = "";
             g.entered = "";
             g.status = "That took too long. Try again.";
             g.rejected();
@@ -253,7 +312,16 @@ Scope {
             if (responseRequired) {
                 // The first hidden question is the password already typed.
                 if (!g.passwordSent && !echoResponse) {
+                    // Howdy didn't find them: wait for the password, unless
+                    // it has already been typed and Enter pressed.
+                    if (g.faceStarted && !g.pending) {
+                        g.awaitingPassword = true;
+                        g.info = "Face not recognised · type your password";
+                        return;
+                    }
+                    g.pending = false;
                     g.passwordSent = true;
+                    g.info = "";
                     Greetd.respond(g.entered);
                     return;
                 }
@@ -263,21 +331,30 @@ Scope {
                 g.busy = false;
                 return;
             }
-            // Information, or a problem PAM can carry on from.
+            // Information, or a problem PAM can carry on from. Howdy's own
+            // words while it looks are left out: the line already says so.
+            if (g.faceStarted && !error) return;
             g.status = message.trim();
             g.failed = error;
         }
 
         function onAuthFailure(message) {
+            const facing = g.faceStarted;
+            g.faceDone();
+            g.info = "";
             g.busy = false;
             g.failed = true;
             g.entered = "";
             g.prompt = "";
             g.status = "Wrong password";
             g.rejected();
+            // Look again while the password is typed again.
+            if (facing) faceSoon.restart();
         }
 
         function onError(message) {
+            g.faceDone();
+            g.info = "";
             g.busy = false;
             g.failed = true;
             g.prompt = "";
@@ -286,6 +363,8 @@ Scope {
         }
 
         function onReadyToLaunch() {
+            g.faceDone();
+            g.info = "";
             g.remember();
             g.status = "Starting " + g.session.name + "…";
             g.failed = false;

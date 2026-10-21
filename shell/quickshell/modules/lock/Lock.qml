@@ -33,8 +33,9 @@ Scope {
         id: lock
 
         locked: Config.UiState.locked
-        // Each lock starts with an empty field.
-        onLockedChanged: if (locked) lockAuth.reset()
+        // Each lock starts with an empty field, and with your face being
+        // looked for (when Howdy is set up).
+        onLockedChanged: locked ? lockAuth.begin() : lockAuth.stop()
 
         // Your name as the greeter shows it — the full name from /etc/passwd,
         // the login name when there is none.
@@ -86,7 +87,7 @@ Scope {
                 // Your ~/.face, then the picture the greeter shows.
                 pictures: [Quickshell.env("HOME") + "/.face",
                            "/var/lib/AccountsService/icons/" + Services.SysInfo.user]
-                statusText: lockAuth.status || lockAuth.pamMessage
+                statusText: lockAuth.status || lockAuth.pamMessage || lockAuth.info
 
                 onPower: action => {
                     if (action === "suspend") Services.Session.suspend();
