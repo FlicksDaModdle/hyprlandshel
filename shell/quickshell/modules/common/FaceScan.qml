@@ -10,6 +10,7 @@ import "../../config" as Config
 //   state "found"     the lens closes into a whole ring, in the accent,
 //                     and the dots give way to a tick
 //   state "failed"    the lens stops and reddens, the dots dim, a shake
+//   state "idle"      all of it, standing still
 //   state ""          gone
 //
 // Drawn on a Canvas rather than with Shapes: the login screen can be on a
@@ -22,6 +23,9 @@ Item {
     property color accent: Config.Appearance.accent
     property color bad: Qt.rgba(1, 0.42, 0.38, 1)
     property real size: 64
+    // The dot face inside the lens; off where something else is in there
+    // (the camera's picture, in Settings).
+    property bool showFace: true
 
     implicitWidth: size
     implicitHeight: size
@@ -107,6 +111,8 @@ Item {
         onDimPChanged: requestPaint()
         onColChanged: requestPaint()
         onWidthChanged: requestPaint()
+        readonly property bool face: root.showFace
+        onFaceChanged: requestPaint()
 
         onPaint: {
             const ctx = getContext("2d");
@@ -144,7 +150,7 @@ Item {
             // Lit where the sweep is passing; dim on a failure; fading as
             // the tick comes.
             const fade = 1 - tickP;
-            if (fade > 0.01) {
+            if (fade > 0.01 && root.showFace) {
                 const dr = Math.max(1, s * 0.022);
                 for (const d of root.dots) {
                     let a = 0.35;

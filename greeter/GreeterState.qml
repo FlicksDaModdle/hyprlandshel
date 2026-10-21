@@ -230,9 +230,9 @@ Scope {
         Greetd.createSession(g.user.name);
     }
     function retryFace() { g.beginFace(); }
-    // A moment after a person is picked (or the greeter comes up), so the
-    // screen is there before the camera's light comes on.
-    Timer { id: faceSoon; interval: 400; onTriggered: g.beginFace() }
+    // As soon as a person is picked (or the greeter comes up): just after,
+    // so picking someone else straight away doesn't start two.
+    Timer { id: faceSoon; interval: 1; onTriggered: g.beginFace() }
     onUserChanged: if (g.user) faceSoon.restart()
     onFaceEnabledChanged: if (g.faceEnabled) faceSoon.restart()
     function faceDone() {

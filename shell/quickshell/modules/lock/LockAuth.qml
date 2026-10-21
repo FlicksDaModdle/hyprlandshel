@@ -53,6 +53,16 @@ Scope {
         root.faceState = "looking";
         if (!face.start()) { root.info = ""; root.faceState = ""; }
     }
+    // When the face attempt last ended without you, to look again when you
+    // come back (wake()).
+    property real faceEndedAt: 0
+    // You're back (the pointer moved): if the last look ended a while ago,
+    // you were probably away for it, so look again, straight away.
+    function wake() {
+        if (!root.canRetryFace || root.entered !== "" || root.faceState === "found") return;
+        if (Date.now() - root.faceEndedAt < 15000) return;
+        root.retryFace();
+    }
     // When the screen locks, and when it is woken.
     function begin() {
         root.reset();
@@ -88,13 +98,48 @@ Scope {
                 root.faceState = "found";
                 if (Config.Appearance.animated) unlockSoon.restart();
                 else unlockSoon.triggered();
-            } else if (!pam.active) {
+            } else if (!pam.active && !root.sleeping && !afterSleep.running) {
                 // (Not when Enter stopped it: the password is being checked.)
                 root.info = "Face not recognised · type your password";
                 root.faceState = "failed";
             }
+            root.faceEndedAt = Date.now();
         }
         onError: err => { root.info = ""; root.faceState = root.faceEnabled ? "failed" : ""; }
+    }
+
+    // ── sleep ─────────────────────────────────────────────────────────────
+    // A look started as the laptop went to sleep has timed out by the time
+    // it wakes: logind says when it sleeps and wakes, and the look is let go
+    // before, and started again the moment it's back.
+    Process {
+        running: Config.UiState.locked && root.faceEnabled
+        command: ["gdbus", "monitor", "--system", "--dest", "org.freedesktop.login1",
+                  "--object-path", "/org/freedesktop/login1"]
+        stdout: SplitParser {
+            onRead: line => {
+                if (line.indexOf("PrepareForSleep") < 0) return;
+                if (line.indexOf("true") >= 0) {
+                    root.sleeping = true;
+                    if (face.active) face.abort();
+                } else {
+                    root.sleeping = false;
+                    if (face.active) face.abort();
+                    afterSleep.restart();
+                }
+            }
+        }
+    }
+    property bool sleeping: false
+    Timer {
+        id: afterSleep
+        interval: 50
+        repeat: true
+        onTriggered: {
+            if (face.active) return;
+            stop();
+            if (root.entered === "" && !pam.active) root.retryFace();
+        }
     }
 
     // Which monitors' lock surfaces the compositor has given the keyboard,

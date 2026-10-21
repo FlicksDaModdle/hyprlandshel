@@ -2025,7 +2025,8 @@ Scope {
                         set: v => { const k = labels.indexOf(v); if (k >= 0) F.setCamera(F.cameras[k].path); } });
         }
         rows.push({ type: "header", n: "Your face",
-                    s: "What the camera sees, to line your face up before adding it" });
+                    s: "See yourself through the webcam while Howdy learns your face through the infrared camera, "
+                       + "and the looks it knows you by" });
         rows.push({ type: "panel", panel: "face" });
         if (F.faces !== 0)
             rows.push({ n: "Forget my faces", s: "Every look Howdy knows you by; your password still works",

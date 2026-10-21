@@ -24,6 +24,7 @@ import "../icons"
 //                       the field, shown in clear when promptEcho is set
 //   info               optional: what your face (Howdy) is doing
 //   canRetryFace, retryFace()  optional: offer to look for your face again
+//   wake()             optional: the pointer moved (you may be back)
 //
 // — the lock screen's surface and the greeter's GreeterState both are.
 Item {
@@ -198,6 +199,11 @@ Item {
     PointHandler {
         acceptedButtons: Qt.AllButtons
         onActiveChanged: if (active) view.takeKeys()
+    }
+    // You're back (the pointer moved): the face is looked for again, if
+    // the last look ended while you were away (auth.wake, optional).
+    HoverHandler {
+        onPointChanged: if (typeof view.auth.wake === "function") view.auth.wake()
     }
 
     Timer {

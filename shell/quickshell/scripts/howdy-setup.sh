@@ -7,6 +7,7 @@
 #   sudo ./howdy-setup.sh --camera DEVICE  use that camera (/dev/videoN)
 #   sudo ./howdy-setup.sh --add-face       enrol your face (look at the camera)
 #   sudo ./howdy-setup.sh --add-face --alt …as an alternative look (glasses, a beard)
+#   sudo ./howdy-setup.sh --remove-face ID forget one look (the ID from --list-faces)
 #   sudo ./howdy-setup.sh --clear-faces    forget every face of yours
 #   sudo ./howdy-setup.sh --list-faces     the faces enrolled for you
 #
@@ -46,11 +47,15 @@ say() { printf '  %s\n' "$*"; }
 die() { printf 'howdy-setup.sh: %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "run it with sudo"
 
-mode=install camera="" alt=0
+mode=install camera="" alt=0 id=""
 case ${1:-} in
     --check) mode=check ;;
     --remove) mode=remove ;;
     --add-face) mode=add; [ "${2:-}" = --alt ] && alt=1 ;;
+    --remove-face)
+        mode=forget; id=${2:-}
+        [[ $id =~ ^[0-9]{1,5}$ ]] || die "not a face ID: $id"
+        ;;
     --clear-faces) mode=clear ;;
     --list-faces) mode=list ;;
     --camera)
@@ -60,7 +65,7 @@ case ${1:-} in
         [ -c "$camera" ] || die "no such camera: $camera"
         ;;
     "") ;;
-    *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
 
 # Whose faces: the person behind pkexec or sudo.
@@ -92,6 +97,10 @@ case $mode in
         # this gives it one.
         if [ "$alt" = 1 ]; then label="Alt look $(date +%Y-%m-%d)"; else label="Face $(date +%Y-%m-%d)"; fi
         printf '%s\n' "$label" | howdy -U "$person" add
+        exit $? ;;
+    forget)
+        need_person; need_howdy
+        howdy -U "$person" -y remove "$id"
         exit $? ;;
     clear)
         need_person; need_howdy
