@@ -154,13 +154,17 @@ PanelSurface {
                             ColorSpring { id: tint2; to: tile.modelData.on ? Config.Appearance.accent
                                      : (tileArea.containsMouse ? Config.Appearance.sel : Config.Appearance.hover) }
 
-                            // Bottom rail, brighter when the tile is on.
+                            // Bottom rail, brighter when the tile is on: a
+                            // short pill in the middle, a little up from the
+                            // edge, rather than a line most of the tile wide
+                            // that ran into its rounded corners.
                             Rectangle {
                                 anchors.bottom: parent.bottom
+                                anchors.bottomMargin: 5
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                width: parent.width - 24
-                                height: 2
-                                radius: 1
+                                width: Math.min(28, parent.width * 0.25)
+                                height: 3
+                                radius: 1.5
                                 color: tile.modelData.on ? Config.Appearance.inkOnAccent : Config.Appearance.div
                                 opacity: tile.modelData.on ? 0.55 : 1
                             }
