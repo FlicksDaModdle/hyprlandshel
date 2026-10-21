@@ -89,6 +89,10 @@ Scope {
             PanelSurface {
                 id: card
                 anchors.centerIn: parent
+                // Opaque: this layer has no compositor blur behind it, so the
+                // translucent panel colour showed whatever was under the
+                // prompt, sharp, through its text.
+                color: Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g, Config.Appearance.panel.b, 1)
                 width: 420
                 height: body.implicitHeight + 44
 
