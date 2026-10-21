@@ -1654,20 +1654,35 @@ Variants {
         }
 
         // Anywhere else closes it, without also doing what was under it.
+        // It takes the hover too, so the rows behind don't light up
+        // under a pointer that is on its way to the menu.
         MouseArea {
             anchors.fill: parent
             visible: launcher.menuOpen
+            hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             onPressed: launcher.closeMenu()
+            HoverHandler { blocking: true }
+        }
+        // The launcher's own rows, blurred, behind the menu: it sits inside
+        // the same surface, where the compositor's blur can't reach.
+        BackdropBlur {
+            visible: launcher.menuOpen && GraphicsInfo.api !== GraphicsInfo.Software
+            x: menu.x; y: menu.y; width: menu.width; height: menu.height
+            radius: menu.radius
+            source: panel
         }
         PanelSurface {
             id: menu
             visible: launcher.menuOpen
             showSeam: false
-            // Solid: it sits over the launcher's own rows, inside the same
-            // surface, where the compositor's blur can't reach to soften
-            // what shows through.
-            color: Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g, Config.Appearance.panel.b, 1)
+            // Solid only where nothing can blur what is behind it.
+            color: GraphicsInfo.api === GraphicsInfo.Software
+                   ? Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g, Config.Appearance.panel.b, 1)
+                   : Config.Appearance.panel
+            // Its gaps are the menu's, not the rows' behind it.
+            MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.AllButtons; z: -1 }
+            HoverHandler { blocking: true }
             width: 232
             height: menuList.implicitHeight + 12
             // At the pointer, kept on the screen: above it when there is no
@@ -1702,8 +1717,10 @@ Variants {
         MouseArea {
             anchors.fill: parent
             visible: launcher.powerOpen
+            hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             onPressed: launcher.powerOpen = false
+            HoverHandler { blocking: true }
         }
         Item {
             id: powerAnchor
@@ -1723,16 +1740,30 @@ Variants {
                 yScale: 0.92 + 0.08 * powerPop.value
             }
 
+            // The menu's heading, footer and padding are its own: a pointer
+            // there is on the menu, not on whatever is behind it.
+            MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.AllButtons }
+            HoverHandler { blocking: true }
+
+            // Glass, like the bar's: the launcher's rows blurred behind
+            // it (see BackdropBlur).
+            BackdropBlur {
+                anchors.fill: parent
+                radius: Config.Appearance.rPanel
+                source: panel
+            }
+
             Loader {
                 id: powerLoader
                 active: launcher.powerOpen || powerPop.value > 0.01
                 sourceComponent: Component {
                     PowerMenu {
-                        // Solid, like the right-click menu: it sits over
-                        // the launcher's own rows, where the compositor's
-                        // blur can't reach.
-                        color: Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g,
-                                       Config.Appearance.panel.b, 1)
+                        // Solid only where nothing can blur what is
+                        // behind it (the software renderer).
+                        color: GraphicsInfo.api === GraphicsInfo.Software
+                               ? Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g,
+                                         Config.Appearance.panel.b, 1)
+                               : Config.Appearance.panel
                     }
                 }
             }
