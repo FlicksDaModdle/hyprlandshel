@@ -113,10 +113,13 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
 
-            // A new session. Left of the window buttons, and a little
-            // apart from them: opening a tab and closing the window are
-            // not things to have next to each other.
+            // A new session, here only while the tab strip is hidden: with
+            // the strip it sits at the end of the tabs (below). Left of the
+            // window buttons, and a little apart from them: opening a tab
+            // and closing the window are not things to have next to each
+            // other.
             Rectangle {
+                visible: !frame.showTabs
                 anchors.verticalCenter: parent.verticalCenter
                 width: 28
                 height: 28
@@ -135,7 +138,7 @@ Rectangle {
                 TapHandler { onTapped: frame.host.newTab() }
             }
 
-            Item { width: 8; height: 1 }
+            Item { visible: !frame.showTabs; width: 8; height: 1 }
 
             Repeater {
                 model: [
@@ -321,6 +324,28 @@ Rectangle {
                             }
                         }
                     }
+                }
+
+                // A new session: straight after the last tab, so it is
+                // where the next one will appear and moves along as tabs
+                // are opened.
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 26
+                    height: 26
+                    radius: Appearance.rSm
+                    color: tabPlusHover.hovered ? Appearance.hover : "transparent"
+
+                    MonoIcon {
+                        anchors.centerIn: parent
+                        name: "plus"
+                        size: 14
+                        inkColor: tabPlusHover.hovered ? Appearance.ink : Appearance.ink2
+                        monochrome: true
+                    }
+
+                    HoverHandler { id: tabPlusHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: frame.host.newTab() }
                 }
             }
         }
