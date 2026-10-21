@@ -316,6 +316,9 @@ fi
 mkdir -p "$CACHE"
 chown "$GU" "$CACHE"
 chmod 700 "$CACHE"
+# The greeter's Hyprland's home, where your cursor theme is linked.
+mkdir -p "$CACHE/home/.local/share/icons"
+chown -R "$GU" "$CACHE/home"
 
 # The keyboard layout you are typing with now, so the password is typed on
 # the same one. Best effort: from the running Hyprland, else "us".

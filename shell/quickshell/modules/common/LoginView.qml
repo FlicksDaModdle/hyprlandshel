@@ -446,9 +446,14 @@ Item {
                         anchors.right: eye.left
                         anchors.rightMargin: 8
                         anchors.verticalCenter: parent.verticalCenter
-                        height: 30
+                        // The field's whole height: a click anywhere in the box puts
+                        // the cursor there.
+                        height: field.height
                         verticalAlignment: TextInput.AlignVCenter
                         clip: true
+                        // The text cursor over the box, said here: TextInput doesn't
+                        // set one of its own on every Qt.
+                        HoverHandler { cursorShape: Qt.IBeamCursor }
                         focus: view.primary
                         enabled: view.primary
                         readOnly: view.auth.busy

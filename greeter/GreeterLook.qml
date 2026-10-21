@@ -25,9 +25,9 @@ import Quickshell.Io
 // pointer is set there for the greeter itself too (XCURSOR_THEME), for a
 // Qt that draws its own instead of asking Hyprland to.
 //
-// The theme folder is linked into the greeter's own icon folder, which
-// greeter/hyprland.lua puts on XCURSOR_PATH and XDG_DATA_DIRS — where
-// Hyprland looks when told to use a theme by name.
+// The theme folder is linked into the greeter's own icon folder, in the
+// home greeter/hyprland.lua gives its Hyprland — where hyprcursor looks when
+// told to use a theme by name — and on XCURSOR_PATH.
 //
 // Everything read here was written by a person, not by the greeter, so it
 // is checked to be what it should be — names of screens and themes, and
@@ -44,7 +44,9 @@ Scope {
         const f = String(greeter.stateFile);
         return f.slice(0, f.lastIndexOf("/"));
     }
-    readonly property string iconsDir: cacheDir + "/data/icons"
+    // The greeter's Hyprland's own ~/.local/share/icons (hyprland.lua says
+    // why it has a home of its own).
+    readonly property string iconsDir: cacheDir + "/home/.local/share/icons"
     readonly property bool live: !greeter.preview
     readonly property bool dryRun: Quickshell.env("HYPRSHELL_GREETER_LOOK_DRYRUN") === "1"
 

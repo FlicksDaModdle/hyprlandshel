@@ -16,11 +16,16 @@ hl.env("XDG_CONFIG_HOME", "@STATE@/config")
 hl.env("QT_QPA_PLATFORM", "wayland")
 hl.env("XCURSOR_SIZE", "24")
 hl.env("HYPRCURSOR_SIZE", "24")
--- Where GreeterLook.qml links the cursor theme of the person picked (your
--- accent cursor lives in your home, which the greeter cannot read), ahead
--- of the system's themes, so `hyprctl setcursor` finds it by name.
-hl.env("XCURSOR_PATH", "@CACHE@/data/icons:/usr/local/share/icons:/usr/share/icons:/usr/share/pixmaps")
-hl.env("XDG_DATA_DIRS", "@CACHE@/data:/usr/local/share:/usr/share")
+-- A home of its own, for the cursor. GreeterLook.qml links the cursor theme
+-- of the person picked (your accent cursor lives in your home, which the
+-- greeter cannot read) into ~/.local/share/icons here, so `hyprctl
+-- setcursor` finds it by name. Not on XDG_DATA_DIRS alone: hyprcursor reads
+-- that once, as Hyprland starts and before this file sets it, so a theme
+-- linked there was never found and the greeter kept the default pointer;
+-- it reads HOME every time it looks for a theme.
+hl.env("HOME", "@CACHE@/home")
+hl.env("XCURSOR_PATH", "@CACHE@/home/.local/share/icons:@CACHE@/data/icons:/usr/local/share/icons:/usr/share/icons:/usr/share/pixmaps")
+hl.env("XDG_DATA_DIRS", "@CACHE@/home/.local/share:@CACHE@/data:/usr/local/share:/usr/share")
 
 -- The screens and pointer of whoever last logged in, as their shell keeps
 -- them (GreeterLook.qml writes this): the login screen starts at their
