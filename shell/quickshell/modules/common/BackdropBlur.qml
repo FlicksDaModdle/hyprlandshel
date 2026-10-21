@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import Quickshell.Widgets
+import "../../config" as Config
 
 // Frosted glass over the shell's own content: what `source` draws under
 // this rectangle, blurred, with rounded corners.
@@ -19,6 +20,12 @@ ClippingRectangle {
 
     property Item source: null
     property real amount: 1
+    // Under the blurred copy, opaque. The copy is of a translucent panel,
+    // so it is translucent too, and without something solid under it the
+    // sharp original showed through: the big soft shapes (icons) read as
+    // blurred, but text, fine and high-contrast, stayed readable through
+    // the glass.
+    property color base: Config.Appearance.solid
 
     color: "transparent"
     // The software renderer has no shaders; the menu's own colour is then
@@ -41,13 +48,18 @@ ClippingRectangle {
         }
     }
 
+    Rectangle {
+        anchors.fill: parent
+        color: root.base
+    }
     MultiEffect {
         anchors.fill: parent
         source: grab
         autoPaddingEnabled: false
         blurEnabled: true
         blur: root.amount
-        blurMax: 40
+        blurMax: 64
+        blurMultiplier: 1.5
         saturation: 0.15
     }
 }
