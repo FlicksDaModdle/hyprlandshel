@@ -26,7 +26,7 @@ Column {
 
     Component.onDestruction: root.face.stopPreview()
 
-    readonly property bool seeing: root.face.previewing && picture.status === Image.Ready
+    readonly property bool seeing: camera.item !== null && camera.item.showing
 
     // ── you, in the circle ──────────────────────────────────────────────
     Rectangle {
@@ -47,16 +47,18 @@ Column {
             radius: stage.d / 2
             color: "#191817"
 
-            Image {
-                id: picture
+            // The webcam (FaceCamera.qml), only while a face is being
+            // added; nothing at all without Qt Multimedia.
+            Loader {
+                id: camera
                 anchors.fill: parent
-                visible: root.seeing
-                fillMode: Image.PreserveAspectCrop
-                // As in a mirror.
-                mirror: true
-                cache: false
-                asynchronous: false
-                source: root.face.previewing ? "file://" + root.face.previewFile + "?" + root.face.previewFrame : ""
+                active: root.face.previewing
+                source: "FaceCamera.qml"
+                onStatusChanged: if (status === Loader.Error) console.warn("FacePanel: no webcam picture (is qt6-multimedia installed?)")
+                onLoaded: {
+                    item.device = Qt.binding(() => root.face.previewDevice);
+                    item.active = Qt.binding(() => root.face.previewing);
+                }
             }
         }
 
@@ -100,7 +102,7 @@ Column {
                     : root.face.adding ? (root.face.addingAlone
                         ? "The infrared camera is learning your face. The webcam can't run beside it on this laptop"
                         : root.seeing ? "The infrared camera is learning your face. Hold still, an arm's length away"
-                        : root.face.previewError !== "" ? root.face.previewError
+                        : camera.item && camera.item.error !== "" ? camera.item.error
                         : "Starting the webcam…")
                     : root.face.faces > 0 ? "It unlocks for you at a glance. Wear glasses sometimes? Add that as an alternative look"
                     : "Add your face and Howdy unlocks for you at a glance"
