@@ -169,6 +169,8 @@ Singleton {
         if (root.busy) return;
         root.addAlt = alt;
         root.addingAlone = root.previewShared || root.previewDevice === "";
+        console.info("FaceUnlock: adding", alt ? "an alternative look" : "a face", "through", root.camera || "Howdy's camera",
+                     root.addingAlone ? "(no webcam beside it)" : "while " + root.previewDevice + " shows you");
         root.addFailed = false;
         root.justAdded = false;
         root.startAdding();
@@ -206,9 +208,13 @@ Singleton {
             const adding = runProc.adding;
             runProc.adding = false;
             const said = (runErr.text.trim() || runOut.text.trim()).split("\n").filter(l => l.trim() !== "");
-            // The webcam in Howdy's way: again, with the webcam off.
+            // The webcam in Howdy's way (the camera busy, or no USB
+            // bandwidth left for it): again, with the webcam off. Not for
+            // anything else Howdy says — too dark, no face — which the
+            // webcam has nothing to do with.
             if (adding && code !== 0 && code !== 126 && code !== 127 && !root.addingAlone && !root.retriedAlone
-                    && /camera|device|video|frame|open/i.test(said.join(" "))) {
+                    && /No space left on device|Device or resource busy|Failed to (read|open) (the )?camera/i.test(said.join(" "))) {
+                console.info("FaceUnlock: Howdy couldn't open its camera beside the webcam; again without it:", said.join(" | "));
                 root.retriedAlone = true;
                 root.addingAlone = true;
                 root.stopPreview();
@@ -272,6 +278,7 @@ Singleton {
             .concat(["-i", root.previewDevice,
                      "-vf", "fps=12,scale=640:-2", "-q:v", "6", "-update", "1", "-atomic_writing", "1",
                      "-y", root.previewFile]);
+        console.info("FaceUnlock: webcam picture from", root.previewDevice, previewProc.compact ? "(MJPEG 640×480)" : "(the camera's own format)");
         previewProc.running = true;
         previewStop.restart();
     }
@@ -288,6 +295,7 @@ Singleton {
         stderr: StdioCollector { id: previewErr }
         onExited: code => {
             if (previewProc.stopping) return;
+            console.info("FaceUnlock: webcam picture stopped (" + code + "):", previewErr.text.trim().split("\n").pop() || "-");
             if (code === 127) { root.previewError = "The preview needs ffmpeg"; return; }
             // The small picture wasn't to be had: the camera's own.
             if (previewProc.compact && code !== 0) {
