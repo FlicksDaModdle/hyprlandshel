@@ -252,7 +252,7 @@ Singleton {
         if (prefs.shellBlurMode === "wallpaper") return false;
         return name === "bar" || name === "dock" || root.windowsUnderMenus;
     }
-    readonly property string shellBlurRules: ["bar", "dock", "panel", "overview"]
+    readonly property string shellBlurRules: ["bar", "dock", "panel", "launcher", "overview"]
         .map(n => n + "=" + (root.blurLive(n) ? "false" : "true")).join(",")
     onShellBlurRulesChanged: if (root.applied) root.applyShellBlur()
 
@@ -264,6 +264,10 @@ Singleton {
                  + 'blur = true, ignore_alpha = 0.15, xray = ' + xray + ' }) ';
         }
         Services.Compositor.evalLua(lua);
+        // The launcher animates itself (hyprland.lua says why); sent on its
+        // own, so a Hyprland without the field still gets the blur above.
+        Services.Compositor.evalLua('hl.layer_rule({ name = "launcher-no-anim", '
+            + 'match = { namespace = "^quickshell:launcher$" }, no_anim = true })');
     }
 
     // The borders should follow a theme flip, a new accent or either

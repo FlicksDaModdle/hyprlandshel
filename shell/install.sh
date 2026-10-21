@@ -737,6 +737,8 @@ if [ "$MODE" = shell-only ]; then
       layerrule = blur, ^(quickshell:bar)\$
       layerrule = blur, ^(quickshell:dock)\$
       layerrule = blur, ^(quickshell:panel)\$
+      layerrule = blur, ^(quickshell:launcher)\$
+      layerrule = noanim, ^(quickshell:launcher)\$
       layerrule = blur, ^(quickshell:overview)\$
 EOF
 fi

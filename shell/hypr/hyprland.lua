@@ -406,7 +406,7 @@ animate("layers",           "hsFade",   2.5, "fade")
 -- shell sends its own (Settings → Hyprland → "Blur behind the shell"),
 -- switching the menus to live while there are windows on screen.
 local shell_layers = {
-    bar = false, dock = false, panel = true, overview = true,
+    bar = false, dock = false, panel = true, launcher = true, overview = true,
 }
 for name, xray in pairs(shell_layers) do
     hl.layer_rule({
@@ -417,6 +417,15 @@ for name, xray in pairs(shell_layers) do
         xray         = xray,
     })
 end
+
+-- The launcher draws its own opening and closing, out of the dock and
+-- back into it; a compositor fade on top of that is a second movement
+-- over the first, and the dock flickers at both ends.
+pcall(hl.layer_rule, {
+    name    = "launcher-no-anim",
+    match   = { namespace = "^quickshell:launcher$" },
+    no_anim = true,
+})
 
 -- The wallpaper layer is the ground itself; blurring it would be blurring
 -- nothing, and it must not animate on every reload.

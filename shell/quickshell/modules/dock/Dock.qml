@@ -633,8 +633,17 @@ Variants {
         Rectangle {
             id: pill
             radius: Config.Appearance.rDock
-            color: Config.Appearance.panel
-            border.width: 1
+            // While the launcher is out, it *is* this pill: it starts at
+            // exactly this rectangle and grows, and lands back on it. The
+            // launcher says when its own shape is on screen over this one
+            // (launcherCoversDock), and only then does the pill's glass go,
+            // at once: the two are the same shape in the same place, so
+            // the swap is invisible. Fading it instead left a moment with
+            // two panes of glass stacked (darker) or none (a hole where the
+            // dock was).
+            readonly property bool covered: Config.UiState.launcherCoversDock && dock.onFocusedScreen
+            color: covered ? "transparent" : Config.Appearance.panel
+            border.width: covered ? 0 : 1
             border.color: Config.Appearance.edge
 
             x: dock.isLeft ? dock.pillPos : Math.round((dock.width - width) / 2)
@@ -664,13 +673,6 @@ Variants {
             Binding { target: Config.UiState; property: "dockIconSize"; value: dock.iconSize; when: dock.onFocusedScreen; restoreMode: Binding.RestoreNone }
             Binding { target: Config.UiState; property: "dockPadH"; value: dock.padH; when: dock.onFocusedScreen; restoreMode: Binding.RestoreNone }
 
-            // While the launcher is out, it *is* this pill — it starts at
-            // exactly this rectangle and grows. Two of them on screen at
-            // once would give the trick away, so this one steps aside.
-            opacity: opacitySpring.value
-            visible: opacity > 0.01
-            Spring { id: opacitySpring; to: (Config.Appearance.launcherMorph
-                && Config.UiState.launcherOpen && dock.onFocusedScreen) ? 0 : 1; response: 140; bounce: 0 }
 
             // The mockup's `inset 0 1px 0 var(--gloss)` reads as a soft
             // highlight on a translucent panel over a darker backdrop. Drawn
@@ -680,6 +682,11 @@ Variants {
             Flow {
                 id: tiles
                 anchors.centerIn: parent
+                // The icons, unlike the glass, are not the launcher's: they
+                // fade out as it grows over them and back in as it lands.
+                opacity: tilesFade.value
+                visible: opacity > 0.01
+                Spring { id: tilesFade; to: pill.covered ? 0 : 1; response: pill.covered ? 140 : 240; bounce: 0 }
                 flow: dock.isLeft ? Flow.TopToBottom : Flow.LeftToRight
                 spacing: dock.tileSpacing
 

@@ -20,6 +20,9 @@ ClippingRectangle {
     // Length of the solid accent run before it fades into the seam tint.
     property real seamLead: 40
     property bool showSeam: true
+    // For a panel that grows out of something without one (the launcher,
+    // out of the dock).
+    property real seamOpacity: 1
     // Off inside a real window: the compositor draws that window's border,
     // and a hairline of our own inside it is a second, differently curved
     // outline.
@@ -45,7 +48,8 @@ ClippingRectangle {
 
     Row {
         id: seam
-        visible: root.showSeam
+        visible: root.showSeam && opacity > 0.01
+        opacity: root.seamOpacity
         z: 99
         anchors.top: parent.top
         anchors.left: parent.left

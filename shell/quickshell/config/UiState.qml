@@ -25,6 +25,9 @@ Singleton {
     property real dockTileSize: 0
     property real dockIconSize: 0
     property real dockPadH: 0
+    // The launcher's shape is on screen exactly over the dock's pill, so
+    // the pill's own glass steps aside (see Dock.qml's pill).
+    property bool launcherCoversDock: false
     property bool overviewOpen: false
     property bool controlCenterOpen: false
     property bool notificationsOpen: false

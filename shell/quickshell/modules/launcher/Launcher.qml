@@ -7,6 +7,7 @@ import "../../config" as Config
 import "../../services" as Services
 import "../common"
 import "../icons"
+import "../panels"
 
 // Start menu / Launchpad hybrid, anchored beside the dock's Start tile — the
 // mockup's direction is a Windows Start menu, not a full-screen Spotlight,
@@ -63,9 +64,15 @@ Variants {
         Spring { id: exitSpring; to: 0; response: 260; bounce: 0 }
 
         onWantedChanged: {
-            if (wanted) { linger.stop(); lingering = false; resetInput(); }
-            else if (visible && Config.Appearance.animated) {
-                lingering = true; linger.restart();
+            if (wanted) {
+                linger.stop(); unmap.stop(); lingering = false; resetInput();
+                if (launcher.morphing) coverSoon.restart();
+            } else {
+                powerOpen = false;
+                leavingWhole = launcher.exitAway && launcher.morphing;
+                if (visible && Config.Appearance.animated) {
+                    lingering = true; linger.restart();
+                } else covering = false;
             }
             // Drives the morph too: one handler, because QML keeps only the
             // last handler declared for a signal and silently drops the rest.
@@ -98,10 +105,45 @@ Variants {
                 fadeSpring.wake();
             } else if (!launcher.exitAway) fadeSpring.to = 0;
         }
+        // ── the hand-over with the dock ───────────────────────────────────
+        // Opening, this surface's first frame is the dock's pill, exactly;
+        // once it is on screen the dock's own glass steps aside, so there
+        // is only ever one pane (Dock.qml's pill). Closing, the shape lands
+        // back on the pill, the dock's glass comes back, and this surface
+        // goes a frame later. No fade by the compositor either: the
+        // launcher has a layer namespace of its own with no animation
+        // (hyprland.lua), because Hyprland fading the whole surface in
+        // while it was also growing out of the dock was a second, unrelated
+        // movement over the first, and the pill flickered at both ends.
+        property bool covering: false
+        onCoveringChanged: Config.UiState.launcherCoversDock = covering
+        Connections {
+            target: panel.Window.window
+            ignoreUnknownSignals: true
+            function onFrameSwapped() { if (launcher.wanted && launcher.morphing) launcher.covering = true; }
+        }
+        // ...and in case no frame signal arrives (software rendering).
+        Timer { id: coverSoon; interval: 34; onTriggered: if (launcher.wanted && launcher.morphing) launcher.covering = true }
+
+        // How it is leaving, decided as it starts to: into the dock, or
+        // away whole (see exitAway).
+        property bool leavingWhole: false
+        // Off the screen as far as the eye can tell: landed on the pill,
+        // or gone whole.
+        readonly property bool landed: lingering && (leavingWhole
+            ? exitSpring.value > 0.985
+            : (morphSpring.value < 0.004 && morphYSpring.value < 0.004))
+        onLandedChanged: if (landed) finishClose()
+        function finishClose() {
+            covering = false;
+            unmap.restart();
+        }
+        // A frame for the dock to draw its glass again before this goes.
         Timer {
-            id: linger
-            interval: 260
+            id: unmap
+            interval: 24
             onTriggered: {
+                linger.stop();
                 launcher.lingering = false;
                 // Back to the closed shape now that nothing is on screen,
                 // or the next opening would start from a panel that is
@@ -112,6 +154,12 @@ Variants {
                 fadeSpring.to = 0; fadeSpring.snap();
                 exitSpring.to = 0; exitSpring.snap();
             }
+        }
+        // The longest a close may take, whatever the springs are doing.
+        Timer {
+            id: linger
+            interval: 1200
+            onTriggered: launcher.finishClose()
         }
 
         anchors.top: true
@@ -133,7 +181,7 @@ Variants {
         color: "transparent"
         exclusiveZone: 0
 
-        WlrLayershell.namespace: "quickshell:panel"
+        WlrLayershell.namespace: "quickshell:launcher"
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
@@ -228,9 +276,22 @@ Variants {
         // One rise, straight up: the width (already the dock's) and the
         // height move together on the same spring, so nothing leads off to
         // one side.
-        Spring { id: morphSpring; to: 0; response: launcher.wanted ? 420 : 260; bounce: launcher.wanted ? 0.7 : 0 }
-        Spring { id: morphYSpring; to: 0; response: launcher.wanted ? 420 : 260; bounce: launcher.wanted ? 0.7 : 0 }
-        Spring { id: fadeSpring; to: 0; response: launcher.wanted ? 300 : 150; bounce: 0 }
+        //
+        // The height is a touch slower than the width, so the glass leads
+        // with its top edge and the sides follow, the way a liquid does;
+        // closing is critically damped (an overshoot below 0 would turn the
+        // shape inside out) and a little quicker.
+        Spring { id: morphSpring; to: 0; response: launcher.wanted ? 400 : 300; bounce: launcher.wanted ? 0.6 : 0 }
+        Spring { id: morphYSpring; to: 0; response: launcher.wanted ? 470 : 320; bounce: launcher.wanted ? 0.8 : 0 }
+        Spring { id: fadeSpring; to: 0; response: launcher.wanted ? 320 : 140; bounce: 0 }
+
+        // How fast the shape is moving, 0 at rest and 1 at full tilt.
+        // The glass gives a little as it travels: it draws in at the sides
+        // and its corners soften, then it settles back square to the
+        // finished panel. Read from the spring's own speed, so it is
+        // exactly as strong as the movement and gone the moment it stops.
+        readonly property real flow: morphing
+            ? Math.min(1, Math.abs(morphYSpring.velocity) / 6) : 0
         Component.onCompleted: {
             const v = wanted ? 1 : 0;
             for (const sp of [morphSpring, morphYSpring, fadeSpring]) { sp.to = v; sp.snap(); }
@@ -541,6 +602,7 @@ Variants {
         // Start tile ("I am done with the dock too").
         function close(intoDock) {
             menuOpen = false;
+            powerOpen = false;
             Config.UiState.holdDockAfterLauncher = intoDock === true;
             Config.UiState.launcherOpen = false;
         }
@@ -583,10 +645,17 @@ Variants {
             id: panel
 
             readonly property real targetWidth: launcher.panelWidth
+            // The dock has no accent seam: it comes in with the inside.
+            seamOpacity: inner.fade
             // Not rounded while it moves: whole-pixel steps are what make a
             // slow settle look like it is ticking rather than flowing.
+            //
+            // Drawing in while it moves, but never so far that the Start
+            // button in the footer (where the dock's was) is cut into.
+            readonly property real squeezeMax: footer.overDock
+                ? Math.max(0, 2 * (Config.UiState.dockPadH - 3)) : launcher.z(28)
             width: launcher.morphing
-                   ? launcher.lerp(launcher.pillW, targetWidth)
+                   ? launcher.lerp(launcher.pillW, targetWidth) - launcher.flow * squeezeMax
                    : targetWidth
             // The content is laid out at the finished size throughout and
             // this clips it, so the panel opens like a shutter rather than
@@ -599,9 +668,12 @@ Variants {
             // The corner travels too: the pill is a lozenge and the panel
             // is a window, and a radius that snaps between them at either
             // end is the one hard edge in an otherwise soft movement.
+            // It starts on the dock's own corner, so the hand-over is
+            // exact, and rounds off a little more while it travels.
             radius: launcher.morphing
-                    ? (launcher.lerpY(Math.min(launcher.pillH / 2, 24),
-                                                Config.Appearance.rPanel))
+                    ? Math.min(Math.min(width, height) / 2,
+                               launcher.lerpY(Config.Appearance.rDock, Config.Appearance.rPanel)
+                               + launcher.flow * launcher.z(10))
                     : Config.Appearance.rPanel
             // As tall as what is in it, and no taller.
             //
@@ -671,7 +743,9 @@ Variants {
                              Math.round(launcher.height / 2 - targetHeight / 2)))
                : launcher.height - targetHeight - launcher.nearEdge
 
-            x: launcher.morphing ? launcher.lerp(launcher.pillX, targetX) : targetX
+            x: launcher.morphing
+               ? launcher.lerp(launcher.pillX + launcher.pillW / 2, targetX + targetWidth / 2) - width / 2
+               : targetX
             // Straight up out of the dock, centred: it is the dock's width
             // already, so it only rises — no sideways squeeze, nothing
             // pulled towards the Start tile in the corner. Without a pill
@@ -687,10 +761,27 @@ Variants {
             y: (launcher.morphing ? launcher.lerpY(launcher.pillY, targetY) : targetY)
                + (launcher.rises && !launcher.isLeft ? (1 - launcher.morphY) * launcher.z(24) : 0)
                + (launcher.isLeft ? 0 : launcher.exit * launcher.z(56))
-            opacity: (1 - launcher.exit) * (launcher.rises ? Math.min(1, launcher.morphY * 4) : 1)
+            opacity: (1 - launcher.exit)
+                     * (launcher.rises || launcher.grows ? Math.max(0, Math.min(1, launcher.morphY * 3)) : 1)
 
             // Swallow clicks so they don't reach the catcher behind.
             MouseArea { anchors.fill: parent }
+
+            // Light catching the top edge of the glass while it moves.
+            Rectangle {
+                z: 98
+                enabled: false
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: launcher.z(56)
+                opacity: launcher.flow
+                visible: opacity > 0.01
+                gradient: Gradient {
+                    GradientStop { position: 0; color: Qt.rgba(1, 1, 1, Config.Appearance.dark ? 0.10 : 0.22) }
+                    GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) }
+                }
+            }
 
             // Everything inside is laid out at the panel's finished size and
             // pinned to the bottom, which is the edge it grows away from, so
@@ -704,7 +795,12 @@ Variants {
                 // Fades in over the back half of the morph: at the start
                 // there is a pill-sized hole to look through and text in it
                 // would just be clipped nonsense.
-                opacity: launcher.morphing || launcher.grows || launcher.rises ? launcher.morphFade : 1
+                //
+                // The inside, not the footer: growing out of the dock the
+                // footer is where the dock was, with the Start button that
+                // opened this on it, and that has to be there from the
+                // first frame (see footer).
+                readonly property real fade: launcher.morphing || launcher.grows || launcher.rises ? launcher.morphFade : 1
 
             Column {
                 id: body
@@ -713,6 +809,9 @@ Variants {
                 anchors.top: parent.top
                 anchors.bottom: footer.top
                 clip: true
+                opacity: inner.fade
+                // ...and comes up into place, the way the glass did.
+                transform: Translate { y: (1 - inner.fade) * launcher.z(14) }
 
                 // ── search ────────────────────────────────────────────────────
                 Item {
@@ -778,7 +877,8 @@ Variants {
                             // half on its own. The compositor's binding
                             // is the one that toggles.
                             Keys.onEscapePressed: {
-                                if (launcher.menuOpen) launcher.closeMenu();
+                                if (launcher.powerOpen) launcher.powerOpen = false;
+                                else if (launcher.menuOpen) launcher.closeMenu();
                                 else if (launcher.query !== "") { launcher.query = ""; text = ""; }
                                 else if (launcher.showAll) launcher.showAll = false;
                                 else launcher.close(true);
@@ -1372,9 +1472,13 @@ Variants {
                 readonly property bool overDock: launcher.morphing && !launcher.isLeft
                                                  && Config.UiState.dockTileSize > 0
                 height: overDock ? Math.max(launcher.z(40), launcher.pillH) : launcher.z(40)
-                color: Config.Appearance.hover
+                // Everything here but the Start button comes in with the
+                // inside: at the first frame this is the dock's pill, and
+                // the dock's pill has no tint and no user name on it.
+                color: Qt.rgba(Config.Appearance.hover.r, Config.Appearance.hover.g,
+                               Config.Appearance.hover.b, Config.Appearance.hover.a * inner.fade)
 
-                Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule }
+                Rectangle { width: parent.width; height: 1; color: Config.Appearance.rule; opacity: inner.fade }
 
                 // The button that opened this, still where it was.
                 //
@@ -1424,6 +1528,7 @@ Variants {
                 }
 
                 Rectangle {
+                    opacity: inner.fade
                     anchors.left: startTile.right
                     anchors.leftMargin: launcher.z(6)
                     anchors.verticalCenter: parent.verticalCenter
@@ -1472,30 +1577,34 @@ Variants {
                     }
 
                     HoverHandler { id: userHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { launcher.close(); Config.UiState.togglePower(); } }
+                    TapHandler { onTapped: launcher.togglePowerMenu() }
                 }
 
-                // Power shortcut, mirroring the bar's own.
+                // Power: the bar's own session menu, opened here above the
+                // button rather than by closing this and opening it under
+                // the bar on the other side of the screen.
                 Rectangle {
+                    id: powerButton
+                    opacity: inner.fade
                     anchors.right: parent.right
                     anchors.rightMargin: launcher.z(10)
                     anchors.verticalCenter: parent.verticalCenter
                     width: launcher.z(28)
                     height: launcher.z(28)
                     radius: Config.Appearance.rSm
-                    color: powerHover.hovered ? Config.Appearance.accent : "transparent"
+                    color: powerHover.hovered || launcher.powerOpen ? Config.Appearance.accent : "transparent"
 
                     MonoIcon {
                         anchors.centerIn: parent
                         name: "power"
                         size: launcher.z(15)
-                        inkColor: powerHover.hovered
+                        inkColor: powerHover.hovered || launcher.powerOpen
                                   ? Config.Appearance.inkOnAccent : Config.Appearance.ink2
                         monochrome: true
                     }
 
                     HoverHandler { id: powerHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { launcher.close(); Config.UiState.togglePower(); } }
+                    TapHandler { onTapped: launcher.togglePowerMenu() }
                 }
             }
             }
@@ -1576,6 +1685,59 @@ Variants {
                 entries: launcher.menuEntries
                 onDone: keepOpen => { if (!keepOpen) launcher.closeMenu(); }
             }
+        }
+
+        // ── session menu ──────────────────────────────────────────────────────
+        // The same menu as the bar's power button (panels/PowerMenu.qml),
+        // over the launcher above its power button. Choosing an entry
+        // closes everything and does it, as it does from the bar.
+        property bool powerOpen: false
+        function togglePowerMenu() {
+            menuOpen = false;
+            powerOpen = !powerOpen;
+            if (!powerOpen) searchInput.forceActiveFocus();
+        }
+        onPowerOpenChanged: if (!powerOpen && visible) searchInput.forceActiveFocus()
+
+        MouseArea {
+            anchors.fill: parent
+            visible: launcher.powerOpen
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: launcher.powerOpen = false
+        }
+        Item {
+            id: powerAnchor
+            // Right-aligned with the button, just above the footer.
+            x: Math.max(8, Math.min(launcher.width - powerMenu.width - 8,
+                                    panel.x + panel.width - powerMenu.width - launcher.z(4)))
+            y: panel.y + panel.height - footer.height - powerMenu.height - launcher.z(8)
+            width: powerMenu.width
+            height: powerMenu.height
+            visible: powerPop.value > 0.01
+            opacity: Math.min(1, powerPop.value * 1.6)
+            Spring { id: powerPop; to: launcher.powerOpen ? 1 : 0; response: launcher.powerOpen ? 300 : 160; bounce: launcher.powerOpen ? 1 : 0 }
+            transform: Scale {
+                origin.x: powerAnchor.width
+                origin.y: powerAnchor.height
+                xScale: 0.92 + 0.08 * powerPop.value
+                yScale: 0.92 + 0.08 * powerPop.value
+            }
+
+            Loader {
+                id: powerLoader
+                active: launcher.powerOpen || powerPop.value > 0.01
+                sourceComponent: Component {
+                    PowerMenu {
+                        // Solid, like the right-click menu: it sits over
+                        // the launcher's own rows, where the compositor's
+                        // blur can't reach.
+                        color: Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g,
+                                       Config.Appearance.panel.b, 1)
+                    }
+                }
+            }
+            readonly property Item powerMenu: powerLoader.item ?? powerSize
+            Item { id: powerSize; width: 248; height: 300 }
         }
 
         // ── keyboard navigation ───────────────────────────────────────────────
