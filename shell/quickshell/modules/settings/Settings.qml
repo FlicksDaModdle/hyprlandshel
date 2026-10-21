@@ -2024,14 +2024,12 @@ Scope {
                         type: "menu", options: labels, value: cur ? F.cameraLabel(cur) : "",
                         set: v => { const k = labels.indexOf(v); if (k >= 0) F.setCamera(F.cameras[k].path); } });
         }
-        rows.push({ n: "Your face",
-                    s: F.faces > 0 ? (F.faces + (F.faces === 1 ? " face enrolled" : " faces enrolled")
-                                      + " · adding another, in different light or with glasses, helps")
-                       : F.faces === 0 ? "None enrolled yet: add yours, looking at the camera"
-                       : "Add your face, looking at the camera",
-                    type: "buttons",
-                    buttons: [{ label: "Add my face", set: () => F.addFace() }]
-                             .concat(F.faces !== 0 ? [{ label: "Remove all", quiet: true, set: () => F.clearFaces() }] : []) });
+        rows.push({ type: "header", n: "Your face",
+                    s: "What the camera sees, to line your face up before adding it" });
+        rows.push({ type: "panel", panel: "face" });
+        if (F.faces !== 0)
+            rows.push({ n: "Forget my faces", s: "Every look Howdy knows you by; your password still works",
+                        type: "buttons", buttons: [{ label: "Remove all", quiet: true, set: () => F.clearFaces() }] });
         if (F.lockOn)
             rows.push({ n: "Try it", s: F.testing ? "Look at the camera…" : "Checks your face the way the lock screen does",
                         type: "buttons", buttons: [{ label: F.testing ? "Looking…" : "Try it", set: () => F.test() }] });

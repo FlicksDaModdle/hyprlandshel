@@ -6,6 +6,7 @@
 #   sudo ./howdy-setup.sh --remove         take it out again
 #   sudo ./howdy-setup.sh --camera DEVICE  use that camera (/dev/videoN)
 #   sudo ./howdy-setup.sh --add-face       enrol your face (look at the camera)
+#   sudo ./howdy-setup.sh --add-face --alt …as an alternative look (glasses, a beard)
 #   sudo ./howdy-setup.sh --clear-faces    forget every face of yours
 #   sudo ./howdy-setup.sh --list-faces     the faces enrolled for you
 #
@@ -45,11 +46,11 @@ say() { printf '  %s\n' "$*"; }
 die() { printf 'howdy-setup.sh: %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "run it with sudo"
 
-mode=install camera=""
+mode=install camera="" alt=0
 case ${1:-} in
     --check) mode=check ;;
     --remove) mode=remove ;;
-    --add-face) mode=add ;;
+    --add-face) mode=add; [ "${2:-}" = --alt ] && alt=1 ;;
     --clear-faces) mode=clear ;;
     --list-faces) mode=list ;;
     --camera)
@@ -87,8 +88,10 @@ case $mode in
         exit 0 ;;
     add)
         need_person; need_howdy
-        # Howdy asks for a name for the new face; this gives it one.
-        printf 'Hyprshell %s\n' "$(date +%Y-%m-%d)" | howdy -U "$person" add
+        # Howdy asks for a name for the new face (24 characters at most);
+        # this gives it one.
+        if [ "$alt" = 1 ]; then label="Alt look $(date +%Y-%m-%d)"; else label="Face $(date +%Y-%m-%d)"; fi
+        printf '%s\n' "$label" | howdy -U "$person" add
         exit $? ;;
     clear)
         need_person; need_howdy

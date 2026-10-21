@@ -81,6 +81,12 @@ Item {
 
     readonly property var ap: Config.Appearance
 
+    // Face unlock's state (auth.faceState: looking, found, failed, or ""),
+    // and whether the password field stands aside for it.
+    readonly property bool faceUp: primary && !!auth.faceState
+    readonly property bool faceFirst: primary && (auth.faceState === "looking" || auth.faceState === "found")
+                                      && (auth.entered || "") === "" && !(auth.prompt || "")
+
     // ── ground ────────────────────────────────────────────────────────────
     Ground {
         id: ground
@@ -225,6 +231,36 @@ Item {
         scale: view.uiScale
         transformOrigin: Item.TopLeft
 
+        // ── your face ─────────────────────────────────────────────────────────
+        // Face unlock's glyph (FaceScan), at the top above the clock, while
+        // it looks for you, as it finds you, and if it doesn't
+        // (`auth.faceState`). Only where the card is.
+        FaceScan {
+            id: faceScan
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: Math.max(14, clock.y - height - 34)
+            size: 58
+            state: view.primary && view.auth.faceState ? view.auth.faceState : ""
+            ink: view.fg
+            accent: view.ap.accent
+
+            // Not found (or it timed out): the glyph is the way to look again.
+            readonly property bool canRetry: state === "failed" && view.auth.canRetryFace === true
+            HoverHandler { enabled: faceScan.canRetry; cursorShape: Qt.PointingHandCursor }
+            TapHandler { enabled: faceScan.canRetry; onTapped: { view.auth.retryFace(); view.takeKeys(); } }
+        }
+        StyledText {
+            anchors.horizontalCenter: faceScan.horizontalCenter
+            anchors.top: faceScan.bottom
+            anchors.topMargin: 4
+            opacity: faceScan.canRetry ? faceScan.opacity : 0
+            visible: opacity > 0.01
+            text: "Tap to try again"
+            font.pixelSize: view.ap.fs(11)
+            font.weight: Font.DemiBold
+            color: view.fg2
+        }
+
         // ── clock ─────────────────────────────────────────────────────────────
         // High on the screen with the card, centred on the others: a light
         // weight at this size reads as a clock face rather than a heading.
@@ -235,7 +271,7 @@ Item {
             // between it and the row along the bottom (a short screen, or
             // a large shell scale).
             readonly property real restY: view.primary
-                ? Math.max(16, Math.min(stage.height * 0.13,
+                ? Math.max(view.faceUp ? 106 : 16, Math.min(stage.height * 0.13 + (view.faceUp ? 52 : 0),
                                         stage.height - 96 - card.height - 24 - height))
                 : (stage.height - height) / 2
             y: restY + (1 - view.shown) * -14
@@ -425,11 +461,19 @@ Item {
                 Item { width: 1; height: 2 }
 
                 // The field: a pill, with the accent's round button at its end.
+                //
+                // Face first: while your face is being looked for, and nothing
+                // has been typed, it folds away — the password is asked for
+                // only if the face isn't found. Typing brings it straight
+                // back (the field has the keys all along, folded or not).
                 Rectangle {
                     id: field
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: 320
-                    height: 50
+                    height: 50 * fieldOpen.value
+                    opacity: Math.min(1, fieldOpen.value * 1.4)
+                    clip: true
+                    Spring { id: fieldOpen; to: view.faceFirst ? 0 : 1; response: 420; bounce: 0.6 }
                     radius: height / 2
                     color: view.ap.hover
                     border.width: 1.5
@@ -655,7 +699,7 @@ Item {
                 // (Howdy; `auth.canRetryFace` and `auth.retryFace()`).
                 Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    visible: view.auth.canRetryFace === true && !view.auth.busy
+                    visible: view.auth.canRetryFace === true && !view.auth.busy && view.auth.faceState !== "found"
                     width: faceRow.implicitWidth + 22
                     height: 28
                     radius: 14

@@ -127,18 +127,35 @@ Singleton {
     function enable() { run([], "Setting up face unlock…", "Face unlock is on: lock the screen to try it"); }
     function disable() { run(["--remove"], "Turning face unlock off…", "Face unlock is off"); }
     function setCamera(path) { run(["--camera", path], "Switching camera…", "Howdy uses " + path); }
-    function addFace() { run(["--add-face"], "Look at the camera…", "Your face is added"); }
+    // The camera can be open in one place at a time: the preview lets go
+    // before Howdy takes it, and comes back when Howdy is done.
+    function addFace(alt) {
+        root.resumePreview = root.previewing;
+        root.stopPreview();
+        runProc.adding = true;
+        run(alt ? ["--add-face", "--alt"] : ["--add-face"],
+            "Hold still and look at the camera…",
+            alt ? "Your alternative look is added" : "Your face is added");
+    }
     function clearFaces() { run(["--clear-faces"], "Removing your faces…", "Your faces are removed"); }
 
     Process {
         id: runProc
         property string done: ""
+        property bool adding: false
         stdout: StdioCollector { id: runOut }
         stderr: StdioCollector { id: runErr }
         onExited: code => {
             root.busy = false;
             root.refresh();
-            if (code === 0) { root.status = runProc.done; return; }
+            if (root.resumePreview) { root.resumePreview = false; root.startPreview(); }
+            const adding = runProc.adding;
+            runProc.adding = false;
+            if (code === 0) {
+                root.status = runProc.done;
+                if (adding) { root.justAdded = true; justAddedClear.restart(); }
+                return;
+            }
             root.failed = true;
             // pkexec: 126 a dismissed or wrong password, 127 not allowed.
             if (code === 126 || code === 127) { root.status = "Not changed: the password wasn't given"; return; }
@@ -147,10 +164,51 @@ Singleton {
         }
     }
 
+    // ── the camera, seen ────────────────────────────────────────────────
+    // What the face camera sees, for lining your face up before adding it:
+    // ffmpeg writes a frame a dozen times a second to a file (swapped in
+    // whole, never half-written), and the panel shows the latest.
+    readonly property string previewFile: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/hyprshell-face-preview.jpg"
+    readonly property string previewDevice: {
+        if (root.camera !== "") return root.camera;
+        const ir = root.cameras.find(c => c.ir);
+        return ir ? ir.path : (root.cameras.length ? root.cameras[0].path : "");
+    }
+    readonly property bool previewing: previewProc.running
+    property bool resumePreview: false
+    // A look was just added: the panel's frame shows the tick a moment.
+    property bool justAdded: false
+    Timer { id: justAddedClear; interval: 2500; onTriggered: root.justAdded = false }
+    property int previewFrame: 0
+    property string previewError: ""
+    function startPreview() {
+        if (previewProc.running || root.busy || root.previewDevice === "") return;
+        root.previewError = "";
+        previewProc.command = ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "v4l2", "-i", root.previewDevice,
+                               "-vf", "fps=12", "-q:v", "6", "-update", "1", "-atomic_writing", "1",
+                               "-y", root.previewFile];
+        previewProc.running = true;
+        previewStop.restart();
+    }
+    function stopPreview() { if (previewProc.running) previewProc.signal(15); }
+    Process {
+        id: previewProc
+        stderr: StdioCollector { id: previewErr }
+        onExited: code => {
+            if (code !== 0 && code !== 255 && previewErr.text.trim() !== "")
+                root.previewError = code === 127 ? "The preview needs ffmpeg" : previewErr.text.trim().split("\n").pop();
+        }
+    }
+    // A new frame to show, while it runs.
+    Timer { interval: 90; repeat: true; running: previewProc.running; onTriggered: root.previewFrame++ }
+    // Not left running with nobody looking.
+    Timer { id: previewStop; interval: 180000; onTriggered: root.stopPreview() }
+
     // ── trying it ───────────────────────────────────────────────────────
     // The lock screen's own face service, run here.
     function test() {
         if (root.busy || testPam.active || !root.lockOn) return;
+        root.stopPreview();
         root.failed = false;
         root.status = "Look at the camera…";
         if (!testPam.start()) { root.failed = true; root.status = "Couldn't start the face check"; }

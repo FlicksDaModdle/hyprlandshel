@@ -211,9 +211,18 @@ Scope {
     // Enter was pressed before PAM asked.
     property bool pending: false
     readonly property bool canRetryFace: faceEnabled && !g.preview && !faceStarted && !g.busy
+    // For the glyph at the top of the screen (FaceScan).
+    property bool faceFound: false
+    property bool faceMissed: false
+    readonly property string faceState: !faceEnabled || g.preview ? ""
+        : faceFound ? "found"
+        : faceStarted && !awaitingPassword && !passwordSent && !pending ? "looking"
+        : faceMissed || awaitingPassword ? "failed" : ""
     function beginFace() {
         if (!g.faceEnabled || g.preview || !g.user || !g.session || g.faceStarted || g.busy) return;
         g.faceStarted = true;
+        g.faceFound = false;
+        g.faceMissed = false;
         g.awaitingPassword = false;
         g.pending = false;
         g.passwordSent = false;
@@ -242,7 +251,7 @@ Scope {
         if (!g.preview && Greetd.state !== GreetdState.Inactive) Greetd.cancelSession();
         g.entered = ""; g.status = ""; g.failed = false; g.busy = false;
         g.prompt = ""; g.passwordSent = false;
-        g.faceDone(); g.info = "";
+        g.faceDone(); g.info = ""; g.faceFound = false; g.faceMissed = false;
     }
 
     function submit() {
@@ -314,6 +323,7 @@ Scope {
                 if (!g.passwordSent && !echoResponse) {
                     // Howdy didn't find them: wait for the password, unless
                     // it has already been typed and Enter pressed.
+                    if (g.faceStarted) g.faceMissed = true;
                     if (g.faceStarted && !g.pending) {
                         g.awaitingPassword = true;
                         g.info = "Face not recognised · type your password";
@@ -363,13 +373,24 @@ Scope {
         }
 
         function onReadyToLaunch() {
+            // In by face (no password was sent): the tick is drawn first.
+            const byFace = g.faceStarted && !g.passwordSent;
             g.faceDone();
             g.info = "";
-            g.remember();
-            g.status = "Starting " + g.session.name + "…";
-            g.failed = false;
-            Greetd.launch(g.session.command, g.sessionEnv(g.session));
+            if (byFace) {
+                g.faceFound = true;
+                launchSoon.restart();
+                return;
+            }
+            g.launchNow();
         }
+    }
+    Timer { id: launchSoon; interval: 650; onTriggered: g.launchNow() }
+    function launchNow() {
+        g.remember();
+        g.status = "Starting " + g.session.name + "…";
+        g.failed = false;
+        Greetd.launch(g.session.command, g.sessionEnv(g.session));
     }
 
     // ── power ─────────────────────────────────────────────────────────────

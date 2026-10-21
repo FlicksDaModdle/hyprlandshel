@@ -42,12 +42,16 @@ Scope {
     }
     // What the face attempt is doing, for the line under the field.
     property string info: ""
+    // For the glyph at the top of the screen (FaceScan): looking, found,
+    // failed, or "" when there is no face unlock.
+    property string faceState: ""
     readonly property bool faceLooking: face.active
     readonly property bool canRetryFace: faceEnabled && !face.active && !pam.active
     function retryFace() {
         if (!root.canRetryFace) return;
         root.info = "Looking for you…";
-        if (!face.start()) root.info = "";
+        root.faceState = "looking";
+        if (!face.start()) { root.info = ""; root.faceState = ""; }
     }
     // When the screen locks, and when it is woken.
     function begin() {
@@ -57,6 +61,18 @@ Scope {
     function stop() {
         if (face.active) face.abort();
         root.info = "";
+        root.faceState = "";
+        unlockSoon.stop();
+    }
+    // Found: the tick is drawn, and then the screen goes.
+    Timer {
+        id: unlockSoon
+        interval: 650
+        onTriggered: {
+            root.reset();
+            root.faceState = "";
+            Config.UiState.locked = false;
+        }
     }
 
     PamContext {
@@ -69,13 +85,16 @@ Scope {
         onCompleted: result => {
             if (result === PamResult.Success) {
                 root.info = "";
-                root.reset();
-                Config.UiState.locked = false;
-            } else {
+                root.faceState = "found";
+                if (Config.Appearance.animated) unlockSoon.restart();
+                else unlockSoon.triggered();
+            } else if (!pam.active) {
+                // (Not when Enter stopped it: the password is being checked.)
                 root.info = "Face not recognised · type your password";
+                root.faceState = "failed";
             }
         }
-        onError: err => { root.info = ""; }
+        onError: err => { root.info = ""; root.faceState = root.faceEnabled ? "failed" : ""; }
     }
 
     // Which monitors' lock surfaces the compositor has given the keyboard,
@@ -101,6 +120,7 @@ Scope {
         if (pam.active) return;
         if (face.active) face.abort();
         info = "";
+        if (faceState === "looking") faceState = "failed";
         status = "Checking…";
         failed = false;
         if (!pam.start()) {
