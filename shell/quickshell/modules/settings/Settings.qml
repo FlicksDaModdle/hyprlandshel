@@ -2052,12 +2052,111 @@ Scope {
         if (!F.adding && !F.justAdded && F.status !== "")
             rows.push({ n: F.busy ? "Working…" : (F.failed ? "That didn't work" : "Done"), s: F.status,
                         type: "info", value: "" });
+        for (const r of root.howdyRows()) rows.push(r);
         for (const r of root.keyringRows()) rows.push(r);
         rows.push({ type: "header", n: "Login screen" });
         rows.push({ n: "Hyprshell's login screen",
                     s: F.greeterInstalled ? "Installed; it follows your theme, wallpaper, screens and pointer"
                                           : "Not installed: sudo greeter/install.sh in Hyprshell's folder",
                     type: "info", value: F.greeterInstalled ? "Installed" : "Not installed" });
+        return rows;
+    }
+
+    // Settings → Login screen → Howdy: its own settings (config.ini),
+    // through services/FaceUnlock.qml. Changes wait, and go in together
+    // with one password (scripts/howdy-config.py checks every one).
+    function howdyRows() {
+        const F = Services.FaceUnlock;
+        const rows = [{ type: "header", n: "Howdy",
+                        s: "Howdy's own settings. Changes wait until you apply them, then ask for your password once" }];
+        if (F.configPath === "") {
+            rows.push({ n: "Howdy's settings", type: "info", value: "Not readable",
+                        s: "Its config.ini wasn't found, or can't be read: sudo howdy config edits it by hand" });
+            return rows;
+        }
+        const n = Object.keys(F.pending).length;
+        if (n > 0)
+            rows.push({ n: n === 1 ? "1 change waiting" : n + " changes waiting",
+                        s: "Applying asks for your password", type: "buttons",
+                        buttons: [{ label: F.busy ? "Applying…" : "Apply", set: () => F.applyConfig() },
+                                  { label: "Discard", quiet: true, set: () => F.discardConfig() }] });
+        const num = (key, fallback, round) => v => F.setCfg(key, round ? Math.round(v) : Number(v).toFixed(1));
+        rows.push(
+            { n: "How close a match has to be",
+              s: "Lower is stricter: harder to fool, but it may take you a second try. Howdy's default is 3.5; "
+                 + "above 5 isn't recommended",
+              type: "slider", min: 1, max: 6, step: 0.1, unit: "",
+              value: F.cfgNum("video.certainty", 3.5), set: num("video.certainty", 3.5, false) },
+            { n: "Give up after", s: "How long it looks for you before the password is asked for",
+              type: "slider", min: 1, max: 15, step: 1, unit: "s",
+              value: F.cfgNum("video.timeout", 4), set: num("video.timeout", 4, true) },
+            { n: "Dark frames",
+              s: "How dark a frame can be and still be used (the IR light flashes, so some are black). "
+                 + "Raise it if Howdy says all frames were too dark",
+              type: "slider", min: 0, max: 100, step: 1, unit: "%",
+              value: F.cfgNum("video.dark_threshold", 60), set: num("video.dark_threshold", 60, true) },
+            { n: "Picture size for matching", s: "Smaller is faster; larger can be more precise",
+              type: "seg", options: [{ label: "240", value: "240" }, { label: "320", value: "320" },
+                                     { label: "480", value: "480" }, { label: "720", value: "720" }],
+              value: String(F.cfgNum("video.max_height", 320)), set: v => F.setCfg("video.max_height", v) },
+            { n: "More accurate face finding (CNN)", s: "Much slower without a GPU to run it on",
+              type: "toggle", value: F.cfgBool("core.use_cnn", false), set: v => F.setCfg("core.use_cnn", v) },
+            { n: "Not with the lid closed", s: "Skip Howdy when the laptop is shut (an external screen, say)",
+              type: "toggle", value: F.cfgBool("core.abort_if_lid_closed", true),
+              set: v => F.setCfg("core.abort_if_lid_closed", v) },
+            { n: "Not over SSH", s: "Skip Howdy for logins from another computer",
+              type: "toggle", value: F.cfgBool("core.abort_if_ssh", true), set: v => F.setCfg("core.abort_if_ssh", v) });
+        if (F.webcamCheck)
+            rows.push(
+                { n: "Webcam: how close a match has to be",
+                  s: "For the webcam check. Lower is stricter; colour pictures vary more with the light than infrared",
+                  type: "slider", min: 2, max: 6, step: 0.1, unit: "",
+                  value: F.cfgNum("webcam.certainty", 4.5), set: num("webcam.certainty", 4.5, false) },
+                { n: "Webcam: too dark below",
+                  s: "Average brightness (0–255) under which the webcam is left out and infrared decides alone",
+                  type: "slider", min: 5, max: 150, step: 1, unit: "",
+                  value: F.cfgNum("webcam.min_light", 45), set: num("webcam.min_light", 45, true) });
+        rows.push({ type: "header", n: "Howdy's camera and messages" },
+            { n: "Recorder", s: "How frames are read. FFmpeg can help with grey or garbled pictures",
+              type: "seg", options: [{ label: "OpenCV", value: "opencv" }, { label: "FFmpeg", value: "ffmpeg" },
+                                     { label: "pyv4l2", value: "pyv4l2" }],
+              value: F.cfg("video.recording_plugin", "opencv"), set: v => F.setCfg("video.recording_plugin", v) },
+            { n: "Force Motion JPEG", s: "OpenCV only: fixes some cameras' broken raw frames",
+              type: "toggle", value: F.cfgBool("video.force_mjpeg", false), set: v => F.setCfg("video.force_mjpeg", v) },
+            { n: "Frame rate", s: "Some IR emitters only light at one rate. 0 leaves it to the camera",
+              type: "slider", min: 0, max: 60, step: 1, unit: "fps",
+              value: Math.max(0, F.cfgNum("video.device_fps", -1)),
+              set: v => F.setCfg("video.device_fps", Math.round(v) === 0 ? -1 : Math.round(v)) },
+            { n: "Orientation", s: "For a camera mounted sideways",
+              type: "seg", options: [{ label: "Landscape", value: "0" }, { label: "Both", value: "1" },
+                                     { label: "Portrait", value: "2" }],
+              value: F.cfg("video.rotate", "0"), set: v => F.setCfg("video.rotate", v) },
+            { n: "Keep pictures of failed attempts", s: "In /var/log/howdy/snapshots, to see who tried",
+              type: "toggle", value: F.cfgBool("snapshots.save_failed", false),
+              set: v => F.setCfg("snapshots.save_failed", v) },
+            { n: "Keep pictures of successful ones too", s: "Same folder",
+              type: "toggle", value: F.cfgBool("snapshots.save_successful", false),
+              set: v => F.setCfg("snapshots.save_successful", v) },
+            { n: "In the terminal: say when it's looking", s: "For sudo and other password prompts in a terminal",
+              type: "toggle", value: F.cfgBool("core.detection_notice", false),
+              set: v => F.setCfg("core.detection_notice", v) },
+            { n: "In the terminal: say when it gives up",
+              type: "toggle", value: F.cfgBool("core.timeout_notice", true), set: v => F.setCfg("core.timeout_notice", v) },
+            { n: "In the terminal: say when it recognises you",
+              type: "toggle", value: !F.cfgBool("core.no_confirmation", false),
+              set: v => F.setCfg("core.no_confirmation", !v) },
+            { n: "In the terminal: face and password together",
+              s: "Off: press Enter after Howdy gives up. Input: it presses Enter for you. "
+                 + "Native: stops the prompt itself (can be unstable)",
+              type: "seg", options: [{ label: "Off", value: "off" }, { label: "Input", value: "input" },
+                                     { label: "Native", value: "native" }],
+              value: F.cfg("core.workaround", "off"), set: v => F.setCfg("core.workaround", v) },
+            { n: "Timing report", s: "Howdy prints how long each step took (in a terminal; can upset some apps)",
+              type: "toggle", value: F.cfgBool("debug.end_report", false), set: v => F.setCfg("debug.end_report", v) });
+        if (n > 0)
+            rows.push({ n: n === 1 ? "1 change waiting" : n + " changes waiting", type: "buttons",
+                        buttons: [{ label: F.busy ? "Applying…" : "Apply", set: () => F.applyConfig() },
+                                  { label: "Discard", quiet: true, set: () => F.discardConfig() }] });
         return rows;
     }
 

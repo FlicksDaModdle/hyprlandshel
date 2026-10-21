@@ -10,6 +10,7 @@
 #   sudo ./howdy-setup.sh --add-face --stills DIR   …with webcam pictures taken meanwhile
 #   sudo ./howdy-setup.sh --webcam-check on DEVICE  the webcam has to know you too
 #   sudo ./howdy-setup.sh --webcam-check off        the infrared camera alone
+#   sudo ./howdy-setup.sh --set video.certainty=3.2 …  Howdy's settings (scripts/howdy-config.py)
 #   sudo ./howdy-setup.sh --remove-face ID forget one look (the ID from --list-faces)
 #   sudo ./howdy-setup.sh --clear-faces    forget every face of yours
 #   sudo ./howdy-setup.sh --list-faces     the faces enrolled for you
@@ -51,6 +52,7 @@ die() { printf 'howdy-setup.sh: %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "run it with sudo"
 
 mode=install camera="" alt=0 id="" stills="" webcam=""
+settings=()
 case ${1:-} in
     --check) mode=check ;;
     --remove) mode=remove ;;
@@ -64,6 +66,11 @@ case ${1:-} in
             esac
             shift
         done
+        ;;
+    --set)
+        mode=set; shift
+        settings=("$@")
+        [ ${#settings[@]} -gt 0 ] || die "--set section.key=value …"
         ;;
     --webcam-check)
         mode=webcam; webcam=${2:-}
@@ -89,7 +96,7 @@ case ${1:-} in
         [ -c "$camera" ] || die "no such camera: $camera"
         ;;
     "") ;;
-    *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
 
 # Whose faces: the person behind pkexec or sudo.
@@ -158,6 +165,12 @@ case $mode in
         need_person; need_howdy
         howdy -U "$person" -y clear || exit $?
         { hdir=$(howdy_dir) && webcam_py clear "$hdir" "$person"; } || true
+        exit 0 ;;
+    set)
+        need_howdy
+        [ -n "$CONFIG" ] || die "Howdy's config.ini wasn't found"
+        # Checked there, every one, before anything is written.
+        python3 -I "$here/howdy-config.py" "$CONFIG" "${settings[@]}" || exit 1
         exit 0 ;;
     webcam)
         need_howdy

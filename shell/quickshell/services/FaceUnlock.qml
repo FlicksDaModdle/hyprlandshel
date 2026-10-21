@@ -53,6 +53,72 @@ Singleton {
         }
         onLoadFailed: root.webcamIds = []
     }
+    // ── Howdy's settings ────────────────────────────────────────────────
+    // Read from its config.ini as it is; changed through howdy-setup.sh
+    // --set (scripts/howdy-config.py, which takes only the settings it
+    // knows, within their ranges). Changes wait in `pending` and go in
+    // together, so the password is asked for once, not at every slider.
+    property string configPath: ""
+    // { "video.certainty": "3.5", "webcam.min_light": "45", … }
+    property var config: ({})
+    property var pending: ({})
+    readonly property bool hasPending: Object.keys(root.pending).length > 0
+    FileView {
+        id: configFile
+        path: root.configPath
+        printErrors: false
+        onLoaded: {
+            const out = {};
+            let section = "";
+            for (const line of text().split("\n")) {
+                const t = line.trim();
+                if (t === "" || t.startsWith("#") || t.startsWith(";")) continue;
+                const head = /^\[(.+)\]$/.exec(t);
+                if (head) { section = head[1]; continue; }
+                // The webcam check's options, from its rule.
+                if (section === "rubberstamps" && t.startsWith("hyprshell_webcam")) {
+                    const option = /(\w+)=(\S+)/g;
+                    let m;
+                    while ((m = option.exec(t)) !== null) out["webcam." + m[1]] = m[2];
+                    continue;
+                }
+                const kv = /^(\w+)\s*=\s*(.*)$/.exec(line);
+                if (kv && section !== "") out[section + "." + kv[1]] = kv[2].trim();
+            }
+            root.config = out;
+        }
+    }
+    // What it is (or will be, once applied).
+    function cfg(name, fallback) {
+        if (name in root.pending) return root.pending[name];
+        return name in root.config ? root.config[name] : fallback;
+    }
+    function cfgBool(name, fallback) { return String(root.cfg(name, fallback ? "true" : "false")).toLowerCase() === "true"; }
+    function cfgNum(name, fallback) { const n = Number(root.cfg(name, fallback)); return isFinite(n) ? n : fallback; }
+    function setCfg(name, value) {
+        const next = Object.assign({}, root.pending);
+        const v = typeof value === "boolean" ? (value ? "true" : "false") : String(value);
+        if (root.config[name] === v) delete next[name];
+        else next[name] = v;
+        root.pending = next;
+    }
+    function discardConfig() { root.pending = ({}); }
+    function applyConfig() {
+        if (!root.hasPending) return;
+        const args = Object.keys(root.pending).map(k => k + "=" + root.pending[k]);
+        applying.args = args;
+        run(["--set"].concat(args), "Changing Howdy's settings…", "Howdy's settings are changed");
+    }
+    // Pending changes are cleared once they're in (or kept, to try again).
+    QtObject { id: applying; property var args: [] }
+    // (Later: whether it failed is set after busy goes.)
+    onBusyChanged: if (!root.busy && applying.args.length > 0) Qt.callLater(root.afterApply)
+    function afterApply() {
+        if (!root.failed) root.pending = ({});
+        applying.args = [];
+        configFile.reload();
+    }
+
     function setWebcamCheck(on) {
         if (on) run(["--webcam-check", "on", root.previewDevice], "Turning the webcam check on…",
                      "The webcam has to recognise you too; in low light the infrared camera decides alone");
@@ -125,6 +191,7 @@ Singleton {
             done
             for c in /etc/howdy/config.ini /usr/lib/security/howdy/config.ini /lib/security/howdy/config.ini; do
                 [ -r "$c" ] || continue
+                printf 'config\\t%s\\n' "$c"
                 sed -n -E 's/^[[:space:]]*device_path[[:space:]]*=[[:space:]]*(.*)$/device\\t\\1/p' "$c" | head -n1
                 # The webcam check (scripts/hyprshell_webcam.py): rubberstamps
                 # on, and its rule among them.
@@ -146,7 +213,7 @@ Singleton {
             true`]
         stdout: StdioCollector {
             onStreamFinished: {
-                let howdy = false, pam = false, greeter = false, faces = -1, device = "", models = "", webcamCheck = false;
+                let howdy = false, pam = false, greeter = false, faces = -1, device = "", models = "", webcamCheck = false, configPath = "";
                 const cams = [];
                 for (const line of text.split("\n")) {
                     const t = line.split("\t");
@@ -159,6 +226,7 @@ Singleton {
                     else if (t[0] === "faces") faces = parseInt(t[1], 10);
                     else if (t[0] === "models") models = (t[1] || "").trim();
                     else if (t[0] === "webcamcheck") webcamCheck = true;
+                    else if (t[0] === "config") configPath = (t[1] || "").trim();
                 }
                 root.howdyInstalled = howdy;
                 root.pamModule = pam;
@@ -168,6 +236,8 @@ Singleton {
                 root.listedFaces = isFinite(faces) ? faces : -1;
                 root.modelsPath = models;
                 root.webcamCheck = webcamCheck;
+                root.configPath = configPath;
+                if (configPath !== "") configFile.reload();
                 if (models !== "") { modelsFile.reload(); webcamFile.reload(); }
             }
         }
@@ -343,7 +413,7 @@ Singleton {
             root.failed = true;
             // pkexec: 126 a dismissed or wrong password, 127 not allowed.
             if (code === 126 || code === 127) { root.status = "Not changed: the password wasn't given"; return; }
-            root.status = (said.length ? said[said.length - 1] : "That didn't work").replace(/^howdy-setup\.sh: /, "");
+            root.status = (said.length ? said[said.length - 1] : "That didn't work").replace(/^howdy-(setup\.sh|config): /, "");
         }
     }
 
