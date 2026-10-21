@@ -32,13 +32,21 @@ Variants {
 
         readonly property var cap: Services.Capture
         readonly property var ap: Config.Appearance
-        readonly property string file: cap.snip && modelData ? cap.fileFor(modelData) : ""
+        readonly property string file: cap.snip && !cap.snip.copy && modelData ? cap.fileFor(modelData) : ""
+        // Frozen in the shell (services/Capture.qml, freeze): this surface
+        // maps at once, still see-through, copies its own output, and
+        // shows the copy. Nothing is drawn on it before then, or the copy
+        // would have the dimming in it.
+        readonly property bool copying: !!(cap.snip && cap.snip.copy)
+        readonly property bool ready: copying ? copy.hasContent : (file !== "" && still.status === Image.Ready)
+        readonly property real picW: copying ? copy.sourceSize.width : still.sourceSize.width
+        readonly property real picH: copying ? copy.sourceSize.height : still.sourceSize.height
         readonly property bool focusedHere: Services.Compositor.isFocusedScreen(modelData)
         readonly property string mode: cap.snipMode
 
         screen: modelData ?? null
-        visible: file !== ""
-        color: "black"
+        visible: file !== "" || copying
+        color: ready ? "black" : "transparent"
         exclusionMode: ExclusionMode.Ignore
         anchors { top: true; bottom: true; left: true; right: true }
         WlrLayershell.namespace: "quickshell:snip"
@@ -47,7 +55,7 @@ Variants {
 
         // Physical pixels per logical one, from the picture itself, so a
         // fractional scale comes out exact.
-        readonly property real ratio: still.sourceSize.width > 0 && width > 0 ? still.sourceSize.width / width : 1
+        readonly property real ratio: picW > 0 && width > 0 ? picW / width : 1
 
         // ── what is being chosen ─────────────────────────────────────────
         property bool dragging: false
@@ -68,12 +76,15 @@ Variants {
 
         onVisibleChanged: {
             dragging = false; taking = false; px = -1; py = -1;
-            if (visible) {
-                cap.snipShown(modelData ? modelData.name : "");
-                cap.trace("overlay", modelData ? modelData.name : "?", width + "x" + height, "picture",
-                          still.sourceSize.width + "x" + still.sourceSize.height, "ratio", ratio.toFixed(3));
-                keys.forceActiveFocus(); bar.shown = false; barIn.restart();
-            }
+            if (visible) keys.forceActiveFocus();
+            bar.shown = false;
+        }
+        onReadyChanged: {
+            if (!ready || !visible) return;
+            cap.snipShown(modelData ? modelData.name : "");
+            cap.trace("overlay", modelData ? modelData.name : "?", width + "x" + height, "picture",
+                      picW + "x" + picH, "ratio", ratio.toFixed(3), copying ? "(copied in the shell)" : "(grim)");
+            keys.forceActiveFocus(); barIn.restart();
         }
         Timer { id: barIn; interval: 16; onTriggered: bar.shown = true }
 
@@ -124,7 +135,7 @@ Variants {
         // each edge at a fractional scale could otherwise ask for a pixel
         // past the last one.
         function pixels(r) {
-            const W = still.sourceSize.width, H = still.sourceSize.height;
+            const W = picW, H = picH;
             const x0 = Math.max(0, Math.min(W - 1, Math.round(r.x * ratio)));
             const y0 = Math.max(0, Math.min(H - 1, Math.round(r.y * ratio)));
             const x1 = Math.max(x0 + 1, Math.min(W, Math.round((r.x + r.width) * ratio)));
@@ -132,6 +143,7 @@ Variants {
             return Qt.rect(x0, y0, x1 - x0, y1 - y0);
         }
         function cut(r) {
+            if (copying) { cutCopy(r); return; }
             if (cutImg.status !== Image.Ready || still.sourceSize.width <= 0) {
                 win.cap.trace("cut: picture not ready", cutImg.status, still.status);
                 win.cap.snipFailed("The frozen screen wasn't ready yet — try again");
@@ -159,6 +171,42 @@ Variants {
                 if (!ok) { cutWatch.stop(); win.cap.snipFailed("Could not cut the picture"); }
             });
         }
+        // From the shell's own copy: the chosen part of it rendered at one
+        // texel to a pixel of the copy (full resolution), and grabbed.
+        function cutCopy(r) {
+            if (!copy.hasContent || picW <= 0) {
+                win.cap.snipFailed("The frozen screen wasn't ready yet — try again");
+                return;
+            }
+            taking = true;
+            const pr = pixels(r);
+            cutSrc.sourceRect = Qt.rect(pr.x / ratio, pr.y / ratio, pr.width / ratio, pr.height / ratio);
+            cutSrc.textureSize = Qt.size(pr.width, pr.height);
+            cutSrc.width = pr.width / ratio;
+            cutSrc.height = pr.height / ratio;
+            cap.trace("take (copy)", "-> pixels", pr.x + "," + pr.y, pr.width + "x" + pr.height);
+            cutWatch.restart();
+            Qt.callLater(() => {
+                const target = win.cap.snipTarget();
+                const ok = cutSrc.grabToImage(res => {
+                    cutWatch.stop();
+                    if (res.saveToFile(target)) win.cap.snipSaved(target);
+                    else win.cap.snipFailed("Could not write " + target);
+                }, Qt.size(pr.width, pr.height));
+                if (!ok) { cutWatch.stop(); win.cap.snipFailed("Could not cut the picture"); }
+            });
+        }
+        ShaderEffectSource {
+            id: cutSrc
+            z: -10
+            width: 1
+            height: 1
+            sourceItem: copy
+            live: true
+            hideSource: false
+            smooth: false
+        }
+
         // A cut that never comes back must not leave the screen frozen.
         Timer {
             id: cutWatch
@@ -188,6 +236,18 @@ Variants {
         }
 
         // ── the still picture ────────────────────────────────────────────
+        // The shell's own copy of this output, taken as the surface maps
+        // (and let go of when it closes).
+        ScreencopyView {
+            id: copy
+            anchors.fill: parent
+            visible: win.copying && win.ready
+            captureSource: win.copying && win.visible ? win.modelData : null
+            live: false
+            paintCursor: !!(win.cap.snip && win.cap.snip.pointer)
+            // The compositor refused or ended the copy: grim, at once.
+            onStopped: if (win.copying) win.cap.copyFailed()
+        }
         Image {
             id: still
             anchors.fill: parent
@@ -200,13 +260,20 @@ Variants {
             fillMode: Image.Stretch
         }
 
+        // Nothing over the picture until there is one: the shell's copy is
+        // of this very surface, and must not have the dimming in it.
+        Item {
+            id: stage
+            anchors.fill: parent
+            visible: win.ready
+
         // Dimmed everywhere but the choice.
         readonly property color shade: Qt.rgba(0, 0, 0, 0.42)
         Rectangle { visible: !win.hasPick; anchors.fill: parent; color: Qt.rgba(0, 0, 0, 0.3) }
-        Rectangle { visible: win.hasPick; x: 0; y: 0; width: parent.width; height: win.pick.y; color: win.shade }
-        Rectangle { visible: win.hasPick; x: 0; y: win.pick.y + win.pick.height; width: parent.width; height: parent.height - y; color: win.shade }
-        Rectangle { visible: win.hasPick; x: 0; y: win.pick.y; width: win.pick.x; height: win.pick.height; color: win.shade }
-        Rectangle { visible: win.hasPick; x: win.pick.x + win.pick.width; y: win.pick.y; width: parent.width - x; height: win.pick.height; color: win.shade }
+        Rectangle { visible: win.hasPick; x: 0; y: 0; width: parent.width; height: win.pick.y; color: stage.shade }
+        Rectangle { visible: win.hasPick; x: 0; y: win.pick.y + win.pick.height; width: parent.width; height: parent.height - y; color: stage.shade }
+        Rectangle { visible: win.hasPick; x: 0; y: win.pick.y; width: win.pick.x; height: win.pick.height; color: stage.shade }
+        Rectangle { visible: win.hasPick; x: win.pick.x + win.pick.width; y: win.pick.y; width: parent.width - x; height: win.pick.height; color: stage.shade }
 
         // The choice: a hairline in the accent, with a soft outer glow so
         // it reads over light and dark alike.
@@ -375,6 +442,8 @@ Variants {
             color: "white"
             style: Text.Outline
             styleColor: Qt.rgba(0, 0, 0, 0.5)
+        }
+
         }
 
         Item {

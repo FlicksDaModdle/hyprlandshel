@@ -62,7 +62,18 @@ Singleton {
     // Each entry takes the argument string, which is empty for most.
     readonly property var table: ({
         // Panels
-        "toggleLauncher":      () => Config.UiState.toggleLauncher(),
+        // Not during a screenshot. Super on its own is a release bind,
+        // and Super+Shift+S hands the keyboard to the frozen screen part
+        // way through the chord, so Hyprland can let the Super release
+        // through as a tap: it toggled the launcher, which closed whatever
+        // was open, the very thing the screenshot was of.
+        "toggleLauncher":      () => {
+            if (Services.Capture.busy || Date.now() - Services.Capture.shotAt < 1500) {
+                console.log("Commands: toggleLauncher ignored during a screenshot");
+                return;
+            }
+            Config.UiState.toggleLauncher();
+        },
         "toggleOverview":      () => Config.UiState.toggleOverview(),
         "toggleControlCenter": () => Config.UiState.toggleControlCenter(),
         "toggleNotifications": () => Config.UiState.toggleNotifications(),

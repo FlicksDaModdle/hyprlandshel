@@ -77,7 +77,11 @@ Singleton {
         Config.UiState.captureOpen = false;
         return 280;
     }
+    // When the last one was asked for (Commands ignores a Super tap just
+    // after one; see toggleLauncher there).
+    property real shotAt: 0
     function shot(mode, opts) {
+        shotAt = Date.now();
         const m = mode || "region";
         traceFresh = true;
         trace("shot", m, "freeze=" + prefs.captureFreeze, busy ? "busy since " + Math.round((Date.now() - busySince) / 1000) + " s" : "");
@@ -202,18 +206,37 @@ Singleton {
     property string snipMode: "region"
     property var freezeWant: null
 
+    // The freeze itself is the frozen screen's own (modules/capture/
+    // Snipper.qml): each screen's surface maps, still see-through, and
+    // copies its output inside the shell (ScreencopyView), then shows that
+    // copy. That is a frame or two after the key — nothing is run, written
+    // or read back. grim, writing each output to a file the overlay then
+    // loads, is the fallback when the copy doesn't arrive.
     function freeze(kind, mode, delay, pointer) {
         busy = true;
         snipMode = mode;
         freezeWant = { kind: kind, delay: delay || 0, pointer: !!pointer };
         // At once, whatever is open (see leaveToolbar): the panels are in
         // the picture, and still open when it is done.
-        freezeSoon.interval = leaveToolbar();
-        freezeSoon.restart();
+        const wait = Math.max(leaveToolbar(), (delay || 0) * 1000);
+        if (wait <= 1) startFrozen();
+        else { freezeSoon.interval = wait; freezeSoon.restart(); }
     }
-    Timer { id: freezeSoon; onTriggered: root.runFreeze() }
+    Timer { id: freezeSoon; onTriggered: root.startFrozen() }
+    function startFrozen() {
+        const dir = (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/hyprshell-snip-" + Date.now();
+        // Where the cut is written: there before anyone can choose.
+        snipDirProc.command = ["mkdir", "-p", dir, picturesDir];
+        snipDirProc.running = true;
+        shownOnce = false;
+        snipWatch.interval = 800;
+        snipWatch.restart();
+        snip = { kind: freezeWant.kind, dir: dir, files: {}, list: [], copy: true, pointer: freezeWant.pointer };
+        trace("freezing in the shell");
+    }
+    Process { id: snipDirProc }
     function runFreeze() {
-        const w = freezeWant;
+        const w = Object.assign({}, freezeWant, { delay: 0 });
         const dir = (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/hyprshell-snip-" + Date.now();
         const outs = Quickshell.screens.map(s => s.name).filter(n => !!n);
         freezeProc.command = ["sh", "-c",
@@ -259,6 +282,7 @@ Singleton {
             // seconds later took a perfectly good frozen screen away and
             // put slurp's live picker up in its place.
             root.shownOnce = false;
+            snipWatch.interval = 2000;
             snipWatch.restart();
             root.snip = { kind: root.freezeWant.kind, dir: freezeProc.dir, files: files, list: list };
         }
@@ -280,12 +304,23 @@ Singleton {
     function snipShown(screen) { trace("frozen screen up on", screen || "?"); shownOnce = true; snipWatch.stop(); }
     Timer {
         id: snipWatch
-        interval: 2000
-        onTriggered: {
-            if (!root.snip || root.shownOnce) return;
-            root.trace("the frozen screen never came up; choosing live");
-            root.liveFallback();
+        interval: 800
+        onTriggered: root.copyFailed()
+    }
+    function copyFailed() {
+        if (!root.snip || root.shownOnce) return;
+        snipWatch.stop();
+        if (root.snip.copy) {
+            // The shell's own copy didn't arrive: freeze with grim.
+            root.trace("the shell's screen copy never came; freezing with grim");
+            const old = root.snip.dir;
+            root.snip = null;
+            root.cleanSnip(old);
+            root.runFreeze();
+            return;
         }
+        root.trace("the frozen screen never came up; choosing live");
+        root.liveFallback();
     }
     function liveFallback() {
         const kind = snip ? snip.kind : (freezeWant ? freezeWant.kind : "shot");

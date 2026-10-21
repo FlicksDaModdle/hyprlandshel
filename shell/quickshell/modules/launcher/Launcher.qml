@@ -1668,22 +1668,15 @@ Variants {
             onPressed: launcher.closeMenu()
             HoverHandler { blocking: true }
         }
-        // The launcher's own rows, blurred, behind the menu: it sits inside
-        // the same surface, where the compositor's blur can't reach.
-        BackdropBlur {
-            visible: launcher.menuOpen && GraphicsInfo.api !== GraphicsInfo.Software
-            x: menu.x; y: menu.y; width: menu.width; height: menu.height
-            radius: menu.radius
-            source: panel
-        }
         PanelSurface {
             id: menu
             visible: launcher.menuOpen
             showSeam: false
-            // Solid only where nothing can blur what is behind it.
-            color: GraphicsInfo.api === GraphicsInfo.Software
-                   ? Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g, Config.Appearance.panel.b, 1)
-                   : Config.Appearance.panel
+            // Solid: it sits over the launcher's own rows, inside the same
+            // surface, where the compositor's blur can't reach. Blurring
+            // them in the shell was tried; it can only see the launcher,
+            // not the desktop under it, so it never looked like glass.
+            color: Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g, Config.Appearance.panel.b, 1)
             // Its gaps are the menu's, not the rows' behind it.
             MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.AllButtons; z: -1 }
             HoverHandler { blocking: true }
@@ -1749,25 +1742,14 @@ Variants {
             MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.AllButtons }
             HoverHandler { blocking: true }
 
-            // Glass, like the bar's: the launcher's rows blurred behind
-            // it (see BackdropBlur).
-            BackdropBlur {
-                anchors.fill: parent
-                radius: Config.Appearance.rPanel
-                source: panel
-            }
-
             Loader {
                 id: powerLoader
                 active: launcher.powerOpen || powerPop.value > 0.01
                 sourceComponent: Component {
                     PowerMenu {
-                        // Solid only where nothing can blur what is
-                        // behind it (the software renderer).
-                        color: GraphicsInfo.api === GraphicsInfo.Software
-                               ? Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g,
-                                         Config.Appearance.panel.b, 1)
-                               : Config.Appearance.panel
+                        // Solid, like the right-click menu (see there).
+                        color: Qt.rgba(Config.Appearance.panel.r, Config.Appearance.panel.g,
+                                       Config.Appearance.panel.b, 1)
                     }
                 }
             }
