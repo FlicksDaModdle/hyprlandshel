@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell.Widgets
 import "../../config" as Config
 import "../common"
 import "../background"
@@ -27,20 +28,30 @@ Column {
                 required property var modelData
                 readonly property bool chosen: root.ap.wallpaperStyle === modelData.key
                 spacing: 5
-                Rectangle {
+                Item {
                     width: root.tileW
                     height: Math.round(root.tileW * 10 / 16)
-                    radius: Config.Appearance.rSm
-                    color: "transparent"
-                    clip: true
-                    border.width: tile.chosen ? 2 : 1
-                    border.color: tile.chosen ? Config.Appearance.accent : Config.Appearance.edge
-                    Loader {
+                    // Clipped to the rounded shape, not just the box: `clip`
+                    // alone is square, and the previews drew their own
+                    // square corners out past the frame's rounded ones.
+                    ClippingRectangle {
                         anchors.fill: parent
-                        anchors.margins: tile.chosen ? 2 : 1
-                        sourceComponent: tile.modelData.key === "topo" ? topoPreview : animPreview
-                        Component { id: topoPreview; Topography { preview: true } }
-                        Component { id: animPreview; AnimatedWallpaper { preview: true; style: tile.modelData.key } }
+                        radius: Config.Appearance.rSm
+                        color: "transparent"
+                        Loader {
+                            anchors.fill: parent
+                            sourceComponent: tile.modelData.key === "topo" ? topoPreview : animPreview
+                            Component { id: topoPreview; Topography { preview: true } }
+                            Component { id: animPreview; AnimatedWallpaper { preview: true; style: tile.modelData.key } }
+                        }
+                    }
+                    // The frame, over the preview.
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Config.Appearance.rSm
+                        color: "transparent"
+                        border.width: tile.chosen ? 2 : 1
+                        border.color: tile.chosen ? Config.Appearance.accent : Config.Appearance.edge
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler {
