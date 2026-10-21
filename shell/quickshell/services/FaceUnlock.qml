@@ -232,23 +232,53 @@ Singleton {
     Timer { id: justAddedClear; interval: 2500; onTriggered: root.justAdded = false }
     property int previewFrame: 0
     property string previewError: ""
+    // Small and compressed first (MJPEG, 640 × 480): the webcam and the
+    // infrared camera are often one USB device, and a full-size raw picture
+    // can take the bandwidth the infrared one needs while Howdy records.
+    // Whatever the camera gives, if it can't do that.
     function startPreview() {
         if (previewProc.running || root.previewDevice === "" || (root.busy && root.previewShared)) return;
         root.previewError = "";
-        previewProc.command = ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "v4l2", "-i", root.previewDevice,
-                               "-vf", "fps=12,scale=640:-2", "-q:v", "6", "-update", "1", "-atomic_writing", "1",
-                               "-y", root.previewFile];
+        previewProc.stopping = false;
+        previewProc.command = ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "v4l2"]
+            .concat(previewProc.compact ? ["-input_format", "mjpeg", "-video_size", "640x480"] : [])
+            .concat(["-i", root.previewDevice,
+                     "-vf", "fps=12,scale=640:-2", "-q:v", "6", "-update", "1", "-atomic_writing", "1",
+                     "-y", root.previewFile]);
         previewProc.running = true;
         previewStop.restart();
     }
-    function stopPreview() { if (previewProc.running) previewProc.signal(15); }
+    function stopPreview() {
+        previewKeep.stop();
+        if (!previewProc.running) return;
+        previewProc.stopping = true;
+        previewProc.signal(15);
+    }
     Process {
         id: previewProc
+        property bool compact: true
+        property bool stopping: false
         stderr: StdioCollector { id: previewErr }
         onExited: code => {
-            if (code !== 0 && code !== 255 && previewErr.text.trim() !== "")
-                root.previewError = code === 127 ? "The preview needs ffmpeg" : previewErr.text.trim().split("\n").pop();
+            if (previewProc.stopping) return;
+            if (code === 127) { root.previewError = "The preview needs ffmpeg"; return; }
+            // The small picture wasn't to be had: the camera's own.
+            if (previewProc.compact && code !== 0) {
+                previewProc.compact = false;
+                root.startPreview();
+                return;
+            }
+            // Lost while Howdy records (the camera busy a moment): back as
+            // soon as it can be.
+            if (root.adding && !root.previewShared) { previewKeep.restart(); return; }
+            if (code !== 0 && previewErr.text.trim() !== "")
+                root.previewError = previewErr.text.trim().split("\n").pop();
         }
+    }
+    Timer {
+        id: previewKeep
+        interval: 700
+        onTriggered: if (root.adding || root.justAdded) root.startPreview()
     }
     // A new frame to show, while it runs.
     Timer { interval: 90; repeat: true; running: previewProc.running; onTriggered: root.previewFrame++ }
