@@ -1982,7 +1982,7 @@ Scope {
         } else if (mode === "animated") {
             rows.push({ type: "panel", panel: "animated" });
             return rows.concat(A.wallpaperStyle === "topo" ? root.topoRows() : root.animRows())
-                       .concat(root.motionRows());
+                       .concat(root.motionRows()).concat(root.bootRows());
         } else if (mode === "image") {
             rows.push({ n: "Image",
                 s: A.wallpaper !== "" ? A.wallpaper.split("/").pop() : "None picked yet",
@@ -1990,8 +1990,29 @@ Scope {
                 buttons: [{ label: A.wallpaper !== "" ? "Change…" : "Choose…",
                             quiet: A.wallpaper !== "", set: () => root.pickWallpaper() }] });
         } else {
-            return rows.concat(root.liveWallpaperRows());
+            return rows.concat(root.liveWallpaperRows()).concat(root.bootRows());
         }
+        return rows.concat(root.bootRows());
+    }
+
+    // Settings → Wallpaper → Boot menu: a still of this wallpaper, and the
+    // accent, in the Limine boot menu (services/BootTheme.qml). Only when
+    // Update is pressed: it writes to the boot partition and asks for the
+    // password.
+    function bootRows() {
+        const B = Services.BootTheme;
+        const rows = [{ type: "header", n: "Boot menu" }];
+        if (!B.installed) {
+            rows.push({ n: "Limine", type: "info", value: "Not set up",
+                        s: "To use this wallpaper in the Limine boot menu, run once: sudo shell/limine/install.sh" });
+            return rows;
+        }
+        rows.push({ n: "Use this wallpaper in the boot menu",
+                    s: B.status !== "" ? B.status
+                       : "A still of it, with your accent, in Limine. Asks for your password.",
+                    type: "buttons",
+                    buttons: [{ label: B.busy ? "Working…" : "Update", set: () => B.update() },
+                              { label: "Remove", quiet: true, set: () => B.remove() }] });
         return rows;
     }
 

@@ -1,0 +1,147 @@
+#!/bin/bash
+# hyprshell-limine-theme — your desktop's wallpaper and colours in the Limine
+# boot menu.
+#
+#   hyprshell-limine-theme --accent RRGGBB --background RRGGBB --foreground RRGGBB < still.png
+#   hyprshell-limine-theme --remove
+#   hyprshell-limine-theme --check
+#
+# Runs as root (through pkexec; see org.hyprshell.limine-theme.policy), so it
+# takes as little as it can: the picture on stdin, never a path (a path would
+# let it be pointed at a file only root may read), checked to be a PNG of a
+# sensible size, and three colours checked to be colours. It writes the
+# picture to <boot partition>/hyprshell/wallpaper.png and a block of global
+# options, between two marker lines, at the top of limine.conf; --remove
+# takes both out again. Nothing else in limine.conf is touched, and the file
+# as it was before the first change is kept beside it as
+# limine.conf.hyprshell-orig.
+#
+# A limine.conf whose checksum is enrolled into Limine itself (Secure Boot
+# set-ups) would stop booting if edited behind its back, so where
+# /etc/default/limine says it is enrolled, the checksum is enrolled again
+# with limine-enroll-config afterwards, and without that tool nothing is
+# changed at all.
+set -euo pipefail
+umask 022
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+die() { printf 'hyprshell-limine-theme: %s\n' "$*" >&2; exit 1; }
+[ "$(id -u)" -eq 0 ] || die "needs to run as root"
+
+mode=apply accent="" background="" foreground=""
+while [ $# -gt 0 ]; do
+    case $1 in
+        --accent)     [ $# -ge 2 ] || die "--accent needs a colour"; accent=$2; shift ;;
+        --background) [ $# -ge 2 ] || die "--background needs a colour"; background=$2; shift ;;
+        --foreground) [ $# -ge 2 ] || die "--foreground needs a colour"; foreground=$2; shift ;;
+        --remove)     mode=remove ;;
+        --check)      mode=check ;;
+        *)            die "unknown option: $1" ;;
+    esac
+    shift
+done
+
+colour() { [[ $1 =~ ^[0-9a-fA-F]{6}$ ]] || die "not a colour (RRGGBB): $1"; }
+
+# ── where limine.conf is ─────────────────────────────────────────────────
+conf=""
+for c in /boot/limine.conf /boot/limine/limine.conf /boot/EFI/limine/limine.conf \
+         /efi/limine.conf /efi/limine/limine.conf /efi/EFI/limine/limine.conf \
+         /boot/efi/limine.conf /boot/efi/limine/limine.conf /boot/efi/EFI/limine/limine.conf; do
+    if [ -f "$c" ] && [ ! -L "$c" ]; then conf=$c; break; fi
+done
+[ -n "$conf" ] || die "no limine.conf found (is Limine the boot loader?)"
+# Limine before 8 used KEY=value and :Entry; its options are different.
+if grep -Eq '^[[:space:]]*[A-Z_]+=' "$conf"; then
+    die "$conf is in the format of Limine 7 or older; update Limine first"
+fi
+# The partition limine.conf is on is the one Limine was loaded from: boot().
+mnt=$(findmnt -no TARGET -T "$conf") || die "can't tell which partition $conf is on"
+dir="$mnt/hyprshell"
+[ ! -L "$dir" ] || die "$dir is a link; not writing through it"
+
+enrolled=0
+if [ -r /etc/default/limine ] \
+   && grep -Eq '^[[:space:]]*ENABLE_ENROLL_LIMINE_CONFIG=["'"'"']?(yes|1|true)' /etc/default/limine; then
+    enrolled=1
+fi
+if [ "$enrolled" = 1 ] && ! command -v limine-enroll-config >/dev/null 2>&1; then
+    die "limine.conf is enrolled (Secure Boot) and limine-enroll-config isn't installed; not editing it"
+fi
+
+if [ "$mode" = check ]; then
+    printf 'config: %s\npartition: %s\nenrolled: %s\napplied: %s\n' "$conf" "$mnt" \
+        "$([ "$enrolled" = 1 ] && echo yes || echo no)" \
+        "$(grep -q '^# >>> hyprshell' "$conf" && echo yes || echo no)"
+    exit 0
+fi
+
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+
+# limine.conf without our block.
+awk '/^# >>> hyprshell/ { skip = 1; next }
+     /^# <<< hyprshell/ { skip = 0; next }
+     !skip' "$conf" > "$work/rest"
+
+if [ "$mode" = apply ]; then
+    colour "$accent"; colour "$background"; colour "$foreground"
+    # The picture: at most 16 MB, and a PNG (Limine reads PNG; the shell
+    # converts whatever the wallpaper was).
+    head -c $((16 * 1024 * 1024 + 1)) > "$work/wallpaper.png"
+    size=$(stat -c %s "$work/wallpaper.png")
+    [ "$size" -gt 0 ] || die "no picture on stdin"
+    [ "$size" -le $((16 * 1024 * 1024)) ] || die "the picture is over 16 MB"
+    [ "$(head -c 8 "$work/wallpaper.png" | od -An -tx1 | tr -d ' \n')" = "89504e470d0a1a0a" ] \
+        || die "the picture isn't a PNG"
+
+    a=${accent,,} b=${background,,} f=${foreground,,}
+    {
+        echo "# >>> hyprshell: written by hyprshell-limine-theme (Settings → Wallpaper → Boot menu); replaced on every change"
+        echo "wallpaper: boot():/hyprshell/wallpaper.png"
+        echo "wallpaper_style: stretched"
+        echo "backdrop: $b"
+        # A dark veil behind the menu's text, so it reads over any picture;
+        # the first two digits are its transparency.
+        echo "term_background: 60$b"
+        echo "term_foreground: $f"
+        echo "term_background_bright: 60$b"
+        echo "term_foreground_bright: $f"
+        # black red green brown blue magenta cyan grey: the accent in blue
+        # and cyan, which the menu uses for its title and highlights.
+        echo "term_palette: $b;e5534b;6bc46d;d6a24c;$a;c06fd6;$a;$f"
+        echo "term_palette_bright: $b;f47067;8ddb8c;e3b341;$a;dcbdfb;$a;ffffff"
+        echo "interface_branding_colour: 6"
+        echo "# <<< hyprshell"
+        cat "$work/rest"
+    } > "$work/conf"
+else
+    cp "$work/rest" "$work/conf"
+fi
+
+# Once, the file as it was before any of this.
+[ -e "$conf.hyprshell-orig" ] || cp -p "$conf" "$conf.hyprshell-orig"
+cp -p "$conf" "$work/previous"
+
+if [ "$mode" = apply ]; then
+    mkdir -p "$dir"
+    install -m 644 "$work/wallpaper.png" "$dir/wallpaper.png.new"
+    mv -f "$dir/wallpaper.png.new" "$dir/wallpaper.png"
+fi
+install -m "$(stat -c %a "$conf")" "$work/conf" "$conf.new"
+sync -f "$conf.new" 2>/dev/null || sync
+mv -f "$conf.new" "$conf"
+sync -f "$conf" 2>/dev/null || sync
+
+if [ "$enrolled" = 1 ] && ! limine-enroll-config >/dev/null 2>&1; then
+    # Put it back as it was, enrolled checksum and all.
+    cp -p "$work/previous" "$conf"
+    sync
+    die "limine-enroll-config failed; limine.conf is back as it was"
+fi
+
+if [ "$mode" = remove ] && [ -d "$dir" ]; then
+    rm -f -- "$dir/wallpaper.png" "$dir/wallpaper.png.new"
+    rmdir -- "$dir" 2>/dev/null || true
+fi
+echo "hyprshell-limine-theme: $mode done ($conf)"

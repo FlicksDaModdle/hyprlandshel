@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  Putting your wallpaper and colours in the Limine boot menu, from
+  Settings → Wallpaper → Boot menu. It writes to the boot partition, so it
+  asks for an administrator's password every time (remembered for a few
+  minutes). The helper only takes a PNG on stdin and three colours, and only
+  writes <boot partition>/hyprshell/wallpaper.png and its own block in
+  limine.conf.
+-->
+<policyconfig>
+  <action id="org.hyprshell.limine-theme">
+    <description>Theme the Limine boot menu with your wallpaper</description>
+    <message>Authentication is required to change the boot menu's wallpaper</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/hyprshell-limine-theme</annotate>
+  </action>
+</policyconfig>

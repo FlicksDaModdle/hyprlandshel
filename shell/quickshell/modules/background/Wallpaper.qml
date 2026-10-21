@@ -71,21 +71,41 @@ Variants {
         readonly property bool useAnimated: !useImage && !useTopo && Config.Appearance.wallpaperStyle !== "gradient"
         readonly property bool useGradient: !useImage && !useTopo && !useAnimated
 
+        // A still of what is drawn here, for the boot menu
+        // (services/BootTheme.qml): asked of the main display's surface.
+        Connections {
+            target: Services.BootTheme
+            function onGrabRequest(screenName, path) {
+                if (!win.modelData || String(win.modelData.name) !== screenName) return;
+                // The ground being drawn, at the screen's own pixels. (Not
+                // the window's contentItem: it isn't QML's, and can't be
+                // grabbed.)
+                const item = win.useTopo ? topoGround : win.useAnimated ? animatedGround : gradientGround;
+                const dpr = win.modelData.devicePixelRatio || 1;
+                const ok = item.grabToImage(result => {
+                    Services.BootTheme.grabbed(result.saveToFile(path) ? path : "");
+                }, Qt.size(Math.round(win.width * dpr), Math.round(win.height * dpr)));
+                if (!ok) Services.BootTheme.grabbed("");
+            }
+        }
 
         // ── the theme's gradient ──────────────────────────────────────────
         GradientGround {
+            id: gradientGround
             anchors.fill: parent
             visible: win.useGradient
         }
 
         // Only loaded while it is the one shown.
         Loader {
+            id: topoGround
             anchors.fill: parent
             active: win.useTopo
             sourceComponent: Topography { screen: win.modelData; motion: Services.WallMotion }
         }
 
         Loader {
+            id: animatedGround
             anchors.fill: parent
             active: win.useAnimated
             sourceComponent: AnimatedWallpaper { screen: win.modelData; motion: Services.WallMotion }
