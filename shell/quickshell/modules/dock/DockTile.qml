@@ -81,40 +81,26 @@ Item {
     }
 
     // ── launching ─────────────────────────────────────────────────────────
-    // An app tile that isn't running bounces when clicked, until its window
-    // turns up — or a few hops, if it is slow or never shows one.
+    // An app tile that isn't running shows it is starting, until its window
+    // turns up: the icon stays where it is, and a short accent bar under it
+    // breathes in and out where the running pip will be. (It used to hop
+    // up and down, three times, like macOS; that read as fidgeting.) It
+    // gives up after a while if no window ever comes.
     property bool bounceOnLaunch: false
-    // The hop is a flick upwards on a spring that pulls the icon back
-    // down: it rises, comes back, and settles with a small rebound.
-    readonly property real hop: hopSpring.value
-    property int hopCount: 0
-    Spring { id: hopSpring; to: 0; response: 420 }
+    property bool launching: false
     function launchBounce() {
-        if (!bounceOnLaunch || running || !Config.Appearance.animated) return;
-        hopCount = 0;
-        hops.restart();
+        if (!bounceOnLaunch || running) return;
+        launching = true;
+        launchTimeout.restart();
     }
-    Timer {
-        id: hops
-        interval: Math.max(1, Config.Appearance.anim(640))
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: {
-            // Again only while there is still nothing to show for it.
-            if (root.running || root.hopCount >= 3) { stop(); return; }
-            root.hopCount++;
-            hopSpring.velocity = -root.tileSize * hopSpring.omega * 0.95;
-            hopSpring.wake();
-        }
-    }
+    onRunningChanged: if (running) launching = false
+    Timer { id: launchTimeout; interval: 8000; onTriggered: root.launching = false }
 
     Row {
         id: glyphRow
         anchors.centerIn: parent
         spacing: 9
-        // Lifts a little under the pointer and gives under a press; the
-        // launch hop rides on top.
-        transform: Translate { y: root.hop * (root.vertical ? 0 : 1); x: root.hop * (root.vertical ? -1 : 0) }
+        // Lifts a little under the pointer and gives under a press.
         scale: scaleSpring2.value
         Spring { id: scaleSpring2; to: tapper.pressed ? 0.86 : (root.hovered && !root.dragging && !root.showLabel ? 1.12 : 1); response: 270 }
 
@@ -162,6 +148,32 @@ Item {
                 color: root.active ? Config.Appearance.accent : Config.Appearance.ink3
                 Spring { id: widthSpring; to: root.active && index === 0 ? 14 : 6; response: 260 }
             }
+        }
+    }
+
+    // Starting: a short accent bar where the pip will be, breathing.
+    Rectangle {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 3
+        width: 10
+        height: 2.5
+        radius: 1.25
+        color: Config.Appearance.accent
+        visible: opacity > 0.01
+        opacity: breathe.value
+        // Towards full and back towards faint while starting, and out when
+        // the window comes.
+        Spring { id: breathe; to: 0; response: root.launching ? 900 : 200; bounce: 0 }
+        Connections {
+            target: root
+            function onLaunchingChanged() { breathe.to = root.launching ? 1 : 0; }
+        }
+        Timer {
+            running: root.launching && Config.Appearance.animated
+            interval: 700
+            repeat: true
+            onTriggered: breathe.to = breathe.to > 0.5 ? 0.25 : 1
         }
     }
 
