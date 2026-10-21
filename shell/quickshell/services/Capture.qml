@@ -66,8 +66,17 @@ Singleton {
     property string lastError: ""
 
     // ── screenshots ──────────────────────────────────────────────────────
-    // Panels are closed first and given a moment to leave the screen, so
-    // a shot of the desktop is not a shot of the toolbar that took it.
+    // Nothing on screen is closed for one, as with Windows' Snipping Tool:
+    // the screen is captured the moment the key goes down, menus and
+    // panels and all, and they are still there afterwards. The one
+    // exception is the capture toolbar, when the shot was taken from it: a
+    // shot of the toolbar that took it is never what was wanted, so it goes
+    // and is given a moment to leave the screen first.
+    function leaveToolbar() {
+        if (!Config.UiState.captureOpen) return 1;
+        Config.UiState.captureOpen = false;
+        return 280;
+    }
     function shot(mode, opts) {
         const m = mode || "region";
         traceFresh = true;
@@ -85,7 +94,7 @@ Singleton {
     // fallback when the frozen screen cannot be put up.
     function shotLive(m, o) {
         busy = true;
-        Config.UiState.closeAll();
+        settle.interval = leaveToolbar();
         pending = { kind: "shot", mode: m, delay: o.delay !== undefined ? o.delay : prefs.captureDelay,
                     pointer: o.pointer !== undefined ? o.pointer : prefs.capturePointer };
         settle.restart();
@@ -111,7 +120,7 @@ Singleton {
         if (busy && !unstick()) return;
         if (prefs.captureFreeze) { freeze("ocr", "region", 0, false); return; }
         busy = true;
-        Config.UiState.closeAll();
+        settle.interval = leaveToolbar();
         pending = { kind: "ocr" };
         settle.restart();
     }
@@ -197,13 +206,9 @@ Singleton {
         busy = true;
         snipMode = mode;
         freezeWant = { kind: kind, delay: delay || 0, pointer: !!pointer };
-        // A panel open over the screen would be frozen into the picture;
-        // the toolbar that asked for this certainly should not be. Pressed
-        // from the keyboard with nothing open, it freezes at once.
-        if (Config.UiState.anyPanelOpen || Config.UiState.launcherOpen) {
-            Config.UiState.closeAll();
-            freezeSoon.interval = 280;
-        } else freezeSoon.interval = 1;
+        // At once, whatever is open (see leaveToolbar): the panels are in
+        // the picture, and still open when it is done.
+        freezeSoon.interval = leaveToolbar();
         freezeSoon.restart();
     }
     Timer { id: freezeSoon; onTriggered: root.runFreeze() }

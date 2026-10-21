@@ -183,7 +183,11 @@ Variants {
 
         WlrLayershell.namespace: "quickshell:launcher"
         WlrLayershell.layer: WlrLayer.Overlay
-        WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+        // Not while a screenshot is being chosen over it: the frozen
+        // screen (modules/capture/Snipper.qml) needs the keys, Escape above
+        // all, and the launcher has them back when it is done.
+        WlrLayershell.keyboardFocus: visible && !Services.Capture.snip
+                                     ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
         readonly property bool isLeft: Config.Appearance.dockLeft
         // Geometry is a preference now — Settings → Shell → Launcher. The grid
