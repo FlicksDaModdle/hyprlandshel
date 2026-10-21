@@ -36,6 +36,28 @@ Singleton {
     // of them; null when it can't be read.
     property var looks: null
     property string modelsPath: ""
+    // The webcam check: on, and which looks (Howdy model ids) have webcam
+    // pictures for it, kept beside Howdy's models by howdy-webcam.py.
+    property bool webcamCheck: false
+    property var webcamIds: []
+    FileView {
+        id: webcamFile
+        path: root.modelsPath !== "" ? root.modelsPath.replace(/\.dat$/, ".webcam.json") : ""
+        printErrors: false
+        onLoaded: {
+            try {
+                root.webcamIds = JSON.parse(text() || "[]").map(l => l.howdy_id);
+            } catch (e) {
+                root.webcamIds = [];
+            }
+        }
+        onLoadFailed: root.webcamIds = []
+    }
+    function setWebcamCheck(on) {
+        if (on) run(["--webcam-check", "on", root.previewDevice], "Turning the webcam check on…",
+                     "The webcam has to recognise you too; in low light the infrared camera decides alone");
+        else run(["--webcam-check", "off"], "Turning the webcam check off…", "The infrared camera decides alone");
+    }
     FileView {
         id: modelsFile
         path: root.modelsPath
@@ -104,6 +126,11 @@ Singleton {
             for c in /etc/howdy/config.ini /usr/lib/security/howdy/config.ini /lib/security/howdy/config.ini; do
                 [ -r "$c" ] || continue
                 sed -n -E 's/^[[:space:]]*device_path[[:space:]]*=[[:space:]]*(.*)$/device\\t\\1/p' "$c" | head -n1
+                # The webcam check (scripts/hyprshell_webcam.py): rubberstamps
+                # on, and its rule among them.
+                r=$(sed -n '/^\\[rubberstamps\\]/,/^\\[/p' "$c")
+                printf '%s\\n' "$r" | grep -Eq '^[[:space:]]*enabled[[:space:]]*=[[:space:]]*true' \\
+                    && printf '%s\\n' "$r" | grep -Eq '^[[:space:]]+hyprshell_webcam' && echo webcamcheck
                 break
             done
             # Where Howdy keeps your looks (Howdy 3, then Howdy 2): the
@@ -119,7 +146,7 @@ Singleton {
             true`]
         stdout: StdioCollector {
             onStreamFinished: {
-                let howdy = false, pam = false, greeter = false, faces = -1, device = "", models = "";
+                let howdy = false, pam = false, greeter = false, faces = -1, device = "", models = "", webcamCheck = false;
                 const cams = [];
                 for (const line of text.split("\n")) {
                     const t = line.split("\t");
@@ -131,6 +158,7 @@ Singleton {
                     else if (t[0] === "device") device = (t[1] || "").trim();
                     else if (t[0] === "faces") faces = parseInt(t[1], 10);
                     else if (t[0] === "models") models = (t[1] || "").trim();
+                    else if (t[0] === "webcamcheck") webcamCheck = true;
                 }
                 root.howdyInstalled = howdy;
                 root.pamModule = pam;
@@ -139,7 +167,8 @@ Singleton {
                 root.camera = device;
                 root.listedFaces = isFinite(faces) ? faces : -1;
                 root.modelsPath = models;
-                if (models !== "") modelsFile.reload();
+                root.webcamCheck = webcamCheck;
+                if (models !== "") { modelsFile.reload(); webcamFile.reload(); }
             }
         }
     }
@@ -181,7 +210,7 @@ Singleton {
     function startAdding() {
         if (root.addingAlone) {
             root.stopPreview();
-            root.launchAdding();
+            root.launchAdding(false);
             return;
         }
         root.startPreview();
@@ -189,25 +218,41 @@ Singleton {
         if (root.previewReady) cameraSettle.restart();
         else cameraWait.restart();
     }
-    function launchAdding() {
+    // Webcam pictures for the webcam check, from the picture you've just
+    // lined up in: five, a third of a second apart.
+    function takeStills() {
+        cameraWait.stop();
+        cameraSettle.stop();
+        if (!root.previewReady) { root.launchAdding(false); return; }
+        stillsProc.command = ["sh", "-c", `
+            out=$1 dir=$2
+            mkdir -p "$dir" && chmod 700 "$dir" || exit 1
+            rm -f "\${dir:?}/1.jpg" "\${dir:?}/2.jpg" "\${dir:?}/3.jpg" "\${dir:?}/4.jpg" "\${dir:?}/5.jpg"
+            for i in 1 2 3 4 5; do cp "$out" "$dir/$i.jpg" || exit 1; sleep 0.33; done`,
+            "face-stills", root.previewFile, root.stillsDir];
+        stillsProc.running = true;
+    }
+    Process {
+        id: stillsProc
+        onExited: code => root.launchAdding(code === 0)
+    }
+    function launchAdding(withStills) {
         cameraWait.stop();
         cameraSettle.stop();
         runProc.adding = true;
         runProc.recordingAt = 0;
-        run(root.addAlt ? ["--add-face", "--alt"] : ["--add-face"],
+        run((root.addAlt ? ["--add-face", "--alt"] : ["--add-face"]).concat(withStills ? ["--stills", root.stillsDir] : []),
             "Hold still and look at the camera…",
             root.addAlt ? "Your alternative look is added" : "Your face is added");
         // After: busy now, so `adding` never drops in between.
         root.preparing = false;
     }
-    // The panel's picture is showing (FacePanel sets it).
-    property bool previewReady: false
     // Waiting for it, before Howdy starts.
     property bool preparing: false
     onPreviewReadyChanged: if (root.preparing && root.previewReady) cameraSettle.restart()
     // A moment to see yourself first.
-    Timer { id: cameraSettle; interval: 700; onTriggered: if (root.preparing) root.launchAdding() }
-    Timer { id: cameraWait; interval: 5000; onTriggered: if (root.preparing) root.launchAdding() }
+    Timer { id: cameraSettle; interval: 700; onTriggered: if (root.preparing) root.takeStills() }
+    Timer { id: cameraWait; interval: 5000; onTriggered: if (root.preparing) root.launchAdding(false) }
     // Howdy is recording (after the password).
     readonly property bool recording: (root.busy && runProc.adding && runProc.recordingAt > 0) || root.holding
     // Howdy takes a second or so; the scan stays on screen a little
@@ -303,9 +348,11 @@ Singleton {
     }
 
     // ── the camera, seen ────────────────────────────────────────────────
-    // While a face is being added, the panel shows you through the webcam
-    // (modules/settings/FaceCamera.qml, Qt's own camera): this only says
-    // when, and which one.
+    // While a face is being added, the panel shows you through the webcam:
+    // ffmpeg writes its picture a dozen times a second to a file (swapped
+    // in whole, never half-written), and the panel shows the latest. It
+    // goes when the shell goes (setpriv --pdeathsig), so it can't be left
+    // holding the camera; one left over from before is stopped at start.
     //
     // The ordinary camera when there is one besides Howdy's (an infrared
     // picture is a grey ghost, and Howdy needs its camera to itself while
@@ -318,22 +365,97 @@ Singleton {
     }
     readonly property bool previewShared: root.previewDevice === root.camera
                                           || !!root.cameras.find(c => c.ir && c.path === root.previewDevice)
+    // A webcam besides Howdy's camera, for the webcam check.
+    readonly property bool hasWebcam: root.previewDevice !== "" && !root.previewShared
     readonly property bool adding: (root.busy && runProc.adding) || root.preparing || root.holding
     property bool addFailed: false
     Timer { id: addFailedClear; interval: 4000; onTriggered: { root.addFailed = false; if (!root.busy) root.stopPreview(); } }
-    property bool previewing: false
     // A look was just added: the panel's frame shows the tick a moment.
     property bool justAdded: false
     Timer { id: justAddedClear; interval: 2500; onTriggered: { root.justAdded = false; if (!root.busy) root.stopPreview(); } }
+
+    readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || ("/run/user/" + (Quickshell.env("UID") || "1000"))
+    readonly property string previewFile: root.runtimeDir + "/hyprshell-face-preview.jpg"
+    // Where the webcam pictures for the webcam check are put, for
+    // howdy-setup.sh (which takes them from nowhere else).
+    readonly property string stillsDir: root.runtimeDir + "/hyprshell-face-stills"
+    property bool previewing: false
+    // The first frame is there.
+    property bool previewFileReady: false
+    readonly property bool previewReady: root.previewing && root.previewFileReady
+    property int previewFrame: 0
+    property string previewError: ""
     function startPreview() {
-        if (root.previewDevice === "" || (root.busy && root.previewShared)) return;
-        console.info("FaceUnlock: webcam picture from", root.previewDevice);
-        root.previewing = true;
         previewStop.restart();
+        if (previewProc.running || root.previewDevice === "" || (root.busy && root.previewShared)) return;
+        console.info("FaceUnlock: webcam picture from", root.previewDevice, previewProc.small ? "(MJPEG 640×480)" : "(the camera's own format)");
+        root.previewError = "";
+        root.previewFileReady = false;
+        root.previewing = true;
+        previewProc.stopping = false;
+        previewProc.command = ["sh", "-c", previewProc.script, "face-preview", root.previewFile, root.previewDevice,
+                               previewProc.small ? "1" : ""];
+        previewProc.running = true;
     }
-    function stopPreview() { root.previewing = false; }
+    function stopPreview() {
+        root.previewing = false;
+        root.previewFileReady = false;
+        if (!previewProc.running) return;
+        previewProc.stopping = true;
+        previewProc.signal(15);
+    }
+    Process {
+        id: previewProc
+        // Small and compressed first (MJPEG, 640 × 480): the webcam and the
+        // infrared camera are often one USB device, and a big raw picture
+        // can leave the infrared one no bandwidth. The camera's own format
+        // if it can't do that.
+        property bool small: true
+        property bool stopping: false
+        readonly property string script: `
+            out=$1 dev=$2 small=$3
+            rm -f "$out"
+            set -- -nostdin -loglevel error -f v4l2 \${small:+-input_format mjpeg -video_size 640x480} -i "$dev" \\
+                -vf fps=12,scale=640:-2 -q:v 5 -update 1 -atomic_writing 1 -y "$out"
+            command -v setpriv >/dev/null 2>&1 && exec setpriv --pdeathsig TERM -- ffmpeg "$@"
+            exec ffmpeg "$@"`
+        stderr: StdioCollector { id: previewErr }
+        onExited: code => {
+            if (previewProc.stopping) return;
+            const said = previewErr.text.trim().split("\n").pop() || "";
+            console.info("FaceUnlock: webcam picture stopped (" + code + "):", said || "-");
+            root.previewing = false;
+            root.previewFileReady = false;
+            if (code === 127) { root.previewError = "The webcam picture needs ffmpeg"; return; }
+            if (previewProc.small && code !== 0) {
+                previewProc.small = false;
+                root.startPreview();
+                return;
+            }
+            root.previewError = said !== "" ? "The webcam: " + said : "The webcam stopped";
+        }
+    }
+    // Until the first frame is written.
+    Timer {
+        interval: 150
+        repeat: true
+        running: root.previewing && !root.previewFileReady
+        onTriggered: if (!readyCheck.running) readyCheck.running = true
+    }
+    Process {
+        id: readyCheck
+        command: ["test", "-s", root.previewFile]
+        onExited: code => { if (code === 0 && root.previewing) root.previewFileReady = true; }
+    }
+    // A new frame to show, while it runs.
+    Timer { interval: 90; repeat: true; running: root.previewReady; onTriggered: root.previewFrame++ }
     // Not left on with nobody looking.
     Timer { id: previewStop; interval: 180000; onTriggered: root.stopPreview() }
+    // One left over from a shell that went without stopping it.
+    Process {
+        running: true
+        command: ["pkill", "-f", "^ffmpeg .*hyprshell-face-preview"]
+    }
 
     // ── trying it ───────────────────────────────────────────────────────
     // The lock screen's own face service, run here.

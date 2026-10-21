@@ -24,15 +24,10 @@ Column {
     width: parent ? parent.width : 560
     spacing: 14
 
-    // The list of rows can be rebuilt under it (a row of Settings coming or
-    // going), so the camera isn't this panel's to turn off: the next panel
-    // picks it up, and the service turns it off once the result is shown.
-    Component.onDestruction: root.face.previewReady = false
-    Component.onCompleted: root.face.previewReady = root.seeing
-
-    readonly property bool seeing: camera.item !== null && camera.item.showing
-    // Howdy waits for it before recording.
-    onSeeingChanged: root.face.previewReady = root.seeing
+    // The camera is the service's to start and stop, not this panel's: the
+    // list of rows can be rebuilt under it (a row of Settings coming or
+    // going), and the next panel just picks the picture up.
+    readonly property bool seeing: root.face.previewReady && picture.status === Image.Ready
 
     // ── you, in the circle ──────────────────────────────────────────────
     Rectangle {
@@ -53,18 +48,17 @@ Column {
             radius: stage.d / 2
             color: "#191817"
 
-            // The webcam (FaceCamera.qml), only while a face is being
-            // added; nothing at all without Qt Multimedia.
-            Loader {
-                id: camera
+            // The webcam's latest frame, only while a face is being added.
+            Image {
+                id: picture
                 anchors.fill: parent
-                active: root.face.previewing
-                source: "FaceCamera.qml"
-                onStatusChanged: if (status === Loader.Error) console.warn("FacePanel: no webcam picture (is qt6-multimedia installed?)")
-                onLoaded: {
-                    item.device = Qt.binding(() => root.face.previewDevice);
-                    item.active = Qt.binding(() => root.face.previewing);
-                }
+                visible: root.seeing
+                fillMode: Image.PreserveAspectCrop
+                // As in a mirror.
+                mirror: true
+                cache: false
+                asynchronous: false
+                source: root.face.previewReady ? "file://" + root.face.previewFile + "?" + root.face.previewFrame : ""
             }
         }
 
@@ -109,7 +103,7 @@ Column {
                         ? "The infrared camera is learning your face. The webcam can't run beside it on this laptop"
                         : root.face.recording ? "The infrared camera is learning your face. Hold still, an arm's length away"
                         : root.seeing ? "Centre your face in the circle"
-                        : camera.item && camera.item.error !== "" ? camera.item.error
+                        : root.face.previewError !== "" ? root.face.previewError
                         : "Starting the webcam…")
                     : root.face.faces > 0 ? "It unlocks for you at a glance. Wear glasses sometimes? Add that as an alternative look"
                     : "Add your face and Howdy unlocks for you at a glance"
@@ -177,6 +171,9 @@ Column {
                         width: parent.width
                         elide: Text.ElideRight
                         text: "Added " + Qt.formatDateTime(modelData.time, "d MMM yyyy, hh:mm")
+                              + (!root.face.webcamCheck ? ""
+                                 : root.face.webcamIds.indexOf(modelData.id) >= 0 ? " · infrared and webcam"
+                                 : " · infrared only: add it again for the webcam")
                         font.pixelSize: Config.Appearance.fs(11)
                         color: Config.Appearance.ink3
                     }

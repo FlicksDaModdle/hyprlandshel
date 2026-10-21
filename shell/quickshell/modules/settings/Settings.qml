@@ -2024,6 +2024,18 @@ Scope {
                         type: "menu", options: labels, value: cur ? F.cameraLabel(cur) : "",
                         set: v => { const k = labels.indexOf(v); if (k >= 0) F.setCamera(F.cameras[k].path); } });
         }
+        // The webcam check (scripts/hyprshell_webcam.py): both cameras
+        // have to know you.
+        if (F.hasWebcam)
+            rows.push({ n: "Check with the webcam too",
+                        s: !F.webcamCheck
+                           ? "Off: the infrared camera decides alone. On, both cameras have to recognise you — "
+                             + "a photo that fools one rarely fools the other"
+                           : F.webcamIds.length === 0
+                           ? "On, but the webcam has no pictures of you yet: add your face again below"
+                           : "Both cameras have to recognise you. In low light, or with the webcam in use elsewhere, "
+                             + "the infrared camera decides alone. The webcam's light comes on as you unlock",
+                        type: "toggle", value: F.webcamCheck, set: v => F.setWebcamCheck(v) });
         rows.push({ type: "header", n: "Your face",
                     s: "Howdy learns your face through the infrared camera while the webcam shows you, "
                        + "and the looks it knows you by" });

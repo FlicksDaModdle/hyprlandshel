@@ -7,6 +7,9 @@
 #   sudo ./howdy-setup.sh --camera DEVICE  use that camera (/dev/videoN)
 #   sudo ./howdy-setup.sh --add-face       enrol your face (look at the camera)
 #   sudo ./howdy-setup.sh --add-face --alt …as an alternative look (glasses, a beard)
+#   sudo ./howdy-setup.sh --add-face --stills DIR   …with webcam pictures taken meanwhile
+#   sudo ./howdy-setup.sh --webcam-check on DEVICE  the webcam has to know you too
+#   sudo ./howdy-setup.sh --webcam-check off        the infrared camera alone
 #   sudo ./howdy-setup.sh --remove-face ID forget one look (the ID from --list-faces)
 #   sudo ./howdy-setup.sh --clear-faces    forget every face of yours
 #   sudo ./howdy-setup.sh --list-faces     the faces enrolled for you
@@ -47,11 +50,32 @@ say() { printf '  %s\n' "$*"; }
 die() { printf 'howdy-setup.sh: %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "run it with sudo"
 
-mode=install camera="" alt=0 id=""
+mode=install camera="" alt=0 id="" stills="" webcam=""
 case ${1:-} in
     --check) mode=check ;;
     --remove) mode=remove ;;
-    --add-face) mode=add; [ "${2:-}" = --alt ] && alt=1 ;;
+    --add-face)
+        mode=add; shift
+        while [ $# -gt 0 ]; do
+            case $1 in
+                --alt) alt=1 ;;
+                --stills) stills=${2:-}; shift ;;
+                *) die "unknown option: $1" ;;
+            esac
+            shift
+        done
+        ;;
+    --webcam-check)
+        mode=webcam; webcam=${2:-}
+        case $webcam in
+            on)
+                camera=${3:-}
+                [[ $camera =~ ^/dev/video[0-9]{1,3}$ ]] || die "not a camera device: $camera"
+                [ -c "$camera" ] || die "no such camera: $camera" ;;
+            off) ;;
+            *) die "--webcam-check on DEVICE, or off" ;;
+        esac
+        ;;
     --remove-face)
         mode=forget; id=${2:-}
         [[ $id =~ ^[0-9]{1,5}$ ]] || die "not a face ID: $id"
@@ -65,7 +89,7 @@ case ${1:-} in
         [ -c "$camera" ] || die "no such camera: $camera"
         ;;
     "") ;;
-    *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
 
 # Whose faces: the person behind pkexec or sudo.
@@ -79,6 +103,20 @@ CONFIG=""
 for c in /etc/howdy/config.ini /usr/lib/security/howdy/config.ini /lib/security/howdy/config.ini; do
     [ -f "$c" ] && { CONFIG=$c; break; }
 done
+
+# Howdy's own folder (compare.py and its rubberstamps), wherever the
+# package put it.
+howdy_dir() {
+    local d c
+    d=$(readlink -f "$(command -v howdy 2>/dev/null)" 2>/dev/null) && d=${d%/*}
+    for c in "$d" /usr/lib/howdy /usr/lib/security/howdy /lib/security/howdy /usr/share/howdy; do
+        [ -n "$c" ] && [ -f "$c/compare.py" ] && [ -d "$c/rubberstamps" ] && { printf '%s\n' "$c"; return 0; }
+    done
+    return 1
+}
+here=$(cd "${0%/*}" && pwd)
+STAMP=hyprshell_webcam.py
+webcam_py() { python3 -I "$here/howdy-webcam.py" "$@"; }
 
 case $mode in
     camera)
@@ -96,18 +134,45 @@ case $mode in
         # Howdy asks for a name for the new face (24 characters at most);
         # this gives it one.
         if [ "$alt" = 1 ]; then label="Alt look $(date +%Y-%m-%d)"; else label="Face $(date +%Y-%m-%d)"; fi
+        # Webcam pictures from Settings, taken while you lined up: only
+        # from your own runtime folder, where Settings puts them.
+        if [ -n "$stills" ]; then
+            uid=$(id -u "$person")
+            [ "$stills" = "/run/user/$uid/hyprshell-face-stills" ] && [ -d "$stills" ] && [ ! -L "$stills" ] \
+                || die "webcam pictures aren't where Settings keeps them: $stills"
+        fi
         # (For Settings: the camera is being recorded from now.)
         echo recording
-        printf '%s\n' "$label" | howdy -U "$person" add
-        exit $? ;;
+        printf '%s\n' "$label" | howdy -U "$person" add || exit $?
+        if [ -n "$stills" ]; then
+            hdir=$(howdy_dir) && webcam_py enrol "$hdir" "$person" "$label" "$stills" \
+                || echo "webcam: the webcam pictures couldn't be kept; the infrared camera decides alone for this look"
+        fi
+        exit 0 ;;
     forget)
         need_person; need_howdy
-        howdy -U "$person" -y remove "$id"
-        exit $? ;;
+        howdy -U "$person" -y remove "$id" || exit $?
+        { hdir=$(howdy_dir) && webcam_py forget "$hdir" "$person" "$id"; } || true
+        exit 0 ;;
     clear)
         need_person; need_howdy
-        howdy -U "$person" -y clear
-        exit $? ;;
+        howdy -U "$person" -y clear || exit $?
+        { hdir=$(howdy_dir) && webcam_py clear "$hdir" "$person"; } || true
+        exit 0 ;;
+    webcam)
+        need_howdy
+        [ -n "$CONFIG" ] || die "Howdy's config.ini wasn't found"
+        hdir=$(howdy_dir) || die "Howdy's rubberstamps folder wasn't found"
+        if [ "$webcam" = on ]; then
+            install -m 644 -o root -g root "$here/$STAMP" "$hdir/rubberstamps/$STAMP"
+            webcam_py rule "$CONFIG" on "$camera"
+            say "The webcam has to recognise you too ($camera); in low light the infrared camera decides alone"
+        else
+            webcam_py rule "$CONFIG" off
+            rm -f "$hdir/rubberstamps/$STAMP"
+            say "The infrared camera decides alone"
+        fi
+        exit 0 ;;
     list)
         need_person; need_howdy
         howdy -U "$person" list
@@ -129,6 +194,10 @@ fi
 
 if [ "$mode" = remove ]; then
     rm -f "$LOCK"
+    if [ -n "$CONFIG" ] && hdir=$(howdy_dir) && [ -f "$hdir/rubberstamps/$STAMP" ]; then
+        webcam_py rule "$CONFIG" off || true
+        rm -f "$hdir/rubberstamps/$STAMP"
+    fi
     if [ -f "$GREETD" ] && grep -q "$MARK" "$GREETD"; then
         grep -v "$MARK" "$GREETD" > "$GREETD.new"
         chmod --reference="$GREETD" "$GREETD.new"
