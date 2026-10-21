@@ -22,6 +22,11 @@ hl.env("HYPRCURSOR_SIZE", "24")
 hl.env("XCURSOR_PATH", "@CACHE@/data/icons:/usr/local/share/icons:/usr/share/icons:/usr/share/pixmaps")
 hl.env("XDG_DATA_DIRS", "@CACHE@/data:/usr/local/share:/usr/share")
 
+-- The screens and pointer of whoever last logged in, as their shell keeps
+-- them (GreeterLook.qml writes this): the login screen starts at their
+-- scale and with their cursor instead of changing to them a moment later.
+pcall(dofile, "@CACHE@/look.lua")
+
 hl.config({
     input = {
         kb_layout          = "@KB_LAYOUT@",

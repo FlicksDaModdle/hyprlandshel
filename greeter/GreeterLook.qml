@@ -18,6 +18,13 @@ import Quickshell.Io
 // and this hands them to the greeter's Hyprland when it starts, and again
 // if a different person is picked.
 //
+// It also keeps them for next time, as look.lua in the greeter's cache,
+// which greeter/hyprland.lua runs before anything is drawn: so the login
+// screen comes up at your scale and with your pointer from its first
+// frame, rather than at Hyprland's own and changing a moment later. The
+// pointer is set there for the greeter itself too (XCURSOR_THEME), for a
+// Qt that draws its own instead of asking Hyprland to.
+//
 // The theme folder is linked into the greeter's own icon folder, which
 // greeter/hyprland.lua puts on XCURSOR_PATH and XDG_DATA_DIRS — where
 // Hyprland looks when told to use a theme by name.
@@ -33,10 +40,11 @@ Scope {
 
     required property var greeter
     readonly property string userDir: greeter.userDir
-    readonly property string iconsDir: {
+    readonly property string cacheDir: {
         const f = String(greeter.stateFile);
-        return f.slice(0, f.lastIndexOf("/")) + "/data/icons";
+        return f.slice(0, f.lastIndexOf("/"));
     }
+    readonly property string iconsDir: cacheDir + "/data/icons"
     readonly property bool live: !greeter.preview
     readonly property bool dryRun: Quickshell.env("HYPRSHELL_GREETER_LOOK_DRYRUN") === "1"
 
@@ -100,13 +108,22 @@ Scope {
         const theme = /^[A-Za-z0-9 _.+-]{1,64}$/.test(String(c.theme || "")) ? String(c.theme) : "";
         const size = Math.round(look.num(c.size, 8, 256) || 24);
         if (lua === "" && theme === "") return;
+        // For the next start: the same screens, and the pointer as
+        // environment, which is how Hyprland and Qt pick one up at launch.
+        let boot = lua.replace(/\) hl\.monitor/g, ")\nhl.monitor");
+        if (theme !== "")
+            for (const v of ["XCURSOR_THEME", "HYPRCURSOR_THEME"])
+                boot += '\nhl.env("' + v + '", "' + theme + '")';
+        for (const v of ["XCURSOR_SIZE", "HYPRCURSOR_SIZE"])
+            boot += '\nhl.env("' + v + '", "' + size + '")';
         if (!look.live) {
             if (look.dryRun) console.log("greeter look:", JSON.stringify({ lua: lua, theme: theme, size: size,
-                                                                          link: look.userDir + "/cursor" }));
+                                                                          link: look.userDir + "/cursor", boot: boot }));
             return;
         }
         run.command = ["sh", "-c", run.script, "greeter-look",
-                       look.iconsDir, theme, String(size), look.userDir + "/cursor", lua];
+                       look.iconsDir, theme, String(size), look.userDir + "/cursor", lua,
+                       look.cacheDir + "/look.lua", "-- Written by the greeter (GreeterLook.qml) for its next start.\n" + boot + "\n"];
         run.running = true;
     }
 
@@ -114,8 +131,9 @@ Scope {
     Process {
         id: run
         readonly property string script: `
-            icons=$1 theme=$2 size=$3 src=$4 lua=$5
+            icons=$1 theme=$2 size=$3 src=$4 lua=$5 boot=$6 bootlua=$7
             [ -n "$lua" ] && hyprctl eval "$lua" >/dev/null 2>&1
+            printf '%s' "$bootlua" > "$boot.tmp" && mv -f "$boot.tmp" "$boot"
             if [ -n "$theme" ]; then
                 mkdir -p "$icons"
                 # The person picked's own copy, or none: a theme of the same

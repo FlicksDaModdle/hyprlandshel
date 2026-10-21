@@ -211,618 +211,640 @@ Item {
         function onPrimaryChanged() { if (view.primary) keys.forceActiveFocus(); }
     }
 
-    // ── clock ─────────────────────────────────────────────────────────────
-    // High on the screen with the card, centred on the others: a light
-    // weight at this size reads as a clock face rather than a heading.
-    Column {
-        id: clock
-        anchors.horizontalCenter: parent.horizontalCenter
-        y: (view.primary ? view.height * 0.13 : (view.height - height) / 2) + (1 - view.shown) * -14
-        opacity: view.shown
-        spacing: 0
-
-        StyledText {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: Qt.formatDate(tick.now, "dddd, d MMMM")
-            font.pixelSize: view.ap.fs(15)
-            font.weight: Font.DemiBold
-            font.letterSpacing: 2.2
-            font.capitalization: Font.AllUppercase
-            color: view.fg2
-        }
-        StyledText {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: Qt.formatDateTime(tick.now, view.ap.clock24 ? "HH:mm" : "h:mm")
-            font.pixelSize: view.ap.fs(132)
-            font.weight: Font.Light
-            font.letterSpacing: -3
-            color: view.fg
-        }
-        StyledText {
-            anchors.horizontalCenter: parent.horizontalCenter
-            visible: !view.ap.clock24
-            text: Qt.formatDateTime(tick.now, "AP")
-            font.pixelSize: view.ap.fs(13)
-            font.weight: Font.DemiBold
-            font.letterSpacing: 2
-            color: view.fg3
-        }
-    }
-
-    // ── the card ──────────────────────────────────────────────────────────
+    // Everything but the ground is drawn at the shell's own scale for this
+    // screen (Settings → Display → shell scale), as the bar and dock are:
+    // laid out in a smaller box and scaled up, or the other way, so the
+    // card, clock and buttons are the size they are on the desktop.
+    readonly property real uiScale: ap.screenScale(view.screen ? String(view.screen.name) : "")
     Item {
-        id: card
-        visible: view.primary
-        width: 392
-        height: cardColumn.implicitHeight + 52
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.verticalCenterOffset: view.height * 0.1 + (1 - view.shown) * 26
-        opacity: view.shown
+        id: stage
+        width: view.width / view.uiScale
+        height: view.height / view.uiScale
+        scale: view.uiScale
+        transformOrigin: Item.TopLeft
 
-        // The shell's panel radius, as the card is one of its panels.
-        readonly property real radius: view.ap.rPanel
-
-        // A refused password nudges the card, the standard cue.
-        transform: Translate { id: shakeShift; x: shakeSpring.value }
-        Spring { id: shakeSpring; to: 0; response: 300; bounce: 2.2 }
-
-        // Frosted the way the shell's panels are: the wallpaper behind it
-        // blurred about as strongly as Hyprland blurs behind them
-        // (Settings → Hyprland → blur size and passes, and none with blur
-        // off), under the same panel colour the Translucency slider sets,
-        // with the same hairline edge and accent seam (PanelSurface). The
-        // blur goes through a Loader, so a Qt without QtQuick.Effects
-        // shows the panel colour alone.
-        //
-        // Hyprland's blur is passes of a kernel `size` wide, each pass
-        // reaching twice as far as the last; about size × (2^passes − 1)
-        // pixels in all, which is what MultiEffect is asked for.
-        readonly property real blurRadius: !view.ap.hyprBlur ? 0
-            : Math.max(1, view.ap.hyprBlurSize) * (Math.pow(2, Math.max(1, view.ap.hyprBlurPasses)) - 1) * 1.6
-        Loader {
-            anchors.fill: parent
-            active: card.blurRadius > 0
-            source: "BlurBackdrop.qml"
-            onLoaded: {
-                item.sourceItem = ground;
-                item.radius = Qt.binding(() => card.radius);
-                item.blurMax = 64;
-                item.amount = Qt.binding(() => Math.min(1, card.blurRadius / 64));
-                item.sampleRect = Qt.binding(() => Qt.rect(card.x + shakeShift.x, card.y, card.width, card.height));
-            }
-        }
-        PanelSurface {
-            anchors.fill: parent
-            radius: card.radius
-        }
-
+        // ── clock ─────────────────────────────────────────────────────────────
+        // High on the screen with the card, centred on the others: a light
+        // weight at this size reads as a clock face rather than a heading.
         Column {
-            id: cardColumn
-            anchors.centerIn: parent
-            spacing: 14
+            id: clock
+            anchors.horizontalCenter: parent.horizontalCenter
+            // High up, but never so high or low that the card can't fit
+            // between it and the row along the bottom (a short screen, or
+            // a large shell scale).
+            readonly property real restY: view.primary
+                ? Math.max(16, Math.min(stage.height * 0.13,
+                                        stage.height - 96 - card.height - 24 - height))
+                : (stage.height - height) / 2
+            y: restY + (1 - view.shown) * -14
+            opacity: view.shown
+            spacing: 0
 
-            // Picture, in a ring of the accent, cut to a circle — a
-            // ClippingRectangle, as plain clipping would crop it square.
-            Item {
+            StyledText {
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: 92
-                height: 92
+                text: Qt.formatDate(tick.now, "dddd, d MMMM")
+                font.pixelSize: view.ap.fs(15)
+                font.weight: Font.DemiBold
+                font.letterSpacing: 2.2
+                font.capitalization: Font.AllUppercase
+                color: view.fg2
+            }
+            StyledText {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: Qt.formatDateTime(tick.now, view.ap.clock24 ? "HH:mm" : "h:mm")
+                font.pixelSize: view.ap.fs(132)
+                font.weight: Font.Light
+                font.letterSpacing: -3
+                color: view.fg
+            }
+            StyledText {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: !view.ap.clock24
+                text: Qt.formatDateTime(tick.now, "AP")
+                font.pixelSize: view.ap.fs(13)
+                font.weight: Font.DemiBold
+                font.letterSpacing: 2
+                color: view.fg3
+            }
+        }
 
-                Rectangle {
-                    anchors.fill: parent
-                    radius: width / 2
-                    color: "transparent"
-                    border.width: 2.5
-                    border.color: view.ap.accent
-                }
-                ClippingRectangle {
-                    anchors.centerIn: parent
-                    width: 80
-                    height: 80
-                    radius: 40
-                    color: view.ap.accent
+        // ── the card ──────────────────────────────────────────────────────────
+        Item {
+            id: card
+            visible: view.primary
+            width: 392
+            height: cardColumn.implicitHeight + 52
+            anchors.horizontalCenter: parent.horizontalCenter
+            // A little below the middle, and always clear of the clock.
+            y: Math.max(clock.restY + clock.height + 24,
+                        (stage.height - height) / 2 + stage.height * 0.1)
+               + (1 - view.shown) * 26
+            opacity: view.shown
 
-                    StyledText {
-                        anchors.centerIn: parent
-                        visible: picture.status !== Image.Ready
-                        text: view.userName.charAt(0).toUpperCase()
-                        font.pixelSize: view.ap.fs(34)
-                        font.weight: Font.DemiBold
-                        color: view.ap.inkOnAccent
-                    }
-                    Image {
-                        id: picture
-                        property int attempt: 0
-                        anchors.fill: parent
-                        source: attempt < view.pictures.length ? "file://" + view.pictures[attempt] : ""
-                        fillMode: Image.PreserveAspectCrop
-                        sourceSize: Qt.size(160, 160)
-                        visible: status === Image.Ready
-                        asynchronous: true
-                        // The next candidate when one is not there.
-                        onStatusChanged: if (status === Image.Error) attempt++
-                        Connections {
-                            target: view
-                            function onPicturesChanged() { picture.attempt = 0; }
-                        }
-                    }
+            // The shell's panel radius, as the card is one of its panels.
+            readonly property real radius: view.ap.rPanel
+
+            // A refused password nudges the card, the standard cue.
+            transform: Translate { id: shakeShift; x: shakeSpring.value }
+            Spring { id: shakeSpring; to: 0; response: 300; bounce: 2.2 }
+
+            // Frosted the way the shell's panels are: the wallpaper behind it
+            // blurred about as strongly as Hyprland blurs behind them
+            // (Settings → Hyprland → blur size and passes, and none with blur
+            // off), under the same panel colour the Translucency slider sets,
+            // with the same hairline edge and accent seam (PanelSurface). The
+            // blur goes through a Loader, so a Qt without QtQuick.Effects
+            // shows the panel colour alone.
+            //
+            // Hyprland's blur is passes of a kernel `size` wide, each pass
+            // reaching twice as far as the last; about size × (2^passes − 1)
+            // pixels in all, which is what MultiEffect is asked for.
+            readonly property real blurRadius: !view.ap.hyprBlur ? 0
+                : Math.max(1, view.ap.hyprBlurSize) * (Math.pow(2, Math.max(1, view.ap.hyprBlurPasses)) - 1) * 1.6
+            Loader {
+                anchors.fill: parent
+                active: card.blurRadius > 0
+                source: "BlurBackdrop.qml"
+                onLoaded: {
+                    item.sourceItem = ground;
+                    item.radius = Qt.binding(() => card.radius);
+                    item.blurMax = 64;
+                    item.amount = Qt.binding(() => Math.min(1, card.blurRadius / 64));
+                    item.sampleRect = Qt.binding(() => Qt.rect(card.x + shakeShift.x, card.y, card.width, card.height));
                 }
             }
+            PanelSurface {
+                anchors.fill: parent
+                radius: card.radius
+            }
 
-            // Name, with a way to the others when there are others.
             Column {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 3
+                id: cardColumn
+                anchors.centerIn: parent
+                spacing: 14
 
-                Row {
+                // Picture, in a ring of the accent, cut to a circle — a
+                // ClippingRectangle, as plain clipping would crop it square.
+                Item {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: 6
+                    width: 92
+                    height: 92
 
-                    Stepper {
-                        visible: view.canStepUser
-                        icon: "chevronLeft"
-                        onStep: view.stepUser(-1)
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: width / 2
+                        color: "transparent"
+                        border.width: 2.5
+                        border.color: view.ap.accent
                     }
-                    StyledText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Math.min(implicitWidth, 240)
-                        elide: Text.ElideRight
-                        text: view.userName
-                        font.pixelSize: view.ap.fs(20)
-                        font.weight: Font.DemiBold
-                        color: view.ap.ink
-                    }
-                    Stepper {
-                        visible: view.canStepUser
-                        icon: "chevronRight"
-                        onStep: view.stepUser(1)
-                    }
-                }
-                Row {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    visible: view.subtitle !== ""
-                    spacing: 6
-                    MonoIcon {
-                        anchors.verticalCenter: parent.verticalCenter
-                        name: "lock"
-                        size: 12
-                        monochrome: true
-                        inkColor: view.ap.ink3
-                    }
-                    StyledText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: view.subtitle
-                        font.pixelSize: view.ap.fs(12.5)
-                        color: view.ap.ink3
-                    }
-                }
-            }
+                    ClippingRectangle {
+                        anchors.centerIn: parent
+                        width: 80
+                        height: 80
+                        radius: 40
+                        color: view.ap.accent
 
-            Item { width: 1; height: 2 }
-
-            // The field: a pill, with the accent's round button at its end.
-            Rectangle {
-                id: field
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: 320
-                height: 50
-                radius: height / 2
-                color: view.ap.hover
-                border.width: 1.5
-                border.color: tint1.value
-                ColorSpring { id: tint1; to: view.auth.failed ? view.ap.accent
-                        : (keys.activeFocus && view.auth.entered.length > 0)
-                          ? Qt.rgba(view.ap.accent.r, view.ap.accent.g, view.ap.accent.b, 0.55)
-                          : view.ap.edge }
-
-                readonly property bool shown: view.reveal || (!!view.auth.prompt && !!view.auth.promptEcho)
-
-                TextInput {
-                    id: keys
-                    anchors.left: parent.left
-                    anchors.leftMargin: 20
-                    anchors.right: eye.left
-                    anchors.rightMargin: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: 30
-                    verticalAlignment: TextInput.AlignVCenter
-                    clip: true
-                    focus: view.primary
-                    enabled: view.primary
-                    readOnly: view.auth.busy
-                    echoMode: field.shown ? TextInput.Normal : TextInput.Password
-                    passwordCharacter: "•"
-                    passwordMaskDelay: 0
-                    inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
-                                      | Qt.ImhNoAutoUppercase | (field.shown ? 0 : Qt.ImhHiddenText)
-                    selectByMouse: true
-                    // Kept if the window loses the keyboard for a moment.
-                    persistentSelection: true
-                    mouseSelectionMode: TextInput.SelectCharacters
-                    font.family: view.ap.fontFamily
-                    font.pixelSize: view.ap.fs(field.shown ? 14 : 18)
-                    font.letterSpacing: field.shown ? 0 : 3
-                    color: view.ap.ink
-                    selectionColor: Qt.rgba(view.ap.accent.r, view.ap.accent.g, view.ap.accent.b, 0.45)
-                    selectedTextColor: view.ap.ink
-
-                    Component.onCompleted: {
-                        text = view.auth.entered;
-                        if (view.primary) forceActiveFocus();
-                    }
-                    // Both ways: typed here, it is the password; cleared
-                    // or set by the caller (a refused attempt, another
-                    // monitor's field), it shows here.
-                    onTextEdited: {
-                        view.auth.entered = text;
-                        view.auth.failed = false;
-                        view.auth.status = "";
-                    }
-                    Connections {
-                        target: view.auth
-                        function onEnteredChanged() {
-                            if (keys.text !== view.auth.entered) keys.text = view.auth.entered;
+                        StyledText {
+                            anchors.centerIn: parent
+                            visible: picture.status !== Image.Ready
+                            text: view.userName.charAt(0).toUpperCase()
+                            font.pixelSize: view.ap.fs(34)
+                            font.weight: Font.DemiBold
+                            color: view.ap.inkOnAccent
                         }
-                    }
-
-                    onActiveFocusChanged: {
-                        console.info("login view: password " + (activeFocus ? "has" : "lost") + " the keys (" + view.screenName + ")");
-                        if (!activeFocus && view.primary) refocus.restart();
-                    }
-
-                    // What the screen does with a key, before the field
-                    // does its own editing with it.
-                    Keys.onPressed: event => {
-                        const a = view.auth;
-                        view.lastKey = Date.now();
-                        view.keyboardMissing = false;
-                        if (a.busy) {
-                            console.info("login view: a key while checking the password, ignored");
-                            event.accepted = true;
-                            return;
-                        }
-                        const plain = !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier));
-                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) a.submit();
-                        else if (event.key === Qt.Key_Escape) {
-                            if (keys.selectedText.length > 0) keys.deselect();
-                            else {
-                                if (a.entered === "") view.escapeOnEmpty();
-                                a.entered = ""; a.status = "";
+                        Image {
+                            id: picture
+                            property int attempt: 0
+                            anchors.fill: parent
+                            source: attempt < view.pictures.length ? "file://" + view.pictures[attempt] : ""
+                            fillMode: Image.PreserveAspectCrop
+                            sourceSize: Qt.size(160, 160)
+                            visible: status === Image.Ready
+                            asynchronous: true
+                            // The next candidate when one is not there.
+                            onStatusChanged: if (status === Image.Error) attempt++
+                            Connections {
+                                target: view
+                                function onPicturesChanged() { picture.attempt = 0; }
                             }
                         }
-                        else if (plain && event.key === Qt.Key_Up && view.canStepUser) view.stepUser(-1);
-                        else if (plain && event.key === Qt.Key_Down && view.canStepUser) view.stepUser(1);
-                        else if (event.key === Qt.Key_Tab && view.canStepSession) view.stepSession(1);
-                        else if (event.key === Qt.Key_Backtab && view.canStepSession) view.stepSession(-1);
-                        // Said here, not left to the field: over some
-                        // keyboard layouts and virtual keyboards Qt doesn't
-                        // match Ctrl+A to Select All in a password field.
-                        else if (event.matches(StandardKey.SelectAll)
-                                 || (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)))
-                            keys.selectAll();
-                        else { event.accepted = false; return; }
-                        event.accepted = true;
                     }
+                }
 
-                    // The text cursor: the accent's, blinking, solid again
-                    // whenever it moves; hidden while there is a selection
-                    // or a check is under way.
-                    cursorDelegate: Rectangle {
-                        id: caret
-                        width: 2
-                        radius: 1
-                        color: view.ap.accent
-                        visible: keys.activeFocus && !view.auth.busy && keys.selectedText.length === 0
-                        SequentialAnimation on opacity {
-                            id: blink
-                            running: caret.visible
-                            loops: Animation.Infinite
-                            PropertyAction { value: 1 }
-                            PauseAnimation { duration: 530 }
-                            PropertyAction { value: 0 }
-                            PauseAnimation { duration: 530 }
+                // Name, with a way to the others when there are others.
+                Column {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 3
+
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: 6
+
+                        Stepper {
+                            visible: view.canStepUser
+                            icon: "chevronLeft"
+                            onStep: view.stepUser(-1)
+                        }
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Math.min(implicitWidth, 240)
+                            elide: Text.ElideRight
+                            text: view.userName
+                            font.pixelSize: view.ap.fs(20)
+                            font.weight: Font.DemiBold
+                            color: view.ap.ink
+                        }
+                        Stepper {
+                            visible: view.canStepUser
+                            icon: "chevronRight"
+                            onStep: view.stepUser(1)
+                        }
+                    }
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        visible: view.subtitle !== ""
+                        spacing: 6
+                        MonoIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            name: "lock"
+                            size: 12
+                            monochrome: true
+                            inkColor: view.ap.ink3
+                        }
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: view.subtitle
+                            font.pixelSize: view.ap.fs(12.5)
+                            color: view.ap.ink3
+                        }
+                    }
+                }
+
+                Item { width: 1; height: 2 }
+
+                // The field: a pill, with the accent's round button at its end.
+                Rectangle {
+                    id: field
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 320
+                    height: 50
+                    radius: height / 2
+                    color: view.ap.hover
+                    border.width: 1.5
+                    border.color: tint1.value
+                    ColorSpring { id: tint1; to: view.auth.failed ? view.ap.accent
+                            : (keys.activeFocus && view.auth.entered.length > 0)
+                              ? Qt.rgba(view.ap.accent.r, view.ap.accent.g, view.ap.accent.b, 0.55)
+                              : view.ap.edge }
+
+                    readonly property bool shown: view.reveal || (!!view.auth.prompt && !!view.auth.promptEcho)
+
+                    TextInput {
+                        id: keys
+                        anchors.left: parent.left
+                        anchors.leftMargin: 20
+                        anchors.right: eye.left
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        height: 30
+                        verticalAlignment: TextInput.AlignVCenter
+                        clip: true
+                        focus: view.primary
+                        enabled: view.primary
+                        readOnly: view.auth.busy
+                        echoMode: field.shown ? TextInput.Normal : TextInput.Password
+                        passwordCharacter: "•"
+                        passwordMaskDelay: 0
+                        inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+                                          | Qt.ImhNoAutoUppercase | (field.shown ? 0 : Qt.ImhHiddenText)
+                        selectByMouse: true
+                        // Kept if the window loses the keyboard for a moment.
+                        persistentSelection: true
+                        mouseSelectionMode: TextInput.SelectCharacters
+                        font.family: view.ap.fontFamily
+                        font.pixelSize: view.ap.fs(field.shown ? 14 : 18)
+                        font.letterSpacing: field.shown ? 0 : 3
+                        color: view.ap.ink
+                        selectionColor: Qt.rgba(view.ap.accent.r, view.ap.accent.g, view.ap.accent.b, 0.45)
+                        selectedTextColor: view.ap.ink
+
+                        Component.onCompleted: {
+                            text = view.auth.entered;
+                            if (view.primary) forceActiveFocus();
+                        }
+                        // Both ways: typed here, it is the password; cleared
+                        // or set by the caller (a refused attempt, another
+                        // monitor's field), it shows here.
+                        onTextEdited: {
+                            view.auth.entered = text;
+                            view.auth.failed = false;
+                            view.auth.status = "";
                         }
                         Connections {
-                            target: keys
-                            function onCursorPositionChanged() { if (caret.visible) blink.restart(); }
-                            function onTextChanged() { if (caret.visible) blink.restart(); }
+                            target: view.auth
+                            function onEnteredChanged() {
+                                if (keys.text !== view.auth.entered) keys.text = view.auth.entered;
+                            }
+                        }
+
+                        onActiveFocusChanged: {
+                            console.info("login view: password " + (activeFocus ? "has" : "lost") + " the keys (" + view.screenName + ")");
+                            if (!activeFocus && view.primary) refocus.restart();
+                        }
+
+                        // What the screen does with a key, before the field
+                        // does its own editing with it.
+                        Keys.onPressed: event => {
+                            const a = view.auth;
+                            view.lastKey = Date.now();
+                            view.keyboardMissing = false;
+                            if (a.busy) {
+                                console.info("login view: a key while checking the password, ignored");
+                                event.accepted = true;
+                                return;
+                            }
+                            const plain = !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier));
+                            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) a.submit();
+                            else if (event.key === Qt.Key_Escape) {
+                                if (keys.selectedText.length > 0) keys.deselect();
+                                else {
+                                    if (a.entered === "") view.escapeOnEmpty();
+                                    a.entered = ""; a.status = "";
+                                }
+                            }
+                            else if (plain && event.key === Qt.Key_Up && view.canStepUser) view.stepUser(-1);
+                            else if (plain && event.key === Qt.Key_Down && view.canStepUser) view.stepUser(1);
+                            else if (event.key === Qt.Key_Tab && view.canStepSession) view.stepSession(1);
+                            else if (event.key === Qt.Key_Backtab && view.canStepSession) view.stepSession(-1);
+                            // Said here, not left to the field: over some
+                            // keyboard layouts and virtual keyboards Qt doesn't
+                            // match Ctrl+A to Select All in a password field.
+                            else if (event.matches(StandardKey.SelectAll)
+                                     || (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)))
+                                keys.selectAll();
+                            else { event.accepted = false; return; }
+                            event.accepted = true;
+                        }
+
+                        // The text cursor: the accent's, blinking, solid again
+                        // whenever it moves; hidden while there is a selection
+                        // or a check is under way.
+                        cursorDelegate: Rectangle {
+                            id: caret
+                            width: 2
+                            radius: 1
+                            color: view.ap.accent
+                            visible: keys.activeFocus && !view.auth.busy && keys.selectedText.length === 0
+                            SequentialAnimation on opacity {
+                                id: blink
+                                running: caret.visible
+                                loops: Animation.Infinite
+                                PropertyAction { value: 1 }
+                                PauseAnimation { duration: 530 }
+                                PropertyAction { value: 0 }
+                                PauseAnimation { duration: 530 }
+                            }
+                            Connections {
+                                target: keys
+                                function onCursorPositionChanged() { if (caret.visible) blink.restart(); }
+                                function onTextChanged() { if (caret.visible) blink.restart(); }
+                            }
                         }
                     }
+                    StyledText {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 22
+                        anchors.right: eye.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: keys.text.length === 0
+                        elide: Text.ElideRight
+                        text: view.auth.busy ? "Checking…" : (view.auth.prompt || "Password")
+                        font.pixelSize: view.ap.fs(13.5)
+                        color: view.ap.ink3
+                    }
+
+                    // Show what was typed — a password typed blind is the
+                    // commonest way to be locked out by Caps Lock.
+                    Item {
+                        id: eye
+                        anchors.right: submitBtn.left
+                        anchors.rightMargin: 2
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 36
+                        MonoIcon {
+                            anchors.centerIn: parent
+                            name: "eye"
+                            size: 17
+                            monochrome: true
+                            inkColor: view.reveal ? view.ap.accent : view.ap.ink3
+                        }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: view.reveal = !view.reveal }
+                    }
+
+                    Rectangle {
+                        id: submitBtn
+                        anchors.right: parent.right
+                        anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 38
+                        height: 38
+                        radius: 19
+                        color: view.ap.accent
+                        opacity: opacitySpring.value
+                        scale: scaleSpring.value
+                        Spring { id: opacitySpring; to: view.auth.entered.length > 0 && !view.auth.busy ? 1 : 0.45; response: 220; bounce: 0 }
+                        Spring { id: scaleSpring; to: submitHover.hovered && view.auth.entered.length > 0 && !view.auth.busy ? 1.06 : 1; response: 190; bounce: 0 }
+
+                        MonoIcon {
+                            anchors.centerIn: parent
+                            visible: !view.auth.busy
+                            name: "chevronRight"
+                            size: 18
+                            inkColor: view.ap.inkOnAccent
+                            monochrome: true
+                        }
+                        // Checking: a ring going round where the arrow was.
+                        Rectangle {
+                            anchors.centerIn: parent
+                            visible: view.auth.busy
+                            width: 16
+                            height: 16
+                            radius: 8
+                            color: "transparent"
+                            border.width: 2
+                            border.color: view.ap.inkOnAccent
+                            opacity: 0.9
+                            Rectangle {
+                                width: 6; height: 6; radius: 3
+                                color: view.ap.accent
+                                x: -1; y: -1
+                            }
+                            RotationAnimation on rotation {
+                                running: view.auth.busy
+                                from: 0; to: 360
+                                duration: 900
+                                loops: Animation.Infinite
+                            }
+                        }
+                        HoverHandler { id: submitHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: view.auth.submit() }
+                    }
+                }
+
+                StyledText {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 320
+                    height: Math.max(16, implicitHeight)
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                    text: view.keyboardMissing ? view.keyboardHint : view.statusText
+                    font.pixelSize: view.ap.fs(12)
+                    color: view.auth.failed || view.keyboardMissing ? view.ap.accent : view.ap.ink3
+                }
+            }
+        }
+
+        // The pills' frost: the same blurred wallpaper the card stands on,
+        // under the pill's tint and edge, so what shows through them is blurred
+        // rather than sharp. A lock surface is the shell's own drawing, which
+        // Hyprland's blur never reaches, so it is done here as for the card.
+        // (An inline component cannot see this file's ids, so what it needs
+        // is handed to it.)
+        component PillFrost: Item {
+            id: frost
+            required property Item pill
+            required property Item backdrop
+            required property real blurRadius
+            required property color tint
+            required property color edge
+            anchors.fill: parent
+            Loader {
+                anchors.fill: parent
+                active: frost.blurRadius > 0
+                source: "BlurBackdrop.qml"
+                onLoaded: {
+                    item.sourceItem = frost.backdrop;
+                    item.radius = Qt.binding(() => frost.pill.radius);
+                    item.blurMax = 64;
+                    item.amount = Qt.binding(() => Math.min(1, frost.blurRadius / 64));
+                    item.sampleRect = Qt.binding(() => Qt.rect(frost.pill.x, frost.pill.y, frost.pill.width, frost.pill.height));
+                }
+            }
+            Rectangle {
+                anchors.fill: parent
+                radius: frost.pill.radius
+                color: frost.tint
+                border.width: 1
+                border.color: frost.edge
+            }
+        }
+
+        // ── session ───────────────────────────────────────────────────────────
+        // What you are logging into, under the card — the greeter's. Click, or
+        // Tab, for the next one.
+        Rectangle {
+            id: sessionPill
+            visible: view.primary && view.sessionName !== ""
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: card.bottom
+            anchors.topMargin: 16
+            opacity: view.shown
+            height: 34
+            width: sessionRow.implicitWidth + 30
+            radius: height / 2
+            color: "transparent"
+            PillFrost {
+                pill: sessionPill
+                backdrop: ground
+                blurRadius: card.blurRadius
+                tint: sessionHover.hovered ? Qt.tint(view.pill, view.pillHover) : view.pill
+                edge: view.pillEdge
+            }
+
+            Row {
+                id: sessionRow
+                anchors.centerIn: parent
+                spacing: 8
+                MonoIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "monitor"
+                    size: 15
+                    monochrome: true
+                    inkColor: view.pillInk
                 }
                 StyledText {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 22
-                    anchors.right: eye.left
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: keys.text.length === 0
-                    elide: Text.ElideRight
-                    text: view.auth.busy ? "Checking…" : (view.auth.prompt || "Password")
-                    font.pixelSize: view.ap.fs(13.5)
-                    color: view.ap.ink3
+                    text: view.sessionName
+                    font.pixelSize: view.ap.fs(12.5)
+                    font.weight: Font.DemiBold
+                    color: view.pillInk
                 }
-
-                // Show what was typed — a password typed blind is the
-                // commonest way to be locked out by Caps Lock.
-                Item {
-                    id: eye
-                    anchors.right: submitBtn.left
-                    anchors.rightMargin: 2
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: 36
-                    MonoIcon {
-                        anchors.centerIn: parent
-                        name: "eye"
-                        size: 17
-                        monochrome: true
-                        inkColor: view.reveal ? view.ap.accent : view.ap.ink3
-                    }
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: view.reveal = !view.reveal }
-                }
-
-                Rectangle {
-                    id: submitBtn
-                    anchors.right: parent.right
-                    anchors.rightMargin: 6
+                MonoIcon {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 38
-                    height: 38
-                    radius: 19
-                    color: view.ap.accent
-                    opacity: opacitySpring.value
-                    scale: scaleSpring.value
-                    Spring { id: opacitySpring; to: view.auth.entered.length > 0 && !view.auth.busy ? 1 : 0.45; response: 220; bounce: 0 }
-                    Spring { id: scaleSpring; to: submitHover.hovered && view.auth.entered.length > 0 && !view.auth.busy ? 1.06 : 1; response: 190; bounce: 0 }
-
-                    MonoIcon {
-                        anchors.centerIn: parent
-                        visible: !view.auth.busy
-                        name: "chevronRight"
-                        size: 18
-                        inkColor: view.ap.inkOnAccent
-                        monochrome: true
-                    }
-                    // Checking: a ring going round where the arrow was.
-                    Rectangle {
-                        anchors.centerIn: parent
-                        visible: view.auth.busy
-                        width: 16
-                        height: 16
-                        radius: 8
-                        color: "transparent"
-                        border.width: 2
-                        border.color: view.ap.inkOnAccent
-                        opacity: 0.9
-                        Rectangle {
-                            width: 6; height: 6; radius: 3
-                            color: view.ap.accent
-                            x: -1; y: -1
-                        }
-                        RotationAnimation on rotation {
-                            running: view.auth.busy
-                            from: 0; to: 360
-                            duration: 900
-                            loops: Animation.Infinite
-                        }
-                    }
-                    HoverHandler { id: submitHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: view.auth.submit() }
+                    visible: view.canStepSession
+                    name: "chevronDown"
+                    size: 13
+                    monochrome: true
+                    inkColor: view.pillInk2
                 }
             }
-
-            StyledText {
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: 320
-                height: Math.max(16, implicitHeight)
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
-                text: view.keyboardMissing ? view.keyboardHint : view.statusText
-                font.pixelSize: view.ap.fs(12)
-                color: view.auth.failed || view.keyboardMissing ? view.ap.accent : view.ap.ink3
-            }
+            HoverHandler { id: sessionHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: if (view.canStepSession) view.stepSession(1) }
         }
-    }
 
-    // The pills' frost: the same blurred wallpaper the card stands on,
-    // under the pill's tint and edge, so what shows through them is blurred
-    // rather than sharp. A lock surface is the shell's own drawing, which
-    // Hyprland's blur never reaches, so it is done here as for the card.
-    // (An inline component cannot see this file's ids, so what it needs
-    // is handed to it.)
-    component PillFrost: Item {
-        id: frost
-        required property Item pill
-        required property Item backdrop
-        required property real blurRadius
-        required property color tint
-        required property color edge
-        anchors.fill: parent
+        // ── along the bottom ──────────────────────────────────────────────────
         Loader {
-            anchors.fill: parent
-            active: frost.blurRadius > 0
-            source: "BlurBackdrop.qml"
-            onLoaded: {
-                item.sourceItem = frost.backdrop;
-                item.radius = Qt.binding(() => frost.pill.radius);
-                item.blurMax = 64;
-                item.amount = Qt.binding(() => Math.min(1, frost.blurRadius / 64));
-                item.sampleRect = Qt.binding(() => Qt.rect(frost.pill.x, frost.pill.y, frost.pill.width, frost.pill.height));
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 32
+            anchors.bottomMargin: 30
+            opacity: view.shown
+            sourceComponent: view.corner ? view.corner : cornerLine
+        }
+        Component {
+            id: cornerLine
+            StyledText {
+                text: view.cornerText
+                font.pixelSize: view.ap.fs(12.5)
+                font.weight: Font.Medium
+                color: view.fg3
             }
         }
+
+        // Sleep, restart, shut down: round buttons on a dark pill, so they
+        // read on any wallpaper.
         Rectangle {
-            anchors.fill: parent
-            radius: frost.pill.radius
-            color: frost.tint
-            border.width: 1
-            border.color: frost.edge
-        }
-    }
+            id: powerPill
+            visible: view.primary && view.showPower
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.rightMargin: 26
+            anchors.bottomMargin: 22
+            opacity: view.shown
+            width: powerRow.implicitWidth + 12
+            height: 52
+            radius: height / 2
+            color: "transparent"
+            PillFrost {
+                pill: powerPill
+                backdrop: ground
+                blurRadius: card.blurRadius
+                tint: view.pill
+                edge: view.pillEdge
+            }
 
-    // ── session ───────────────────────────────────────────────────────────
-    // What you are logging into, under the card — the greeter's. Click, or
-    // Tab, for the next one.
-    Rectangle {
-        id: sessionPill
-        visible: view.primary && view.sessionName !== ""
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: card.bottom
-        anchors.topMargin: 16
-        opacity: view.shown
-        height: 34
-        width: sessionRow.implicitWidth + 30
-        radius: height / 2
-        color: "transparent"
-        PillFrost {
-            pill: sessionPill
-            backdrop: ground
-            blurRadius: card.blurRadius
-            tint: sessionHover.hovered ? Qt.tint(view.pill, view.pillHover) : view.pill
-            edge: view.pillEdge
+            Row {
+                id: powerRow
+                anchors.centerIn: parent
+                spacing: 4
+
+                Repeater {
+                    model: [{ icon: "moon", label: "Sleep", action: "suspend" },
+                            { icon: "rotateCw", label: "Restart", action: "reboot" },
+                            { icon: "power", label: "Shut down", action: "poweroff" }]
+
+                    Rectangle {
+                        id: powerBtn
+                        required property var modelData
+                        width: 40
+                        height: 40
+                        radius: 20
+                        color: tint2.value
+                        ColorSpring { id: tint2; to: hover.hovered ? view.pillHover : "transparent" }
+                        MonoIcon {
+                            anchors.centerIn: parent
+                            name: powerBtn.modelData.icon
+                            size: 18
+                            monochrome: true
+                            inkColor: hover.hovered ? view.pillInk : view.pillInk2
+                        }
+                        // Its name, in a small pill above, while pointed at.
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.top
+                            anchors.bottomMargin: 14
+                            visible: hover.hovered
+                            width: tip.implicitWidth + 18
+                            height: 26
+                            radius: 13
+                            color: Qt.rgba(0, 0, 0, 0.55)
+                            StyledText {
+                                id: tip
+                                anchors.centerIn: parent
+                                text: powerBtn.modelData.label
+                                font.pixelSize: view.ap.fs(11.5)
+                                font.weight: Font.Medium
+                                color: "#ffffff"
+                            }
+                        }
+                        HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: view.power(powerBtn.modelData.action) }
+                    }
+                }
+            }
         }
 
-        Row {
-            id: sessionRow
-            anchors.centerIn: parent
-            spacing: 8
+        // ‹ and › beside the name.
+        component Stepper: Rectangle {
+            id: stepper
+            property string icon: ""
+            signal step()
+            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+            width: 28
+            height: 28
+            radius: 14
+            color: stepHover.hovered ? view.ap.sel : "transparent"
             MonoIcon {
-                anchors.verticalCenter: parent.verticalCenter
-                name: "monitor"
+                anchors.centerIn: parent
+                name: stepper.icon
                 size: 15
                 monochrome: true
-                inkColor: view.pillInk
+                inkColor: view.ap.ink2
             }
-            StyledText {
-                anchors.verticalCenter: parent.verticalCenter
-                text: view.sessionName
-                font.pixelSize: view.ap.fs(12.5)
-                font.weight: Font.DemiBold
-                color: view.pillInk
-            }
-            MonoIcon {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: view.canStepSession
-                name: "chevronDown"
-                size: 13
-                monochrome: true
-                inkColor: view.pillInk2
-            }
+            HoverHandler { id: stepHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: stepper.step() }
         }
-        HoverHandler { id: sessionHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: if (view.canStepSession) view.stepSession(1) }
-    }
-
-    // ── along the bottom ──────────────────────────────────────────────────
-    Loader {
-        anchors.left: parent.left
-        anchors.bottom: parent.bottom
-        anchors.leftMargin: 32
-        anchors.bottomMargin: 30
-        opacity: view.shown
-        sourceComponent: view.corner ? view.corner : cornerLine
-    }
-    Component {
-        id: cornerLine
-        StyledText {
-            text: view.cornerText
-            font.pixelSize: view.ap.fs(12.5)
-            font.weight: Font.Medium
-            color: view.fg3
-        }
-    }
-
-    // Sleep, restart, shut down: round buttons on a dark pill, so they
-    // read on any wallpaper.
-    Rectangle {
-        id: powerPill
-        visible: view.primary && view.showPower
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.rightMargin: 26
-        anchors.bottomMargin: 22
-        opacity: view.shown
-        width: powerRow.implicitWidth + 12
-        height: 52
-        radius: height / 2
-        color: "transparent"
-        PillFrost {
-            pill: powerPill
-            backdrop: ground
-            blurRadius: card.blurRadius
-            tint: view.pill
-            edge: view.pillEdge
-        }
-
-        Row {
-            id: powerRow
-            anchors.centerIn: parent
-            spacing: 4
-
-            Repeater {
-                model: [{ icon: "moon", label: "Sleep", action: "suspend" },
-                        { icon: "rotateCw", label: "Restart", action: "reboot" },
-                        { icon: "power", label: "Shut down", action: "poweroff" }]
-
-                Rectangle {
-                    id: powerBtn
-                    required property var modelData
-                    width: 40
-                    height: 40
-                    radius: 20
-                    color: tint2.value
-                    ColorSpring { id: tint2; to: hover.hovered ? view.pillHover : "transparent" }
-                    MonoIcon {
-                        anchors.centerIn: parent
-                        name: powerBtn.modelData.icon
-                        size: 18
-                        monochrome: true
-                        inkColor: hover.hovered ? view.pillInk : view.pillInk2
-                    }
-                    // Its name, in a small pill above, while pointed at.
-                    Rectangle {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.top
-                        anchors.bottomMargin: 14
-                        visible: hover.hovered
-                        width: tip.implicitWidth + 18
-                        height: 26
-                        radius: 13
-                        color: Qt.rgba(0, 0, 0, 0.55)
-                        StyledText {
-                            id: tip
-                            anchors.centerIn: parent
-                            text: powerBtn.modelData.label
-                            font.pixelSize: view.ap.fs(11.5)
-                            font.weight: Font.Medium
-                            color: "#ffffff"
-                        }
-                    }
-                    HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: view.power(powerBtn.modelData.action) }
-                }
-            }
-        }
-    }
-
-    // ‹ and › beside the name.
-    component Stepper: Rectangle {
-        id: stepper
-        property string icon: ""
-        signal step()
-        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
-        width: 28
-        height: 28
-        radius: 14
-        color: stepHover.hovered ? view.ap.sel : "transparent"
-        MonoIcon {
-            anchors.centerIn: parent
-            name: stepper.icon
-            size: 15
-            monochrome: true
-            inkColor: view.ap.ink2
-        }
-        HoverHandler { id: stepHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: stepper.step() }
     }
 }
