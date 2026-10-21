@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell.Widgets
 import "../../config" as Config
 
 // The mockup's slider: a rounded trough filled from the left in accent, with
@@ -32,34 +33,22 @@ Item {
     implicitHeight: trough
     implicitWidth: 200
 
-    Rectangle {
+    // The track clips the fill to its own rounded shape, and the fill is a
+    // plain bar: its edge is the level, straight at any value, and it can
+    // never show outside the track. A rounded fill clipped to a square box
+    // used to shrink, near zero, into a little lozenge of its own whose
+    // corners stood out past the track's rounded end.
+    ClippingRectangle {
         id: track
         anchors.fill: parent
         radius: root.radius
         color: root.trackColor
-        clip: true
         opacity: root.enabled ? 1 : 0.5   // Item.enabled, set by the caller
 
         Rectangle {
-            width: Math.round(parent.width * root.shownValue)
+            width: parent.width * root.shownValue
             height: parent.height
-            radius: root.radius
             color: root.fillColor
-
-            // A rounded fill at tiny widths collapses into a lozenge, so the
-            // right edge is squared off to read as a level rather than a
-            // pill. Not at the top of the range though: there the fill and
-            // the track end together, and squaring it leaves a flat corner
-            // sticking out of the trough's rounded one.
-            Rectangle {
-                visible: parent.width > root.radius
-                         && parent.width < track.width - 0.5
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: Math.min(root.radius, parent.width)
-                color: parent.color
-            }
         }
 
         Rectangle {

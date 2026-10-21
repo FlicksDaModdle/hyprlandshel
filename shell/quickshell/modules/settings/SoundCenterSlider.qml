@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell.Widgets
 import "../../config" as Config
 
 // A slider with its rest point in the middle — balance, fade, a delay that
@@ -13,21 +14,29 @@ Item {
     implicitHeight: 14
     implicitWidth: 200
 
-    Rectangle {
+    // The fill is a plain bar clipped to the rounded track, so a small
+    // value is a thin straight-edged level, never a rounded blob reaching
+    // past the track (see FillSlider).
+    ClippingRectangle {
         anchors.fill: parent
         radius: Config.Appearance.rSm
         color: Config.Appearance.ground
-        border.width: 1
-        border.color: Config.Appearance.rule
+
+        Rectangle {
+            readonly property real c: root.width / 2
+            readonly property real v: Math.max(-1, Math.min(1, root.value))
+            x: v < 0 ? c + v * c : c
+            width: Math.abs(v) * c
+            height: parent.height
+            color: Config.Appearance.accent
+        }
     }
     Rectangle {
-        readonly property real c: root.width / 2
-        readonly property real v: Math.max(-1, Math.min(1, root.value))
-        x: v < 0 ? c + v * c : c
-        width: Math.max(2, Math.abs(v) * c)
-        height: parent.height
+        anchors.fill: parent
         radius: Config.Appearance.rSm
-        color: Config.Appearance.accent
+        color: "transparent"
+        border.width: 1
+        border.color: Config.Appearance.rule
     }
     Rectangle {
         x: parent.width / 2 - 1
