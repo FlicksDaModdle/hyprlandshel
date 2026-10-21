@@ -175,13 +175,53 @@ Singleton {
         root.justAdded = false;
         root.startAdding();
     }
+    // The webcam first, as Windows Hello does: Howdy starts recording once
+    // you can see yourself in the circle (or after five seconds without a
+    // picture), not before.
     function startAdding() {
-        if (root.addingAlone) root.stopPreview();
-        else root.startPreview();
+        if (root.addingAlone) {
+            root.stopPreview();
+            root.launchAdding();
+            return;
+        }
+        root.startPreview();
+        root.preparing = true;
+        if (root.previewReady) cameraSettle.restart();
+        else cameraWait.restart();
+    }
+    function launchAdding() {
+        cameraWait.stop();
+        cameraSettle.stop();
         runProc.adding = true;
+        runProc.recordingAt = 0;
         run(root.addAlt ? ["--add-face", "--alt"] : ["--add-face"],
             "Hold still and look at the camera…",
             root.addAlt ? "Your alternative look is added" : "Your face is added");
+        // After: busy now, so `adding` never drops in between.
+        root.preparing = false;
+    }
+    // The panel's picture is showing (FacePanel sets it).
+    property bool previewReady: false
+    // Waiting for it, before Howdy starts.
+    property bool preparing: false
+    onPreviewReadyChanged: if (root.preparing && root.previewReady) cameraSettle.restart()
+    // A moment to see yourself first.
+    Timer { id: cameraSettle; interval: 700; onTriggered: if (root.preparing) root.launchAdding() }
+    Timer { id: cameraWait; interval: 5000; onTriggered: if (root.preparing) root.launchAdding() }
+    // Howdy is recording (after the password).
+    readonly property bool recording: (root.busy && runProc.adding && runProc.recordingAt > 0) || root.holding
+    // Howdy takes a second or so; the scan stays on screen a little
+    // longer than that, so it can be seen happening.
+    property bool holding: false
+    property string heldStatus: ""
+    Timer {
+        id: holdTimer
+        onTriggered: {
+            root.holding = false;
+            root.status = root.heldStatus;
+            root.justAdded = true;
+            justAddedClear.restart();
+        }
     }
     property bool addAlt: false
     property bool addingAlone: false
@@ -200,14 +240,24 @@ Singleton {
         id: runProc
         property string done: ""
         property bool adding: false
-        stdout: StdioCollector { id: runOut }
+        // When recording began ("recording", from howdy-setup.sh), and
+        // what else it said.
+        property real recordingAt: 0
+        property string out: ""
+        stdout: SplitParser {
+            onRead: line => {
+                if (line.trim() === "recording") runProc.recordingAt = Date.now();
+                else runProc.out += line + "\n";
+            }
+        }
+        onStarted: runProc.out = ""
         stderr: StdioCollector { id: runErr }
         onExited: code => {
             root.busy = false;
             root.refresh();
             const adding = runProc.adding;
             runProc.adding = false;
-            const said = (runErr.text.trim() || runOut.text.trim()).split("\n").filter(l => l.trim() !== "");
+            const said = (runErr.text.trim() || runProc.out.trim()).split("\n").filter(l => l.trim() !== "");
             // The webcam in Howdy's way (the camera busy, or no USB
             // bandwidth left for it): again, with the webcam off. Not for
             // anything else Howdy says — too dark, no face — which the
@@ -230,7 +280,19 @@ Singleton {
             }
             if (code === 0) {
                 root.status = runProc.done;
-                if (adding) { root.justAdded = true; justAddedClear.restart(); }
+                if (adding) {
+                    const shown = Date.now() - (runProc.recordingAt || Date.now());
+                    if (shown < 3000) {
+                        root.heldStatus = root.status;
+                        root.status = "Hold still and look at the camera…";
+                        root.holding = true;
+                        holdTimer.interval = 3000 - shown;
+                        holdTimer.restart();
+                    } else {
+                        root.justAdded = true;
+                        justAddedClear.restart();
+                    }
+                }
                 return;
             }
             root.failed = true;
@@ -256,7 +318,7 @@ Singleton {
     }
     readonly property bool previewShared: root.previewDevice === root.camera
                                           || !!root.cameras.find(c => c.ir && c.path === root.previewDevice)
-    readonly property bool adding: root.busy && runProc.adding
+    readonly property bool adding: (root.busy && runProc.adding) || root.preparing || root.holding
     property bool addFailed: false
     Timer { id: addFailedClear; interval: 4000; onTriggered: { root.addFailed = false; if (!root.busy) root.stopPreview(); } }
     property bool previewing: false

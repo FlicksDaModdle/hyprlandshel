@@ -96,6 +96,8 @@ case $mode in
         # Howdy asks for a name for the new face (24 characters at most);
         # this gives it one.
         if [ "$alt" = 1 ]; then label="Alt look $(date +%Y-%m-%d)"; else label="Face $(date +%Y-%m-%d)"; fi
+        # (For Settings: the camera is being recorded from now.)
+        echo recording
         printf '%s\n' "$label" | howdy -U "$person" add
         exit $? ;;
     forget)

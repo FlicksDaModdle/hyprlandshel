@@ -2034,7 +2034,10 @@ Scope {
         if (F.lockOn)
             rows.push({ n: "Try it", s: F.testing ? "Look at the camera…" : "Checks your face the way the lock screen does",
                         type: "buttons", buttons: [{ label: F.testing ? "Looking…" : "Try it", set: () => F.test() }] });
-        if (F.status !== "")
+        // Not while a face is being added: the panel says how that's going,
+        // and a row coming and going rebuilds the list, the panel and its
+        // camera with it.
+        if (!F.adding && !F.justAdded && F.status !== "")
             rows.push({ n: F.busy ? "Working…" : (F.failed ? "That didn't work" : "Done"), s: F.status,
                         type: "info", value: "" });
         for (const r of root.keyringRows()) rows.push(r);

@@ -24,9 +24,15 @@ Column {
     width: parent ? parent.width : 560
     spacing: 14
 
-    Component.onDestruction: root.face.stopPreview()
+    // The list of rows can be rebuilt under it (a row of Settings coming or
+    // going), so the camera isn't this panel's to turn off: the next panel
+    // picks it up, and the service turns it off once the result is shown.
+    Component.onDestruction: root.face.previewReady = false
+    Component.onCompleted: root.face.previewReady = root.seeing
 
     readonly property bool seeing: camera.item !== null && camera.item.showing
+    // Howdy waits for it before recording.
+    onSeeingChanged: root.face.previewReady = root.seeing
 
     // ── you, in the circle ──────────────────────────────────────────────
     Rectangle {
@@ -101,7 +107,8 @@ Column {
                 text: root.face.addFailed ? root.face.status
                     : root.face.adding ? (root.face.addingAlone
                         ? "The infrared camera is learning your face. The webcam can't run beside it on this laptop"
-                        : root.seeing ? "The infrared camera is learning your face. Hold still, an arm's length away"
+                        : root.face.recording ? "The infrared camera is learning your face. Hold still, an arm's length away"
+                        : root.seeing ? "Centre your face in the circle"
                         : camera.item && camera.item.error !== "" ? camera.item.error
                         : "Starting the webcam…")
                     : root.face.faces > 0 ? "It unlocks for you at a glance. Wear glasses sometimes? Add that as an alternative look"
@@ -117,12 +124,12 @@ Column {
         spacing: 8
         NetButton {
             primary: true
-            active: !root.face.busy
+            active: !root.face.busy && !root.face.adding
             label: root.face.adding ? "Adding…" : root.face.faces > 0 ? "Add my face again" : "Add my face"
             onClicked: root.face.addFace(false)
         }
         NetButton {
-            active: !root.face.busy && root.face.faces !== 0
+            active: !root.face.busy && !root.face.adding && root.face.faces !== 0
             label: "Add an alternative look"
             onClicked: root.face.addFace(true)
         }
@@ -179,7 +186,7 @@ Column {
                     anchors.right: parent.right
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
-                    active: !root.face.busy
+                    active: !root.face.busy && !root.face.adding
                     danger: true
                     label: "Remove"
                     onClicked: root.face.removeLook(modelData.id)
