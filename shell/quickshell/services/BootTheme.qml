@@ -10,9 +10,10 @@ import "." as Services
 //
 // A still of whatever the desktop shows — the picture itself, a frame from
 // the live video, or the shell's own gradient, map or animation captured
-// from the wallpaper surface — at the main display's size, and the theme's
-// background, text and accent. Both go to shell/limine/hyprshell-limine-theme,
-// a small root helper installed by shell/limine/install.sh, through pkexec:
+// from the wallpaper surface — at the main display's size, and colours
+// taken from that picture (see palette()). Both go to
+// shell/limine/hyprshell-limine-theme, a small root helper installed by
+// shell/limine/install.sh, through pkexec:
 // it writes to the boot partition, so it asks for the password, and only
 // when Update is pressed, never behind your back.
 Singleton {
@@ -127,17 +128,74 @@ Singleton {
                                        : "Couldn't make a still of the wallpaper");
                 return;
             }
-            root.apply();
+            sampleProc.running = true;
         }
     }
 
-    function apply() {
+    // ── the colours, from the picture ────────────────────────────────────
+    // The still shrunk to 16 × 10 and read back as numbers, 160 pixels.
+    Process {
+        id: sampleProc
+        command: ["sh", "-c", 'ffmpeg -nostdin -loglevel error -i "$1" -vf scale=16:10 -f rawvideo -pix_fmt rgb24 - | od -An -v -tu1',
+                  "boot-sample", root.still]
+        stdout: StdioCollector { id: sampleOut }
+        onExited: code => {
+            const n = sampleOut.text.trim().split(/\s+/).map(Number).filter(v => isFinite(v));
+            const px = [];
+            for (let i = 0; i + 2 < n.length; i += 3) px.push([n[i] / 255, n[i + 1] / 255, n[i + 2] / 255]);
+            root.apply(root.palette(px));
+        }
+    }
+
+    // HSL, 0..1 throughout.
+    function hsl(c) {
+        const [r, g, b] = c, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+        if (mx === mn) return [0, 0, l];
+        const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+        const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+        return [h / 6, s, l];
+    }
+    function fromHsl(h, s, l) {
+        const f = n => {
+            const k = (n + h * 12) % 12, a = s * Math.min(l, 1 - l);
+            return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+        };
+        return Qt.rgba(f(0), f(8), f(4), 1);
+    }
+
+    // Background: the picture's own average, its hue kept and darkened to
+    // something text reads over. Accent: its most vivid colour, lifted to
+    // a strength that reads as a highlight — or the shell's accent, for a
+    // picture with no colour to speak of. Text: near white, warmed or
+    // cooled towards the background's hue.
+    function palette(px) {
         const A = Config.Appearance;
+        if (px.length === 0) return { accent: A.accent, background: "#1f1d1c", foreground: "#f8f4f4" };
+        const avg = [0, 1, 2].map(i => px.reduce((t, p) => t + p[i], 0) / px.length);
+        const [bh, bs] = root.hsl(avg);
+        const background = root.fromHsl(bh, Math.min(0.35, bs), 0.09);
+        const foreground = root.fromHsl(bh, Math.min(0.2, bs), 0.94);
+        let best = null, bestScore = 0;
+        for (const p of px) {
+            const [h, s, l] = root.hsl(p);
+            // Vivid and neither near black nor near white.
+            const score = s * (1 - Math.abs(l - 0.55) * 1.6);
+            if (score > bestScore) { bestScore = score; best = [h, s, l]; }
+        }
+        const accent = best && bestScore > 0.18
+            ? root.fromHsl(best[0], Math.max(0.6, best[1]), Math.max(0.55, Math.min(0.65, best[2])))
+            : A.accent;
+        return { accent: accent, background: background, foreground: foreground };
+    }
+
+    function apply(c) {
         root.status = "Writing to the boot menu…";
+        console.log("BootTheme: colours", root.hex(c.accent), root.hex(c.background), root.hex(c.foreground));
         // Dark ground and light text whatever the desktop's mode: the menu
         // is read over a picture, at boot, often in the dark.
         runProc.command = ["sh", "-c", 'exec pkexec "$1" --accent "$2" --background "$3" --foreground "$4" < "$5"',
-                           "boot-theme", root.helper, root.hex(A.accent), "1f1d1c", "f8f4f4", root.still];
+                           "boot-theme", root.helper, root.hex(c.accent), root.hex(Qt.color(c.background)),
+                           root.hex(Qt.color(c.foreground)), root.still];
         runProc.running = true;
     }
     function remove() {
