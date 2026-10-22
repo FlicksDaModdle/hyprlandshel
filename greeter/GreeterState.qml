@@ -434,15 +434,33 @@ Scope {
     Timer {
         id: leaveThenLaunch
         interval: 440
-        onTriggered: Greetd.launch(g.session.command, g.sessionEnv(g.session))
+        onTriggered: Greetd.launch(g.sessionCommand(g.session), g.sessionEnv(g.session))
     }
 
-    // The session's command exactly as its .desktop file has it. Nothing
-    // wrapped around it: greetd joins the words with spaces and hands them
-    // to /bin/sh (greetd/src/session/worker.rs), so a quoted script in
-    // there falls apart, the session ends at once, and greetd comes back
-    // to the greeter — a login that loops. (The console is cleared before
-    // the greeter starts, by /etc/hyprshell-greeter/start.sh.)
+    // The session's command as its .desktop file has it, started through
+    // /etc/hyprshell-greeter/session.sh when that is there: it clears the
+    // text console and hides its cursor, and sends what the session prints
+    // somewhere other than that console, which is what shows for the moment
+    // between this compositor going and the session's arriving.
+    //
+    // Only plain words go to greetd: it joins them with spaces and hands
+    // the line to /bin/sh (greetd/src/session/worker.rs), so anything quoted
+    // falls apart, the session ends at once and greetd shows the greeter
+    // again — a login that loops. A path and the session's own words are
+    // safe; the script is run by /bin/sh, so a lost execute bit can't stop
+    // it, and without the file the command goes alone.
+    readonly property string sessionWrap: "/etc/hyprshell-greeter/session.sh"
+    property bool canWrap: false
+    FileView {
+        path: g.sessionWrap
+        preload: true
+        printErrors: false
+        onLoaded: g.canWrap = text().indexOf('exec "$@"') >= 0
+        onLoadFailed: g.canWrap = false
+    }
+    function sessionCommand(s) {
+        return g.canWrap ? ["/bin/sh", g.sessionWrap].concat(s.command) : s.command;
+    }
 
     // ── power ─────────────────────────────────────────────────────────────
     function power(action) {

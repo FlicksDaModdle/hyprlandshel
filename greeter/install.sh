@@ -369,6 +369,19 @@ did "its compositor config in ${ETC#$ROOT}/hyprland.lua (keyboard: $layout${vari
 chmod 755 "$ETC/start.sh"
 did "its start script in ${ETC#$ROOT}/start.sh"
 
+# And the session after it, the same way. The greeter starts the session
+# as `/bin/sh session.sh <the session's own command>`: plain words only,
+# because greetd joins them with spaces and runs them through a shell.
+{
+    echo '#!/bin/sh'
+    echo "# Written by hyprshell's greeter/install.sh: starts your session on a"
+    echo "# clean console. Takes the session's command as its arguments."
+    echo "printf '\\033[2J\\033[3J\\033[H\\033[?25l' 2>/dev/null"
+    echo 'exec "$@" >/dev/null 2>&1'
+} > "$ETC/session.sh"
+chmod 755 "$ETC/session.sh"
+did "its session start script in ${ETC#$ROOT}/session.sh"
+
 # ── greetd ────────────────────────────────────────────────────────────────
 mkdir -p "$GREETD"
 # The config from before the first install is kept, and never overwritten
