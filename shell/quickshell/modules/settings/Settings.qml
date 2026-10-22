@@ -833,12 +833,17 @@ Scope {
         ];
 
         case "Notifications": return [
+            { type: "header", n: "Apps",
+              s: "Everything that has sent a notification. Switch one off to block it: nothing shown, "
+                 + "nothing kept" },
+            { type: "panel", panel: "notifApps" },
+            { type: "header", n: "Do not disturb", s: "" },
             { n: "Do not disturb", s: "Silence banners, keep them in the center", type: "toggle",
               value: A.dnd, set: v => A.dnd = v },
             { n: "Let urgent ones through", s: "Alarms, a battery about to run out and other critical "
                  + "notifications still show while quiet",
               type: "toggle", value: A.focusUrgent, set: v => A.focusUrgent = v },
-            { type: "header", n: "Focus", s: "Quiet hours, and how each app may interrupt" },
+            { type: "header", n: "Focus", s: "Quiet hours, on a schedule" },
             { type: "panel", panel: "focus" },
             { type: "header", n: "The center", s: "" },
             { n: "Badge counts", s: "Numeric badge on the bar bell", type: "toggle",

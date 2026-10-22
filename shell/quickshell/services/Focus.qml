@@ -10,11 +10,12 @@ import "../config" as Config
 //   schedules   [{ id, name, from: "22:00", to: "07:00", days: [0..6],
 //                  on }] — Sunday is 0; a window that crosses midnight
 //               belongs to the day it starts on.
-//   rules       { app: "always" | "normal" | "silent" | "mute" }
+//   rules       { app: "always" | "normal" | "silent" | "mute" | "block" }
 //                 always  a banner even while quiet
 //                 normal  the default
 //                 silent  never a banner; kept in the center
 //                 mute    neither; only the history keeps it
+//                 block   nothing at all, not even the history
 //
 // While quiet, urgent (critical) notifications — alarms, a battery about
 // to run out — still show unless that is switched off.
@@ -94,6 +95,8 @@ Singleton {
 
     // ── per app ──────────────────────────────────────────────────────────
     function rule(app) { return rules[app] || "normal"; }
+    // Blocked outright (Settings → Notifications → Apps, switched off).
+    function blocked(app) { return rule(app) === "block"; }
     function setRule(app, r) {
         const next = Object.assign({}, rules);
         if (r === "normal") delete next[app]; else next[app] = r;
@@ -112,7 +115,7 @@ Singleton {
     // Whether a notification gets a banner.
     function banner(app, urgent) {
         const r = rule(app);
-        if (r === "mute" || r === "silent") return false;
+        if (r === "block" || r === "mute" || r === "silent") return false;
         if (r === "always") return true;
         if (!quiet) return true;
         return urgent && allowUrgent;

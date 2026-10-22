@@ -126,6 +126,26 @@ PanelSurface {
                 TapHandler { onTapped: Services.Notifications.toggleDnd() }
             }
 
+            // Settings → Notifications: which apps may send them, quiet
+            // hours, banners.
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 28
+                height: 28
+                radius: 9
+                color: tint3.value
+                ColorSpring { id: tint3; to: settingsHover.hovered ? Config.Appearance.sel : Config.Appearance.hover }
+                MonoIcon {
+                    anchors.centerIn: parent
+                    name: "settings"
+                    size: 14
+                    inkColor: Config.Appearance.ink2
+                    monochrome: true
+                }
+                HoverHandler { id: settingsHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: Config.UiState.openSettings("Notifications") }
+            }
+
             // In History, Clear asks once more: what it forgets cannot be
             // brought back.
             Rectangle {

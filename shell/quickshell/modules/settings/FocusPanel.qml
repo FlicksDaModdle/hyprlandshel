@@ -5,7 +5,7 @@ import "../common"
 import "../icons"
 
 // Settings → Notifications → Focus (services/Focus.qml): quiet hours on a
-// schedule, and how each app that has sent anything may interrupt.
+// schedule. How each app may interrupt is NotifAppsPanel.qml.
 Column {
     id: root
 
@@ -165,91 +165,5 @@ Column {
         }
         HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.fc.addSchedule() }
-    }
-
-    // ── apps ──────────────────────────────────────────────────────────────
-    Item { width: 1; height: 10 }
-    // Titled like a section of the pane, over its card.
-    StyledText {
-        leftPadding: 4
-        text: "Apps"
-        font.pixelSize: 12
-        font.weight: Font.DemiBold
-        font.capitalization: Font.AllUppercase
-        font.letterSpacing: 0.6
-        color: Config.Appearance.ink3
-    }
-    StyledText {
-        width: parent.width
-        wrapMode: Text.Wrap
-        leftPadding: 4
-        text: "Always: a banner even while quiet. Silent: kept in the center. Mute: history only."
-        font.pixelSize: Config.Appearance.fs(11.5)
-        color: Config.Appearance.ink3
-    }
-    StyledText {
-        visible: root.fc.apps.length === 0
-        text: "Apps show up here once they have sent a notification."
-        font.pixelSize: Config.Appearance.fs(12)
-        color: Config.Appearance.ink3
-    }
-    // In a card, like every other list in Settings.
-    Rectangle {
-        visible: root.fc.apps.length > 0
-        width: root.width
-        height: appCol.implicitHeight
-        radius: Config.Appearance.r
-        color: Config.Appearance.hover
-        Column {
-            id: appCol
-            width: parent.width
-            Repeater {
-                model: root.fc.apps
-                Item {
-                    id: appRow
-                    required property string modelData
-                    required property int index
-                    width: appCol.width
-                    height: 48
-                    HoverHandler { id: appHover }
-                    Rectangle {
-                        visible: appRow.index > 0
-                        x: 16; width: parent.width - 32; height: 1
-                        color: Config.Appearance.rule
-                    }
-                    StyledText {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 16
-                        anchors.right: seg.left
-                        anchors.rightMargin: 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        elide: Text.ElideRight
-                        text: appRow.modelData
-                        font.pixelSize: Config.Appearance.fs(12.5)
-                        font.weight: Font.Medium
-                    }
-                    Segmented {
-                        id: seg
-                        anchors.right: forget.left
-                        anchors.rightMargin: 6
-                        anchors.verticalCenter: parent.verticalCenter
-                        segmentPadding: 10
-                        options: [{ label: "Always", value: "always" }, { label: "Normal", value: "normal" },
-                                  { label: "Silent", value: "silent" }, { label: "Mute", value: "mute" }]
-                        value: root.fc.rule(appRow.modelData)
-                        onSelected: v => root.fc.setRule(appRow.modelData, v)
-                    }
-                    Round {
-                        id: forget
-                        anchors.right: parent.right
-                        anchors.rightMargin: 12
-                        anchors.verticalCenter: parent.verticalCenter
-                        opacity: appHover.hovered ? 1 : 0
-                        icon: "x"
-                        onClicked: root.fc.forgetApp(appRow.modelData)
-                    }
-                }
-            }
-        }
     }
 }

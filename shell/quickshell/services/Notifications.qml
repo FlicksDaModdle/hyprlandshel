@@ -34,8 +34,12 @@ Singleton {
 
         onNotification: notification => {
             const app = root.appNameOf(notification);
-            Services.NotifHistory.add(notification);
+            // Still listed in Settings, so it can be let back in.
             Services.Focus.noteApp(app);
+            // Blocked: dropped here, before the history or anything else
+            // sees it.
+            if (Services.Focus.blocked(app)) return;
+            Services.NotifHistory.add(notification);
             // Muted: not kept, not shown — only the history has it.
             if (Services.Focus.rule(app) === "mute") return;
 

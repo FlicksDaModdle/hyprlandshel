@@ -168,6 +168,7 @@ Item {
                 case "panel":  return root.spec.panel === "bluetooth" ? bluetoothComponent
                                    : root.spec.panel === "sound" ? soundComponent
                                    : root.spec.panel === "focus" ? focusComponent
+                                   : root.spec.panel === "notifApps" ? notifAppsComponent
                                    : root.spec.panel === "face" ? faceComponent
                                    : root.spec.panel === "animated" ? animatedComponent : wifiComponent;
                 case "color":  return colorComponent;
@@ -1069,6 +1070,10 @@ Item {
     Component {
         id: focusComponent
         FocusPanel { width: control.width }
+    }
+    Component {
+        id: notifAppsComponent
+        NotifAppsPanel { width: control.width }
     }
     Component {
         id: faceComponent
