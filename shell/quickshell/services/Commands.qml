@@ -135,7 +135,7 @@ Singleton {
         "nextLiveWallpaper":   () => Services.LiveWallpaper.next(),
         "setAccent":           arg => { Config.Appearance.accentFromWallpaper = false;
                                         Config.Appearance.accentIndex = parseInt(arg, 10) || 0; },
-        "syncTheming":         () => Services.Theming.resync(),
+        "syncTheming":         () => { Services.Theming.resync(); Services.Spicetify.recheck(); },
 
         // Session
         "lock":                () => Config.UiState.lock(),

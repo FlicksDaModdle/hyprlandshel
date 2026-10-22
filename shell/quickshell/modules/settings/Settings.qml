@@ -459,7 +459,16 @@ Scope {
                           // widget style, turning it off deselects it again.
                           Services.Theming.applyKde(); } },
             { n: "Theme written to", s: "Regenerated whenever the theme changes",
-              type: "info", value: "Kvantum/Hyprshell/" }
+              type: "info", value: "Kvantum/Hyprshell/" },
+
+            { n: "Spotify theme",
+              s: Services.Spicetify.installed
+                 ? (Services.Spicetify.wearing
+                    ? "Spotify wears the shell's colours through Spicetify, and follows them when they change (it shows them when next started)"
+                    : "Written for Spicetify, but Spotify is wearing another theme — run spotify/install.sh to switch")
+                 : "Set up Spotify with Spicetify (spotify/install.sh in the hyprshell folder) and it follows this theme",
+              type: "toggle", value: A.spotifyTheme,
+              set: v => { A.spotifyTheme = v; if (v) Services.Spicetify.apply(); } }
         ];
 
         case "Bar": return [

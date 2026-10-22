@@ -1,0 +1,258 @@
+/* Hyprshell for Spotify (Spicetify).
+ *
+ * The shell's look: its own surfaces, hairline edges, its radii and font,
+ * and its accent where Spotify has green. The colours are color.ini's
+ * (--spice-*); the shell writes both files from the theme it is wearing
+ * (services/Spicetify.qml) and puts the --hs-* values at the top of this
+ * one: --hs-r (panels, cards), --hs-rsm (rows, buttons, fields), --hs-font,
+ * --hs-on-accent (ink on the accent).
+ *
+ * Spotify's class names change between versions, so this leans on its
+ * colour tokens (encore's --background-base and the rest), which change
+ * rarely, and keeps its own rules to the few stable shapes. */
+
+/* ── colour tokens: Spotify's own, pointed at the shell's ──────────────── */
+.encore-dark-theme,
+.encore-dark-theme .encore-base-set,
+.encore-light-theme,
+.encore-light-theme .encore-base-set,
+.encore-dark-theme .encore-bright-accent-set,
+.encore-dark-theme .encore-inverted-light-set,
+.encore-layout-themes,
+:root {
+    --background-base: var(--spice-main) !important;
+    --background-highlight: var(--spice-highlight) !important;
+    --background-press: var(--spice-highlight-elevated) !important;
+    --background-elevated-base: var(--spice-main-elevated) !important;
+    --background-elevated-highlight: var(--spice-highlight-elevated) !important;
+    --background-elevated-press: var(--spice-highlight-elevated) !important;
+    --background-tinted-base: rgba(var(--spice-rgb-text), 0.07) !important;
+    --background-tinted-highlight: rgba(var(--spice-rgb-text), 0.10) !important;
+    --background-tinted-press: rgba(var(--spice-rgb-text), 0.14) !important;
+    --text-base: var(--spice-text) !important;
+    --text-subdued: var(--spice-subtext) !important;
+    --text-bright-accent: var(--spice-button) !important;
+    --text-positive: var(--spice-button) !important;
+    --text-negative: var(--spice-notification-error) !important;
+    --text-announcement: var(--spice-button) !important;
+    --essential-base: var(--spice-text) !important;
+    --essential-subdued: var(--spice-misc) !important;
+    --essential-bright-accent: var(--spice-button) !important;
+    --essential-negative: var(--spice-notification-error) !important;
+    --decorative-base: var(--spice-text) !important;
+    --decorative-subdued: rgba(var(--spice-rgb-text), 0.16) !important;
+}
+/* The accent's own set (the big play button): accent, the shell's ink on it. */
+.encore-bright-accent-set {
+    --background-base: var(--spice-button) !important;
+    --background-highlight: var(--spice-button-active) !important;
+    --background-press: var(--spice-button-active) !important;
+    --text-base: var(--hs-on-accent) !important;
+    --essential-base: var(--hs-on-accent) !important;
+}
+
+/* ── type ──────────────────────────────────────────────────────────────── */
+body,
+.encore-text,
+input,
+button {
+    font-family: var(--hs-font), "Inter", system-ui, sans-serif !important;
+}
+
+/* ── the layout: panels on the ground, the shell's gaps and radii ───────── */
+.Root__top-container {
+    background-color: var(--spice-main) !important;
+}
+.Root__nav-bar,
+.Root__main-view,
+.Root__right-sidebar,
+.Root__now-playing-bar,
+.main-yourLibraryX-libraryContainer,
+.main-view-container,
+.main-nowPlayingView-section {
+    border-radius: var(--hs-r) !important;
+}
+.Root__nav-bar > *,
+.Root__main-view,
+.Root__right-sidebar > * {
+    background-color: var(--spice-sidebar) !important;
+    box-shadow: inset 0 0 0 1px rgba(var(--spice-rgb-text), 0.08);
+}
+.Root__now-playing-bar,
+.main-nowPlayingBar-container {
+    background-color: var(--spice-player) !important;
+}
+
+/* The tinted gradient Spotify lays behind album and playlist headers: the
+ * shell's surfaces are flat, so it fades from a quiet tint instead. */
+.main-entityHeader-backgroundColor,
+.main-actionBarBackground-background,
+.main-home-homeHeader,
+.main-topBar-background {
+    background-color: rgba(var(--spice-rgb-text), 0.04) !important;
+    background-image: none !important;
+}
+.main-entityHeader-overlay,
+.main-actionBarBackground-background {
+    background: linear-gradient(transparent, var(--spice-sidebar)) !important;
+}
+
+/* ── cards and rows ────────────────────────────────────────────────────── */
+.main-card-card,
+[data-encore-id="card"] {
+    background-color: transparent !important;
+    border-radius: var(--hs-r) !important;
+    transition: background-color 120ms ease;
+}
+.main-card-card:hover,
+[data-encore-id="card"]:hover {
+    background-color: var(--spice-highlight) !important;
+}
+.main-image-image,
+.main-cardImage-image,
+.main-entityHeader-image,
+.main-coverSlotExpanded-container img,
+.cover-art,
+.cover-art-image {
+    border-radius: var(--hs-rsm) !important;
+}
+.main-trackList-trackListRow,
+.main-yourLibraryX-listItem > div,
+.x-entityImage-imageContainer {
+    border-radius: var(--hs-rsm) !important;
+}
+.main-trackList-trackListRow:hover,
+.main-trackList-trackListRow:focus-within {
+    background-color: rgba(var(--spice-rgb-text), 0.07) !important;
+}
+.main-trackList-trackListRow[aria-selected="true"],
+.main-trackList-selected {
+    background-color: rgba(var(--spice-rgb-text), 0.12) !important;
+    box-shadow: inset 0 -2px 0 var(--spice-button);
+}
+/* What's playing, in the accent rather than Spotify's green. */
+.main-trackList-playingIcon,
+.main-trackList-active .main-trackList-rowTitle,
+.main-trackList-rowTitle[data-is-playing="true"] {
+    color: var(--spice-button) !important;
+    fill: var(--spice-button) !important;
+}
+
+/* ── buttons, fields and bars ──────────────────────────────────────────── */
+.main-playButton-PlayButton button,
+.main-playButton-button,
+.encore-bright-accent-set.Button-sc-qlcn5g-0,
+.Button-buttonPrimary-useBrowserDefaultFocusStyle {
+    background-color: var(--spice-button) !important;
+    color: var(--hs-on-accent) !important;
+}
+button[data-encore-id="buttonPrimary"] > span,
+button[data-encore-id="buttonSecondary"] {
+    border-radius: var(--hs-rsm) !important;
+}
+.main-playPauseButton-button {
+    background-color: var(--spice-text) !important;
+    color: var(--spice-main) !important;
+}
+/* Toggles that are on (shuffle, repeat, liked): the accent. */
+.main-shuffleButton-button[aria-checked="true"],
+.main-repeatButton-button[aria-checked="true"],
+.main-addButton-active,
+.control-button--active {
+    color: var(--spice-button) !important;
+}
+.control-button--active-dot::after,
+.main-shuffleButton-button[aria-checked="true"]::after,
+.main-repeatButton-button[aria-checked="true"]::after {
+    background-color: var(--spice-button) !important;
+}
+
+.x-searchInput-searchInputInput,
+.main-searchBar-searchBar input,
+input[data-encore-id="formInput"],
+input[type="search"] {
+    background-color: rgba(var(--spice-rgb-text), 0.07) !important;
+    border: 1px solid rgba(var(--spice-rgb-text), 0.12) !important;
+    border-radius: var(--hs-rsm) !important;
+    color: var(--spice-text) !important;
+}
+.x-searchInput-searchInputInput:focus,
+input[data-encore-id="formInput"]:focus {
+    border-color: var(--spice-button) !important;
+    box-shadow: none !important;
+}
+
+.progress-bar {
+    --fg-color: var(--spice-text) !important;
+    --bg-color: rgba(var(--spice-rgb-text), 0.16) !important;
+    --progress-bar-height: 4px !important;
+    --progress-bar-radius: 2px !important;
+}
+.progress-bar:hover,
+.playback-progressbar:hover .progress-bar,
+.volume-bar:hover .progress-bar {
+    --fg-color: var(--spice-button) !important;
+}
+.x-progressBar-fillColor {
+    background-color: var(--spice-button) !important;
+}
+
+/* ── menus, tooltips and dialogs: the shell's panels ───────────────────── */
+.main-contextMenu-menu,
+#context-menu ul,
+.main-userWidget-dropDownMenu,
+.GenericModal,
+.main-trackCreditsModal-container,
+.main-popupModal-container {
+    background-color: var(--spice-card) !important;
+    border: 1px solid rgba(var(--spice-rgb-text), 0.16) !important;
+    border-radius: var(--hs-r) !important;
+    box-shadow: 0 12px 32px rgba(var(--spice-rgb-shadow), 0.45) !important;
+}
+.main-contextMenu-menuItemButton,
+.main-contextMenu-menuItem a,
+.main-contextMenu-menuItem button {
+    border-radius: var(--hs-rsm) !important;
+}
+.main-contextMenu-menuItemButton:hover,
+.main-contextMenu-menuItemButton:focus {
+    background-color: rgba(var(--spice-rgb-text), 0.09) !important;
+}
+.main-contextMenu-dividerAfter,
+.main-contextMenu-dividerBefore {
+    border-color: rgba(var(--spice-rgb-text), 0.10) !important;
+}
+.Tooltip,
+.main-tooltip-tooltip,
+[data-encore-id="tooltip"] {
+    background-color: var(--spice-card) !important;
+    color: var(--spice-text) !important;
+    border: 1px solid rgba(var(--spice-rgb-text), 0.16);
+    border-radius: var(--hs-rsm) !important;
+}
+
+/* ── scrollbars: thin, as the shell draws them ─────────────────────────── */
+.os-scrollbar-handle,
+::-webkit-scrollbar-thumb {
+    background-color: rgba(var(--spice-rgb-text), 0.22) !important;
+    border-radius: 2px !important;
+}
+.os-scrollbar-handle:hover,
+::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(var(--spice-rgb-text), 0.36) !important;
+}
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* Selected text and focus rings: the accent. */
+::selection {
+    background-color: rgba(var(--spice-rgb-button), 0.35);
+}
+:focus-visible {
+    outline-color: var(--spice-button) !important;
+}

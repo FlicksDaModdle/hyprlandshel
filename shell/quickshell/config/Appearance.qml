@@ -514,6 +514,9 @@ Singleton {
             // which is as close as a file manager gets to the design without
             // being rewritten.
             property bool kvantumTheme: false
+            // Spotify in the shell's colours (services/Spicetify.qml): on,
+            // but nothing is written until Spicetify is set up.
+            property bool spotifyTheme: true
 
 
             // Subpixel order, written to fontconfig for every app, not just
@@ -843,6 +846,7 @@ Singleton {
     property alias textNative: prefs.textNative
     property alias themeQtApps: prefs.themeQtApps
     property alias kvantumTheme: prefs.kvantumTheme
+    property alias spotifyTheme: prefs.spotifyTheme
     property alias subpixel: prefs.subpixel
     property alias fontHinting: prefs.fontHinting
 

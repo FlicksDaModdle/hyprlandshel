@@ -52,6 +52,9 @@ ShellRoot {
     // nothing else in the shell has any reason to look at it.
     readonly property bool qtThemed: Services.Kvantum.enabled
 
+    // And Spotify's theme, rewritten whenever the shell's changes.
+    readonly property bool spotifyThemed: Services.Spicetify.enabled
+
     // And the pointer: Cursor draws and installs the accent cursor theme,
     // and nothing else would build it before Settings was opened.
     readonly property bool cursorThemed: Services.Cursor.enabled

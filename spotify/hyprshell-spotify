@@ -1,0 +1,38 @@
+#!/bin/sh
+# Spotify, kept in the shell's theme across its own updates.
+#
+# spotify-launcher keeps Spotify up to date by itself, and an update puts
+# back Spotify's own files, which drops Spicetify's theme. So: let it fetch
+# any update first without starting Spotify, put the theme back in if the
+# files changed since last time (spicetify backup apply), then start it.
+# Installed by spotify/install.sh as the Spotify menu entry's command.
+set -u
+
+SP="${XDG_DATA_HOME:-$HOME/.local/share}/spotify-launcher/install/usr/share/spotify"
+STAMP="${XDG_CACHE_HOME:-$HOME/.cache}/hyprshell-spotify.stamp"
+
+spicetify_bin() {
+    for s in spicetify "$HOME/.spicetify/spicetify" "$HOME/.local/bin/spicetify"; do
+        command -v "$s" >/dev/null 2>&1 && { printf '%s\n' "$s"; return 0; }
+    done
+    return 1
+}
+
+# The launcher's flags differ between versions: used only when it has them.
+help=$(spotify-launcher --help 2>&1 || true)
+case "$help" in *--no-exec*) spotify-launcher --no-exec >/dev/null 2>&1 || true ;; esac
+
+if S=$(spicetify_bin) && [ -f "$SP/spotify" ]; then
+    now=$(stat -c %Y "$SP/spotify" 2>/dev/null || echo 0)
+    if [ "$(cat "$STAMP" 2>/dev/null)" != "$now" ]; then
+        # Spotify was installed or updated since the theme last went in.
+        if "$S" -n -q backup apply </dev/null >/dev/null 2>&1 || "$S" -n -q apply </dev/null >/dev/null 2>&1; then
+            mkdir -p "$(dirname "$STAMP")" && printf '%s\n' "$now" > "$STAMP"
+        fi
+    fi
+fi
+
+case "$help" in
+    *--skip-update*) exec spotify-launcher --skip-update "$@" ;;
+    *) exec spotify-launcher "$@" ;;
+esac
