@@ -1,0 +1,494 @@
+// Weather: the places you keep, now, the next day hour by hour, and ten
+// days ahead, from Open-Meteo.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Sidebar, Card, Caption, Label, Dim, Heading,
+         Button, IconButton, Seg, Field, Scroll, Empty, Toast, Rule, Icon, Spinner, Menu, MenuEntry } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct PlaceRow {
+    id: string,
+    name: string,
+    region: string,
+    temp: string,
+    icon: string,
+}
+
+export struct Found {
+    name: string,
+    region: string,
+    lat: float,
+    lon: float,
+}
+
+export struct Hour {
+    time: string,
+    icon: string,
+    temp: string,
+    rain: string,
+    now: bool,
+}
+
+export struct Day {
+    name: string,
+    icon: string,
+    rain: string,
+    low: string,
+    high: string,
+    // Where this day's low and high fall in the ten days' range, 0 to 1.
+    from: float,
+    to: float,
+}
+
+export struct Detail {
+    icon: string,
+    title: string,
+    value: string,
+    note: string,
+}
+
+export global Weather {
+    in property <[PlaceRow]> places;
+    in-out property <string> current;
+    // Now, at the chosen place.
+    in property <string> place-name;
+    in property <string> place-region;
+    in property <string> temp;
+    in property <string> summary;
+    in property <string> icon;
+    in property <string> feels;
+    in property <string> high-low;
+    in property <[Hour]> hours;
+    in property <[Day]> days;
+    in property <[Detail]> details;
+    in property <string> updated;
+    in property <bool> loading;
+    in property <string> error;
+    in property <bool> have-data;
+    // Units: 0 °C and km/h, 1 °F and mph.
+    in-out property <int> units;
+    // Searching for a place to add.
+    in-out property <string> query;
+    in property <[Found]> found;
+    in property <bool> searching;
+    in property <string> search-note;
+    in property <string> toast;
+
+    callback pick(string);
+    callback search(string);
+    callback add(int);
+    callback remove(string);
+    callback refresh();
+    callback set-units(int);
+}
+
+component PlaceItem inherits Rectangle {
+    in property <PlaceRow> place;
+    in property <bool> selected;
+    callback clicked();
+    callback menu(length, length);
+    height: 52px;
+    border-radius: Theme.r-sm;
+    background: selected ? Theme.sel : ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: Theme.t(180); easing: spring(0); }
+    Rectangle {
+        x: 0;
+        width: 3px;
+        height: root.selected ? 18px : 0px;
+        y: (parent.height - self.height) / 2;
+        border-radius: 2px;
+        background: Theme.accent;
+        animate height { duration: Theme.t(300); easing: spring(0.3); }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.place.name;
+                overflow: elide;
+                font-size: Theme.fs(13);
+                font-weight: root.selected ? 600 : 500;
+                color: root.selected ? Theme.ink : Theme.ink2;
+            }
+            Text {
+                text: root.place.region;
+                overflow: elide;
+                font-size: Theme.fs(11);
+                color: Theme.ink3;
+            }
+        }
+        if root.place.icon != "": VerticalLayout { alignment: center; Icon { name: root.place.icon; size: 18px; } }
+        Text {
+            text: root.place.temp;
+            vertical-alignment: center;
+            font-size: Theme.fs(15);
+            font-weight: 500;
+            color: Theme.ink;
+            min-width: 34px;
+            horizontal-alignment: right;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                root.menu(self.mouse-x, self.mouse-y);
+            }
+        }
+    }
+}
+
+component HourItem inherits Rectangle {
+    in property <Hour> hour;
+    width: 64px;
+    height: 112px;
+    border-radius: Theme.r-sm;
+    background: hour.now ? Theme.sel : transparent;
+    VerticalLayout {
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 7px;
+        alignment: center;
+        Text {
+            text: root.hour.now ? "Now" : root.hour.time;
+            horizontal-alignment: center;
+            font-size: Theme.fs(11.5);
+            font-weight: root.hour.now ? 600 : 400;
+            color: root.hour.now ? Theme.ink : Theme.ink3;
+        }
+        HorizontalLayout { alignment: center; Icon { name: root.hour.icon; size: 24px; } }
+        Text {
+            text: root.hour.temp;
+            horizontal-alignment: center;
+            font-size: Theme.fs(14);
+            font-weight: 500;
+            color: Theme.ink;
+        }
+        Text {
+            text: root.hour.rain;
+            horizontal-alignment: center;
+            font-size: Theme.fs(10.5);
+            color: Theme.accent;
+            opacity: root.hour.rain == "" ? 0 : 1;
+        }
+    }
+}
+
+component DayRow inherits Rectangle {
+    in property <Day> day;
+    in property <bool> first;
+    height: 44px;
+    if !root.first: Rectangle { y: 0; height: 1px; background: Theme.rule; }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 12px;
+        Text {
+            text: root.day.name;
+            vertical-alignment: center;
+            font-size: Theme.fs(13);
+            font-weight: root.first ? 600 : 400;
+            color: Theme.ink;
+            width: 84px;
+            overflow: elide;
+        }
+        VerticalLayout { alignment: center; Icon { name: root.day.icon; size: 20px; } }
+        Text {
+            text: root.day.rain;
+            vertical-alignment: center;
+            font-size: Theme.fs(11);
+            color: Theme.accent;
+            width: 34px;
+        }
+        Text {
+            text: root.day.low;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            font-size: Theme.fs(13);
+            color: Theme.ink3;
+            width: 36px;
+        }
+        // The day's range within the ten days'.
+        Rectangle {
+            horizontal-stretch: 1;
+            min-width: 60px;
+            Rectangle {
+                y: (parent.height - 5px) / 2;
+                height: 5px;
+                border-radius: 3px;
+                background: Theme.sel;
+            }
+            Rectangle {
+                x: parent.width * root.day.from;
+                width: max(6px, parent.width * (root.day.to - root.day.from));
+                y: (parent.height - 5px) / 2;
+                height: 5px;
+                border-radius: 3px;
+                background: @linear-gradient(90deg, Theme.accent.transparentize(0.45) 0%, Theme.accent 100%);
+            }
+        }
+        Text {
+            text: root.day.high;
+            vertical-alignment: center;
+            font-size: Theme.fs(13);
+            font-weight: 500;
+            color: Theme.ink;
+            width: 36px;
+        }
+    }
+}
+
+component DetailCard inherits Card {
+    in property <Detail> detail;
+    height: 104px;
+    // Two to a row, the same width whatever they say.
+    min-width: 0px;
+    preferred-width: 0px;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 7px;
+            VerticalLayout { alignment: center; Icon { name: root.detail.icon; size: 15px; ink: Theme.ink3; } }
+            Caption { text: root.detail.title; vertical-alignment: center; }
+        }
+        Text {
+            text: root.detail.value;
+            font-size: Theme.fs(22);
+            font-weight: 500;
+            color: Theme.ink;
+            overflow: elide;
+        }
+        Text {
+            text: root.detail.note;
+            font-size: Theme.fs(11.5);
+            color: Theme.ink3;
+            wrap: word-wrap;
+            overflow: elide;
+            vertical-stretch: 1;
+        }
+    }
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Weather";
+    preferred-width: 1100px;
+    preferred-height: 760px;
+    property <string> menu-for;
+    property <length> menu-x;
+    property <length> menu-y;
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Weather";
+            app-icon: "cloudSun";
+            subtitle: Weather.updated;
+            Seg {
+                width: 110px;
+                options: ["°C", "°F"];
+                current <=> Weather.units;
+                picked(i) => { Weather.set-units(i); }
+            }
+            IconButton {
+                icon: "refresh";
+                tip: "Refresh";
+                enabled: !Weather.loading && Weather.current != "";
+                clicked => { Weather.refresh(); }
+            }
+        }
+        Rule {}
+        HorizontalLayout {
+            Sidebar {
+                VerticalLayout {
+                    spacing: 6px;
+                    search := Field {
+                        icon: "search";
+                        placeholder: "Add a place…";
+                        text <=> Weather.query;
+                        edited(t) => { Weather.search(t); }
+                        accepted(t) => { if (Weather.found.length > 0) { Weather.add(0); } }
+                        escape => { Weather.query = ""; Weather.search(""); }
+                    }
+                    // Places matching what's typed.
+                    if Weather.query != "": Card {
+                        VerticalLayout {
+                            padding: 4px;
+                            if Weather.searching: HorizontalLayout { padding: 8px; alignment: center; Spinner {} }
+                            if !Weather.searching && Weather.found.length == 0: Dim {
+                                text: Weather.search-note;
+                                wrap: word-wrap;
+                                horizontal-alignment: center;
+                                height: 40px;
+                            }
+                            for f[i] in Weather.found: Rectangle {
+                                height: 44px;
+                                border-radius: Theme.r-sm;
+                                background: fta.has-hover ? Theme.hover : transparent;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    spacing: 9px;
+                                    VerticalLayout { alignment: center; Icon { name: "mapPin"; size: 15px; ink: Theme.ink3; } }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text { text: f.name; overflow: elide; font-size: Theme.fs(12.5); color: Theme.ink; font-weight: 500; }
+                                        Text { text: f.region; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
+                                    }
+                                }
+                                fta := TouchArea { mouse-cursor: pointer; clicked => { Weather.add(i); } }
+                            }
+                        }
+                    }
+                }
+                Rectangle { height: 4px; }
+                for p in Weather.places: PlaceItem {
+                    place: p;
+                    selected: p.id == Weather.current;
+                    clicked => { Weather.pick(p.id); }
+                    menu(x, y) => {
+                        root.menu-for = p.id;
+                        root.menu-x = self.absolute-position.x - root.absolute-position.x + x;
+                        root.menu-y = self.absolute-position.y - root.absolute-position.y + y;
+                        place-menu.show();
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+                Text {
+                    text: "Weather data by Open-Meteo.com";
+                    font-size: Theme.fs(10.5);
+                    color: Theme.ink3;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+
+            // ── the chosen place ──────────────────────────────────────────
+            if Weather.places.length == 0: Empty {
+                horizontal-stretch: 1;
+                icon: "mapPin";
+                title: "Where are you?";
+                text: "Type a town or city in Add a place, on the left.";
+            }
+            if Weather.places.length > 0 && !Weather.have-data: Rectangle {
+                horizontal-stretch: 1;
+                if Weather.loading: VerticalLayout { alignment: center; HorizontalLayout { alignment: center; Spinner {} } }
+                if !Weather.loading: Empty {
+                    icon: "cloud";
+                    title: "No forecast yet";
+                    text: Weather.error != "" ? Weather.error : "It'll come when there's a connection.";
+                }
+            }
+            if Weather.places.length > 0 && Weather.have-data: Scroll {
+                horizontal-stretch: 1;
+                VerticalLayout {
+                    padding: 26px;
+                    padding-top: 22px;
+                    spacing: 18px;
+
+                    // Now.
+                    HorizontalLayout {
+                        spacing: 20px;
+                        VerticalLayout {
+                            alignment: start;
+                            spacing: 2px;
+                            HorizontalLayout {
+                                spacing: 7px;
+                                VerticalLayout { alignment: center; Icon { name: "mapPin"; size: 15px; ink: Theme.ink3; } }
+                                Text { text: Weather.place-name; font-size: Theme.fs(15); font-weight: 600; color: Theme.ink; }
+                                Text { text: Weather.place-region; font-size: Theme.fs(12.5); color: Theme.ink3; vertical-alignment: center; overflow: elide; }
+                            }
+                            HorizontalLayout {
+                                spacing: 14px;
+                                alignment: start;
+                                Text {
+                                    text: Weather.temp;
+                                    font-size: Theme.fs(72);
+                                    font-weight: 300;
+                                    color: Theme.ink;
+                                }
+                                VerticalLayout { alignment: center; Icon { name: Weather.icon; size: 64px; } }
+                            }
+                            Text { text: Weather.summary; font-size: Theme.fs(17); font-weight: 500; color: Theme.ink; }
+                            Text { text: Weather.feels + "   ·   " + Weather.high-low; font-size: Theme.fs(13); color: Theme.ink3; }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        if Weather.error != "": VerticalLayout {
+                            alignment: start;
+                            Text { text: Weather.error; font-size: Theme.fs(11.5); color: Theme.warn; wrap: word-wrap; max-width: 240px; }
+                        }
+                    }
+
+                    // The next day, hour by hour.
+                    Card {
+                        height: 150px;
+                        VerticalLayout {
+                            padding: 12px;
+                            padding-bottom: 6px;
+                            spacing: 4px;
+                            HorizontalLayout { spacing: 7px; Icon { name: "clock"; size: 14px; ink: Theme.ink3; } Caption { text: "NEXT 24 HOURS"; } }
+                            Flickable {
+                                height: 112px;
+                                content-width: hours-row.preferred-width;
+                                hours-row := HorizontalLayout {
+                                    spacing: 2px;
+                                    for h in Weather.hours: HourItem { hour: h; }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 18px;
+                        alignment: stretch;
+                        // Ten days.
+                        Card {
+                            horizontal-stretch: 3;
+                            min-width: 340px;
+                            VerticalLayout {
+                                padding-top: 12px;
+                                padding-bottom: 6px;
+                                HorizontalLayout {
+                                    padding-left: 14px;
+                                    spacing: 7px;
+                                    Icon { name: "calendar"; size: 14px; ink: Theme.ink3; }
+                                    Caption { text: "10 DAYS"; }
+                                }
+                                Rectangle { height: 4px; }
+                                for d[i] in Weather.days: DayRow { day: d; first: i == 0; }
+                                Rectangle { vertical-stretch: 1; }
+                            }
+                        }
+                        // The rest of now.
+                        VerticalLayout {
+                            horizontal-stretch: 2;
+                            min-width: 240px;
+                            spacing: 12px;
+                            for row[r] in [0, 1, 2, 3]: HorizontalLayout {
+                                spacing: 12px;
+                                if r * 2 < Weather.details.length: DetailCard { horizontal-stretch: 1; detail: Weather.details[r * 2]; }
+                                if r * 2 + 1 < Weather.details.length: DetailCard { horizontal-stretch: 1; detail: Weather.details[r * 2 + 1]; }
+                            }
+                            Rectangle { vertical-stretch: 1; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    place-menu := Menu {
+        x: root.menu-x;
+        y: root.menu-y;
+        menu-width: 160px;
+        entries: [{ text: "Remove", icon: "trash", danger: true }];
+        chosen(i) => { if (i == 0) { Weather.remove(root.menu-for); } }
+    }
+
+    Toast { text: Weather.toast; }
+}

@@ -2,7 +2,7 @@
 #
 # Builds and installs Hyprshell's Rust apps: ROG Control Center, Notes,
 # Snapshots, Disks, Passwords and Keys, Documents, Music, Videos, Sound
-# Recorder and Chats — with their desktop entries, so the launcher and the
+# Recorder, Chats and Weather — with their desktop entries, so the launcher and the
 # dock find them. (Chats' WhatsApp side is in Go, chats/daemon, and needs
 # Go to build.)
 #
@@ -14,7 +14,7 @@
 #   ./install.sh --prefix /usr/local
 #   ./install.sh --remove           take them out again
 #
-# Names: rog notes snapshots disks keys docs music video recorder chats
+# Names: rog notes snapshots disks keys docs music video recorder chats weather
 #
 # Not `set -e`: most of this probes for things that may be absent, and a
 # probe saying "no" must not end the run.
@@ -67,6 +67,7 @@ LIST=(
     "video|Videos|Video Player|Films and clips, picked up where you stopped|video-x-generic|AudioVideo;Video;Player;|%U|video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/ogg;video/x-flv;video/3gpp;video/mp2t;video/x-ms-wmv;video/x-m4v;"
     "recorder|Sound Recorder|Audio Recorder|Voice memos, and what the computer is playing|audio-input-microphone|AudioVideo;Audio;Recorder;||"
     "chats|Chats|Messaging|WhatsApp on this computer, as a linked device|internet-chat|Network;InstantMessaging;Chat;|||WhatsApp;Messages;"
+    "weather|Weather|Weather Forecast|The weather now, by the hour and ten days ahead, for the places you keep|weather-few-clouds|Utility;|||Forecast;Temperature;Rain;"
 )
 field() { local n=$2 IFS='|'; local f=($1); printf '%s' "${f[$((n - 1))]:-}"; }
 SKIP=""
@@ -80,7 +81,7 @@ if [ -n "$ONLY" ]; then
     for k in ${ONLY//,/ }; do
         known=0
         for a in "${LIST[@]}"; do [ "$(field "$a" 1)" = "$k" ] && known=1; done
-        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats)" >&2; exit 2; }
+        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats weather)" >&2; exit 2; }
     done
 fi
 
@@ -146,6 +147,8 @@ if has_lib "libopus.so"; then ok "Opus" "Chats' voice messages"
 else warn "Opus" "Chats needs it for voice messages — sudo pacman -S --needed opus"; fi
 if fc-list :charset=1f600 family 2>/dev/null | grep -qi "color emoji\|twemoji\|joypixels"; then ok "colour emoji" "Chats"
 else warn "colour emoji" "Chats shows emoji in colour with one — sudo pacman -S --needed noto-fonts-emoji"; fi
+if command -v curl >/dev/null 2>&1; then ok "curl" "Weather fetches forecasts with it"
+else warn "curl" "Weather needs it — sudo pacman -S --needed curl"; fi
 if command -v asusd >/dev/null 2>&1 || [ -e /usr/bin/asusd ]; then ok "asusd" "ROG Control Center"
 else warn "asusd" "ROG Control Center needs asusctl (ASUS laptops; from the g14 repository or the AUR)"; fi
 
