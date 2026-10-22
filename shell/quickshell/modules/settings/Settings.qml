@@ -1529,10 +1529,11 @@ Scope {
                         { label: "Master",  value: "master" }],
               value: A.hyprLayout,
               set: v => { A.hyprLayout = v; Services.Devices.applyFrame(); } },
-            { n: "Focus follows mouse", s: "Move the pointer onto a window to "
-                 + "focus it, without clicking",
-              type: "toggle", value: A.hyprFocusFollowsMouse,
-              set: v => { A.hyprFocusFollowsMouse = v; Services.Devices.applyFrame(); } },
+            { n: "Focus follows mouse", s: A.windowMode === "windows"
+                 ? "With Windows 11 behaviour a click focuses a window, as on Windows; scrolling still reaches the one under the pointer"
+                 : "Move the pointer onto a window to focus it, without clicking",
+              type: "toggle", value: A.followMouse !== 0,
+              set: v => { A.followMouse = v ? 1 : 0; Services.Devices.applyInput(); } },
 
             { type: "header", n: "Gaps and borders", s: "" },
             { n: "Inner gap", s: "Between tiled windows", type: "slider",
@@ -1638,7 +1639,9 @@ Scope {
             // Segmented deals in strings — its `value` is a string property and
             // its signal carries one — so the numeric option is carried as text
             // and converted here. Sent as a number, or Hyprland gets "1".
-            { n: "Focus follows mouse", s: "Whether moving the pointer over a window focuses it",
+            { n: "Focus follows mouse", s: A.windowMode === "windows"
+                 ? "Whether moving the pointer over a window focuses it. With Windows 11 behaviour, Full works as Loose: a click focuses"
+                 : "Whether moving the pointer over a window focuses it",
               type: "seg",
               options: [{ label: "Off", value: "0" }, { label: "Loose", value: "2" },
                         { label: "Full", value: "1" }],

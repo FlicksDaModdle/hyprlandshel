@@ -24,6 +24,13 @@ Singleton {
     // capital, because that is the namespace for types.
     readonly property var prefs: Config.Appearance
 
+    // Focus follows the pointer: Off 0, Loose 2 (a click focuses; scrolling
+    // reaches what's under the pointer), Full 1. In the Windows 11
+    // behaviour Full is taken as Loose, as on Windows: with windows
+    // floating over each other, the pointer passing over one mustn't take
+    // the keyboard from the one you're typing in.
+    readonly property int followMouseNow: prefs.windowMode === "windows" && prefs.followMouse === 1 ? 2 : prefs.followMouse
+
     // The whole input tree in one call. hl.config merges, so sending it as a
     // single statement is one hyprctl round trip instead of twenty.
     function inputTree() {
@@ -32,7 +39,10 @@ Singleton {
                 repeat_rate: prefs.repeatRate,
                 repeat_delay: prefs.repeatDelay,
                 numlock_by_default: prefs.numlock,
-                follow_mouse: prefs.followMouse,
+                follow_mouse: root.followMouseNow,
+                // Nor a window's focus moving to whatever is under the
+                // pointer when focus goes between floating and tiled.
+                float_switch_override_focus: prefs.windowMode === "windows" ? 0 : 1,
                 sensitivity: prefs.sensitivity,
                 accel_profile: prefs.accelProfile,
                 left_handed: prefs.leftHanded,
@@ -160,8 +170,7 @@ Singleton {
             },
             // Battery saver may be holding them off; it puts back whatever
             // this says when it lets go.
-            animations: { enabled: prefs.hyprAnimEnabled && !Services.PowerSaver.want.animations },
-            input: { follow_mouse: prefs.hyprFocusFollowsMouse ? 1 : 0 }
+            animations: { enabled: prefs.hyprAnimEnabled && !Services.PowerSaver.want.animations }
         };
     }
 
@@ -808,7 +817,11 @@ Singleton {
     }
     Connections {
         target: root.prefs
-        function onWindowModeChanged() { if (root.applied) root.syncWindowMode(); }
+        function onWindowModeChanged() {
+            if (!root.applied) return;
+            root.syncWindowMode();
+            root.applyInput();
+        }
     }
 
     // Waits for theme.json to have been read and for Hyprland to have told
@@ -840,6 +853,12 @@ Singleton {
                 && (Services.Compositor.monitors || []).length === 0) return;
             root.applied = true;
             root.actedOnBattery = root.onBattery;
+            // There were two settings for this, which fought: the one in
+            // Settings → Hyprland, turned off, now turns the other off.
+            if (!root.prefs.hyprFocusFollowsMouse) {
+                if (root.prefs.followMouse === 1) root.prefs.followMouse = 0;
+                root.prefs.hyprFocusFollowsMouse = true;
+            }
             root.applyInput();
             root.applyFrame();
             root.applyDisplays();

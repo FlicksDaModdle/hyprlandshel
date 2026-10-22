@@ -841,6 +841,11 @@ if window_mode == "windows" then
         center = true,
     })
     pcall(hl.config, { general = { snap = { enabled = true, window_gap = 12, monitor_gap = 12 } } })
+    -- A click focuses a window, as on Windows: with windows floating over
+    -- each other, the pointer passing over one doesn't take the keyboard
+    -- from the one you're typing in (scrolling still reaches what's under
+    -- it). The shell keeps this from Settings → Keyboard once it starts.
+    pcall(hl.config, { input = { follow_mouse = 2, float_switch_override_focus = 0 } })
 end
 
 -- Windows 11 behaviour, too: an app opens where you last left it, at the
