@@ -497,6 +497,19 @@ function names() {
 
 // Aliases so callers can use either the mockup's ICONS keys or plain names.
 icons.appTerm = icons.terminal;
+// Three the Rust apps' tables have (apps/kit), for their windows in the dock.
+icons.cloudSun = {
+    ink: "M9 20.5h8.5a3.5 3.5 0 0 0 .5-6.96A5 5 0 0 0 8.4 13 3.8 3.8 0 0 0 9 20.5Z",
+    acc: "M8 2.8v1.6 M2.8 8h1.6 M4.3 4.3l1.1 1.1 M11.7 4.3l-1.1 1.1 M5.3 10.6A3.2 3.2 0 0 1 10.9 6.9"
+};
+icons.doc = {
+    ink: "M7 3.5H17A2 2 0 0 1 19 5.5V18.5A2 2 0 0 1 17 20.5H7A2 2 0 0 1 5 18.5V5.5A2 2 0 0 1 7 3.5Z M8.5 13H15.5 M8.5 16.5H13",
+    acc: "M8.5 9H15.5"
+};
+icons.key = {
+    ink: "M4.25 15.5A3.75 3.75 0 1 0 11.75 15.5A3.75 3.75 0 1 0 4.25 15.5Z M10.75 12.9L19 5",
+    acc: "M16.25 7.5L18.5 9.75"
+};
 icons.appFiles = icons.folder;
 icons.appWeb = icons.globe;
 icons.appCode = icons.code;

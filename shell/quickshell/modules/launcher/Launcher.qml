@@ -389,7 +389,9 @@ Variants {
             const apps = DesktopEntries.applications.values.filter(e => e && !e.noDisplay && e.id !== "hyprshell-tasks");
             const pool = apps.map(e => ({
                 kind: "desktop", entry: e, label: e.name || "",
-                icon: "", appIcon: Config.Apps.themeIcon(e.icon),
+                // The pack glyph is what shows when the theme has no such icon.
+                icon: Config.Apps.iconFor(e.startupClass || (e.id || "").replace(/\.desktop$/, "") || e.name),
+                appIcon: Config.Apps.themeIcon(e.icon),
                 cat: e.genericName || e.comment || (e.categories && e.categories.length > 0
                      ? e.categories[0] : "Application")
             }));

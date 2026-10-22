@@ -52,6 +52,7 @@ head1(){ printf '\n%s%s%s\n' "$BOLD" "$1" "$RST"; }
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPS="$PREFIX/share/applications"
+ICONS="$PREFIX/share/icons/hicolor/scalable/apps"
 BIN="$PREFIX/bin"
 
 # ── the apps ───────────────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ if [ "$MODE" = remove ]; then
     head1 "Removing"
     for a in "${LIST[@]}"; do
         k=$(field "$a" 1); wanted "$k" || continue
-        rm -f "$BIN/hyprshell-$k" "$APPS/hyprshell-$k.desktop"
+        rm -f "$BIN/hyprshell-$k" "$APPS/hyprshell-$k.desktop" "$ICONS/hyprshell-$k.svg"
         if [ "$k" = chats ]; then
             if command -v systemctl >/dev/null 2>&1; then
                 systemctl --user disable --now hyprshell-chatsd.service >/dev/null 2>&1
@@ -192,7 +193,7 @@ ok "built"
 
 # ── installing ─────────────────────────────────────────────────────────────
 head1 "Installing"
-mkdir -p "$BIN" "$APPS" || exit 1
+mkdir -p "$BIN" "$APPS" "$ICONS" || exit 1
 for a in "${LIST[@]}"; do
     k=$(field "$a" 1); wanted "$k" || continue
     name=$(field "$a" 2); generic=$(field "$a" 3); comment=$(field "$a" 4)
@@ -202,6 +203,11 @@ for a in "${LIST[@]}"; do
     # its own, and is never half-written under it.
     if ! install -m 755 "$SRC/target/release/hyprshell-$k" "$exe.new" || ! mv -f "$exe.new" "$exe"; then
         bad "$name" "could not write $exe"; continue
+    fi
+    # Its own icon (icons/, made by kit/tools/gen-app-icons.py); the
+    # theme's generic one if that's missing.
+    if [ -f "$SRC/icons/hyprshell-$k.svg" ] && install -m 644 "$SRC/icons/hyprshell-$k.svg" "$ICONS/hyprshell-$k.svg"; then
+        icon="hyprshell-$k"
     fi
     {
         echo "[Desktop Entry]"
@@ -221,6 +227,7 @@ for a in "${LIST[@]}"; do
     ok "$name" "$exe"
 done
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" 2>/dev/null
+command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t "$PREFIX/share/icons/hicolor" 2>/dev/null
 
 # Chats' WhatsApp side: its own program, and a systemd user unit so
 # messages (and their notifications) arrive with the window closed.
