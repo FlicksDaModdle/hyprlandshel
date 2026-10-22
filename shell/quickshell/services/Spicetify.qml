@@ -60,6 +60,11 @@ Singleton {
                        top.b * a + under.b * (1 - a), 1);
     }
 
+    function rgba(c) {
+        return "rgba(" + Math.round(c.r * 255) + ", " + Math.round(c.g * 255) + ", "
+             + Math.round(c.b * 255) + ", " + (Math.round(c.a * 1000) / 1000) + ")";
+    }
+
     readonly property var ap: Config.Appearance
     readonly property color danger: ap.dark ? "#ff5a52" : "#d93a32"
     readonly property string colorIni: {
@@ -107,6 +112,14 @@ Singleton {
         + "    --hs-rsm: " + ap.rSm + "px;\n"
         + "    --hs-font: \"" + ap.fontFamily + "\";\n"
         + "    --hs-on-accent: #" + hex(ap.inkOnAccent) + ";\n"
+        // The shell's own tints, as its apps use them: lines, hover and
+        // selection are the ink at a strength, not colours of their own.
+        + "    --hs-edge: " + rgba(ap.edge) + ";\n"
+        + "    --hs-rule: " + rgba(ap.rule) + ";\n"
+        + "    --hs-hover: " + rgba(ap.hover) + ";\n"
+        + "    --hs-sel: " + rgba(ap.sel) + ";\n"
+        + "    --hs-accent: #" + hex(ap.accent) + ";\n"
+        + "    --hs-accent-soft: " + rgba(Qt.rgba(ap.accent.r, ap.accent.g, ap.accent.b, 0.16)) + ";\n"
         + "}\n\n" + template.text()
 
     // ── writing it out ────────────────────────────────────────────────────

@@ -1,15 +1,22 @@
 /* Hyprshell for Spotify (Spicetify).
  *
- * The shell's look: its own surfaces, hairline edges, its radii and font,
- * and its accent where Spotify has green. The colours are color.ini's
- * (--spice-*); the shell writes both files from the theme it is wearing
- * (services/Spicetify.qml) and puts the --hs-* values at the top of this
- * one: --hs-r (panels, cards), --hs-rsm (rows, buttons, fields), --hs-font,
- * --hs-on-accent (ink on the accent).
+ * Spotify made to look like one of the shell's own apps (apps/kit): one
+ * sheet rather than floating boxes, a title bar with the accent tick, a
+ * side bar of rows like the kit's NavItem, hairline rules between the
+ * parts, and its buttons, fields, chips, cards and menus in the kit's
+ * shapes. The colours are color.ini's (--spice-*); the shell writes both
+ * files from the theme it is wearing (services/Spicetify.qml) and puts its
+ * own values at the top of this one:
+ *   --hs-r, --hs-rsm        radii (panels and cards; rows, buttons, fields)
+ *   --hs-font               its font
+ *   --hs-on-accent          ink on the accent
+ *   --hs-edge, --hs-rule    hairlines: around things, between things
+ *   --hs-hover, --hs-sel    under the pointer, picked
+ *   --hs-accent, --hs-accent-soft
  *
  * Spotify's class names change between versions, so this leans on its
  * colour tokens (encore's --background-base and the rest), which change
- * rarely, and keeps its own rules to the few stable shapes. */
+ * rarely, and on the few shapes that have stayed put. */
 
 /* ── colour tokens: Spotify's own, pointed at the shell's ──────────────── */
 .encore-dark-theme,
@@ -21,14 +28,14 @@
 .encore-layout-themes,
 :root {
     --background-base: var(--spice-main) !important;
-    --background-highlight: var(--spice-highlight) !important;
-    --background-press: var(--spice-highlight-elevated) !important;
+    --background-highlight: var(--hs-hover) !important;
+    --background-press: var(--hs-sel) !important;
     --background-elevated-base: var(--spice-main-elevated) !important;
     --background-elevated-highlight: var(--spice-highlight-elevated) !important;
     --background-elevated-press: var(--spice-highlight-elevated) !important;
-    --background-tinted-base: rgba(var(--spice-rgb-text), 0.07) !important;
-    --background-tinted-highlight: rgba(var(--spice-rgb-text), 0.10) !important;
-    --background-tinted-press: rgba(var(--spice-rgb-text), 0.14) !important;
+    --background-tinted-base: var(--hs-hover) !important;
+    --background-tinted-highlight: var(--hs-sel) !important;
+    --background-tinted-press: var(--hs-sel) !important;
     --text-base: var(--spice-text) !important;
     --text-subdued: var(--spice-subtext) !important;
     --text-bright-accent: var(--spice-button) !important;
@@ -40,7 +47,9 @@
     --essential-bright-accent: var(--spice-button) !important;
     --essential-negative: var(--spice-notification-error) !important;
     --decorative-base: var(--spice-text) !important;
-    --decorative-subdued: rgba(var(--spice-rgb-text), 0.16) !important;
+    --decorative-subdued: var(--hs-edge) !important;
+    /* The gaps between Spotify's boxes: none, it's one sheet. */
+    --panel-gap: 0px !important;
 }
 /* The accent's own set (the big play button): accent, the shell's ink on it. */
 .encore-bright-accent-set {
@@ -51,84 +60,241 @@
     --essential-base: var(--hs-on-accent) !important;
 }
 
-/* ── type ──────────────────────────────────────────────────────────────── */
+/* ── type: the shell's font, its weights ───────────────────────────────── */
 body,
 .encore-text,
 input,
 button {
     font-family: var(--hs-font), "Inter", system-ui, sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+}
+/* Big headings as the kit's Heading: semibold, not Spotify's black. */
+.encore-text-headline-large,
+.encore-text-headline-medium,
+.main-entityHeader-title h1,
+.main-entityHeader-title span {
+    font-weight: 700 !important;
+    letter-spacing: -0.02em !important;
+}
+.encore-text-title-medium,
+.encore-text-title-small,
+.main-shelf-title,
+.main-type-alto {
+    font-weight: 600 !important;
+    letter-spacing: -0.01em !important;
 }
 
-/* ── the layout: panels on the ground, the shell's gaps and radii ───────── */
+/* ── one sheet ─────────────────────────────────────────────────────────── */
+/* Spotify's floating rounded boxes, gaps and all, become the kit's window:
+ * one surface, its parts split by hairlines. Hyprland rounds the window's
+ * own corners. */
+body,
+.Root,
 .Root__top-container {
     background-color: var(--spice-main) !important;
+}
+.Root__top-container {
+    gap: 0 !important;
+    padding: 0 !important;
 }
 .Root__nav-bar,
 .Root__main-view,
 .Root__right-sidebar,
-.Root__now-playing-bar,
+.Root__nav-bar > *,
+.Root__main-view > *,
+.Root__right-sidebar > *,
 .main-yourLibraryX-libraryContainer,
 .main-view-container,
-.main-nowPlayingView-section {
-    border-radius: var(--hs-r) !important;
+.main-nowPlayingView-section,
+.main-buddyFeed-container {
+    border-radius: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
 }
+/* The side bar, as the kit's Sidebar: the sheet a shade off the page, a
+ * rule along its edge. */
+.Root__nav-bar,
 .Root__nav-bar > *,
+.main-yourLibraryX-libraryContainer {
+    background-color: var(--spice-sidebar) !important;
+}
+.Root__nav-bar {
+    border-right: 1px solid var(--hs-rule) !important;
+}
 .Root__main-view,
+.Root__main-view > *,
+.main-view-container {
+    background-color: var(--spice-main) !important;
+}
+.Root__right-sidebar,
 .Root__right-sidebar > * {
     background-color: var(--spice-sidebar) !important;
-    box-shadow: inset 0 0 0 1px rgba(var(--spice-rgb-text), 0.08);
 }
-.Root__now-playing-bar,
-.main-nowPlayingBar-container {
-    background-color: var(--spice-player) !important;
+.Root__right-sidebar {
+    border-left: 1px solid var(--hs-rule) !important;
+}
+/* The resize handles keep working, as the hairline itself. */
+.LayoutResizer__resize-bar {
+    background: transparent !important;
+}
+.LayoutResizer__resize-bar:hover {
+    background: var(--hs-edge) !important;
 }
 
+/* ── the title bar ─────────────────────────────────────────────────────── */
+/* As the kit's TitleBar: the accent tick at the left, a rule beneath. */
+.Root__globalNav {
+    background-color: var(--spice-main) !important;
+    border-bottom: 1px solid var(--hs-rule) !important;
+    position: relative;
+}
+.Root__globalNav::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    width: 3px;
+    height: 16px;
+    margin-top: -8px;
+    border-radius: 2px;
+    background-color: var(--hs-accent);
+    pointer-events: none;
+}
+.Root__globalNav > *:first-child {
+    margin-left: 10px;
+}
+/* Its round icon buttons (home, back and forward, friends, the bell) as
+ * the kit's IconButton: no disc until the pointer is on it. */
+.Root__globalNav button:not([data-encore-id="buttonPrimary"]) {
+    background-color: transparent !important;
+    border-radius: var(--hs-rsm) !important;
+    transform: none !important;
+}
+.Root__globalNav button:not([data-encore-id="buttonPrimary"]):hover {
+    background-color: var(--hs-hover) !important;
+}
+
+/* ── the side bar's rows, as the kit's NavItem ─────────────────────────── */
+.main-yourLibraryX-listItem > div,
+.main-yourLibraryX-listItem [role="button"],
+.main-yourLibraryX-navLink,
+.main-yourLibraryX-listRowGroup [role="row"] > div {
+    border-radius: var(--hs-rsm) !important;
+}
+.main-yourLibraryX-listItem > div:hover,
+.main-yourLibraryX-navLink:hover {
+    background-color: var(--hs-hover) !important;
+}
+/* Picked or playing: the selection tint and the accent tick at its left. */
+.main-yourLibraryX-listItem [aria-selected="true"],
+.main-yourLibraryX-listItem [aria-current="true"],
+.main-yourLibraryX-listItem > div[aria-selected="true"],
+.main-yourLibraryX-navLinkActive {
+    background-color: var(--hs-sel) !important;
+    position: relative;
+}
+.main-yourLibraryX-listItem [aria-selected="true"]::before,
+.main-yourLibraryX-listItem [aria-current="true"]::before,
+.main-yourLibraryX-navLinkActive::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 3px;
+    height: 16px;
+    margin-top: -8px;
+    border-radius: 2px;
+    background-color: var(--hs-accent);
+}
+.main-yourLibraryX-listItem img,
+.main-yourLibraryX-listItem .main-image-image,
+.x-entityImage-imageContainer {
+    border-radius: calc(var(--hs-rsm) - 3px) !important;
+}
+
+/* ── chips, as the kit's segmented control ─────────────────────────────── */
+[data-encore-id="chip"],
+.ChipComponent,
+button[role="checkbox"][class*="Chip"] {
+    background-color: var(--hs-hover) !important;
+    color: var(--spice-text) !important;
+    border: none !important;
+    border-radius: var(--hs-rsm) !important;
+    font-weight: 500 !important;
+}
+[data-encore-id="chip"]:hover {
+    background-color: var(--hs-sel) !important;
+}
+[data-encore-id="chip"][aria-checked="true"],
+[data-encore-id="chip"][aria-selected="true"],
+.ChipComponent[aria-checked="true"] {
+    background-color: var(--hs-accent) !important;
+    color: var(--hs-on-accent) !important;
+}
+
+/* ── the page ──────────────────────────────────────────────────────────── */
 /* The tinted gradient Spotify lays behind album and playlist headers: the
  * shell's surfaces are flat, so it fades from a quiet tint instead. */
 .main-entityHeader-backgroundColor,
 .main-actionBarBackground-background,
 .main-home-homeHeader,
 .main-topBar-background {
-    background-color: rgba(var(--spice-rgb-text), 0.04) !important;
+    background-color: var(--hs-hover) !important;
     background-image: none !important;
 }
 .main-entityHeader-overlay,
 .main-actionBarBackground-background {
-    background: linear-gradient(transparent, var(--spice-sidebar)) !important;
+    background: linear-gradient(transparent, var(--spice-main)) !important;
+}
+/* The top bar inside the page: the sheet, a rule once it's scrolled. */
+.main-topBar-container,
+.main-topBar-background {
+    border-radius: 0 !important;
 }
 
-/* ── cards and rows ────────────────────────────────────────────────────── */
+/* Cards as the kit's Card: a quiet surface with a hairline, lit on hover. */
 .main-card-card,
 [data-encore-id="card"] {
     background-color: transparent !important;
+    border: 1px solid transparent !important;
     border-radius: var(--hs-r) !important;
-    transition: background-color 120ms ease;
+    transition: background-color 140ms ease, border-color 140ms ease;
 }
 .main-card-card:hover,
 [data-encore-id="card"]:hover {
-    background-color: var(--spice-highlight) !important;
+    background-color: var(--hs-hover) !important;
+    border-color: var(--hs-rule) !important;
 }
 .main-image-image,
 .main-cardImage-image,
+.main-cardImage-imageWrapper,
 .main-entityHeader-image,
 .main-coverSlotExpanded-container img,
 .cover-art,
 .cover-art-image {
     border-radius: var(--hs-rsm) !important;
 }
+/* Artists are round; the kit's avatars are too. */
+.main-cardImage-circular,
+.main-entityHeader-imagePlaceholder.main-entityHeader-circle {
+    border-radius: 50% !important;
+}
+
+/* Track rows: the kit's list rows. */
 .main-trackList-trackListRow,
-.main-yourLibraryX-listItem > div,
-.x-entityImage-imageContainer {
+.main-trackList-trackListHeaderRow {
     border-radius: var(--hs-rsm) !important;
 }
 .main-trackList-trackListRow:hover,
 .main-trackList-trackListRow:focus-within {
-    background-color: rgba(var(--spice-rgb-text), 0.07) !important;
+    background-color: var(--hs-hover) !important;
 }
 .main-trackList-trackListRow[aria-selected="true"],
 .main-trackList-selected {
-    background-color: rgba(var(--spice-rgb-text), 0.12) !important;
-    box-shadow: inset 0 -2px 0 var(--spice-button);
+    background-color: var(--hs-sel) !important;
+}
+.main-trackList-trackListHeader {
+    border-bottom: 1px solid var(--hs-rule) !important;
 }
 /* What's playing, in the accent rather than Spotify's green. */
 .main-trackList-playingIcon,
@@ -138,18 +304,35 @@ button {
     fill: var(--spice-button) !important;
 }
 
-/* ── buttons, fields and bars ──────────────────────────────────────────── */
+/* ── buttons and fields, as the kit's ──────────────────────────────────── */
+/* Primary: the accent. The big round play button stays round. */
 .main-playButton-PlayButton button,
 .main-playButton-button,
-.encore-bright-accent-set.Button-sc-qlcn5g-0,
-.Button-buttonPrimary-useBrowserDefaultFocusStyle {
+button[data-encore-id="buttonPrimary"] > span {
     background-color: var(--spice-button) !important;
     color: var(--hs-on-accent) !important;
 }
-button[data-encore-id="buttonPrimary"] > span,
-button[data-encore-id="buttonSecondary"] {
+button[data-encore-id="buttonPrimary"]:not([aria-label]) > span,
+button[data-encore-id="buttonPrimary"][aria-label=""] > span {
     border-radius: var(--hs-rsm) !important;
 }
+/* Secondary: a hairline, no fill — the kit's "secondary" Button. */
+button[data-encore-id="buttonSecondary"] {
+    background-color: transparent !important;
+    border: 1px solid var(--hs-edge) !important;
+    border-radius: var(--hs-rsm) !important;
+    box-shadow: none !important;
+}
+button[data-encore-id="buttonSecondary"]:hover {
+    background-color: var(--hs-hover) !important;
+    transform: none !important;
+}
+button[data-encore-id="buttonTertiary"]:hover {
+    background-color: var(--hs-hover) !important;
+    border-radius: var(--hs-rsm) !important;
+}
+
+/* Play/pause in the player: the ink, as the shell's media controls. */
 .main-playPauseButton-button {
     background-color: var(--spice-text) !important;
     color: var(--spice-main) !important;
@@ -167,24 +350,47 @@ button[data-encore-id="buttonSecondary"] {
     background-color: var(--spice-button) !important;
 }
 
+/* Fields: the kit's Field — a quiet fill, a hairline, the accent on focus. */
 .x-searchInput-searchInputInput,
 .main-searchBar-searchBar input,
 input[data-encore-id="formInput"],
-input[type="search"] {
-    background-color: rgba(var(--spice-rgb-text), 0.07) !important;
-    border: 1px solid rgba(var(--spice-rgb-text), 0.12) !important;
+input[type="search"],
+.Root__globalNav form input {
+    background-color: var(--hs-hover) !important;
+    border: 1px solid var(--hs-edge) !important;
     border-radius: var(--hs-rsm) !important;
+    box-shadow: none !important;
     color: var(--spice-text) !important;
 }
+.x-searchInput-searchInputInput:hover,
+.Root__globalNav form input:hover {
+    background-color: var(--hs-sel) !important;
+}
 .x-searchInput-searchInputInput:focus,
-input[data-encore-id="formInput"]:focus {
-    border-color: var(--spice-button) !important;
+input[data-encore-id="formInput"]:focus,
+.Root__globalNav form input:focus {
+    border-color: var(--hs-accent) !important;
+    background-color: var(--hs-hover) !important;
+    outline: none !important;
     box-shadow: none !important;
 }
 
+/* ── the player, as the shell's media panel ────────────────────────────── */
+.Root__now-playing-bar,
+.main-nowPlayingBar-container,
+footer[data-testid="now-playing-bar"] {
+    background-color: var(--spice-sidebar) !important;
+    border-top: 1px solid var(--hs-rule) !important;
+    border-radius: 0 !important;
+}
+.main-nowPlayingWidget-coverArt img,
+.main-nowPlayingWidget-coverArt .cover-art {
+    border-radius: var(--hs-rsm) !important;
+}
+/* Its bars: thin, the ink, the accent under the pointer. */
 .progress-bar {
     --fg-color: var(--spice-text) !important;
-    --bg-color: rgba(var(--spice-rgb-text), 0.16) !important;
+    --bg-color: var(--hs-edge) !important;
     --progress-bar-height: 4px !important;
     --progress-bar-radius: 2px !important;
 }
@@ -201,45 +407,53 @@ input[data-encore-id="formInput"]:focus {
 .main-contextMenu-menu,
 #context-menu ul,
 .main-userWidget-dropDownMenu,
+[data-tippy-root] ul[role="menu"],
 .GenericModal,
 .main-trackCreditsModal-container,
 .main-popupModal-container {
     background-color: var(--spice-card) !important;
-    border: 1px solid rgba(var(--spice-rgb-text), 0.16) !important;
+    border: 1px solid var(--hs-edge) !important;
     border-radius: var(--hs-r) !important;
-    box-shadow: 0 12px 32px rgba(var(--spice-rgb-shadow), 0.45) !important;
+    box-shadow: 0 10px 30px rgba(var(--spice-rgb-shadow), 0.4) !important;
+    padding: 5px !important;
 }
 .main-contextMenu-menuItemButton,
 .main-contextMenu-menuItem a,
 .main-contextMenu-menuItem button {
     border-radius: var(--hs-rsm) !important;
+    padding-top: 7px !important;
+    padding-bottom: 7px !important;
 }
 .main-contextMenu-menuItemButton:hover,
 .main-contextMenu-menuItemButton:focus {
-    background-color: rgba(var(--spice-rgb-text), 0.09) !important;
+    background-color: var(--hs-hover) !important;
 }
 .main-contextMenu-dividerAfter,
 .main-contextMenu-dividerBefore {
-    border-color: rgba(var(--spice-rgb-text), 0.10) !important;
+    border-color: var(--hs-rule) !important;
 }
 .Tooltip,
 .main-tooltip-tooltip,
 [data-encore-id="tooltip"] {
     background-color: var(--spice-card) !important;
     color: var(--spice-text) !important;
-    border: 1px solid rgba(var(--spice-rgb-text), 0.16);
+    border: 1px solid var(--hs-edge);
     border-radius: var(--hs-rsm) !important;
+    box-shadow: 0 6px 16px rgba(var(--spice-rgb-shadow), 0.3) !important;
 }
 
-/* ── scrollbars: thin, as the shell draws them ─────────────────────────── */
+/* ── scrollbars: thin, as the kit's Scroll draws them ──────────────────── */
 .os-scrollbar-handle,
 ::-webkit-scrollbar-thumb {
-    background-color: rgba(var(--spice-rgb-text), 0.22) !important;
+    background-color: var(--hs-sel) !important;
     border-radius: 2px !important;
 }
 .os-scrollbar-handle:hover,
 ::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(var(--spice-rgb-text), 0.36) !important;
+    background-color: var(--spice-misc) !important;
+}
+.os-scrollbar-vertical {
+    width: 8px !important;
 }
 ::-webkit-scrollbar {
     width: 8px;
@@ -251,8 +465,8 @@ input[data-encore-id="formInput"]:focus {
 
 /* Selected text and focus rings: the accent. */
 ::selection {
-    background-color: rgba(var(--spice-rgb-button), 0.35);
+    background-color: var(--hs-accent-soft);
 }
 :focus-visible {
-    outline-color: var(--spice-button) !important;
+    outline-color: var(--hs-accent) !important;
 }

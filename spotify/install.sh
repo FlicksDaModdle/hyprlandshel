@@ -175,7 +175,10 @@ fi
 if [ ! -f "$THEME/color.ini" ] || [ ! -f "$THEME/user.css" ]; then
     mkdir -p "$THEME"
     {
-        printf ':root {\n    --hs-r: 14px;\n    --hs-rsm: 9px;\n    --hs-font: "Inter";\n    --hs-on-accent: #ffffff;\n}\n\n'
+        printf ':root {\n    --hs-r: 14px;\n    --hs-rsm: 9px;\n    --hs-font: "Inter";\n    --hs-on-accent: #ffffff;\n'
+        printf '    --hs-edge: rgba(248, 244, 244, 0.16);\n    --hs-rule: rgba(248, 244, 244, 0.1);\n'
+        printf '    --hs-hover: rgba(248, 244, 244, 0.09);\n    --hs-sel: rgba(248, 244, 244, 0.14);\n'
+        printf '    --hs-accent: #ff563c;\n    --hs-accent-soft: rgba(255, 86, 60, 0.16);\n}\n\n'
         cat "$REPO/shell/quickshell/assets/spicetify/user.css"
     } > "$THEME/user.css"
     cat > "$THEME/color.ini" <<'INI'
