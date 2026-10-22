@@ -14,7 +14,7 @@
 #   ./install.sh --prefix /usr/local
 #   ./install.sh --remove           take them out again
 #
-# Names: rog notes snapshots disks keys docs music video recorder chats weather
+# Names: rog notes snapshots disks keys docs music video recorder chats weather calendar
 #
 # Not `set -e`: most of this probes for things that may be absent, and a
 # probe saying "no" must not end the run.
@@ -68,6 +68,7 @@ LIST=(
     "recorder|Sound Recorder|Audio Recorder|Voice memos, and what the computer is playing|audio-input-microphone|AudioVideo;Audio;Recorder;||"
     "chats|Chats|Messaging|WhatsApp on this computer, as a linked device|internet-chat|Network;InstantMessaging;Chat;|||WhatsApp;Messages;"
     "weather|Weather|Weather Forecast|The weather now, by the hour and ten days ahead, for the places you keep|weather-few-clouds|Utility;|||Forecast;Temperature;Rain;"
+    "calendar|Calendar|Calendar|Your calendars, subscriptions and invitations, by month, week or list|x-office-calendar|Office;Calendar;|||Events;Agenda;Schedule;"
 )
 field() { local n=$2 IFS='|'; local f=($1); printf '%s' "${f[$((n - 1))]:-}"; }
 SKIP=""
@@ -81,7 +82,7 @@ if [ -n "$ONLY" ]; then
     for k in ${ONLY//,/ }; do
         known=0
         for a in "${LIST[@]}"; do [ "$(field "$a" 1)" = "$k" ] && known=1; done
-        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats weather)" >&2; exit 2; }
+        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats weather calendar)" >&2; exit 2; }
     done
 fi
 

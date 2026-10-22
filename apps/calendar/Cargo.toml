@@ -1,0 +1,16 @@
+[package]
+name = "hyprshell-calendar"
+version = "0.1.0"
+edition = "2021"
+description = "Calendar for Hyprshell: your .ics calendars, subscriptions and Mail's invitations, by month, week or list"
+
+[dependencies]
+hyprshell-kit = { workspace = true }
+slint = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+chrono-tz = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+slint-build = { workspace = true }

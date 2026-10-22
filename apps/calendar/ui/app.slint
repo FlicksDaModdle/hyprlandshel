@@ -1,0 +1,573 @@
+// Calendar: your calendars as .ics files, calendars you subscribe to by
+// their address, and the invitations Mail has accepted, by the month, the
+// week or as a list.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Sidebar, Card, Caption, Label, Dim, Heading,
+         Button, IconButton, Seg, Field, Scroll, Empty, Toast, Rule, Icon, Switch, Dialog, Menu, MenuEntry } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct Chip {
+    id: string,
+    title: string,
+    time: string,
+    color: color,
+    all-day: bool,
+}
+
+export struct MonthCell {
+    iso: string,
+    day: string,
+    in-month: bool,
+    today: bool,
+    selected: bool,
+    chips: [Chip],
+    more: int,
+}
+
+export struct WeekDay {
+    iso: string,
+    name: string,
+    day: string,
+    today: bool,
+    selected: bool,
+    all-day: [Chip],
+}
+
+export struct Block {
+    id: string,
+    day: int,
+    // Minutes from midnight, and how long.
+    from: float,
+    length: float,
+    // Side by side with the ones it overlaps: which column of how many.
+    col: int,
+    cols: int,
+    title: string,
+    time: string,
+    color: color,
+}
+
+export struct AgendaRow {
+    header: bool,
+    label: string,
+    id: string,
+    title: string,
+    time: string,
+    place: string,
+    color: color,
+}
+
+export struct CalRow {
+    id: string,
+    name: string,
+    color: color,
+    visible: bool,
+    kind: string,     // "local", "url", "mail"
+    note: string,
+}
+
+export global Cal {
+    // 0 month, 1 week, 2 list.
+    in-out property <int> view;
+    in property <string> heading;
+    in property <[string]> weekday-names;
+    in property <[MonthCell]> cells;
+    in property <[WeekDay]> week;
+    in property <[Block]> blocks;
+    in property <[AgendaRow]> agenda;
+    in property <[CalRow]> calendars;
+    in property <string> day-heading;
+    in property <[AgendaRow]> day-events;
+    in property <string> toast;
+    // Minutes since midnight now, for the week's red line; -1 off this week.
+    in property <float> now-minutes;
+    in property <int> now-day;
+
+    callback prev();
+    callback next();
+    callback today();
+    callback set-view(int);
+    callback pick(string);
+    callback new-event(string, int);   // date, hour (-1: all day / whenever)
+    callback open-event(string);
+    callback toggle-calendar(string);
+    callback remove-calendar(string);
+    callback add-calendar(string);
+    callback subscribe(string, string);
+
+    // The event being made or changed.
+    in-out property <bool> editing;
+    in property <bool> ed-new;
+    in property <bool> ed-read-only;
+    in property <string> ed-calendar-name;
+    in property <[string]> ed-calendars;
+    in-out property <int> ed-calendar;
+    in-out property <string> ed-title;
+    in-out property <bool> ed-all-day;
+    in-out property <string> ed-date;
+    in-out property <string> ed-start;
+    in-out property <string> ed-end-date;
+    in-out property <string> ed-end;
+    in-out property <string> ed-location;
+    in-out property <string> ed-notes;
+    in-out property <int> ed-repeat;
+    in property <string> ed-error;
+    callback save-event();
+    callback delete-event();
+}
+
+component ChipView inherits Rectangle {
+    in property <Chip> chip;
+    callback clicked();
+    height: 18px;
+    border-radius: 4px;
+    background: chip.all-day ? chip.color.transparentize(0.25) : ta.has-hover ? Theme.hover : transparent;
+    HorizontalLayout {
+        padding-left: 5px;
+        padding-right: 4px;
+        spacing: 4px;
+        if !root.chip.all-day: VerticalLayout { alignment: center; Rectangle { width: 6px; height: 6px; border-radius: 3px; background: root.chip.color; } }
+        if !root.chip.all-day && root.chip.time != "": Text {
+            text: root.chip.time;
+            vertical-alignment: center;
+            font-size: Theme.fs(10.5);
+            color: Theme.ink3;
+        }
+        Text {
+            text: root.chip.title;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+            font-size: Theme.fs(11);
+            font-weight: root.chip.all-day ? 600 : 400;
+            color: root.chip.all-day ? #ffffff : Theme.ink;
+        }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component MonthView inherits Rectangle {
+    property <length> head: 28px;
+    VerticalLayout {
+        HorizontalLayout {
+            height: root.head;
+            for n in Cal.weekday-names: Text {
+                horizontal-stretch: 1;
+                text: n;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: Theme.fs(11);
+                font-weight: 600;
+                color: Theme.ink3;
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            property <length> cw: self.width / 7;
+            property <length> ch: self.height / 6;
+            for c[i] in Cal.cells: Rectangle {
+                x: mod(i, 7) * parent.cw;
+                y: floor(i / 7) * parent.ch;
+                width: parent.cw;
+                height: parent.ch;
+                background: c.selected ? Theme.hover : transparent;
+                Rectangle { y: 0; height: 1px; background: Theme.rule; }
+                if mod(i, 7) != 0: Rectangle { x: 0; width: 1px; background: Theme.rule; }
+                cta := TouchArea {
+                    clicked => { Cal.pick(c.iso); }
+                    double-clicked => { Cal.new-event(c.iso, -1); }
+                }
+                VerticalLayout {
+                    padding: 5px;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        alignment: start;
+                        Rectangle {
+                            width: 24px;
+                            height: 24px;
+                            border-radius: 12px;
+                            background: c.today ? Theme.accent : transparent;
+                            Text {
+                                text: c.day;
+                                font-size: Theme.fs(12);
+                                font-weight: c.today || c.selected ? 600 : 400;
+                                color: c.today ? Theme.ink-on-accent : c.in-month ? Theme.ink : Theme.ink3;
+                            }
+                        }
+                    }
+                    for chip in c.chips: ChipView { chip: chip; clicked => { Cal.open-event(chip.id); } }
+                    if c.more > 0: Text {
+                        text: "+" + c.more + " more";
+                        font-size: Theme.fs(10.5);
+                        color: Theme.ink3;
+                        x: 5px;
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+        }
+    }
+}
+
+component WeekView inherits Rectangle {
+    property <length> hour: 48px;
+    property <length> gutter: 54px;
+    property <length> colw: (self.width - self.gutter - 10px) / 7;
+    property <int> all-day-rows: 3;
+    VerticalLayout {
+        // The days, and their all-day events.
+        HorizontalLayout {
+            padding-left: root.gutter;
+            padding-right: 10px;
+            for d in Cal.week: VerticalLayout {
+                width: root.colw;
+                spacing: 2px;
+                padding-bottom: 6px;
+                Rectangle {
+                    height: 44px;
+                    TouchArea { clicked => { Cal.pick(d.iso); } double-clicked => { Cal.new-event(d.iso, -1); } }
+                    VerticalLayout {
+                        alignment: center;
+                        Text { text: d.name; horizontal-alignment: center; font-size: Theme.fs(11); font-weight: 600; color: d.today ? Theme.accent : Theme.ink3; }
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 26px;
+                                height: 26px;
+                                border-radius: 13px;
+                                background: d.today ? Theme.accent : d.selected ? Theme.sel : transparent;
+                                Text { text: d.day; font-size: Theme.fs(14); font-weight: 600; color: d.today ? Theme.ink-on-accent : Theme.ink; }
+                            }
+                        }
+                    }
+                }
+                for chip in d.all-day: ChipView { chip: chip; clicked => { Cal.open-event(chip.id); } }
+            }
+        }
+        Rule {}
+        // The hours.
+        hours := Scroll {
+            vertical-stretch: 1;
+            viewport-y: -8 * root.hour;
+            Rectangle {
+                height: 24 * root.hour;
+                width: parent.width;
+                for h in 24: Rectangle {
+                    y: h * root.hour;
+                    height: root.hour;
+                    Rectangle { x: root.gutter; height: 1px; y: 0; background: Theme.rule; }
+                    if h > 0: Text {
+                        x: 6px;
+                        y: -7px;
+                        width: root.gutter - 12px;
+                        text: (h < 10 ? "0" : "") + h + ":00";
+                        horizontal-alignment: right;
+                        font-size: Theme.fs(10.5);
+                        color: Theme.ink3;
+                    }
+                }
+                // Double-click an hour to put something there.
+                for d[di] in Cal.week: Rectangle {
+                    x: root.gutter + di * root.colw;
+                    width: root.colw;
+                    height: parent.height;
+                    Rectangle { x: 0; width: 1px; background: Theme.rule; }
+                    TouchArea {
+                        double-clicked => { Cal.new-event(d.iso, floor(self.mouse-y / root.hour)); }
+                        clicked => { Cal.pick(d.iso); }
+                    }
+                }
+                for b in Cal.blocks: Rectangle {
+                    x: root.gutter + b.day * root.colw + 2px + b.col * (root.colw - 4px) / b.cols;
+                    width: (root.colw - 4px) / b.cols - 2px;
+                    y: b.from / 60 * root.hour + 1px;
+                    height: max(20px, b.length / 60 * root.hour - 2px);
+                    border-radius: 6px;
+                    background: b.color.transparentize(bta.has-hover ? 0.05 : 0.2);
+                    clip: true;
+                    Rectangle { x: 0; width: 3px; background: b.color; }
+                    VerticalLayout {
+                        padding: 4px;
+                        padding-left: 7px;
+                        spacing: 0px;
+                        alignment: start;
+                        Text { text: b.title; font-size: Theme.fs(11.5); font-weight: 600; color: #ffffff; overflow: elide; wrap: word-wrap; }
+                        Text { text: b.time; font-size: Theme.fs(10.5); color: #ffffffcc; overflow: elide; }
+                    }
+                    bta := TouchArea { mouse-cursor: pointer; clicked => { Cal.open-event(b.id); } }
+                }
+                // Now.
+                if Cal.now-day >= 0: Rectangle {
+                    x: root.gutter + Cal.now-day * root.colw - 4px;
+                    y: Cal.now-minutes / 60 * root.hour - 4px;
+                    width: root.colw + 4px;
+                    height: 8px;
+                    Rectangle { x: 0; y: 0; width: 8px; height: 8px; border-radius: 4px; background: Theme.danger; }
+                    Rectangle { x: 4px; y: 3px; height: 2px; background: Theme.danger; }
+                }
+            }
+        }
+    }
+}
+
+component AgendaView inherits Rectangle {
+    if Cal.agenda.length == 0: Empty {
+        icon: "calendar";
+        title: "Nothing coming up";
+        text: "Nothing in the next eight weeks from here.";
+    }
+    if Cal.agenda.length > 0: Scroll {
+        VerticalLayout {
+            padding: 20px;
+            padding-top: 10px;
+            spacing: 2px;
+            for r in Cal.agenda: Rectangle {
+                height: r.header ? 40px : 48px;
+                border-radius: Theme.r-sm;
+                background: !r.header && ata.has-hover ? Theme.hover : transparent;
+                if r.header: Text {
+                    x: 4px;
+                    y: parent.height - self.height - 6px;
+                    text: r.label;
+                    font-size: Theme.fs(12);
+                    font-weight: 600;
+                    color: Theme.accent;
+                }
+                if !r.header: HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 12px;
+                    Text { text: r.time; width: 110px; vertical-alignment: center; font-size: Theme.fs(12); color: Theme.ink3; }
+                    VerticalLayout { alignment: center; Rectangle { width: 8px; height: 8px; border-radius: 4px; background: r.color; } }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text { text: r.title; font-size: Theme.fs(13); color: Theme.ink; overflow: elide; }
+                        if r.place != "": Text { text: r.place; font-size: Theme.fs(11.5); color: Theme.ink3; overflow: elide; }
+                    }
+                }
+                ata := TouchArea { enabled: !r.header; mouse-cursor: pointer; clicked => { Cal.open-event(r.id); } }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Calendar";
+    preferred-width: 1180px;
+    preferred-height: 780px;
+    property <bool> asking-new: false;
+    property <bool> asking-url: false;
+    property <string> new-name;
+    property <string> new-url;
+    property <string> menu-for;
+    property <bool> asking-remove: false;
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Calendar";
+            app-icon: "calendar";
+            IconButton { icon: "chevL"; tip: "Back"; clicked => { Cal.prev(); } }
+            Button { text: "Today"; small: true; clicked => { Cal.today(); } }
+            IconButton { icon: "chevR"; tip: "On"; clicked => { Cal.next(); } }
+            Text {
+                text: Cal.heading;
+                vertical-alignment: center;
+                font-size: Theme.fs(15);
+                font-weight: 600;
+                color: Theme.ink;
+                min-width: 220px;
+                horizontal-alignment: center;
+            }
+            Seg {
+                width: 210px;
+                options: ["Month", "Week", "List"];
+                current <=> Cal.view;
+                picked(i) => { Cal.set-view(i); }
+            }
+        }
+        Rule {}
+        HorizontalLayout {
+            Sidebar {
+                Button {
+                    text: "New event";
+                    icon: "plus";
+                    kind: "primary";
+                    clicked => { Cal.new-event("", -1); }
+                }
+                Rectangle { height: 8px; }
+                // The chosen day.
+                Caption { text: Cal.day-heading; }
+                if Cal.day-events.length == 0: Dim { text: "Nothing"; height: 28px; }
+                for r in Cal.day-events: Rectangle {
+                    height: 44px;
+                    border-radius: Theme.r-sm;
+                    background: dta.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 6px;
+                        spacing: 8px;
+                        VerticalLayout { alignment: center; Rectangle { width: 4px; height: 26px; border-radius: 2px; background: r.color; } }
+                        VerticalLayout {
+                            alignment: center;
+                            Text { text: r.title; overflow: elide; font-size: Theme.fs(12.5); color: Theme.ink; }
+                            Text { text: r.time; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
+                        }
+                    }
+                    dta := TouchArea { mouse-cursor: pointer; clicked => { Cal.open-event(r.id); } }
+                }
+                Rectangle { height: 10px; }
+                Caption { text: "CALENDARS"; }
+                for c in Cal.calendars: Rectangle {
+                    height: c.note != "" ? 44px : 32px;
+                    border-radius: Theme.r-sm;
+                    background: kta.has-hover ? Theme.hover : transparent;
+                    kta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Cal.toggle-calendar(c.id); }
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right && c.kind != "mail") {
+                                root.menu-for = c.id;
+                                cal-menu.show();
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 6px;
+                        spacing: 9px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 14px;
+                                height: 14px;
+                                border-radius: 4px;
+                                border-width: 2px;
+                                border-color: c.color;
+                                background: c.visible ? c.color : transparent;
+                                if c.visible: Icon { name: "check"; size: 10px; ink: #ffffff; }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text { text: c.name; overflow: elide; font-size: Theme.fs(12.5); color: c.visible ? Theme.ink : Theme.ink3; }
+                            if c.note != "": Text { text: c.note; overflow: elide; font-size: Theme.fs(10.5); color: Theme.ink3; }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Button { text: "New"; icon: "plus"; small: true; clicked => { root.new-name = ""; root.asking-new = true; } }
+                    Button { text: "Subscribe"; icon: "globe"; small: true; clicked => { root.new-name = ""; root.new-url = ""; root.asking-url = true; } }
+                }
+                Rectangle { vertical-stretch: 1; }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                if Cal.view == 0: MonthView {}
+                if Cal.view == 1: WeekView {}
+                if Cal.view == 2: AgendaView {}
+            }
+        }
+    }
+
+    cal-menu := Menu {
+        x: 20px;
+        y: 300px;
+        menu-width: 180px;
+        entries: [{ text: "Remove calendar", icon: "trash", danger: true }];
+        chosen(i) => { if (i == 0) { root.asking-remove = true; } }
+    }
+
+    // ── the event ─────────────────────────────────────────────────────────
+    Dialog {
+        open: Cal.editing;
+        title: Cal.ed-new ? "New event" : Cal.ed-read-only ? Cal.ed-title : "Event";
+        text: Cal.ed-read-only ? "In " + Cal.ed-calendar-name + ", which can't be changed here." : "";
+        card-width: 480px;
+        dismissed => { Cal.editing = false; }
+        if !Cal.ed-read-only: Field { placeholder: "Title"; text <=> Cal.ed-title; }
+        HorizontalLayout {
+            spacing: 10px;
+            Label { text: "All day"; horizontal-stretch: 1; }
+            Switch { on <=> Cal.ed-all-day; enabled: !Cal.ed-read-only; }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Field { placeholder: "2026-10-22"; text <=> Cal.ed-date; read-only: Cal.ed-read-only; icon: "calendar"; }
+            if !Cal.ed-all-day: Field { width: 90px; placeholder: "14:00"; text <=> Cal.ed-start; read-only: Cal.ed-read-only; icon: "clock"; }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Dim { text: "to"; width: 22px; }
+            Field { placeholder: "2026-10-22"; text <=> Cal.ed-end-date; read-only: Cal.ed-read-only; }
+            if !Cal.ed-all-day: Field { width: 90px; placeholder: "15:00"; text <=> Cal.ed-end; read-only: Cal.ed-read-only; }
+        }
+        Field { placeholder: "Where"; icon: "mapPin"; text <=> Cal.ed-location; read-only: Cal.ed-read-only; }
+        Field { placeholder: "Notes"; icon: "doc"; text <=> Cal.ed-notes; read-only: Cal.ed-read-only; }
+        if !Cal.ed-read-only: VerticalLayout {
+            spacing: 6px;
+            Caption { text: "REPEATS"; }
+            Seg { options: ["Never", "Daily", "Weekly", "Monthly", "Yearly"]; current <=> Cal.ed-repeat; }
+        }
+        if !Cal.ed-read-only && Cal.ed-calendars.length > 1: VerticalLayout {
+            spacing: 6px;
+            Caption { text: "CALENDAR"; }
+            Seg { options: Cal.ed-calendars; current <=> Cal.ed-calendar; }
+        }
+        if Cal.ed-error != "": Text { text: Cal.ed-error; color: Theme.danger; font-size: Theme.fs(12); wrap: word-wrap; }
+        HorizontalLayout {
+            spacing: 8px;
+            if !Cal.ed-new && !Cal.ed-read-only: Button { text: "Delete"; icon: "trash"; kind: "danger"; clicked => { Cal.delete-event(); } }
+            Rectangle { horizontal-stretch: 1; }
+            Button { text: Cal.ed-read-only ? "Close" : "Cancel"; clicked => { Cal.editing = false; } }
+            if !Cal.ed-read-only: Button { text: "Save"; kind: "primary"; clicked => { Cal.save-event(); } }
+        }
+    }
+
+    Dialog {
+        open: root.asking-new;
+        title: "New calendar";
+        text: "Kept as a .ics file in ~/.local/share/hyprshell-calendar.";
+        dismissed => { root.asking-new = false; }
+        Field { placeholder: "Name"; text <=> root.new-name; accepted(t) => { Cal.add-calendar(t); root.asking-new = false; } }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-new = false; } }
+            Button { text: "Create"; kind: "primary"; clicked => { Cal.add-calendar(root.new-name); root.asking-new = false; } }
+        }
+    }
+
+    Dialog {
+        open: root.asking-url;
+        title: "Subscribe to a calendar";
+        text: "Its address ends in .ics, or starts with webcal:// — Google Calendar's \"Secret address in iCal format\", a team's, holidays. It's read every hour; changes are made where it lives.";
+        card-width: 480px;
+        dismissed => { root.asking-url = false; }
+        Field { placeholder: "Name"; text <=> root.new-name; }
+        Field { placeholder: "https://…/calendar.ics"; icon: "globe"; text <=> root.new-url; mono: true; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-url = false; } }
+            Button { text: "Subscribe"; kind: "primary"; clicked => { Cal.subscribe(root.new-name, root.new-url); root.asking-url = false; } }
+        }
+    }
+
+    Dialog {
+        open: root.asking-remove;
+        title: "Remove this calendar?";
+        text: "A calendar of your own goes to the Trash with its events; a subscription just stops.";
+        dismissed => { root.asking-remove = false; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.asking-remove = false; } }
+            Button { text: "Remove"; kind: "danger"; clicked => { Cal.remove-calendar(root.menu-for); root.asking-remove = false; } }
+        }
+    }
+
+    Toast { text: Cal.toast; }
+}

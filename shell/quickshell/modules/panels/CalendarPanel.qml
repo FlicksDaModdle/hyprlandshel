@@ -45,8 +45,8 @@ PanelSurface {
         return out;
     }
 
-    // Invitations accepted in Mail (mail/), when it runs.
-    readonly property var upcoming: Services.Mail.available ? Services.Mail.upcoming(4) : []
+    // The Calendar app's events, and invitations accepted in Mail (mail/).
+    readonly property var upcoming: Services.Calendar.upcoming(4)
 
     implicitWidth: 320
     implicitHeight: 14 + 34 + 10 + 24 + Math.ceil(cells.length / 7) * 36 + 14
@@ -94,7 +94,7 @@ PanelSurface {
                         anchors.centerIn: parent
                         name: navBtn.modelData.icon
                         size: 14
-                        inkColor: Config.Appearance.ink2
+                        inkColor: ev.modelData.color || Config.Appearance.ink2
                         monochrome: true
                     }
 
@@ -168,8 +168,8 @@ PanelSurface {
                 }
                 // Something on: a dot under the date.
                 Rectangle {
-                    visible: cell.modelData.day > 0 && Services.Mail.events.length > 0
-                             && Services.Mail.eventsOn(root.shownYear, root.shownMonth, cell.modelData.day).length > 0
+                    visible: cell.modelData.day > 0 && Services.Calendar.all.length > 0
+                             && Services.Calendar.eventsOn(root.shownYear, root.shownMonth, cell.modelData.day).length > 0
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 4
@@ -244,6 +244,7 @@ PanelSurface {
                     onTapped: {
                         Config.UiState.closeAll();
                         if (ev.modelData.message) Services.Mail.openMessage(ev.modelData.message);
+                        else Services.Calendar.open();
                     }
                 }
             }
