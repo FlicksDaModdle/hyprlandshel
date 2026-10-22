@@ -689,11 +689,17 @@ hl.bind("XF86AudioPrev", hl.dsp.exec_cmd("playerctl previous"),   { locked = tru
 ---- WINDOWS AND WORKSPACES ----
 --------------------------------
 
-hl.window_rule({
-    name  = "suppress-maximize-events",
-    match = { class = ".*" },
-    suppress_event = "maximize",
-})
+-- Tiling: an app's own maximise is ignored, the layout decides sizes
+-- (Super+Shift+F maximises). In the Windows 11 behaviour the maximise
+-- button in an app's title bar does what it says, as on Windows: the
+-- window fills the screen above the dock, and a second press puts it back.
+if window_mode ~= "windows" then
+    hl.window_rule({
+        name  = "suppress-maximize-events",
+        match = { class = ".*" },
+        suppress_event = "maximize",
+    })
+end
 
 -- No blur rule for kitty. Windows are not layer surfaces: decoration.blur
 -- above already blurs behind any window with transparency, so kitty's

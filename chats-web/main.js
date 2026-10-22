@@ -111,9 +111,21 @@ function create() {
         web.setBounds({ x: 0, y: BAR, width, height: Math.max(0, height - BAR) });
         if (off) off.setBounds({ x: 0, y: BAR, width, height: Math.max(0, height - BAR) });
     };
-    layout();
-    win.on('resize', () => {
+    // Laid out again a moment after any change of size as well: on Wayland
+    // the bounds can still be the old ones when the event comes (maximise,
+    // a resize from the compositor), which left the page at its old size
+    // inside a bigger window.
+    let later = [];
+    const relayout = () => {
         layout();
+        for (const t of later) clearTimeout(t);
+        later = [60, 250].map(ms => setTimeout(() => { if (win && !win.isDestroyed()) layout(); }, ms));
+    };
+    layout();
+    for (const ev of ['resized', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'restore', 'show'])
+        win.on(ev, relayout);
+    win.on('resize', () => {
+        relayout();
         if (!win.isMaximized()) {
             const [w, h] = win.getSize();
             settings.width = w; settings.height = h;
