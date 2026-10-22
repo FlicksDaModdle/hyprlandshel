@@ -101,9 +101,10 @@ Column {
                 text: root.face.addFailed ? root.face.status
                     : root.face.adding ? (root.face.addingAlone
                         ? "The infrared camera is learning your face. The webcam can't run beside it on this laptop"
+                        // The webcam's trouble first: it's why the circle is empty.
+                        : !root.seeing && root.face.previewError !== "" ? root.face.previewError
                         : root.face.recording ? "The infrared camera is learning your face. Hold still, an arm's length away"
                         : root.seeing ? "Centre your face in the circle"
-                        : root.face.previewError !== "" ? root.face.previewError
                         : "Starting the webcam…")
                     : root.face.faces > 0 ? "It unlocks for you at a glance. Wear glasses sometimes? Add that as an alternative look"
                     : "Add your face and Howdy unlocks for you at a glance"

@@ -489,10 +489,19 @@ Singleton {
                 -vf fps=12,scale=640:-2 -q:v 5 -update 1 -atomic_writing 1 -y "$out"
             command -v setpriv >/dev/null 2>&1 && exec setpriv --pdeathsig TERM -- ffmpeg "$@"
             exec ffmpeg "$@"`
-        stderr: StdioCollector { id: previewErr }
+        // What ffmpeg says, as it says it (it can complain and keep going).
+        property string said: ""
+        stderr: SplitParser {
+            onRead: line => {
+                if (line.trim() === "") return;
+                previewProc.said = line.trim();
+                console.warn("FaceUnlock: ffmpeg:", previewProc.said);
+            }
+        }
+        onStarted: previewProc.said = ""
         onExited: code => {
             if (previewProc.stopping) return;
-            const said = previewErr.text.trim().split("\n").pop() || "";
+            const said = previewProc.said;
             console.info("FaceUnlock: webcam picture stopped (" + code + "):", said || "-");
             root.previewing = false;
             root.previewFileReady = false;
@@ -515,7 +524,22 @@ Singleton {
     Process {
         id: readyCheck
         command: ["test", "-s", root.previewFile]
-        onExited: code => { if (code === 0 && root.previewing) root.previewFileReady = true; }
+        onExited: code => {
+            if (code !== 0 || !root.previewing) return;
+            root.previewFileReady = true;
+            console.info("FaceUnlock: first webcam frame in", root.previewFile);
+        }
+    }
+    // On, and still nothing after a few seconds: said, with ffmpeg's last
+    // word if it had one.
+    Timer {
+        interval: 4000
+        running: root.previewing && !root.previewFileReady
+        onTriggered: {
+            root.previewError = "The webcam is on, but no picture has come from it"
+                + (previewProc.said !== "" ? ": " + previewProc.said : "");
+            console.warn("FaceUnlock:", root.previewError, "(" + root.previewDevice + " → " + root.previewFile + ")");
+        }
     }
     // A new frame to show, while it runs.
     Timer { interval: 90; repeat: true; running: root.previewReady; onTriggered: root.previewFrame++ }
