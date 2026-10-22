@@ -87,7 +87,7 @@ Scope {
                 // Your ~/.face, then the picture the greeter shows.
                 pictures: [Quickshell.env("HOME") + "/.face",
                            "/var/lib/AccountsService/icons/" + Services.SysInfo.user]
-                statusText: lockAuth.status || lockAuth.pamMessage || lockAuth.info
+                statusText: lockAuth.status || lockAuth.pamMessage || (lockAuth.faceState ? "" : lockAuth.info)
 
                 onPower: action => {
                     if (action === "suspend") Services.Session.suspend();

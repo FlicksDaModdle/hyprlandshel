@@ -23,7 +23,8 @@ import "../icons"
 //   prompt, promptEcho  optional: a further question from PAM, asked in
 //                       the field, shown in clear when promptEcho is set
 //   info               optional: what your face (Howdy) is doing
-//   canRetryFace, retryFace()  optional: offer to look for your face again
+//   canRetryFace, retryFace()  optional: the face glyph and its "Not recognised"
+//                               pill look again when tapped
 //   wake()             optional: the pointer moved (you may be back)
 //
 // — the lock screen's surface and the greeter's GreeterState both are.
@@ -57,7 +58,12 @@ Item {
     signal stepSession(int delta)
 
     // The line under the field; the caller may add to auth.status.
-    property string statusText: auth.status || auth.info || ""
+    // The password's: how the face is doing shows at the top.
+    property string statusText: auth.status || (auth.faceState ? "" : auth.info) || ""
+    function rescan() {
+        view.auth.retryFace();
+        view.takeKeys();
+    }
 
     // Bottom left: a line of text, or a component in its place. A
     // component should colour itself with view.fg3, which reads on any
@@ -244,27 +250,64 @@ Item {
         FaceScan {
             id: faceScan
             anchors.horizontalCenter: parent.horizontalCenter
-            y: Math.max(14, clock.y - height - 34)
+            y: Math.max(14, clock.y - height - 48)
             size: 58
             state: view.primary && view.auth.faceState ? view.auth.faceState : ""
             ink: view.fg
             accent: view.ap.accent
 
-            // Not found (or it timed out): the glyph is the way to look again.
+            // Not found (or it timed out): the glyph, and the pill under it,
+            // are the way to look again.
             readonly property bool canRetry: state === "failed" && view.auth.canRetryFace === true
             HoverHandler { enabled: faceScan.canRetry; cursorShape: Qt.PointingHandCursor }
-            TapHandler { enabled: faceScan.canRetry; onTapped: { view.auth.retryFace(); view.takeKeys(); } }
+            TapHandler { enabled: faceScan.canRetry; onTapped: view.rescan() }
         }
-        StyledText {
+        // What came of the scan, when it didn't find you: a pill of its own
+        // under the glyph, rather than words under the password.
+        Rectangle {
+            id: faceMissed
             anchors.horizontalCenter: faceScan.horizontalCenter
             anchors.top: faceScan.bottom
-            anchors.topMargin: 4
-            opacity: faceScan.canRetry ? faceScan.opacity : 0
+            anchors.topMargin: 8
+            readonly property bool shown: faceScan.state === "failed"
+            opacity: missedSpring.value
             visible: opacity > 0.01
-            text: "Tap to try again"
-            font.pixelSize: view.ap.fs(11)
-            font.weight: Font.DemiBold
-            color: view.fg2
+            scale: 0.9 + 0.1 * missedSpring.value
+            Spring { id: missedSpring; to: faceMissed.shown ? 1 : 0; response: 380; bounce: 0.4 }
+            width: missedRow.implicitWidth + 24
+            height: 28
+            radius: 14
+            color: missedHover.hovered && faceScan.canRetry ? Qt.rgba(0, 0, 0, 0.42) : Qt.rgba(0, 0, 0, 0.28)
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, 0.1)
+            Row {
+                id: missedRow
+                anchors.centerIn: parent
+                spacing: 8
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 7
+                    height: 7
+                    radius: 3.5
+                    color: faceScan.bad
+                }
+                StyledText {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Not recognised"
+                    font.pixelSize: view.ap.fs(12)
+                    font.weight: Font.DemiBold
+                    color: view.fg
+                }
+                StyledText {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: faceScan.canRetry
+                    text: "Tap to scan again"
+                    font.pixelSize: view.ap.fs(12)
+                    color: view.fg2
+                }
+            }
+            HoverHandler { id: missedHover; enabled: faceScan.canRetry; cursorShape: Qt.PointingHandCursor }
+            TapHandler { enabled: faceScan.canRetry; onTapped: view.rescan() }
         }
 
         // ── clock ─────────────────────────────────────────────────────────────
@@ -277,7 +320,7 @@ Item {
             // between it and the row along the bottom (a short screen, or
             // a large shell scale).
             readonly property real restY: view.primary
-                ? Math.max(view.faceUp ? 106 : 16, Math.min(stage.height * 0.13 + (view.faceUp ? 52 : 0),
+                ? Math.max(view.faceUp ? 124 : 16, Math.min(stage.height * 0.13 + (view.faceUp ? 66 : 0),
                                         stage.height - 96 - card.height - 24 - height))
                 : (stage.height - height) / 2
             y: restY + (1 - view.shown) * -14
@@ -701,37 +744,6 @@ Item {
                     color: view.auth.failed || view.keyboardMissing ? view.ap.accent : view.ap.ink3
                 }
 
-                // Your face again, once the last look didn't find you
-                // (Howdy; `auth.canRetryFace` and `auth.retryFace()`).
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    visible: view.auth.canRetryFace === true && !view.auth.busy && view.auth.faceState !== "found"
-                    width: faceRow.implicitWidth + 22
-                    height: 28
-                    radius: 14
-                    color: faceHover.hovered ? view.ap.sel : "transparent"
-                    Row {
-                        id: faceRow
-                        anchors.centerIn: parent
-                        spacing: 7
-                        MonoIcon {
-                            anchors.verticalCenter: parent.verticalCenter
-                            name: "user"
-                            size: 13
-                            monochrome: true
-                            inkColor: view.ap.accent
-                        }
-                        StyledText {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "Try your face again"
-                            font.pixelSize: view.ap.fs(12)
-                            font.weight: Font.DemiBold
-                            color: view.ap.accent
-                        }
-                    }
-                    HoverHandler { id: faceHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { view.auth.retryFace(); view.takeKeys(); } }
-                }
             }
         }
 
