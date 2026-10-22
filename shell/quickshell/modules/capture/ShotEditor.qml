@@ -208,33 +208,22 @@ FloatingWindow {
         HoverHandler { id: bh; cursorShape: Qt.PointingHandCursor }
         TapHandler { id: bt; onTapped: b.clicked() }
     }
-    // A floating pill that holds a row of them.
-    component Pill: Rectangle {
-        default property alias content: pillRow.data
-        width: pillRow.implicitWidth + 12
+    // A floating pill of tools, colours and weights.
+    Rectangle {
+        id: tools
+        z: 2
+        x: 14
+        y: 14
+        width: toolRow.implicitWidth + 12
         height: 50
         radius: height / 2
         color: Config.Appearance.surface
         border.width: 1
         border.color: Config.Appearance.edge
         Row {
-            id: pillRow
-            anchors.centerIn: parent
-            spacing: 2
-        }
-    }
-    component Divider: Rectangle {
-        width: 1
-        height: 24
-        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
-        color: Config.Appearance.rule
-    }
-
-    Pill {
-        id: tools
-        z: 2
-        x: 14
-        y: 14
+        id: toolRow
+        anchors.centerIn: parent
+        spacing: 2
         Repeater {
             model: [["pen", "pen", "Pen"], ["arrow", "arrowTool", "Arrow"], ["box", "square", "Box"],
                     ["mark", "highlighter", "Highlight"], ["pixel", "grid", "Pixelate"], ["text", "font", "Text"],
@@ -248,7 +237,7 @@ FloatingWindow {
             }
         }
         Item { width: 6; height: 1 }
-        Divider {}
+        Rectangle { width: 1; height: 24; anchors.verticalCenter: parent.verticalCenter; color: Config.Appearance.rule }
         Item { width: 8; height: 1 }
         Repeater {
             model: [Config.Appearance.accent, "#e5484d", "#f5c518", "#30a46c", "#3e63dd", "#ffffff", "#111111"]
@@ -280,7 +269,7 @@ FloatingWindow {
             }
         }
         Item { width: 8; height: 1 }
-        Divider {}
+        Rectangle { width: 1; height: 24; anchors.verticalCenter: parent.verticalCenter; color: Config.Appearance.rule }
         Item { width: 4; height: 1 }
         Repeater {
             model: [[2, "S"], [4, "M"], [8, "L"]]
@@ -293,20 +282,33 @@ FloatingWindow {
             }
         }
         Item { width: 4; height: 1 }
-        Divider {}
+        Rectangle { width: 1; height: 24; anchors.verticalCenter: parent.verticalCenter; color: Config.Appearance.rule }
         Btn { icon: "rotateCw"; onClicked: win.undo(); transform: Scale { origin.x: 19; xScale: -1 } }
         Btn { icon: "rotateCw"; onClicked: win.redo() }
+        }
     }
 
-    Pill {
+    // What to do with it, in a pill of its own.
+    Rectangle {
         id: actions
         z: 2
         anchors.right: parent.right
         anchors.rightMargin: 14
         y: 14
-        Btn { icon: "clipboard"; label: "Copy"; onClicked: win.save(true) }
-        Btn { icon: "download"; label: "Save"; primary: true; onClicked: win.save(false) }
-        Btn { icon: "x"; onClicked: win.close() }
+        width: actionRow.implicitWidth + 12
+        height: 50
+        radius: height / 2
+        color: Config.Appearance.surface
+        border.width: 1
+        border.color: Config.Appearance.edge
+        Row {
+            id: actionRow
+            anchors.centerIn: parent
+            spacing: 2
+            Btn { icon: "clipboard"; label: "Copy"; onClicked: win.save(true) }
+            Btn { icon: "download"; label: "Save"; primary: true; onClicked: win.save(false) }
+            Btn { icon: "x"; onClicked: win.close() }
+        }
     }
 
     // What happened (saved, copied), as a pill along the bottom that goes.
