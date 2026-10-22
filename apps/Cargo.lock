@@ -2356,6 +2356,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyprshell-software"
+version = "0.1.0"
+dependencies = [
+ "hyprshell-kit",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "hyprshell-text"
 version = "0.1.0"
 dependencies = [

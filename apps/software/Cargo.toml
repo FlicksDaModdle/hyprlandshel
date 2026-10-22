@@ -1,0 +1,12 @@
+[package]
+name = "hyprshell-software"
+version = "0.1.0"
+edition = "2021"
+description = "Software for Hyprshell: the Arch repositories, the AUR and Flathub — installed, available and out of date"
+
+[dependencies]
+hyprshell-kit = { workspace = true }
+slint = { workspace = true }
+
+[build-dependencies]
+slint-build = { workspace = true }
