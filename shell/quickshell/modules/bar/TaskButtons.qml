@@ -122,12 +122,10 @@ Item {
 
                 TapHandler {
                     onTapped: {
-                        const wins = task.modelData.windows;
                         // Already focused with more than one window: step to
-                        // the next, the way a taskbar group behaves.
-                        const at = wins.findIndex(c => c.address === Services.Compositor.activeAddress);
-                        const next = at >= 0 ? wins[(at + 1) % wins.length] : wins[0];
-                        Services.Compositor.focusClient(next.address);
+                        // the next, the way a taskbar group behaves; with
+                        // one, minimise it in the Windows 11 behaviour.
+                        Services.Compositor.activateOrMinimise(task.modelData.windows);
                     }
                 }
                 TapHandler {

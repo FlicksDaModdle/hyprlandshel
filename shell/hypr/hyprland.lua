@@ -689,6 +689,30 @@ hl.bind("XF86AudioPrev", hl.dsp.exec_cmd("playerctl previous"),   { locked = tru
 ---- WINDOWS AND WORKSPACES ----
 --------------------------------
 
+-- The minimise plugin (shell/hyprplugin): Hyprland drops the request an
+-- app's own minimise button sends, and this passes it on to the shell,
+-- which puts the window away. Loaded only when it was built for the
+-- Hyprland installed now; after an update the shell builds it again, and
+-- until then the minimise buttons just do nothing.
+do
+    local data = os.getenv("XDG_DATA_HOME")
+    if not data or data == "" then data = (os.getenv("HOME") or "") .. "/.local/share" end
+    local dir = data .. "/hyprshell/hyprplugin"
+    local f = io.open(dir .. "/built-for", "r")
+    if f then
+        local built = f:read("*l") or ""
+        f:close()
+        local now = nil
+        pcall(function()
+            local p = io.popen([[b=$(command -v Hyprland || command -v hyprland) && stat -Lc '%s %Y' "$b"]])
+            if p then now = p:read("*l"); p:close() end
+        end)
+        if built ~= "" and (now == nil or now == built) and hl.plugin and hl.plugin.load then
+            pcall(hl.plugin.load, dir .. "/hyprshell-minimize.so")
+        end
+    end
+end
+
 -- Tiling: an app's own maximise is ignored, the layout decides sizes
 -- (Super+Shift+F maximises). In the Windows 11 behaviour the maximise
 -- button in an app's title bar does what it says, as on Windows: the

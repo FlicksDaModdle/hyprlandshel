@@ -594,10 +594,8 @@ Variants {
         function launchOrFocus(app) {
             const wins = windowsFor(app);
             if (wins.length > 0) {
-                // Already focused with more than one window: cycle.
-                const at = wins.findIndex(c => c.address === Services.Compositor.activeAddress);
-                const next = at >= 0 ? wins[(at + 1) % wins.length] : wins[0];
-                Services.Compositor.focusClient(next.address);
+                // Already focused: cycle, or minimise its only window.
+                Services.Compositor.activateOrMinimise(wins);
                 return;
             }
             if (Config.Apps.isShellTile(app.key)) {

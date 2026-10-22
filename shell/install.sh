@@ -647,6 +647,21 @@ else
     warn "accent files" "left to the shell, which writes them when it starts (no Rust helpers built)"
 fi
 
+# ── the minimise plugin ──────────────────────────────────────────────────────
+#
+# Hyprland drops the request an app's own minimise button sends; a small
+# plugin (hyprplugin/) passes it on to the shell. Built here from
+# Hyprland's headers, as you; if they aren't there, minimise still works
+# from Super+Down and the dock, just not from apps' own buttons.
+head1 "Minimise buttons"
+if [ -f "$SRC/hyprplugin/install.sh" ]; then
+    if _plug=$(bash "$SRC/hyprplugin/install.sh" 2>&1); then
+        ok "minimise plugin" "$(printf '%s\n' "$_plug" | tail -n 1)"
+    else
+        warn "minimise plugin" "$(printf '%s\n' "$_plug" | tail -n 1)"
+    fi
+fi
+
 # ── the files the shell generates ────────────────────────────────────────────
 #
 # The shell writes several files from your theme: kitty's palette include,

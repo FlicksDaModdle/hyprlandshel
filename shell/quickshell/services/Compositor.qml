@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import "." as Services
+import "../config" as Config
 
 // Compositor state: workspaces, windows and their geometry.
 //
@@ -274,7 +275,8 @@ Singleton {
     readonly property string activeTitle: activeClient ? activeClient.title : ""
 
     function clientsOn(workspaceId) {
-        return clients.filter(c => c.workspace === workspaceId);
+        return clients.filter(c => c.workspace === workspaceId
+                                   || (c.minimised && root.minimisedFrom(c) === workspaceId));
     }
 
     // ── what each output is showing ───────────────────────────────────────
@@ -311,7 +313,8 @@ Singleton {
         const m = root.monitorNamed(name);
         const id = m ? m.id : -1;
         return root.clients.filter(c => ws.indexOf(c.workspace) >= 0
-                                        || (c.pinned && c.monitor === id));
+                                        || (c.pinned && c.monitor === id)
+                                        || (c.minimised && ws.indexOf(root.minimisedFrom(c)) >= 0));
     }
 
     // Every window on one output, whatever workspace it is on.
@@ -371,6 +374,9 @@ Singleton {
                                   : (c.fullscreen ? 2 : 0),
                     // Shown on every workspace of its monitor.
                     pinned: !!c.pinned,
+                    // Put away with its minimise button, Super+Down or the
+                    // dock: on a hidden workspace of its own.
+                    minimised: !!(c.workspace && c.workspace.name === root.minimisedWorkspace),
                     // 0 is the window with focus, 1 the one before it, and
                     // so on: the order Alt+Tab walks.
                     focusHistory: typeof c.focusHistoryID === "number"
@@ -453,6 +459,15 @@ Singleton {
         target: Hyprland
         function onRawEvent(event) {
             if (event.name === "openwindow") root.windowOpened(event.data);
+            // An app's own minimise button (passed on by the shell's
+            // Hyprland plugin, shell/hyprplugin) or a taskbar's request:
+            // "ADDRESS,1" to put it away, "ADDRESS,0" to bring it back.
+            else if (event.name === "minimized") {
+                const parts = String(event.data || "").split(",");
+                const addr = "0x" + root.normAddress(parts[0]);
+                if (parts[1] === "0") root.restoreClient(addr);
+                else root.minimiseClient(addr);
+            }
             else if (event.name === "closewindow") root.windowClosed(event.data);
             switch (event.name) {
             case "openwindow":
@@ -595,6 +610,11 @@ Singleton {
         };
         const key = root.normAddress(addr);
         const was = root.snapState[key] || (c.fullscreenMode === 1 ? "max" : "");
+        // Down from a window of its own size minimises it, as on Windows.
+        if (where === "down" && was === "") {
+            root.minimiseClient(addr);
+            return;
+        }
         const next = {
             left:  { right: "", tr: "", br: "" }[was] ?? "left",
             right: { left: "", tl: "", bl: "" }[was] ?? "right",
@@ -625,8 +645,80 @@ Singleton {
 
     function focusClient(address) {
         if (!address) return;
+        // A minimised window comes back first: the dock, the taskbar,
+        // Alt+Tab and the overview all bring one forward through here.
+        const c = root.clientFor(address);
+        if (c && c.minimised) { root.restoreClient(address); return; }
         dispatch("hl.dsp.focus({ window = " + luaSel("address:" + address) + " })");
         actionSettle.restart();
+    }
+
+    // ── minimise ─────────────────────────────────────────────────────────
+    // Hyprland has no minimised state, so a minimised window goes to a
+    // special workspace that is never shown, and comes back to the one it
+    // left. Until then it still counts as on that workspace for the dock
+    // and the taskbar, as on Windows.
+    readonly property string minimisedWorkspace: "special:minimized"
+    // The plugin that passes an app's own minimise button on (shell/
+    // hyprplugin) is built for one Hyprland: after an update it's built
+    // again here, in the background, a little after the shell starts.
+    Timer {
+        running: true
+        interval: 8000
+        onTriggered: Quickshell.execDetached(["sh", "-c",
+            'f="${XDG_DATA_HOME:-$HOME/.local/share}/hyprshell/hyprplugin/install.sh"; '
+            + '[ -f "$f" ] && exec nice bash "$f" --if-stale >/dev/null 2>&1'])
+    }
+    // normalised address → the workspace it was minimised from.
+    property var minimisedOrigin: ({})
+    function clientFor(address) {
+        const want = root.normAddress(address);
+        return root.clients.find(w => root.normAddress(w.address) === want) || null;
+    }
+    function minimisedFrom(c) {
+        const id = root.minimisedOrigin[root.normAddress(c.address)];
+        return id !== undefined ? id : root.focusedId;
+    }
+    function minimiseClient(address) {
+        if (!address) return;
+        const c = root.clientFor(address);
+        if (c && c.minimised) return;
+        const key = root.normAddress(address);
+        const o = Object.assign({}, root.minimisedOrigin);
+        o[key] = c && c.workspace > 0 ? c.workspace : root.focusedId;
+        root.minimisedOrigin = o;
+        // Whatever snapped state it had is kept for when it's back.
+        dispatch('hl.dsp.window.move({ workspace = "' + root.minimisedWorkspace + '", follow = false, window = '
+                 + luaSel("address:" + address) + " })");
+        actionSettle.restart();
+    }
+    function restoreClient(address) {
+        if (!address) return;
+        const c = root.clientFor(address);
+        if (c && !c.minimised) return;
+        const key = root.normAddress(address);
+        const back = root.minimisedOrigin[key];
+        const ws = back !== undefined && back > 0 ? back : (root.focusedId > 0 ? root.focusedId : 1);
+        const o = Object.assign({}, root.minimisedOrigin);
+        delete o[key];
+        root.minimisedOrigin = o;
+        dispatch("hl.dsp.window.move({ workspace = " + ws + ", follow = false, window = "
+                 + luaSel("address:" + address) + " })");
+        dispatch("hl.dsp.focus({ window = " + luaSel("address:" + address) + " })");
+        actionSettle.restart();
+    }
+    // A dock or taskbar click on an app's windows: the focused one's only
+    // window goes down in the Windows 11 behaviour, as on Windows; otherwise
+    // it steps through them, bringing a minimised one back.
+    function activateOrMinimise(wins) {
+        if (!wins || wins.length === 0) return;
+        const at = wins.findIndex(c => c.address === root.activeAddress && !c.minimised);
+        if (at >= 0 && wins.length === 1 && Config.Appearance.windowMode === "windows") {
+            root.minimiseClient(wins[0].address);
+            return;
+        }
+        const next = at >= 0 ? wins[(at + 1) % wins.length] : wins[0];
+        root.focusClient(next.address);
     }
 
     function closeClient(address) {
