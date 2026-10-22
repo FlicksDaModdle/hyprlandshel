@@ -134,11 +134,13 @@ Variants {
             && Services.Compositor.activeClient.fullscreenMode === 2
         readonly property bool launcherOverFullscreen: Config.UiState.launcherOpen && fullscreenHere
 
-        readonly property bool revealed: !Config.Appearance.barAutoHide
-                                         || hoverLatch
-                                         || panelHere
-                                         || launcherHere
-                                         || launcherOverFullscreen
+        // Away while locked, so it comes back down as the desktop does.
+        readonly property bool revealed: !Config.UiState.shellAway
+                                         && (!Config.Appearance.barAutoHide
+                                             || hoverLatch
+                                             || panelHere
+                                             || launcherHere
+                                             || launcherOverFullscreen)
 
         // Where the bar sits inside its surface. Hidden is a little more
         // than one bar-height up: the accent seam hangs a pixel below the

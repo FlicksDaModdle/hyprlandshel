@@ -123,6 +123,7 @@ Item {
     // bottom behind the corner line, clear between.
     Rectangle {
         anchors.fill: parent
+        opacity: 1 - view.away
         gradient: Gradient {
             GradientStop { position: 0.0;  color: Qt.rgba(0, 0, 0, view.vivid ? 0.34 : 0.04) }
             GradientStop { position: 0.38; color: Qt.rgba(0, 0, 0, view.vivid ? 0.10 : 0) }
@@ -130,6 +131,15 @@ Item {
             GradientStop { position: 1.0;  color: Qt.rgba(0, 0, 0, view.vivid ? 0.52 : 0.07) }
         }
     }
+
+    // ── going ─────────────────────────────────────────────────────────────
+    // Let in: the clock, the card and the rest drift towards you and fade,
+    // and the dim clears off the wallpaper, so what's left is the desktop's
+    // own picture for the desktop to come up over. The lock screen sets it;
+    // the greeter has its own way out.
+    property bool leaving: false
+    readonly property real away: leave.value
+    Spring { id: leave; to: view.leaving ? 1 : 0; response: 420; bounce: 0 }
 
     // ── coming in ─────────────────────────────────────────────────────────
     readonly property real shown: arrive.value
@@ -242,6 +252,14 @@ Item {
         height: view.height / view.uiScale
         scale: view.uiScale
         transformOrigin: Item.TopLeft
+        opacity: 1 - view.away
+        visible: opacity > 0.002
+        transform: Scale {
+            origin.x: stage.width / 2
+            origin.y: stage.height * 0.42
+            xScale: 1 + view.away * 0.07
+            yScale: 1 + view.away * 0.07
+        }
 
         // ── your face ─────────────────────────────────────────────────────────
         // Face unlock's glyph (FaceScan), at the top above the clock, while
@@ -551,7 +569,7 @@ Item {
                         HoverHandler { cursorShape: Qt.IBeamCursor }
                         focus: view.primary
                         enabled: view.primary
-                        readOnly: view.auth.busy
+                        readOnly: view.auth.busy || view.leaving
                         echoMode: field.shown ? TextInput.Normal : TextInput.Password
                         passwordCharacter: "•"
                         passwordMaskDelay: 0

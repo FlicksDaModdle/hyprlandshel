@@ -77,12 +77,10 @@ Scope {
     // Found: the tick is drawn, and then the screen goes.
     Timer {
         id: unlockSoon
-        interval: 650
-        onTriggered: {
-            root.reset();
-            root.faceState = "";
-            Config.UiState.locked = false;
-        }
+        interval: 480
+        // Left as it is while the screen goes (the tick stays where it
+        // was); stop() clears it once the lock has gone.
+        onTriggered: Config.UiState.unlock()
     }
 
     PamContext {
@@ -160,6 +158,7 @@ Scope {
     }
 
     function submit() {
+        if (Config.UiState.unlocking) return;
         // Enter on an empty field tries your face again.
         if (entered.length === 0) { retryFace(); return; }
         if (pam.active) return;
@@ -203,7 +202,7 @@ Scope {
         onCompleted: result => {
             if (result === PamResult.Success) {
                 root.reset();
-                Config.UiState.locked = false;
+                Config.UiState.unlock();
             } else {
                 root.failed = true;
                 root.entered = "";

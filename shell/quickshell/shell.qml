@@ -175,6 +175,7 @@ ShellRoot {
         ShotEditor { path: Config.UiState.shotEditorPath }
     }
     Lock {}
+    Arrival {}
     AltTab {}
     // Last: over everything, the screen's own corners rounded off.
     ScreenCorners {}

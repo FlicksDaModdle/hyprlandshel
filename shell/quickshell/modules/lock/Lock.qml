@@ -114,6 +114,7 @@ Scope {
                 anchors.fill: parent
 
                 auth: lockAuth
+                leaving: Config.UiState.unlocking
             // Another monitor's surface has the keys: typing works there.
             keyboardElsewhere: lockAuth.keyboardSomewhere && !windowActive
             onWindowActiveChanged: lockAuth.setKeyboard(screenName, windowActive)

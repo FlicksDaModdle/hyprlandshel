@@ -189,10 +189,12 @@ Variants {
         readonly property bool hidesAway: Config.Appearance.dockAutoHide || fullscreenHere
         readonly property bool edgeStrip: !fullscreenHere || Config.Appearance.dockOverFullscreen
 
-        readonly property bool revealed: !hidesAway
-                                         || hoverLatch
-                                         || launcherHere
-                                         || afterLauncher
+        // Away while locked, so it rises back as the desktop comes up.
+        readonly property bool revealed: !Config.UiState.shellAway
+                                         && (!hidesAway
+                                             || hoverLatch
+                                             || launcherHere
+                                             || afterLauncher)
 
         onHoveredNowChanged: {
             if (hoveredNow) { hideDelay.stop(); hoverLatch = true; }

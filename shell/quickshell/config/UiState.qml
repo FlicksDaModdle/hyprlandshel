@@ -1,6 +1,7 @@
 pragma Singleton
 import QtQuick
 import Quickshell
+import "." as Config
 
 // Ephemeral cross-module UI state: which panel is open, transient hover and
 // OSD state. Deliberately not persisted — it resets on shell reload.
@@ -317,7 +318,58 @@ Singleton {
         closeAll();
         settingsOpen = false;
         if (locked) lockRequested();
+        unlocking = false;
+        arriving = false;
+        leaveDelay.stop();
+        backDelay.stop();
+        arriveEnd.stop();
         locked = true;
+        shellAway = true;
+    }
+
+    // ── unlocking ─────────────────────────────────────────────────────────
+    // Not at once: the lock screen's clock and card lift away and its dim
+    // clears off the wallpaper (`unlocking`), and only then does the lock
+    // go. Underneath, a copy of that bare wallpaper is already up
+    // (lock/Arrival.qml, `arriving`), and fades once the lock has gone, so
+    // the windows come up through it while the bar and dock, kept away
+    // while locked (`shellAway`), spring back in.
+    property bool unlocking: false
+    property bool arriving: false
+    property bool shellAway: false
+    signal arrived()
+
+    function unlock() {
+        if (!locked || unlocking) return;
+        if (!Config.Appearance.animated) {
+            locked = false;
+            shellAway = false;
+            return;
+        }
+        unlocking = true;
+        arriving = true;
+        leaveDelay.restart();
+    }
+    Timer {
+        id: leaveDelay
+        interval: 440
+        onTriggered: {
+            root.unlocking = false;
+            root.locked = false;
+            backDelay.restart();
+        }
+    }
+    // A beat after the lock has gone, so the bar and dock are seen coming.
+    Timer {
+        id: backDelay
+        interval: 90
+        onTriggered: { root.shellAway = false; root.arrived(); arriveEnd.restart(); }
+    }
+    // The wallpaper laid over the desktop has faded by now.
+    Timer {
+        id: arriveEnd
+        interval: 640
+        onTriggered: root.arriving = false
     }
 
     // ── on-screen display ─────────────────────────────────────────────────
