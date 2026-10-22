@@ -11,6 +11,8 @@ Item {
     required property var app
 
     readonly property var svc: FilesService
+    // Hidden, and shown because hidden things are: faded, so it reads so.
+    opacity: tile.entry.hidden ? 0.55 : 1
     // Whether this tile is anywhere near the visible part of the view. A
     // folder of screenshots would otherwise decode every image in it the
     // moment you opened the folder — hundreds of full-resolution PNGs, for

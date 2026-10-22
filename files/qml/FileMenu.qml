@@ -156,6 +156,20 @@ PanelSurface {
                        run: () => menu.svc.copyPathToClipboard(menu.app.selectedPaths()) });
             out.push({ n: "Duplicate", icon: "plus",
                        run: () => menu.app.duplicateSelected() });
+            // Hidden by the folder's .hidden (as Nautilus and Dolphin do),
+            // and shown again; a dotfile is hidden by its name, which only
+            // renaming changes.
+            if (!menu.app.inTrash) {
+                const chosen = menu.app.entries.filter(e => menu.app.isSelected(e.name));
+                const shown = chosen.filter(e => e.hiddenBy === "").map(e => e.name);
+                const listed = chosen.filter(e => e.hiddenBy === "list").map(e => e.name);
+                if (shown.length)
+                    out.push({ n: "Hide", icon: "eye",
+                               run: () => menu.svc.hide(menu.app.cwd, shown) });
+                if (listed.length)
+                    out.push({ n: "Unhide", icon: "eye",
+                               run: () => menu.svc.unhide(menu.app.cwd, listed) });
+            }
             out.push({ n: "Rename…", icon: "sliders", rule: true,
                        run: () => { if (menu.count === 1) menu.app.renaming = t.name; } });
             out.push({ n: "Move to trash", icon: "trash",

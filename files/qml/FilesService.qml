@@ -121,7 +121,14 @@ QtObject {
     // `--` and a leading ./ are not optional: a directory named "-delete"
     // would otherwise be read by find as an option.
     function listCommand(path) {
-        return ["find", path, "-mindepth", "1", "-maxdepth", "1",
+        // The folder's `.hidden` after the listing, behind a record no
+        // listing can make ("//hidden": a name has no slash): the names in
+        // it are hidden as a dotfile is — the convention Nautilus and
+        // Dolphin keep, so what's hidden in one stays hidden in the others.
+        return ["sh", "-c",
+                'find "$1" -mindepth 1 -maxdepth 1 -printf "$2"; r=$?; '
+                + "printf '%s\\0' //hidden; cat -- \"$1/.hidden\" 2>/dev/null; exit $r",
+                "list", path,
                 // Backslash-t and backslash-zero as literal two-character
                 // escapes, which `find` expands itself. They cannot be real
                 // control characters here: argv strings are NUL-terminated,
@@ -129,12 +136,20 @@ QtObject {
                 // execve would reject the call.
                 // %m is the octal mode, which is how a downloaded binary
                 // gets told apart from a document with no suffix.
-                "-printf", "%y\\t%Y\\t%s\\t%T@\\t%m\\t%f\\0"];
+                "%y\\t%Y\\t%s\\t%T@\\t%m\\t%f\\0"];
     }
 
     function parseListing(text) {
         const out = [];
-        for (const rec of String(text || "").split("\0")) {
+        const all = String(text || "");
+        const cut = all.indexOf("//hidden\0");
+        const listing = cut >= 0 ? all.slice(0, cut) : all;
+        // The names in the folder's .hidden, one a line.
+        const listed = {};
+        if (cut >= 0)
+            for (const line of all.slice(cut + 9).split("\n"))
+                if (line.trim() !== "") listed[line.replace(/\r$/, "")] = true;
+        for (const rec of listing.split("\0")) {
             if (!rec) continue;
             const f = rec.split("\t");
             if (f.length < 6) continue;
@@ -144,7 +159,10 @@ QtObject {
             const kind = f[0] === "l" ? f[1] : f[0];
             out.push({
                 name: name,
-                hidden: name.charAt(0) === ".",
+                hidden: name.charAt(0) === "." || listed[name] === true,
+                // Why: "dot" (its name) or "list" (the folder's .hidden),
+                // which is what Hide and Unhide can change.
+                hiddenBy: name.charAt(0) === "." ? "dot" : listed[name] === true ? "list" : "",
                 dir: kind === "d",
                 link: f[0] === "l",
                 // A symlink whose target is gone: `find` reports its type as
@@ -968,6 +986,26 @@ QtObject {
     function trash(paths, dir) {
         if (!paths || !paths.length) return;
         run(["gio", "trash"].concat(paths), dir);
+    }
+
+    // Hiding and showing things again, by name, in the folder's `.hidden`.
+    // Names are arguments, never part of the script.
+    function hide(dir, names) {
+        if (!dir || !names || !names.length) return;
+        run(["sh", "-c",
+             'f="$1/.hidden"; shift; touch -- "$f" || exit 1; '
+             + 'for n; do grep -qxF -- "$n" "$f" || printf "%s\\n" "$n" >> "$f"; done',
+             "hide", dir].concat(names), dir);
+    }
+    function unhide(dir, names) {
+        if (!dir || !names || !names.length) return;
+        run(["sh", "-c",
+             'f="$1/.hidden"; shift; [ -f "$f" ] || exit 0; '
+             + 'tmp=$(mktemp "$f.XXXXXX") || exit 1; cp -- "$f" "$tmp"; '
+             + 'for n; do grep -vxF -- "$n" "$tmp" > "$tmp.n"; mv -- "$tmp.n" "$tmp"; done; '
+             // Nothing left hidden: no empty .hidden lying about.
+             + 'if [ -s "$tmp" ]; then mv -- "$tmp" "$f"; else rm -f -- "$tmp" "$f"; fi',
+             "unhide", dir].concat(names), dir);
     }
 
     function makeDirectory(path) {

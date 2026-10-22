@@ -739,6 +739,34 @@ PanelSurface {
                         }
                     }
                 }
+
+                Rectangle { width: 1; height: 16; anchors.verticalCenter: parent.verticalCenter; color: Appearance.rule }
+
+                // Hidden files and folders: shown, or not (Ctrl+H).
+                Rectangle {
+                    id: hiddenBtn
+                    readonly property bool on: FilesService.showHidden
+                    width: 30
+                    height: 26
+                    radius: Appearance.rSm
+                    color: tintHidden.value
+                    ColorSpring { id: tintHidden; to: hiddenBtn.on ? Appearance.accent
+                             : (hiddenArea.containsMouse ? Appearance.sel : "transparent") }
+                    MonoIcon {
+                        anchors.centerIn: parent
+                        name: "eye"
+                        size: 18
+                        inkColor: hiddenBtn.on ? Appearance.inkOnAccent : Appearance.ink2
+                        monochrome: true
+                    }
+                    MouseArea {
+                        id: hiddenArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: FilesService.showHidden = !FilesService.showHidden
+                    }
+                }
             }
         }
 

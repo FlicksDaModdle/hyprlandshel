@@ -17,6 +17,8 @@ Item {
     // 6px of padding above and below a 34px plate.
     implicitHeight: 46
     height: implicitHeight
+    // Hidden, and shown because hidden things are: faded, so it reads so.
+    opacity: row.entry.hidden ? 0.55 : 1
 
     Rectangle {
         id: fill
