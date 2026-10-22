@@ -91,34 +91,50 @@ did "Spotify is in ${SP#$HOME/}"
 if S=$(spicetify_bin); then
     did "Spicetify is installed ($S)"
 else
+    # Its own release first: built already, where the AUR package builds
+    # from source (Go and a JavaScript toolchain) and that build can fail.
+    # Fetched as Spicetify's own installer fetches it, without running a
+    # script from the internet: the release for this machine, unpacked
+    # into ~/.spicetify, linked from ~/.local/bin.
+    from_release() {
+        command -v curl >/dev/null 2>&1 || return 1
+        case "$(uname -m)" in
+            x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; *) return 1 ;;
+        esac
+        # The release page answers in JSON when asked to (no API limits).
+        page=$(curl -fsSLH 'Accept: application/json' https://github.com/spicetify/cli/releases/latest) || return 1
+        tag=${page%\,\"update_url*}
+        tag=${tag##*tag_name\":\"}
+        tag=${tag%\"}
+        tag=${tag#v}
+        printf '%s' "$tag" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$' || return 1
+        tmp=$(mktemp -d)
+        printf '    downloading Spicetify %s…\n' "$tag"
+        if curl -fsSL -o "$tmp/spicetify.tar.gz" \
+            "https://github.com/spicetify/cli/releases/download/v$tag/spicetify-$tag-linux-$arch.tar.gz" \
+            && mkdir -p "$HOME/.spicetify" "$BIN" \
+            && tar -xzf "$tmp/spicetify.tar.gz" -C "$HOME/.spicetify"; then
+            rm -rf "$tmp"
+            chmod +x "$HOME/.spicetify/spicetify"
+            ln -sf "$HOME/.spicetify/spicetify" "$BIN/spicetify"
+            did "Spicetify $tag in ~/.spicetify"
+            return 0
+        fi
+        rm -rf "$tmp"
+        return 1
+    }
     if pacman -Si spicetify-cli >/dev/null 2>&1; then
         printf '    updating the system and installing spicetify-cli (sudo pacman -Syu)…\n'
         sudo pacman -Syu --needed spicetify-cli || die "couldn't install spicetify-cli"
+    elif from_release; then
+        :
     elif command -v paru >/dev/null 2>&1 || command -v yay >/dev/null 2>&1; then
         h=$(command -v paru || command -v yay)
+        note "Spicetify's release couldn't be fetched; building it from the AUR instead"
         printf '    installing spicetify-cli from the AUR (%s) — it shows the PKGBUILD first…\n' "$(basename "$h")"
-        "$h" -S --needed spicetify-cli || die "couldn't install spicetify-cli"
+        "$h" -S --needed spicetify-cli || die "couldn't build spicetify-cli from the AUR either — check your connection to github.com and run this again"
     else
-        # Its own release, as its own installer does it, without running a
-        # script from the internet: the tarball for this machine, unpacked
-        # into ~/.spicetify, linked from ~/.local/bin.
-        command -v curl >/dev/null 2>&1 || die "no paru or yay, and no curl to fetch Spicetify with"
-        case "$(uname -m)" in
-            x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; *) die "no Spicetify release for $(uname -m)" ;;
-        esac
-        tag=$(curl -fsSL https://api.github.com/repos/spicetify/cli/releases/latest \
-              | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -n1)
-        [ -n "$tag" ] || die "couldn't find Spicetify's latest release"
-        tmp=$(mktemp -d)
-        trap 'rm -rf "$tmp"' EXIT
-        curl -fsSL -o "$tmp/spicetify.tar.gz" \
-            "https://github.com/spicetify/cli/releases/download/v$tag/spicetify-$tag-linux-$arch.tar.gz" \
-            || die "couldn't download Spicetify $tag"
-        mkdir -p "$HOME/.spicetify" "$BIN"
-        tar -xzf "$tmp/spicetify.tar.gz" -C "$HOME/.spicetify" || die "couldn't unpack Spicetify"
-        chmod +x "$HOME/.spicetify/spicetify"
-        ln -sf "$HOME/.spicetify/spicetify" "$BIN/spicetify"
-        did "Spicetify $tag in ~/.spicetify"
+        die "couldn't fetch Spicetify from github.com, and there's no paru or yay to build it with"
     fi
     S=$(spicetify_bin) || die "Spicetify was installed but can't be found — is ~/.local/bin on your PATH?"
 fi
