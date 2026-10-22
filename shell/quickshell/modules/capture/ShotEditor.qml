@@ -37,9 +37,11 @@ FloatingWindow {
 
     readonly property real imgW: img.sourceSize.width
     readonly property real imgH: img.sourceSize.height
-    readonly property real scale: imgW > 0 ? Math.min((stage.width - 32) / imgW, (stage.height - 32) / imgH, 1) : 1
+    // The picture, fitted below the toolbars with a margin all round.
+    readonly property real topRoom: 76
+    readonly property real scale: imgW > 0 ? Math.min((stage.width - 56) / imgW, (stage.height - topRoom - 28) / imgH, 1) : 1
     readonly property real offX: (stage.width - imgW * scale) / 2
-    readonly property real offY: (stage.height - imgH * scale) / 2
+    readonly property real offY: topRoom + (stage.height - topRoom - 28 - imgH * scale) / 2
 
     function close() { Config.UiState.shotEditorPath = ""; }
     function push(s) { shapes = shapes.concat([s]); undone = []; saved = false; view.requestPaint(); }
@@ -160,6 +162,9 @@ FloatingWindow {
     Process { id: copyProc }
 
     // ── chrome ────────────────────────────────────────────────────────────
+    // Round buttons in floating pills over the backdrop, as the capture
+    // toolbar: the tools, colours and weights on the left, what to do with
+    // it on the right.
     component Btn: Rectangle {
         id: b
         property string icon: ""
@@ -167,11 +172,18 @@ FloatingWindow {
         property bool on: false
         property bool primary: false
         signal clicked
-        width: label !== "" ? lbl.implicitWidth + (icon ? 40 : 24) : 34
-        height: 34
-        radius: Config.Appearance.rSm
-        color: b.primary ? Config.Appearance.accent : b.on ? Config.Appearance.sel
-             : (bh.hovered ? Config.Appearance.hover : "transparent")
+        width: label !== "" ? lbl.implicitWidth + (icon ? 44 : 26) : 38
+        height: 38
+        radius: height / 2
+        color: tint.value
+        ColorSpring {
+            id: tint
+            to: b.primary ? (bh.hovered ? Qt.lighter(Config.Appearance.accent, 1.08) : Config.Appearance.accent)
+              : b.on ? Qt.rgba(Config.Appearance.accent.r, Config.Appearance.accent.g, Config.Appearance.accent.b, 0.18)
+              : (bh.hovered ? Config.Appearance.hover : "transparent")
+        }
+        scale: press.value
+        Spring { id: press; to: bt.pressed ? 0.92 : 1; response: 240 }
         Row {
             anchors.centerIn: parent
             spacing: 6
@@ -179,8 +191,8 @@ FloatingWindow {
                 visible: b.icon !== ""
                 anchors.verticalCenter: parent.verticalCenter
                 name: b.icon
-                size: 16
-                inkColor: b.primary ? Config.Appearance.inkOnAccent : Config.Appearance.ink
+                size: 17
+                inkColor: b.primary ? Config.Appearance.inkOnAccent : b.on ? Config.Appearance.accent : Config.Appearance.ink
                 accentColor: b.primary ? Config.Appearance.inkOnAccent : Config.Appearance.accent
             }
             StyledText {
@@ -188,95 +200,147 @@ FloatingWindow {
                 visible: b.label !== ""
                 anchors.verticalCenter: parent.verticalCenter
                 text: b.label
-                font.pixelSize: Config.Appearance.fs(12)
+                font.pixelSize: Config.Appearance.fs(12.5)
                 font.weight: Font.DemiBold
-                color: b.primary ? Config.Appearance.inkOnAccent : Config.Appearance.ink
+                color: b.primary ? Config.Appearance.inkOnAccent : b.on ? Config.Appearance.accent : Config.Appearance.ink
             }
         }
         HoverHandler { id: bh; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: b.clicked() }
+        TapHandler { id: bt; onTapped: b.clicked() }
     }
-
-    Rectangle {
-        id: bar
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        height: 52
+    // A floating pill that holds a row of them.
+    component Pill: Rectangle {
+        default property alias content: pillRow.data
+        width: pillRow.implicitWidth + 12
+        height: 50
+        radius: height / 2
         color: Config.Appearance.surface
-
+        border.width: 1
+        border.color: Config.Appearance.edge
         Row {
-            anchors.left: parent.left
-            anchors.leftMargin: 10
-            anchors.verticalCenter: parent.verticalCenter
+            id: pillRow
+            anchors.centerIn: parent
             spacing: 2
-            Repeater {
-                model: [["pen", "pen", "Pen"], ["arrow", "arrowTool", "Arrow"], ["box", "square", "Box"],
-                        ["mark", "highlighter", "Highlight"], ["pixel", "grid", "Pixelate"], ["text", "font", "Text"],
-                        ["crop", "crop", "Crop"]]
-                Btn {
-                    required property var modelData
-                    icon: modelData[1]
-                    label: win.width > 1080 ? modelData[2] : ""
-                    on: win.tool === modelData[0]
-                    onClicked: win.tool = modelData[0]
-                }
-            }
-            Rectangle { width: 1; height: 26; anchors.verticalCenter: parent.verticalCenter; color: Config.Appearance.rule }
-            Item { width: 6; height: 1 }
-            Repeater {
-                model: [Config.Appearance.accent, "#e5484d", "#f5c518", "#30a46c", "#3e63dd", "#ffffff", "#111111"]
-                Rectangle {
-                    required property var modelData
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 22; height: 22; radius: 11
-                    color: modelData
-                    border.width: Qt.colorEqual(win.ink, modelData) ? 3 : 1
-                    border.color: Qt.colorEqual(win.ink, modelData) ? Config.Appearance.ink : Config.Appearance.edge
-                    TapHandler { onTapped: win.ink = modelData }
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                }
-            }
-            Item { width: 8; height: 1 }
-            Repeater {
-                model: [[2, "S"], [4, "M"], [8, "L"]]
-                Btn {
-                    required property var modelData
-                    width: 30
-                    label: modelData[1]
-                    on: win.weight === modelData[0]
-                    onClicked: win.weight = modelData[0]
-                }
-            }
-            Item { width: 6; height: 1 }
-            Btn { icon: "rotateCw"; onClicked: win.undo(); rotation: 0; transform: Scale { origin.x: 17; xScale: -1 } }
-            Btn { icon: "rotateCw"; onClicked: win.redo() }
-        }
-
-        Row {
-            anchors.right: parent.right
-            anchors.rightMargin: 10
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 6
-            StyledText {
-                anchors.verticalCenter: parent.verticalCenter
-                text: win.status
-                font.pixelSize: Config.Appearance.fs(11.5)
-                color: Config.Appearance.ink3
-                rightPadding: 6
-            }
-            Btn { icon: "clipboard"; label: "Copy"; onClicked: win.save(true) }
-            Btn { icon: "download"; label: "Save"; primary: true; onClicked: win.save(false) }
-            Btn { icon: "x"; onClicked: win.close() }
         }
     }
+    component Divider: Rectangle {
+        width: 1
+        height: 24
+        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+        color: Config.Appearance.rule
+    }
+
+    Pill {
+        id: tools
+        z: 2
+        x: 14
+        y: 14
+        Repeater {
+            model: [["pen", "pen", "Pen"], ["arrow", "arrowTool", "Arrow"], ["box", "square", "Box"],
+                    ["mark", "highlighter", "Highlight"], ["pixel", "grid", "Pixelate"], ["text", "font", "Text"],
+                    ["crop", "crop", "Crop"]]
+            Btn {
+                required property var modelData
+                icon: modelData[1]
+                label: win.width > 1180 ? modelData[2] : ""
+                on: win.tool === modelData[0]
+                onClicked: win.tool = modelData[0]
+            }
+        }
+        Item { width: 6; height: 1 }
+        Divider {}
+        Item { width: 8; height: 1 }
+        Repeater {
+            model: [Config.Appearance.accent, "#e5484d", "#f5c518", "#30a46c", "#3e63dd", "#ffffff", "#111111"]
+            Item {
+                required property var modelData
+                readonly property bool picked: Qt.colorEqual(win.ink, modelData)
+                anchors.verticalCenter: parent.verticalCenter
+                width: 28
+                height: 28
+                // A ring round the colour in use.
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 28; height: 28; radius: 14
+                    color: "transparent"
+                    border.width: 2
+                    border.color: parent.picked ? Config.Appearance.ink : "transparent"
+                }
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: parent.picked ? 18 : 20
+                    height: width
+                    radius: width / 2
+                    color: parent.modelData
+                    border.width: 1
+                    border.color: Config.Appearance.edge
+                }
+                TapHandler { onTapped: win.ink = parent.modelData }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+        }
+        Item { width: 8; height: 1 }
+        Divider {}
+        Item { width: 4; height: 1 }
+        Repeater {
+            model: [[2, "S"], [4, "M"], [8, "L"]]
+            Btn {
+                required property var modelData
+                width: 34
+                label: modelData[1]
+                on: win.weight === modelData[0]
+                onClicked: win.weight = modelData[0]
+            }
+        }
+        Item { width: 4; height: 1 }
+        Divider {}
+        Btn { icon: "rotateCw"; onClicked: win.undo(); transform: Scale { origin.x: 19; xScale: -1 } }
+        Btn { icon: "rotateCw"; onClicked: win.redo() }
+    }
+
+    Pill {
+        id: actions
+        z: 2
+        anchors.right: parent.right
+        anchors.rightMargin: 14
+        y: 14
+        Btn { icon: "clipboard"; label: "Copy"; onClicked: win.save(true) }
+        Btn { icon: "download"; label: "Save"; primary: true; onClicked: win.save(false) }
+        Btn { icon: "x"; onClicked: win.close() }
+    }
+
+    // What happened (saved, copied), as a pill along the bottom that goes.
+    Rectangle {
+        id: toast
+        z: 3
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: parent.height - height - 20 + (shown ? 0 : 14)
+        Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        property bool shown: false
+        opacity: shown ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+        visible: opacity > 0.01
+        width: toastText.implicitWidth + 32
+        height: 38
+        radius: height / 2
+        color: Config.Appearance.surface
+        border.width: 1
+        border.color: Config.Appearance.edge
+        StyledText {
+            id: toastText
+            anchors.centerIn: parent
+            text: win.status
+            font.pixelSize: Config.Appearance.fs(12.5)
+            font.weight: Font.DemiBold
+            color: Config.Appearance.ink
+        }
+        Timer { id: toastOff; interval: 2200; onTriggered: toast.shown = false }
+    }
+    onStatusChanged: if (status !== "") { toast.shown = true; toastOff.restart(); }
 
     Item {
         id: stage
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: bar.bottom
-        anchors.bottom: parent.bottom
+        anchors.fill: parent
         clip: true
         focus: true
 
@@ -299,7 +363,23 @@ FloatingWindow {
                 const ctx = getContext("2d");
                 ctx.reset();
                 if (win.imgW <= 0) return;
-                ctx.drawImage(win.url, win.offX, win.offY, win.imgW * win.scale, win.imgH * win.scale);
+                const pw = win.imgW * win.scale, ph = win.imgH * win.scale;
+                const rr = Math.min(Config.Appearance.r, pw / 4, ph / 4);
+                // The card's shadow, then the picture inside its rounded edge.
+                ctx.save();
+                ctx.shadowColor = Qt.rgba(0, 0, 0, 0.35);
+                ctx.shadowBlur = 28;
+                ctx.shadowOffsetY = 8;
+                ctx.fillStyle = Config.Appearance.surface;
+                ctx.beginPath();
+                ctx.roundedRect(win.offX, win.offY, pw, ph, rr, rr);
+                ctx.fill();
+                ctx.restore();
+                ctx.save();
+                ctx.beginPath();
+                ctx.roundedRect(win.offX, win.offY, pw, ph, rr, rr);
+                ctx.clip();
+                ctx.drawImage(win.url, win.offX, win.offY, pw, ph);
                 const list = win.drawing ? win.shapes.concat([win.drawing]) : win.shapes;
                 win.paintShapes(ctx, win.scale, win.offX, win.offY, list);
                 // Outside the crop, dimmed.
@@ -312,9 +392,16 @@ FloatingWindow {
                     ctx.fillRect(win.offX, y + h, win.imgW * win.scale, win.offY + win.imgH * win.scale - y - h);
                     ctx.fillRect(win.offX, y, x - win.offX, h);
                     ctx.fillRect(x + w, y, win.offX + win.imgW * win.scale - x - w, h);
-                    ctx.strokeStyle = "white"; ctx.lineWidth = 1;
+                    ctx.strokeStyle = "white"; ctx.lineWidth = 1.5;
                     ctx.strokeRect(x, y, w, h);
                 }
+                ctx.restore();
+                // A hairline round the card.
+                ctx.strokeStyle = Config.Appearance.edge;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.roundedRect(win.offX + 0.5, win.offY + 0.5, pw - 1, ph - 1, rr, rr);
+                ctx.stroke();
             }
             Component.onCompleted: loadImage(win.url)
             onImageLoaded: requestPaint()

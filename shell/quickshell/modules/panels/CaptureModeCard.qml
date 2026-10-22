@@ -11,10 +11,10 @@ Rectangle {
     property string label: ""
     property bool on: false
     signal clicked
-    height: 74
-    radius: Config.Appearance.rSm
+    height: 80
+    radius: Config.Appearance.r
     color: tint.value
-    border.width: 1.5
+    border.width: card.on ? 2 : 1
     border.color: edge.value
     ColorSpring {
         id: tint

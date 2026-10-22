@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Shapes
 import Quickshell
 import Quickshell.Wayland
 import "../../config" as Config
@@ -267,51 +268,124 @@ Variants {
             anchors.fill: parent
             visible: win.ready
 
-        // Dimmed everywhere but the choice.
-        readonly property color shade: Qt.rgba(0, 0, 0, 0.42)
-        Rectangle { visible: !win.hasPick; anchors.fill: parent; color: Qt.rgba(0, 0, 0, 0.3) }
-        Rectangle { visible: win.hasPick; x: 0; y: 0; width: parent.width; height: win.pick.y; color: stage.shade }
-        Rectangle { visible: win.hasPick; x: 0; y: win.pick.y + win.pick.height; width: parent.width; height: parent.height - y; color: stage.shade }
-        Rectangle { visible: win.hasPick; x: 0; y: win.pick.y; width: win.pick.x; height: win.pick.height; color: stage.shade }
-        Rectangle { visible: win.hasPick; x: win.pick.x + win.pick.width; y: win.pick.y; width: parent.width - x; height: win.pick.height; color: stage.shade }
+        // The choice as drawn: dragging out a region it follows the pointer
+        // exactly; picking a window or a screen it glides from one to the
+        // next. Rounded as what it is: a region softly, a window as the
+        // shell rounds windows, a screen not at all.
+        readonly property real cx: hx.value
+        readonly property real cy: hy.value
+        readonly property real cw: hw.value
+        readonly property real ch: hh.value
+        readonly property real cr: Math.max(0, Math.min(win.mode === "region" ? 12 : win.mode === "window" ? win.ap.rWin : 0,
+                                                         cw / 2, ch / 2))
+        Spring { id: hx; to: win.pick.x; response: 260; bounce: 0.35; enabled: win.mode !== "region" }
+        Spring { id: hy; to: win.pick.y; response: 260; bounce: 0.35; enabled: win.mode !== "region" }
+        Spring { id: hw; to: win.pick.width; response: 260; bounce: 0.35; enabled: win.mode !== "region" }
+        Spring { id: hh; to: win.pick.height; response: 260; bounce: 0.35; enabled: win.mode !== "region" }
 
-        // The choice: a hairline in the accent, with a soft outer glow so
-        // it reads over light and dark alike.
+        // Dimmed everywhere but the choice: one shape, the screen with the
+        // choice cut out of it, so the hole has the choice's round corners.
+        Shape {
+            anchors.fill: parent
+            preferredRendererType: Shape.CurveRenderer
+            ShapePath {
+                fillColor: win.hasPick ? Qt.rgba(0, 0, 0, 0.46) : Qt.rgba(0, 0, 0, 0.32)
+                strokeWidth: -1
+                fillRule: ShapePath.OddEvenFill
+                PathSvg {
+                    path: {
+                        const W = stage.width, H = stage.height;
+                        let d = "M0 0 H" + W + " V" + H + " H0 Z";
+                        if (!win.hasPick) return d;
+                        const x = stage.cx, y = stage.cy, w = stage.cw, h = stage.ch, r = stage.cr;
+                        d += " M" + (x + r) + " " + y + " H" + (x + w - r)
+                           + (r > 0 ? " A" + r + " " + r + " 0 0 1 " + (x + w) + " " + (y + r) : "")
+                           + " V" + (y + h - r)
+                           + (r > 0 ? " A" + r + " " + r + " 0 0 1 " + (x + w - r) + " " + (y + h) : "")
+                           + " H" + (x + r)
+                           + (r > 0 ? " A" + r + " " + r + " 0 0 1 " + x + " " + (y + h - r) : "")
+                           + " V" + (y + r)
+                           + (r > 0 ? " A" + r + " " + r + " 0 0 1 " + (x + r) + " " + y : "")
+                           + " Z";
+                        return d;
+                    }
+                }
+            }
+        }
+
+        // Its edge: the accent, with a soft glow around it so it reads over
+        // light and dark alike.
         Rectangle {
             visible: win.hasPick
-            x: hx.value
-            y: hy.value
-            width: hw.value
-            height: hh.value
+            x: stage.cx - 4
+            y: stage.cy - 4
+            width: stage.cw + 8
+            height: stage.ch + 8
+            radius: stage.cr + 4
             color: "transparent"
-            radius: win.mode === "region" ? 2 : 0
+            border.width: 4
+            border.color: Qt.rgba(win.ap.accent.r, win.ap.accent.g, win.ap.accent.b, 0.22)
+        }
+        Rectangle {
+            visible: win.hasPick
+            x: stage.cx - 1
+            y: stage.cy - 1
+            width: stage.cw + 2
+            height: stage.ch + 2
+            radius: stage.cr + 1
+            color: "transparent"
             border.width: 2
             border.color: win.ap.accent
-            // Dragging out a region it follows the pointer exactly; picking
-            // a window or a screen it glides from one to the next.
-            Spring { id: hx; to: win.pick.x - 1; response: 240; bounce: 0.5; enabled: win.mode !== "region" }
-            Spring { id: hy; to: win.pick.y - 1; response: 240; bounce: 0.5; enabled: win.mode !== "region" }
-            Spring { id: hw; to: win.pick.width + 2; response: 240; bounce: 0.5; enabled: win.mode !== "region" }
-            Spring { id: hh; to: win.pick.height + 2; response: 240; bounce: 0.5; enabled: win.mode !== "region" }
         }
-        // Its size, in real pixels, beside it.
+        // A region's corners: round handles.
+        Repeater {
+            model: win.hasPick && win.mode === "region" && stage.cw > 24 && stage.ch > 24 ? 4 : 0
+            Rectangle {
+                required property int index
+                width: 12
+                height: 12
+                radius: 6
+                x: (index % 2 === 0 ? stage.cx : stage.cx + stage.cw) - 6
+                y: (index < 2 ? stage.cy : stage.cy + stage.ch) - 6
+                color: "white"
+                border.width: 2.5
+                border.color: win.ap.accent
+            }
+        }
+
+        // Its size, in real pixels, beside it: a rounded pill of the
+        // shell's glass.
         Rectangle {
             visible: win.hasPick && win.mode === "region"
-            readonly property bool below: win.pick.y + win.pick.height + height + 10 < win.height
-            x: Math.max(6, Math.min(win.width - width - 6, win.pick.x))
-            y: below ? win.pick.y + win.pick.height + 8 : Math.max(6, win.pick.y - height - 8)
-            width: sizeText.implicitWidth + 16
-            height: 24
-            radius: 12
-            color: Qt.rgba(0, 0, 0, 0.7)
-            StyledText {
-                id: sizeText
+            readonly property bool below: win.pick.y + win.pick.height + height + 14 < win.height
+            x: Math.max(8, Math.min(win.width - width - 8, win.pick.x + (win.pick.width - width) / 2))
+            y: below ? win.pick.y + win.pick.height + 12 : Math.max(8, win.pick.y - height - 12)
+            width: sizeRow.implicitWidth + 22
+            height: 30
+            radius: 15
+            color: win.ap.sheet
+            border.width: 1
+            border.color: win.ap.edge
+            Row {
+                id: sizeRow
                 anchors.centerIn: parent
-                text: Math.round(win.pick.width * win.ratio) + " × " + Math.round(win.pick.height * win.ratio)
-                font.pixelSize: 12
-                font.weight: Font.DemiBold
-                font.features: { "tnum": 1 }
-                color: "white"
+                spacing: 7
+                MonoIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "crop"
+                    size: 13
+                    monochrome: true
+                    inkColor: win.ap.ink2
+                }
+                StyledText {
+                    id: sizeText
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: Math.round(win.pick.width * win.ratio) + " × " + Math.round(win.pick.height * win.ratio)
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                    font.features: { "tnum": 1 }
+                    color: win.ap.ink
+                }
             }
         }
         // Crosshair guides while nothing is dragged yet.
@@ -350,14 +424,27 @@ Variants {
         }
 
         // ── the toolbar ──────────────────────────────────────────────────
+        // A soft shadow under it.
+        Rectangle {
+            visible: bar.visible
+            x: bar.x - 2
+            y: bar.y + 4
+            width: bar.width + 4
+            height: bar.height + 4
+            radius: height / 2
+            color: Qt.rgba(0, 0, 0, 0.28)
+            opacity: bar.opacity
+            scale: bar.scale
+            transformOrigin: Item.Top
+        }
         Rectangle {
             id: bar
             property bool shown: false
             anchors.horizontalCenter: parent.horizontalCenter
-            y: 18
-            width: barRow.implicitWidth + 12
-            height: 48
-            radius: 24
+            y: 20
+            width: barRow.implicitWidth + 16
+            height: 54
+            radius: height / 2
             color: win.ap.sheet
             border.width: 1
             border.color: win.ap.edge
@@ -369,12 +456,34 @@ Variants {
             Spring { id: scaleSpring; to: bar.shown ? 1 : 0.9; response: 340 }
             HoverHandler { id: barHover }
 
+            // The highlight behind the mode in use, sliding to the next.
+            Rectangle {
+                id: slider
+                readonly property Item at: {
+                    for (let i = 0; i < modes.count; i++) {
+                        const b = modes.itemAt(i);
+                        if (b && b.on) return b;
+                    }
+                    return null;
+                }
+                visible: at !== null
+                x: sx.value
+                y: (bar.height - height) / 2
+                width: sw.value
+                height: 42
+                radius: height / 2
+                color: win.ap.accent
+                Spring { id: sx; to: slider.at ? barRow.x + slider.at.x : 0; response: 300; bounce: 0.3 }
+                Spring { id: sw; to: slider.at ? slider.at.width : 0; response: 300; bounce: 0.3 }
+            }
+
             Row {
                 id: barRow
                 anchors.centerIn: parent
                 spacing: 4
 
                 Repeater {
+                    id: modes
                     model: [
                         { m: "region", icon: "crop", label: "Rectangle", key: "R" },
                         { m: "window", icon: "square", label: "Window", key: "W" },
@@ -384,11 +493,12 @@ Variants {
                         id: modeBtn
                         required property var modelData
                         readonly property bool on: win.mode === modelData.m
-                        width: modeRow.implicitWidth + 24
-                        height: 36
-                        radius: 18
+                        width: modeRow.implicitWidth + 30
+                        height: 42
+                        radius: height / 2
                         color: tint1.value
-                        ColorSpring { id: tint1; to: modeBtn.on ? win.ap.accent : (modeHover.hovered ? win.ap.sel : "transparent") }
+                        // The accent is the slider's, behind; this only lights on hover.
+                        ColorSpring { id: tint1; to: !modeBtn.on && modeHover.hovered ? win.ap.hover : "transparent" }
                         scale: scaleSpring2.value
                         Spring { id: scaleSpring2; to: modeTap.pressed ? 0.92 : 1; response: 260 }
                         Row {
@@ -415,11 +525,11 @@ Variants {
                     }
                 }
 
-                Rectangle { width: 1; height: 24; anchors.verticalCenter: parent.verticalCenter; color: win.ap.rule }
+                Rectangle { width: 1; height: 26; anchors.verticalCenter: parent.verticalCenter; color: win.ap.rule }
 
                 Rectangle {
                     id: closeBtn
-                    width: 36; height: 36; radius: 18
+                    width: 42; height: 42; radius: 21
                     color: closeHover.hovered ? win.ap.sel : "transparent"
                     MonoIcon { anchors.centerIn: parent; name: "x"; size: 16; monochrome: true; inkColor: win.ap.ink2 }
                     HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
@@ -428,20 +538,26 @@ Variants {
             }
         }
         // What to do, under the toolbar, in a word.
-        StyledText {
-            visible: win.focusedHere
+        Rectangle {
+            visible: win.focusedHere && !win.dragging
             anchors.horizontalCenter: parent.horizontalCenter
-            y: bar.y + bar.height + 10
-            opacity: bar.opacity * 0.9
-            text: (win.cap.snip && win.cap.snip.kind === "ocr" ? "Text: " : "")
-                  + (win.mode === "region" ? "Drag over what you want"
-                    : win.mode === "window" ? "Click a window" : "Click a screen")
-                  + " · Esc to cancel"
-            font.pixelSize: 12
-            font.weight: Font.Medium
-            color: "white"
-            style: Text.Outline
-            styleColor: Qt.rgba(0, 0, 0, 0.5)
+            y: bar.y + bar.height + 12
+            width: hint.implicitWidth + 24
+            height: 28
+            radius: 14
+            color: Qt.rgba(0, 0, 0, 0.5)
+            opacity: bar.opacity
+            StyledText {
+                id: hint
+                anchors.centerIn: parent
+                text: (win.cap.snip && win.cap.snip.kind === "ocr" ? "Text: " : "")
+                      + (win.mode === "region" ? "Drag over what you want"
+                        : win.mode === "window" ? "Click a window" : "Click a screen")
+                      + " · Esc to cancel"
+                font.pixelSize: 12
+                font.weight: Font.Medium
+                color: "white"
+            }
         }
 
         }

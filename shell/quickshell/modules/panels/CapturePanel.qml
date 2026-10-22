@@ -17,8 +17,8 @@ PanelSurface {
     property bool video: false
     property string mode: "region"
 
-    implicitWidth: 404
-    implicitHeight: col.implicitHeight + 32
+    implicitWidth: 412
+    implicitHeight: col.implicitHeight + 40
     showSeam: false
 
     Binding {
@@ -55,9 +55,9 @@ PanelSurface {
 
     Column {
         id: col
-        x: 16; y: 16
-        width: root.width - 32
-        spacing: 14
+        x: 20; y: 20
+        width: root.width - 40
+        spacing: 16
 
         // What kind.
         Item {
@@ -167,15 +167,15 @@ PanelSurface {
         // Do it.
         Item {
             width: parent.width
-            height: 40
+            height: 44
             Rectangle {
                 id: textBtn
                 visible: !root.video
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                width: textRow.implicitWidth + 26
-                height: 36
-                radius: Config.Appearance.rSm
+                width: textRow.implicitWidth + 30
+                height: 40
+                radius: height / 2
                 color: textHover.hovered ? Config.Appearance.sel : Config.Appearance.hover
                 border.width: 1
                 border.color: Config.Appearance.rule
@@ -199,9 +199,9 @@ PanelSurface {
                 id: goBtn
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: goRow.implicitWidth + 32
-                height: 40
-                radius: 20
+                width: goRow.implicitWidth + 36
+                height: 44
+                radius: height / 2
                 color: goTint.value
                 ColorSpring { id: goTint; to: goHover.hovered ? Qt.lighter(Config.Appearance.accent, 1.08) : Config.Appearance.accent }
                 scale: goPress.value
