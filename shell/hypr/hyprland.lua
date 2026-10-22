@@ -843,6 +843,130 @@ if window_mode == "windows" then
     pcall(hl.config, { general = { snap = { enabled = true, window_gap = 12, monitor_gap = 12 } } })
 end
 
+-- Windows 11 behaviour, too: an app opens where you last left it, at the
+-- size you left it — or maximised, if it was. Remembered per app (its
+-- class) when its last window closes, in $XDG_STATE_HOME/hyprshell/
+-- window-places, and put back when its first window opens again. A second
+-- window, a dialog or a splash screen is left where the app puts it, and a
+-- place that's no longer on any screen (a monitor unplugged) is forgotten
+-- for that opening.
+if window_mode == "windows" and hl.on and hl.get_windows then
+    local state = os.getenv("XDG_STATE_HOME")
+    if not state or state == "" then state = (os.getenv("HOME") or "") .. "/.local/state" end
+    local file = state .. "/hyprshell/window-places"
+    local places = {}
+    -- Where each open window started, for one that is closed maximised
+    -- before its place was ever remembered.
+    local opened = {}
+
+    pcall(function()
+        local f = io.open(file, "r")
+        if not f then return end
+        for line in f:lines() do
+            local cls, x, y, w, h, m = line:match("^(.-)\t(%-?%d+)\t(%-?%d+)\t(%d+)\t(%d+)\t([01])$")
+            if cls and cls ~= "" then
+                places[cls] = { x = tonumber(x), y = tonumber(y), w = tonumber(w), h = tonumber(h), max = m == "1" }
+            end
+        end
+        f:close()
+    end)
+
+    local function save()
+        pcall(function()
+            local f = io.open(file .. ".new", "w")
+            if not f then return end
+            for cls, p in pairs(places) do
+                if p.w then
+                    f:write(string.format("%s\t%d\t%d\t%d\t%d\t%d\n", cls, p.x, p.y, p.w, p.h, p.max and 1 or 0))
+                end
+            end
+            f:close()
+            os.rename(file .. ".new", file)
+        end)
+    end
+
+    -- Dialogs, file pickers, splash and update windows, picture-in-picture:
+    -- never the app's own place.
+    local function passing(w)
+        local t = string.lower(w.initial_title or w.title or "")
+        return t:find("updat") or t:find("splash") or t:find("loading") or t:find("picture.in.picture")
+            or t:find("^save") or t:find("^open") or t:find("^choose") or t:find("^select")
+            or t:find("— files$")
+    end
+
+    -- Another window of the same app already open.
+    local function another(w)
+        local ok, list = pcall(hl.get_windows)
+        if not ok or type(list) ~= "table" then return true end
+        for _, o in ipairs(list) do
+            if o.address ~= w.address and o.class == w.class then return true end
+        end
+        return false
+    end
+
+    -- Its middle on one of the screens, as they are now.
+    local function onScreen(p)
+        local ok, mons = pcall(hl.get_monitors)
+        if not ok or type(mons) ~= "table" then return false end
+        local cx, cy = p.x + p.w / 2, p.y + p.h / 2
+        for _, m in ipairs(mons) do
+            local s = tonumber(m.scale) or 1
+            if s <= 0 then s = 1 end
+            local mw, mh = (m.width or 0) / s, (m.height or 0) / s
+            if (m.transform or 0) % 2 == 1 then mw, mh = mh, mw end
+            if cx >= m.x and cx < m.x + mw and cy >= m.y and cy < m.y + mh then return true end
+        end
+        return false
+    end
+
+    hl.on("window.open", function(w)
+        pcall(function()
+            if not w or not w.floating or (w.class or "") == "" or passing(w) then return end
+            if w.at and w.size then
+                opened[w.address] = { x = w.at.x, y = w.at.y, w = w.size.x, h = w.size.y }
+            end
+            local p = places[w.class]
+            if not p or not p.w or another(w) then return end
+            opened[w.address] = { x = p.x, y = p.y, w = p.w, h = p.h }
+            local sel = "address:" .. w.address
+            if onScreen(p) then
+                hl.dispatch(hl.dsp.window.resize({ x = p.w, y = p.h, window = sel }))
+                hl.dispatch(hl.dsp.window.move({ x = p.x, y = p.y, window = sel }))
+            end
+            if p.max then
+                hl.dispatch(hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = sel }))
+            end
+        end)
+    end)
+
+    hl.on("window.close", function(w)
+        pcall(function()
+            local start = w and opened[w.address]
+            if w then opened[w.address] = nil end
+            if not w or (w.class or "") == "" or passing(w) or another(w) then return end
+            local fs = tonumber(w.fullscreen) or 0
+            local p = places[w.class] or {}
+            if fs == 1 then
+                -- Maximised: that, and the place it had before stays (or
+                -- the one it opened at, the first time).
+                if not p.w then
+                    if not start then return end
+                    p.x, p.y, p.w, p.h = start.x, start.y, start.w, start.h
+                end
+                p.max = true
+            elseif fs == 0 and w.floating and w.at and w.size then
+                -- Too small to be the app's main window: a leftover popup.
+                if w.size.x < 320 or w.size.y < 200 then return end
+                p.x, p.y, p.w, p.h, p.max = w.at.x, w.at.y, w.size.x, w.size.y, false
+            else
+                return
+            end
+            places[w.class] = p
+            save()
+        end)
+    end)
+end
+
 -- Nothing round a window that fills the screen. Fullscreen (Super+F) and
 -- maximised (Super+Shift+F) alike: no border, no rounded corners, no
 -- shadow, so the app runs right to the edge whichever way it got there.
