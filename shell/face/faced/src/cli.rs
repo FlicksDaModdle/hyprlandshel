@@ -115,7 +115,7 @@ fn set(pairs: &[String]) -> i32 {
         };
         let ok = match k {
             "ir_device" | "webcam_device" => v.is_empty() || is_video_device(v),
-            "webcam_check" | "require_facing" => v == "true" || v == "false",
+            "webcam_check" | "require_facing" | "require_attention" => v == "true" || v == "false",
             _ => NUMBERS.iter().any(|(n, lo, hi)| *n == k && v.parse::<f32>().is_ok_and(|x| (*lo..=*hi).contains(&x))),
         };
         if !ok {

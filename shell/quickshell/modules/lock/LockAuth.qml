@@ -90,6 +90,13 @@ Scope {
         // A face-only service asks nothing; anything it does ask is not
         // for us to answer with a password.
         onResponseRequiredChanged: if (responseRequired) abort()
+        // What the camera sees while it looks ("Come a little closer"),
+        // from pam_hyprshell_face: marked with a zero-width space.
+        onMessageChanged: {
+            if (!active || !message.startsWith("\u200b")) return;
+            const hint = message.slice(1);
+            root.info = hint !== "" ? hint : "Looking for you…";
+        }
         onCompleted: result => {
             if (result === PamResult.Success) {
                 root.info = "";

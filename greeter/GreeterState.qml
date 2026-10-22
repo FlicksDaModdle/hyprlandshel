@@ -369,6 +369,12 @@ Scope {
                 g.busy = false;
                 return;
             }
+            // What the camera sees while it looks ("Come a little closer"),
+            // from pam_hyprshell_face: marked with a zero-width space.
+            if (message.startsWith("\u200b")) {
+                if (g.faceStarted && !g.passwordSent) g.info = message.slice(1) || "Looking for you…";
+                return;
+            }
             // Information, or a problem PAM can carry on from. What the face
             // modules say while they look ("Failure, timeout reached") is
             // left out: the glyph at the top says how that went.

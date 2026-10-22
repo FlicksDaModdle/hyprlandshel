@@ -152,18 +152,56 @@ fn serve(stream: UnixStream, engine: &Mutex<Option<Engine>>) -> std::io::Result<
     // A request is small; a line is enough (stills are a few hundred kB).
     reader.by_ref().take(16 << 20).read_line(&mut line)?;
     let reply = match serde_json::from_str::<Value>(&line) {
-        Ok(request) => handle(&request, uid, engine),
+        Ok(request) => {
+            // Asked for (the PAM module, for the lock and login screens):
+            // what it sees while it looks, a line each, before the answer.
+            let wanted = request["hints"].as_bool() == Some(true);
+            let hints = Hints { out: Mutex::new(if wanted { stream.try_clone().ok().map(|s| (s, String::new())) } else { None }) };
+            handle(&request, uid, engine, &hints)
+        }
         Err(_) => json!({ "result": "error", "message": "not a request" }),
     };
     let mut out = stream;
     out.write_all(format!("{reply}\n").as_bytes())
 }
 
+/// Hints while it looks: `{"hint": "Come a little closer"}`, a line each,
+/// only when it changes; an empty one when there's nothing to say.
+struct Hints {
+    out: Mutex<Option<(UnixStream, String)>>,
+}
+
+impl Hints {
+    fn say(&self, text: &str) {
+        let mut out = self.out.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((stream, last)) = out.as_mut() {
+            if last != text {
+                *last = text.to_string();
+                let _ = stream.write_all(format!("{}\n", json!({ "hint": text })).as_bytes());
+            }
+        }
+    }
+}
+
+/// What to tell you, for what the camera sees.
+fn hint_text(kind: &str) -> &'static str {
+    match kind {
+        "dark" => "It's too dark to see you. Is something covering the camera?",
+        "none" => "Your face isn't in view of the camera",
+        "far" => "Come a little closer",
+        "near" => "Move back a little",
+        "edge" => "Move your face to the middle of the camera's view",
+        "turned" => "Turn to face the screen",
+        "attention" => "Look straight at the screen",
+        _ => "",
+    }
+}
+
 fn unavailable(message: &str) -> Value {
     json!({ "result": "unavailable", "message": message })
 }
 
-fn handle(request: &Value, uid: u32, engine: &Mutex<Option<Engine>>) -> Value {
+fn handle(request: &Value, uid: u32, engine: &Mutex<Option<Engine>>, hints: &Hints) -> Value {
     let op = request["op"].as_str().unwrap_or("");
     // Whose faces: the one named, else the asker's own.
     let user = match request["user"].as_str() {
@@ -189,6 +227,7 @@ fn handle(request: &Value, uid: u32, engine: &Mutex<Option<Engine>>) -> Value {
                     "webcam_check": config.webcam_check, "threshold": r(config.threshold), "webcam_threshold": r(config.webcam_threshold),
                     "timeout": r(config.timeout), "min_light": r(config.min_light), "dark_frame": r(config.dark_frame),
                     "confirm_frames": config.confirm_frames, "require_facing": config.require_facing,
+                    "require_attention": config.require_attention,
                     "lockout_after": config.lockout_after, "lockout_minutes": config.lockout_minutes })
         }
         "list" => {
@@ -239,7 +278,7 @@ fn handle(request: &Value, uid: u32, engine: &Mutex<Option<Engine>>) -> Value {
             let mut guard = engine.lock().unwrap_or_else(|e| e.into_inner());
             let Some(engine) = guard.as_mut() else { return unavailable("the face models aren't installed") };
             let t = Instant::now();
-            let reply = verify(engine, &config, &faces);
+            let reply = verify(engine, &config, &faces, hints);
             {
                 let mut list = strangers().lock().unwrap_or_else(|e| e.into_inner());
                 if reply["result"] == "match" {
@@ -297,6 +336,42 @@ fn facing(face: &models::Face) -> bool {
     (0.25..=0.75).contains(&along)
 }
 
+/// Looking at the screen, not just turned towards it: the head square on
+/// to the camera both ways — the nose near the middle between the eyes,
+/// and as far from them towards the mouth as it is when you look straight
+/// ahead, not up past the screen or down at the keyboard. It's where the
+/// head points; the face finder's five points don't say where the eyes do.
+fn attentive(face: &models::Face) -> bool {
+    let [right_eye, left_eye, nose, right_mouth, left_mouth] = face.points;
+    let (ex, ey) = (left_eye[0] - right_eye[0], left_eye[1] - right_eye[1]);
+    let span = ex * ex + ey * ey;
+    if span < 1.0 {
+        return false;
+    }
+    let along = ((nose[0] - right_eye[0]) * ex + (nose[1] - right_eye[1]) * ey) / span;
+    let eyes = (right_eye[1] + left_eye[1]) / 2.0;
+    let mouth = (right_mouth[1] + left_mouth[1]) / 2.0;
+    if mouth - eyes < 1.0 {
+        return false;
+    }
+    let down = (nose[1] - eyes) / (mouth - eyes);
+    (0.36..=0.64).contains(&along) && (0.35..=0.78).contains(&down)
+}
+
+/// Where a face is in the picture, as something to tell you: too far, too
+/// near, off the edge, or "" when it's fine.
+fn placement(face: &models::Face, w: f32, h: f32) -> &'static str {
+    if face.w > w * 0.55 || face.h > h * 0.8 {
+        "near"
+    } else if face.x < w * 0.02 || face.y < h * 0.02 || face.x + face.w > w * 0.98 || face.y + face.h > h * 0.98 {
+        "edge"
+    } else if face.w < w * 0.13 {
+        "far"
+    } else {
+        ""
+    }
+}
+
 /// Repeated strangers: after `lockout_after` faces that weren't yours in a
 /// row, face unlock steps aside for `lockout_minutes`, and the password is
 /// what's left. A face that is yours starts the count again. Not seeing
@@ -351,7 +426,7 @@ fn watch_webcam(det: &mut Detector, rec: &Recognizer, config: &Config, known: &[
     }
 }
 
-fn verify(engine: &mut Engine, config: &Config, faces: &Faces) -> Value {
+fn verify(engine: &mut Engine, config: &Config, faces: &Faces, hints: &Hints) -> Value {
     let ir_known = faces.ir();
     let web_known = faces.webcam();
     let use_webcam = config.webcam_check && !web_known.is_empty() && !config.webcam_device.is_empty() && config.webcam_device != config.ir_device;
@@ -379,16 +454,52 @@ fn verify(engine: &mut Engine, config: &Config, faces: &Faces) -> Value {
         let mut lowest = f32::MAX;
         let mut turned_away = false;
         let mut stranger = false;
+        // What's wrong with the picture, if anything, and since when: said
+        // once it has lasted a moment, so a frame or two doesn't flicker.
+        let mut seen: (&str, Instant) = ("", Instant::now());
+        let mut said = "";
+        let mut note = |kind: &'static str| {
+            if seen.0 != kind {
+                seen = (kind, Instant::now());
+            }
+            let wait = match kind {
+                "" => 0,
+                "none" => 800,
+                _ => 400,
+            };
+            if kind != said && seen.1.elapsed() >= Duration::from_millis(wait) {
+                said = kind;
+                hints.say(hint_text(kind));
+            }
+        };
+        // The emitter flashes, so every other frame can be unlit: dark is
+        // only dark when it lasts.
+        let mut dark_since: Option<Instant> = None;
         while Instant::now() < deadline {
             let Ok(Some(picture)) = camera.frame(Duration::from_millis(200)) else { continue };
             if picture.light() < config.dark_frame {
+                let since = *dark_since.get_or_insert_with(Instant::now);
+                if since.elapsed() >= Duration::from_millis(900) {
+                    note("dark");
+                }
                 continue;
             }
-            let Some((face, v)) = found_face(ir, recognizer, &picture, config.detect_score) else { continue };
+            dark_since = None;
+            let Some((face, v)) = found_face(ir, recognizer, &picture, config.detect_score) else {
+                note("none");
+                continue;
+            };
             if config.require_facing && !facing(&face) {
                 turned_away = true;
+                note("turned");
                 continue;
             }
+            if config.require_attention && !attentive(&face) {
+                turned_away = true;
+                note("attention");
+                continue;
+            }
+            note(placement(&face, picture.w as f32, picture.h as f32));
             let s = models::best(&v, &ir_known);
             best = best.max(s);
             if s >= config.threshold {
@@ -411,7 +522,8 @@ fn verify(engine: &mut Engine, config: &Config, faces: &Faces) -> Value {
         drop(camera);
         let Some(ir_score) = ir_match else {
             stop.store(true, Ordering::Relaxed);
-            let why = if best < -0.5 && turned_away { "you weren't facing the camera".to_string() }
+            let why = if best < -0.5 && turned_away && config.require_attention { "you weren't looking at the screen".to_string() }
+                      else if best < -0.5 && turned_away { "you weren't facing the camera".to_string() }
                       else if best < -0.5 { "no face seen".to_string() }
                       else { format!("not recognised (best {best:.2}, {:.2} needed)", config.threshold) };
             return json!({ "result": "nomatch", "message": why, "stranger": stranger });

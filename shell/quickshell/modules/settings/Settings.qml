@@ -2170,6 +2170,9 @@ Scope {
             { n: "Only when you face the camera",
               s: "A head turned away doesn't unlock it: someone can't hold the laptop up to you while you look elsewhere",
               type: "toggle", value: S.require_facing !== false, set: v => F.setService("require_facing", v ? "true" : "false") },
+            { n: "Only when you're looking at the screen",
+              s: "Stricter: your head straight on to the screen, not glancing past it or down. It goes by where your head points, not your eyes",
+              type: "toggle", value: S.require_attention === true, set: v => F.setService("require_attention", v ? "true" : "false") },
             { n: "After faces that aren't yours",
               s: "That many in a row, and face unlock steps aside for " + (S.lockout_minutes || 10)
                  + " minutes: the password is needed. Not seeing anyone doesn't count",

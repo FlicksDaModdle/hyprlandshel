@@ -35,6 +35,8 @@ pub struct Config {
     pub confirm_frames: u32,
     /// Only a face turned to the camera counts.
     pub require_facing: bool,
+    /// Only a face looking straight at the screen counts (stricter).
+    pub require_attention: bool,
     /// Faces that aren't yours in a row before face unlock steps aside
     /// (0: never), and for how long.
     pub lockout_after: u32,
@@ -56,6 +58,7 @@ impl Default for Config {
             detect_score: 0.8,
             confirm_frames: 2,
             require_facing: true,
+            require_attention: false,
             lockout_after: 5,
             lockout_minutes: 10,
             models: PathBuf::from(MODELS),
@@ -89,6 +92,7 @@ impl Config {
                 "detect_score" => c.detect_score = num(0.5, 0.99).unwrap_or(c.detect_score),
                 "confirm_frames" => c.confirm_frames = num(1.0, 5.0).map(|n| n as u32).unwrap_or(c.confirm_frames),
                 "require_facing" => c.require_facing = v != "false",
+                "require_attention" => c.require_attention = v == "true",
                 "lockout_after" => c.lockout_after = num(0.0, 20.0).map(|n| n as u32).unwrap_or(c.lockout_after),
                 "lockout_minutes" => c.lockout_minutes = num(1.0, 120.0).map(|n| n as u32).unwrap_or(c.lockout_minutes),
                 "models" => c.models = PathBuf::from(v),
