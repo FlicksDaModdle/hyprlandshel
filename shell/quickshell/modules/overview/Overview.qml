@@ -92,7 +92,65 @@ Variants {
         readonly property real cardWidth: 312
         readonly property real cardHeight: Math.round(cardWidth * monitorH / monitorW)
 
-        onVisibleChanged: if (visible) focusScope.forceActiveFocus();
+        onVisibleChanged: {
+            if (visible) focusScope.forceActiveFocus();
+            else cancelDrag();
+        }
+
+        // ── dragging a window to another workspace ───────────────────────
+        // A window picked up in one card is carried as a copy under the
+        // pointer (`ghost`, below); the card it's over lights, and letting
+        // go there moves the window, leaving you where you are.
+        property var dragging: null       // { address, ws, toplevel, cls }
+        property point dragPos: Qt.point(0, 0)
+        property point dragGrab: Qt.point(0, 0)
+        property real dragW: 0
+        property real dragH: 0
+        property int dropWs: -1
+        // One past the last workspace: a new one, made by moving there.
+        readonly property int newWs: {
+            let top = 0;
+            for (const s of slots) if (s.id > top) top = s.id;
+            return top + 1;
+        }
+
+        function beginDrag(win, toplevel, w, h, grab, scenePos) {
+            dragging = { address: win.address, ws: win.workspace, toplevel: toplevel, cls: win.cls };
+            // Shown a little larger than the thumbnail it came from, so
+            // there's something to see under the pointer.
+            const k = Math.max(1, Math.min(2.2, 180 / Math.max(1, w)));
+            dragW = w * k;
+            dragH = h * k;
+            dragGrab = Qt.point(grab.x * k, grab.y * k);
+            dragTo(scenePos);
+        }
+        function dragTo(p) {
+            dragPos = p;
+            dropWs = workspaceAt(p);
+        }
+        function endDrag() {
+            if (dragging && dropWs > 0 && dropWs !== dragging.ws)
+                Services.Compositor.moveClientToWorkspace(dragging.address, dropWs);
+            cancelDrag();
+        }
+        function cancelDrag() {
+            dragging = null;
+            dropWs = -1;
+        }
+        // The workspace whose card is under a point in the window.
+        function workspaceAt(p) {
+            for (let i = 0; i < cards.count; i++) {
+                const c = cards.itemAt(i);
+                if (!c) continue;
+                const q = c.mapFromItem(null, p.x, p.y);
+                if (q.x >= 0 && q.y >= 0 && q.x < c.width && q.y < c.height) return c.modelData.id;
+            }
+            if (newCard.visible) {
+                const q = newCard.mapFromItem(null, p.x, p.y);
+                if (q.x >= 0 && q.y >= 0 && q.x < newCard.width && q.y < newCard.height) return newWs;
+            }
+            return -1;
+        }
 
         Rectangle {
             anchors.fill: parent
@@ -109,7 +167,10 @@ Variants {
             anchors.fill: parent
             focus: true
 
-            Keys.onEscapePressed: Config.UiState.closeAll()
+            Keys.onEscapePressed: {
+                if (overview.dragging) overview.cancelDrag();
+                else Config.UiState.closeAll();
+            }
             Keys.onPressed: event => {
                 // Number keys jump straight to a workspace, the same as they do
                 // outside the overview.
@@ -142,6 +203,7 @@ Variants {
                     spacing: 18
 
                     Repeater {
+                        id: cards
                         model: overview.slots
 
                         Item {
@@ -157,10 +219,15 @@ Variants {
                                 id: cardBg
                                 anchors.fill: parent
                                 radius: Config.Appearance.rCard
-                                color: Config.Appearance.panel
-                                border.width: card.modelData.focused ? 2 : 1
-                                border.color: card.modelData.focused
-                                              ? Config.Appearance.accent : Config.Appearance.edge
+                                readonly property bool dropHere: overview.dragging !== null
+                                    && overview.dropWs === card.modelData.id
+                                    && overview.dragging.ws !== card.modelData.id
+                                border.width: card.modelData.focused || dropHere ? 2 : 1
+                                border.color: dropHere ? Config.Appearance.accent
+                                              : card.modelData.focused
+                                                ? Config.Appearance.accent : Config.Appearance.edge
+                                color: dropHere ? Qt.tint(Config.Appearance.panel, Config.Appearance.seam)
+                                                : Config.Appearance.panel
                                 clip: true
 
                                 // Windows, positioned at their real proportions
@@ -176,22 +243,45 @@ Variants {
                                         readonly property real sy: cardBg.height / overview.monitorH
                                         readonly property bool isActive:
                                             modelData.address === Services.Compositor.activeAddress
+                                        readonly property bool lifted: overview.dragging !== null
+                                            && overview.dragging.address === modelData.address
+                                        // Looked up rather than carried: a window's
+                                        // toplevel can arrive a moment after it does.
+                                        readonly property var toplevel: {
+                                            const t = Services.Compositor.toplevelFor(modelData.address);
+                                            return t ? t.wayland : null;
+                                        }
+                                        readonly property bool pictured: capture.item !== null && capture.item.ready
 
                                         x: Math.round((modelData.x - overview.monitorX) * sx)
                                         y: Math.round((modelData.y - overview.monitorY) * sy)
                                         width: Math.max(12, Math.round(modelData.w * sx))
                                         height: Math.max(10, Math.round(modelData.h * sy))
 
-                                        radius: 7
-                                        color: isActive ? Config.Appearance.sel : Config.Appearance.hover
-                                        border.width: 1
-                                        border.color: thumbHover.hovered
-                                                      ? Config.Appearance.accent : Config.Appearance.edge
+                                        radius: 5
+                                        clip: true
+                                        color: pictured ? "transparent"
+                                               : isActive ? Config.Appearance.sel : Config.Appearance.hover
+                                        // Left behind, faint, while its copy is carried.
+                                        opacity: lifted ? 0.35 : 1
 
+                                        // The window itself, live while the overview
+                                        // is up (dock/WindowThumb.qml: only loaded
+                                        // where Quickshell can capture windows).
+                                        Loader {
+                                            id: capture
+                                            anchors.fill: parent
+                                            active: overview.visible && thumb.toplevel !== null
+                                            source: "../dock/WindowThumb.qml"
+                                            onLoaded: item.toplevel = Qt.binding(() => thumb.toplevel)
+                                        }
+
+                                        // Its icon and name until the picture comes, or
+                                        // if it can't.
                                         Row {
                                             anchors.centerIn: parent
                                             spacing: 6
-                                            visible: thumb.width > 56 && thumb.height > 26
+                                            visible: !thumb.pictured && thumb.width > 56 && thumb.height > 26
 
                                             MonoIcon {
                                                 anchors.verticalCenter: parent.verticalCenter
@@ -213,7 +303,18 @@ Variants {
                                             }
                                         }
 
-                                        HoverHandler { id: thumbHover; cursorShape: Qt.PointingHandCursor }
+                                        // The edge, over the picture.
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: parent.radius
+                                            color: "transparent"
+                                            border.width: thumb.isActive || thumbHover.hovered ? 2 : 1
+                                            border.color: thumbHover.hovered ? Config.Appearance.accent
+                                                          : thumb.isActive ? Config.Appearance.ink3
+                                                          : Config.Appearance.edge
+                                        }
+
+                                        HoverHandler { id: thumbHover; cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor }
                                         TapHandler {
                                             onTapped: {
                                                 Services.Compositor.focusClient(thumb.modelData.address);
@@ -224,6 +325,22 @@ Variants {
                                             acceptedButtons: Qt.MiddleButton
                                             gesturePolicy: TapHandler.ReleaseWithinBounds
                                             onTapped: Services.Compositor.closeClient(thumb.modelData.address)
+                                        }
+                                        // Picked up and carried to another workspace.
+                                        DragHandler {
+                                            id: drag
+                                            target: null
+                                            onActiveChanged: {
+                                                if (active) {
+                                                    const at = centroid.scenePressPosition;
+                                                    const inThumb = thumb.mapFromItem(null, at.x, at.y);
+                                                    overview.beginDrag(thumb.modelData, thumb.toplevel,
+                                                                       thumb.width, thumb.height, inThumb, at);
+                                                } else {
+                                                    overview.endDrag();
+                                                }
+                                            }
+                                            onCentroidChanged: if (active) overview.dragTo(centroid.scenePosition)
                                         }
                                     }
                                 }
@@ -293,14 +410,86 @@ Variants {
                             }
                         }
                     }
+
+                    // While a window is carried: somewhere new to put it.
+                    // (A Grid leaves out what isn't visible.)
+                    Rectangle {
+                        id: newCard
+                        visible: overview.dragging !== null
+                        width: overview.cardWidth
+                        height: overview.cardHeight
+                        radius: Config.Appearance.rCard
+                        readonly property bool dropHere: overview.dropWs === overview.newWs
+                        color: dropHere ? Qt.tint(Config.Appearance.panel, Config.Appearance.seam)
+                                        : Config.Appearance.panel
+                        border.width: dropHere ? 2 : 1
+                        border.color: dropHere ? Config.Appearance.accent : Config.Appearance.edge
+
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 8
+                            MonoIcon {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                name: "plus"
+                                size: 22
+                                inkColor: newCard.dropHere ? Config.Appearance.accent : Config.Appearance.ink2
+                                accentColor: Config.Appearance.accent
+                            }
+                            StyledText {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: "New workspace"
+                                font.pixelSize: Config.Appearance.fs(12)
+                                font.weight: Font.DemiBold
+                                color: newCard.dropHere ? Config.Appearance.ink : Config.Appearance.ink2
+                            }
+                        }
+                    }
                 }
 
                 StyledText {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Click a window to focus it · middle click to close · Esc to dismiss"
+                    text: "Click a window to focus it · drag it to another workspace · middle click to close · Esc to dismiss"
                     font.pixelSize: Config.Appearance.fs(11)
                     font.weight: Font.Normal
                     color: Config.Appearance.ink3
+                }
+            }
+
+            // The window being carried, under the pointer.
+            Rectangle {
+                id: ghost
+                visible: overview.dragging !== null
+                x: overview.dragPos.x - overview.dragGrab.x
+                y: overview.dragPos.y - overview.dragGrab.y
+                width: overview.dragW
+                height: overview.dragH
+                radius: 7
+                clip: true
+                color: Config.Appearance.sel
+                opacity: 0.94
+                readonly property bool pictured: ghostCapture.item !== null && ghostCapture.item.ready
+
+                Loader {
+                    id: ghostCapture
+                    anchors.fill: parent
+                    active: ghost.visible && !!overview.dragging && overview.dragging.toplevel !== null
+                    source: "../dock/WindowThumb.qml"
+                    onLoaded: item.toplevel = Qt.binding(() => overview.dragging ? overview.dragging.toplevel : null)
+                }
+                MonoIcon {
+                    anchors.centerIn: parent
+                    visible: !ghost.pictured
+                    name: overview.dragging ? Config.Apps.iconFor(overview.dragging.cls) : "square"
+                    size: 22
+                    inkColor: Config.Appearance.ink
+                    accentColor: Config.Appearance.accent
+                }
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: "transparent"
+                    border.width: 2
+                    border.color: Config.Appearance.accent
                 }
             }
         }
