@@ -139,6 +139,28 @@ else
     S=$(spicetify_bin) || die "Spicetify was installed but can't be found — is ~/.local/bin on your PATH?"
 fi
 
+# ── sharp on a scaled screen ──────────────────────────────────────────────
+# Spotify runs through XWayland unless told otherwise, and on a scaled
+# screen XWayland's windows are drawn small and stretched: blurry, pixelly
+# text. Asked to run on Wayland itself, it draws at the screen's own
+# pixels. spotify-launcher reads the arguments from its config; one you've
+# set up yourself is left as it is.
+LCONF="$CONFIG/spotify-launcher.conf"
+WAYLAND_ARGS='extra_arguments = ["--enable-features=UseOzonePlatform,WaylandWindowDecorations", "--ozone-platform=wayland"]'
+if [ ! -f "$LCONF" ]; then
+    printf '[spotify]\n%s\n' "$WAYLAND_ARGS" > "$LCONF"
+    did "Spotify set to run on Wayland, sharp at any scale (${LCONF#$HOME/})"
+elif grep -q '^[[:space:]]*extra_arguments' "$LCONF"; then
+    if grep -q 'ozone-platform' "$LCONF"; then did "Spotify already runs on Wayland"
+    else note "${LCONF#$HOME/} has its own extra_arguments; add \"--ozone-platform=wayland\" to them for sharp text"; fi
+elif grep -q '^\[spotify\]' "$LCONF"; then
+    sed -i "/^\[spotify\]/a $WAYLAND_ARGS" "$LCONF"
+    did "Spotify set to run on Wayland, sharp at any scale (${LCONF#$HOME/})"
+else
+    printf '\n[spotify]\n%s\n' "$WAYLAND_ARGS" >> "$LCONF"
+    did "Spotify set to run on Wayland, sharp at any scale (${LCONF#$HOME/})"
+fi
+
 # ── the theme ─────────────────────────────────────────────────────────────
 # The shell writes it from the theme it's wearing; asked here so it's there
 # now. Without the shell running, a start from its default dark theme,
