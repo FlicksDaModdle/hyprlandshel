@@ -310,10 +310,13 @@ Singleton {
     // state flip rather than launching hyprlock. Nothing may dismiss this
     // except a successful PAM authentication.
     property bool locked: false
+    // Asked again while already locked: the lock screen checks it really is.
+    signal lockRequested()
 
     function lock() {
         closeAll();
         settingsOpen = false;
+        if (locked) lockRequested();
         locked = true;
     }
 

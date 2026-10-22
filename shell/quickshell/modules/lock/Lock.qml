@@ -24,18 +24,59 @@ import "../corners"
 // The mockup's "Click anywhere to unlock" is the one thing deliberately not
 // carried over.
 Scope {
+    id: root
     // The password, shared by every monitor's surface (LockAuth.qml). Beside
     // the lock rather than inside it: what is inside a WlSessionLock is made
     // per surface.
     LockAuth { id: lockAuth }
 
+    // Each lock starts with an empty field, and with your face being looked
+    // for (when Howdy is set up).
+    Connections {
+        target: Config.UiState
+        function onLockedChanged() {
+            if (Config.UiState.locked) lockAuth.begin(); else lockAuth.stop();
+            root.apply();
+        }
+        function onLockRequested() { root.apply(); }
+    }
+    Component.onCompleted: apply()
+
+    function apply() {
+        if (Config.UiState.locked) {
+            lock.locked = true;
+            confirm.restart();
+        } else {
+            confirm.stop();
+            lock.locked = false;
+        }
+    }
+
+    // Not locked for real yet (the compositor hasn't said so): let go and
+    // ask again, until it takes.
+    Timer {
+        id: confirm
+        interval: 600
+        repeat: true
+        onTriggered: {
+            if (!Config.UiState.locked || lock.secure) { stop(); return; }
+            lock.locked = false;
+            relock.restart();
+        }
+    }
+    Timer {
+        id: relock
+        interval: 120
+        onTriggered: if (Config.UiState.locked) lock.locked = true
+    }
+
     WlSessionLock {
         id: lock
 
-        locked: Config.UiState.locked
-        // Each lock starts with an empty field, and with your face being
-        // looked for (when Howdy is set up).
-        onLockedChanged: locked ? lockAuth.begin() : lockAuth.stop()
+        // Set by apply() below rather than bound: a lock asked for just
+        // after an unlock can be turned down by the compositor while it is
+        // still letting the last one go, and then it has to be asked again.
+        locked: false
 
         // Your name as the greeter shows it — the full name from /etc/passwd,
         // the login name when there is none.
