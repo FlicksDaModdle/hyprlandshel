@@ -434,18 +434,15 @@ Scope {
     Timer {
         id: leaveThenLaunch
         interval: 440
-        onTriggered: Greetd.launch(g.sessionCommand(g.session), g.sessionEnv(g.session))
+        onTriggered: Greetd.launch(g.session.command, g.sessionEnv(g.session))
     }
 
-    // The session, started on a clean console: the text screen is cleared
-    // and its cursor hidden, and what the session prints goes nowhere
-    // rather than over it — that text screen is what shows for the moment
-    // between this compositor going and the session's arriving. (Hyprland
-    // keeps its own log in $XDG_RUNTIME_DIR/hypr.)
-    function sessionCommand(s) {
-        const quiet = 'printf "\\033[2J\\033[3J\\033[H\\033[?25l" 2>/dev/null; exec "$@" >/dev/null 2>&1';
-        return ["/bin/sh", "-c", quiet, "hyprshell-session"].concat(s.command);
-    }
+    // The session's command exactly as its .desktop file has it. Nothing
+    // wrapped around it: greetd joins the words with spaces and hands them
+    // to /bin/sh (greetd/src/session/worker.rs), so a quoted script in
+    // there falls apart, the session ends at once, and greetd comes back
+    // to the greeter — a login that loops. (The console is cleared before
+    // the greeter starts, by /etc/hyprshell-greeter/start.sh.)
 
     // ── power ─────────────────────────────────────────────────────────────
     function power(action) {
