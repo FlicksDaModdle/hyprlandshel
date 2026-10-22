@@ -230,11 +230,45 @@ hl.env("TERMCMD", "hyprshell-term")
 -- Nothing here is wrapped in `sh -c`: Hyprland already runs exec commands
 -- through /bin/sh. They just must not *start* with "[", which Hyprland
 -- would read as an exec rule.
+-- Memory. Two things the shell's process does not need to carry:
+--
+--   NVIDIA's EGL driver. On a hybrid laptop (an AMD or Intel GPU driving
+--   the screen, an NVIDIA one beside it) glvnd can hand Quickshell the
+--   NVIDIA driver, whose libraries are well over a hundred megabytes of
+--   the process and keep the discrete GPU awake. Mesa's is used instead,
+--   but only where Mesa has a GPU to drive: with the MUX set to the
+--   NVIDIA GPU alone there is none, and nothing is changed.
+--
+--   glibc's per-thread arenas, one per thread up to eight per core, each
+--   holding on to what it once used. Two are plenty for a shell.
+local function shell_env()
+    local env = "MALLOC_ARENA_MAX=2"
+    local mesa = "/usr/share/glvnd/egl_vendor.d/50_mesa.json"
+    local f = io.open(mesa, "r")
+    if not f then return env end
+    f:close()
+    local has_nvidia, has_mesa_gpu = false, false
+    for n = 128, 135 do
+        local u = io.open("/sys/class/drm/renderD" .. n .. "/device/uevent", "r")
+        if u then
+            local text = u:read("*a") or ""
+            u:close()
+            local driver = text:match("DRIVER=([%w_]+)")
+            if driver == "nvidia" then has_nvidia = true
+            elseif driver == "amdgpu" or driver == "i915" or driver == "xe" or driver == "radeon" then has_mesa_gpu = true end
+        end
+    end
+    if has_nvidia and has_mesa_gpu then
+        env = env .. " __EGL_VENDOR_LIBRARY_FILENAMES=" .. mesa .. " __GLX_VENDOR_LIBRARY_NAME=mesa"
+    end
+    return env
+end
+
 local launch = "pgrep -x qs >/dev/null 2>&1 || "
     -- QT_LOGGING_RULES: Hyprland hangs up after answering each request on
     -- its socket, and Quickshell logs every hang-up as a warning; the shell
     -- asks it something on every window event (services/HyprIpc.qml).
-    .. "exec env QT_QPA_PLATFORM=wayland QT_LOGGING_RULES='quickshell.io.socket.warning=false' qs -c hyprshell"
+    .. "exec env " .. shell_env() .. " QT_QPA_PLATFORM=wayland QT_LOGGING_RULES='quickshell.io.socket.warning=false' qs -c hyprshell"
 
 -- Reload only: WAYLAND_DISPLAY is empty on the first parse, so this does
 -- nothing then and the hook below does the real work.

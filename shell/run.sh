@@ -86,6 +86,26 @@ if [ "${1:-}" = "--restart" ]; then
     fi
 fi
 
+# Memory, as hyprland.lua starts it: two glibc arenas rather than one per
+# thread, and on a hybrid laptop Mesa's EGL driver rather than NVIDIA's —
+# only where Mesa has a GPU to drive (not with the MUX on NVIDIA alone).
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+_mesa=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+if [ -f "$_mesa" ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]; then
+    _nv= _other=
+    for _u in /sys/class/drm/renderD*/device/uevent; do
+        [ -r "$_u" ] || continue
+        case "$(sed -n 's/^DRIVER=//p' "$_u")" in
+            nvidia) _nv=1 ;;
+            amdgpu|i915|xe|radeon) _other=1 ;;
+        esac
+    done
+    if [ -n "$_nv" ] && [ -n "$_other" ]; then
+        export __EGL_VENDOR_LIBRARY_FILENAMES="$_mesa" __GLX_VENDOR_LIBRARY_NAME=mesa
+        note "hybrid graphics: the shell draws with Mesa, leaving the NVIDIA GPU asleep"
+    fi
+fi
+
 # Hyprland hangs up after each request on its socket, which Quickshell
 # would log as a warning every time (services/HyprIpc.qml).
 export QT_LOGGING_RULES="${QT_LOGGING_RULES:+$QT_LOGGING_RULES;}quickshell.io.socket.warning=false"

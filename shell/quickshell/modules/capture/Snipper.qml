@@ -94,7 +94,8 @@ Variants {
         readonly property var boxes: {
             const C = Services.Compositor;
             const s = modelData;
-            if (!s) return [];
+            // Nothing to pick from while it isn't up.
+            if (!s || !win.visible) return [];
             const mon = (C.monitors || []).find(m => m.name === s.name);
             const ws = mon && mon.activeWorkspace ? mon.activeWorkspace.id : C.focusedId;
             return (C.clients || [])

@@ -148,6 +148,21 @@ Singleton {
                                          || calendarOpen || mediaOpen || powerOpen || clipboardOpen || trayMenuOpen || drivesOpen || timersOpen || privacyOpen || updatesOpen || captureOpen || desktopMenuOpen
                                          || windowMenuOpen || appMenuOpen || iconPickerOpen
 
+    // ── giving memory back ────────────────────────────────────────────────
+    // The launcher's results, the overview's windows and a panel's rows are
+    // JavaScript left for the collector once they close, and the engine
+    // only collects when it next needs room — so a shell that has opened
+    // the launcher once holds its lists for good. A while after the last
+    // of them closes (not straight away: it is often opened again at once)
+    // it is asked to collect.
+    readonly property bool bigOpen: launcherOpen || overviewOpen || anyPanelOpen || clipboardOpen
+    onBigOpenChanged: if (bigOpen) idleCollect.stop(); else idleCollect.restart()
+    Timer {
+        id: idleCollect
+        interval: 15000
+        onTriggered: gc()
+    }
+
     function closeAll() {
         // Anything that closes everything is not a collapse back into the
         // dock: only Escape is, and it sets this again on its way out.

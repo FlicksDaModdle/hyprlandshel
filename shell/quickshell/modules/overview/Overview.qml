@@ -204,7 +204,10 @@ Variants {
 
                     Repeater {
                         id: cards
-                        model: overview.slots
+                        // Only while it's up: closed, there are no cards,
+                        // nothing worked out on every window event, and
+                        // nothing held in memory for a screen no one sees.
+                        model: overview.visible ? overview.slots : []
 
                         Item {
                             id: card
