@@ -11,10 +11,14 @@
 #                                  remove the greeter
 #   sudo ./install.sh --no-keyring  install without having your login unlock
 #                                  the keyring
+#   sudo ./install.sh --quiet-boot  …and keep the boot's text off the screen
+#                                  (adds quiet-boot options to Limine's
+#                                  kernel command line; a copy is kept)
 #
 # How it fits together:
 #
-#   greetd  →  Hyprland, with /etc/hyprshell-greeter/hyprland.lua
+#   greetd  →  /etc/hyprshell-greeter/start.sh (a clear console, no cursor)
+#           →  Hyprland, with /etc/hyprshell-greeter/hyprland.lua
 #           →  quickshell -p /usr/share/hyprshell-greeter/shell.qml
 #
 # The greeter runs as greetd's own unprivileged user. Your password goes to
@@ -31,7 +35,7 @@ REPO=$(cd "$HERE/.." && pwd)
 # Everything below is under $ROOT, which is / unless --root is given (for
 # trying the install out on a scratch directory).
 ROOT=""
-enable=0 uninstall=0 themeonly=0 status=0 keyring=1
+enable=0 uninstall=0 themeonly=0 status=0 keyring=1 quietboot=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --enable)    enable=1 ;;
@@ -39,6 +43,7 @@ while [ $# -gt 0 ]; do
         --theme)     themeonly=1 ;;
         --status)    status=1 ;;
         --no-keyring) keyring=0 ;;
+        --quiet-boot) quietboot=1 ;;
         --root)      shift; ROOT="${1%/}" ;;
         -h|--help)   sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) printf 'unknown option %s\n' "$1" >&2; exit 2 ;;
@@ -350,6 +355,20 @@ sed -e "s|@STATE@|/var/lib/hyprshell-greeter|g" \
 chmod 644 "$ETC/hyprland.lua"
 did "its compositor config in ${ETC#$ROOT}/hyprland.lua (keyboard: $layout${variant:+ $variant})"
 
+# How greetd starts it: the text console it runs on is cleared and its
+# cursor hidden first, and the compositor's own output goes nowhere rather
+# than onto it — that console is what shows for a moment before the
+# greeter and between it and your session. (Hyprland keeps its log in
+# $XDG_RUNTIME_DIR/hypr.)
+{
+    echo '#!/bin/sh'
+    echo "# Written by hyprshell's greeter/install.sh: what greetd starts."
+    echo "printf '\\033[2J\\033[3J\\033[H\\033[?25l' 2>/dev/null"
+    echo "exec $COMP >/dev/null 2>&1"
+} > "$ETC/start.sh"
+chmod 755 "$ETC/start.sh"
+did "its start script in ${ETC#$ROOT}/start.sh"
+
 # ── greetd ────────────────────────────────────────────────────────────────
 mkdir -p "$GREETD"
 # The config from before the first install is kept, and never overwritten
@@ -367,10 +386,61 @@ cat > "$CONF" <<EOF
 vt = ${vt:-1}
 
 [default_session]
-command = "$COMP"
+command = "/etc/hyprshell-greeter/start.sh"
 user = "$GU"
 EOF
 did "greetd now starts the greeter (${CONF#$ROOT})"
+
+# ── a quiet boot ──────────────────────────────────────────────────────────
+# Only when asked (--quiet-boot): the kernel's and systemd's messages, and
+# the console's cursor, kept off the screen from the boot menu to the
+# greeter. An option already there (a loglevel you chose) is left alone.
+QUIET="quiet loglevel=3 rd.udev.log_level=3 systemd.show_status=auto vt.global_cursor_default=0"
+missing_from() {
+    out=""
+    for p in $QUIET; do
+        k=${p%%=*}
+        grep -Eq "(^|[^[:alnum:]._-])$k(=|[^[:alnum:]._-]|\$)" "$1" || out="$out $p"
+    done
+    printf '%s' "${out# }"
+}
+if [ "$quietboot" = 1 ]; then
+    LIMINE_DEFAULT="$ROOT/etc/default/limine"
+    limine_conf=""
+    for c in "$ROOT/boot/limine.conf" "$ROOT/boot/limine/limine.conf" "$ROOT/efi/limine.conf" "$ROOT/boot/EFI/limine/limine.conf"; do
+        [ -f "$c" ] && { limine_conf=$c; break; }
+    done
+    if [ -f "$LIMINE_DEFAULT" ] && grep -q 'KERNEL_CMDLINE' "$LIMINE_DEFAULT"; then
+        # CachyOS: limine-update writes the boot entries from this file.
+        add=$(missing_from "$LIMINE_DEFAULT")
+        if [ -n "$add" ]; then
+            [ -f "$LIMINE_DEFAULT.before-hyprshell" ] || cp -p "$LIMINE_DEFAULT" "$LIMINE_DEFAULT.before-hyprshell"
+            printf '\n# Added by hyprshell greeter/install.sh --quiet-boot\nKERNEL_CMDLINE[default]+=" %s"\n' "$add" >> "$LIMINE_DEFAULT"
+            did "quiet boot: added \"$add\" to ${LIMINE_DEFAULT#$ROOT} (the old one is ${LIMINE_DEFAULT#$ROOT}.before-hyprshell)"
+            if [ -z "$ROOT" ] && command -v limine-update >/dev/null 2>&1; then
+                if limine-update >/dev/null 2>&1; then did "boot entries rewritten (limine-update)"
+                else note "limine-update failed — run it yourself: sudo limine-update"; fi
+            else
+                note "now run: sudo limine-update  (it writes this into the boot entries)"
+            fi
+        else
+            did "quiet boot: ${LIMINE_DEFAULT#$ROOT} already has it"
+        fi
+    elif [ -n "$limine_conf" ]; then
+        add=$(missing_from "$limine_conf")
+        if [ -n "$add" ]; then
+            [ -f "$limine_conf.before-hyprshell" ] || cp -p "$limine_conf" "$limine_conf.before-hyprshell"
+            # Every entry's command line, in either of Limine's spellings.
+            sed -i -E "s/^([[:space:]]*(kernel_)?cmdline:.*[^[:space:]])[[:space:]]*\$/\1 $add/I" "$limine_conf"
+            did "quiet boot: added \"$add\" to each entry in ${limine_conf#$ROOT} (the old one is ${limine_conf#$ROOT}.before-hyprshell)"
+        else
+            did "quiet boot: ${limine_conf#$ROOT} already has it"
+        fi
+    else
+        note "quiet boot: no Limine config found — add this to your kernel command line yourself:"
+        note "  $QUIET"
+    fi
+fi
 
 # ── which display manager runs ────────────────────────────────────────────
 [ -n "$ROOT" ] && exit 0

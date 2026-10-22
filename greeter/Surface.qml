@@ -14,6 +14,7 @@ LoginView {
     readonly property var g: greeter
 
     auth: g
+    leaving: g.leaving
     userName: g.user ? g.user.display : (g.users.length === 0 ? "No users found" : "")
     // Their picture as their shell keeps it, then the system's.
     pictures: g.user ? [g.userDir + "/face", g.user.icon] : []

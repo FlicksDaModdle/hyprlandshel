@@ -394,6 +394,8 @@ Scope {
         }
 
         function onError(message) {
+            // A session that wouldn't start: the card comes back to say so.
+            g.leaving = false;
             if (g.letGo) return;
             g.faceDone();
             g.info = "";
@@ -417,12 +419,32 @@ Scope {
             g.launchNow();
         }
     }
-    Timer { id: launchSoon; interval: 650; onTriggered: g.launchNow() }
+    Timer { id: launchSoon; interval: 480; onTriggered: g.launchNow() }
+
+    // In: the card and clock lift away and the dim clears (LoginView's
+    // `leaving`), so the last thing shown is the bare wallpaper your
+    // desktop then fades up on, and only then is the session started.
+    property bool leaving: false
     function launchNow() {
         g.remember();
-        g.status = "Starting " + g.session.name + "…";
         g.failed = false;
-        Greetd.launch(g.session.command, g.sessionEnv(g.session));
+        g.leaving = true;
+        leaveThenLaunch.restart();
+    }
+    Timer {
+        id: leaveThenLaunch
+        interval: 440
+        onTriggered: Greetd.launch(g.sessionCommand(g.session), g.sessionEnv(g.session))
+    }
+
+    // The session, started on a clean console: the text screen is cleared
+    // and its cursor hidden, and what the session prints goes nowhere
+    // rather than over it — that text screen is what shows for the moment
+    // between this compositor going and the session's arriving. (Hyprland
+    // keeps its own log in $XDG_RUNTIME_DIR/hypr.)
+    function sessionCommand(s) {
+        const quiet = 'printf "\\033[2J\\033[3J\\033[H\\033[?25l" 2>/dev/null; exec "$@" >/dev/null 2>&1';
+        return ["/bin/sh", "-c", quiet, "hyprshell-session"].concat(s.command);
     }
 
     // ── power ─────────────────────────────────────────────────────────────

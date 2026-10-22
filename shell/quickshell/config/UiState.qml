@@ -1,6 +1,7 @@
 pragma Singleton
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import "." as Config
 
 // Ephemeral cross-module UI state: which panel is open, transient hover and
@@ -365,6 +366,40 @@ Singleton {
         interval: 90
         onTriggered: { root.shellAway = false; root.arrived(); arriveEnd.restart(); }
     }
+    // ── a new session ─────────────────────────────────────────────────────
+    // Logging in, the desktop fades up out of the dark the greeter left
+    // (background/Wallpaper.qml's curtain) and the bar and dock come in, as
+    // after an unlock. Only once per Hyprland session: a reload of the shell
+    // just shows the desktop. Told apart by a mark in the runtime folder,
+    // named for this Hyprland, which the first start writes.
+    FileView {
+        id: startMark
+        path: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/hyprshell-started-"
+              + (Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") || "session")
+        printErrors: false
+        blockLoading: true
+        blockWrites: true
+    }
+    property bool startChecked: false
+    property bool startFresh: false
+    // Asked by the wallpaper as it is made; the same answer every time.
+    function firstStart() {
+        if (startChecked) return startFresh;
+        startChecked = true;
+        startFresh = startMark.text().trim() === "";
+        if (startFresh) {
+            startMark.setText("started\n");
+            shellAway = true;
+            comeIn.restart();
+        }
+        return startFresh;
+    }
+    Timer {
+        id: comeIn
+        interval: 520
+        onTriggered: if (!root.locked) root.shellAway = false
+    }
+
     // The wallpaper laid over the desktop has faded by now.
     Timer {
         id: arriveEnd

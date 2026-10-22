@@ -124,6 +124,33 @@ Variants {
             sourceSize.height: win.height
         }
 
+        // ── coming in ─────────────────────────────────────────────────────
+        // A new session starts dark — Hyprland's own background, the colour
+        // under everything (shell/hypr: misc.background_color) — and the
+        // wallpaper comes up out of it. A reload of the shell starts clear.
+        Rectangle {
+            id: curtain
+            anchors.fill: parent
+            color: "#201e1d"
+            opacity: 0
+            visible: opacity > 0.002
+            NumberAnimation on opacity {
+                id: lift
+                running: false
+                from: 1
+                to: 0
+                duration: 650
+                easing.type: Easing.OutCubic
+            }
+            Component.onCompleted: {
+                if (!Config.UiState.firstStart()) return;
+                opacity = 1;
+                // A beat for the picture to load before it's shown.
+                liftSoon.start();
+            }
+            Timer { id: liftSoon; interval: 180; onTriggered: lift.start() }
+        }
+
         // ── desktop interactions ──────────────────────────────────────────
         MouseArea {
             anchors.fill: parent
