@@ -1,0 +1,10 @@
+[package]
+name = "pam_hyprshell_face"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "pam_hyprshell_face"
+crate-type = ["cdylib"]
+path = "src/lib.rs"

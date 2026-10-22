@@ -2061,6 +2061,7 @@ Scope {
         if (!F.adding && !F.justAdded && F.status !== "")
             rows.push({ n: F.busy ? "Working…" : (F.failed ? "That didn't work" : "Done"), s: F.status,
                         type: "info", value: "" });
+        for (const r of root.serviceRows()) rows.push(r);
         for (const r of root.howdyRows()) rows.push(r);
         for (const r of root.keyringRows()) rows.push(r);
         rows.push({ type: "header", n: "Login screen" });
@@ -2071,12 +2072,49 @@ Scope {
         return rows;
     }
 
+    // Settings → Login screen → Face service: Hyprshell's own (shell/face),
+    // when it's installed, or how to get it.
+    function serviceRows() {
+        const F = Services.FaceUnlock;
+        if (F.engine !== "service")
+            return [{ type: "header", n: "Faster face unlock" },
+                    { n: "Hyprshell's face service", type: "info", value: F.service ? "Not running" : "Not installed",
+                      s: F.service ? "Installed but not answering: sudo systemctl restart hyprshell-faced"
+                                   : "Keeps the face models loaded, so unlocking starts at the camera, not at loading them: "
+                                     + "sudo shell/face/install.sh in Hyprshell's folder. Howdy stays as its fallback" }];
+        const S = F.service;
+        const rows = [{ type: "header", n: "Face service",
+                        s: "Hyprshell's own: the models stay loaded, and it decides first. Changes apply at the next unlock" },
+            { n: "Running", type: "info", value: "Ready",
+              s: (F.looks && F.looks.length === 0 ? "No face of yours added to it yet: add it below. Until then Howdy answers. " : "")
+                 + "Each unlock, and how long it took: journalctl -u hyprshell-faced" },
+            { n: "How alike your face has to be",
+              s: "Higher is stricter: harder to fool, but it may take a second look. 0.45 suits most people",
+              type: "slider", min: 0.3, max: 0.7, step: 0.01, unit: "",
+              value: Number(S.threshold || 0.45), set: v => F.setService("threshold", Number(v).toFixed(2)) },
+            { n: "Give up after", s: "How long it looks for you before the password is asked for",
+              type: "slider", min: 1, max: 10, step: 0.5, unit: "s",
+              value: Number(S.timeout || 4), set: v => F.setService("timeout", Number(v).toFixed(1)) }];
+        if (F.webcamCheck)
+            rows.push({ n: "Webcam: how alike", s: "For the webcam check; colour pictures vary more with the light",
+                        type: "slider", min: 0.3, max: 0.7, step: 0.01, unit: "",
+                        value: Number(S.webcam_threshold || 0.4), set: v => F.setService("webcam_threshold", Number(v).toFixed(2)) },
+                      { n: "Webcam: too dark below",
+                        s: "Average brightness (0–255) under which the webcam is left out and infrared decides alone",
+                        type: "slider", min: 5, max: 150, step: 1, unit: "",
+                        value: Number(S.min_light || 45), set: v => F.setService("min_light", Math.round(v)) });
+        return rows;
+    }
+
     // Settings → Login screen → Howdy: its own settings (config.ini),
     // through services/FaceUnlock.qml. Changes wait, and go in together
     // with one password (scripts/howdy-config.py checks every one).
     function howdyRows() {
         const F = Services.FaceUnlock;
-        const rows = [{ type: "header", n: "Howdy", s: "Howdy's own settings, changed as you change them" }];
+        const rows = [{ type: "header", n: F.engine === "service" ? "Howdy (the fallback)" : "Howdy",
+                        s: F.engine === "service"
+                           ? "Used only when the face service can't answer: it isn't running, or has no face of yours"
+                           : "Howdy's own settings, changed as you change them" }];
         if (F.configPath === "") {
             rows.push({ n: "Howdy's settings", type: "info", value: "Not readable",
                         s: "Its config.ini wasn't found, or can't be read: sudo howdy config edits it by hand" });

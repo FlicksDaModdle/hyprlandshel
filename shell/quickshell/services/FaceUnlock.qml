@@ -21,37 +21,51 @@ Singleton {
 
     property bool howdyInstalled: false
     property bool pamModule: false
-    readonly property bool installed: howdyInstalled && pamModule
+    readonly property bool installed: (howdyInstalled && pamModule) || root.engine === "service"
     property bool lockOn: false
     property bool greeterOn: false
     readonly property bool on: lockOn || greeterOn
     // [{ path, name, ir }]
     property var cameras: []
     property string camera: ""
-    // How many looks Howdy knows you by; -1 while unknown (Howdy's list
-    // may want root to read).
+    // Hyprshell's own face service (shell/face), when it's running: its
+    // status ({ result, models, ir_device, webcam_check, threshold, … })
+    // and the looks it knows you by. It decides then, Howdy is its
+    // fallback; without it, Howdy alone.
+    property var service: null
+    property var serviceLooks: null
+    readonly property string engine: root.service && root.service.result === "ok" && root.service.models ? "service" : "howdy"
+
+    // How many looks you're known by; -1 while unknown (Howdy's list may
+    // want root to read).
     readonly property int faces: root.looks !== null ? root.looks.length : root.listedFaces
     property int listedFaces: -1
-    // Each look: { id, label, time (a Date) }, read from Howdy's own file
-    // of them; null when it can't be read.
-    property var looks: null
+    // Each look: { id, label, time (a Date) }; null when they can't be read.
+    readonly property var looks: root.engine === "service" ? root.serviceLooks : root.howdyLooks
+    // Howdy's, read from its own file of them.
+    property var howdyLooks: null
     property string modelsPath: ""
-    // The webcam check: on, and which looks (Howdy model ids) have webcam
-    // pictures for it, kept beside Howdy's models by howdy-webcam.py.
-    property bool webcamCheck: false
-    property var webcamIds: []
+    // The webcam check: on, and which looks have webcam pictures for it
+    // (the service's own, or Howdy's, kept beside its models by
+    // howdy-webcam.py).
+    readonly property bool webcamCheck: root.engine === "service" ? !!root.service.webcam_check : root.howdyWebcamCheck
+    property bool howdyWebcamCheck: false
+    readonly property var webcamIds: root.engine === "service"
+        ? (root.serviceLooks || []).filter(l => l.webcam > 0).map(l => l.id)
+        : root.howdyWebcamIds
+    property var howdyWebcamIds: []
     FileView {
         id: webcamFile
         path: root.modelsPath !== "" ? root.modelsPath.replace(/\.dat$/, ".webcam.json") : ""
         printErrors: false
         onLoaded: {
             try {
-                root.webcamIds = JSON.parse(text() || "[]").map(l => l.howdy_id);
+                root.howdyWebcamIds = JSON.parse(text() || "[]").map(l => l.howdy_id);
             } catch (e) {
-                root.webcamIds = [];
+                root.howdyWebcamIds = [];
             }
         }
-        onLoadFailed: root.webcamIds = []
+        onLoadFailed: root.howdyWebcamIds = []
     }
     // ── Howdy's settings ────────────────────────────────────────────────
     // Read from its config.ini as it is; changed through howdy-setup.sh
@@ -152,14 +166,14 @@ Singleton {
         onLoaded: {
             try {
                 const all = JSON.parse(text() || "[]");
-                root.looks = all.map(m => ({ id: m.id, label: String(m.label || "Face"),
-                                             time: new Date(Number(m.time) * 1000) }));
+                root.howdyLooks = all.map(m => ({ id: m.id, label: String(m.label || "Face"),
+                                                  time: new Date(Number(m.time) * 1000) }));
             } catch (e) {
-                root.looks = null;
+                root.howdyLooks = null;
             }
         }
         // Not there: no looks yet (if the folder can be read at all).
-        onLoadFailed: err => root.looks = err === FileViewError.FileNotFound ? [] : null
+        onLoadFailed: err => root.howdyLooks = err === FileViewError.FileNotFound ? [] : null
     }
     property bool greeterInstalled: false
 
@@ -178,7 +192,7 @@ Singleton {
         id: lockFile
         path: "/etc/pam.d/hyprshell-lock"
         printErrors: false
-        onLoaded: root.lockOn = text().indexOf("pam_howdy") >= 0
+        onLoaded: root.lockOn = /pam_howdy|pam_hyprshell_face/.test(text())
         onLoadFailed: root.lockOn = false
     }
     FileView {
@@ -228,6 +242,11 @@ Singleton {
                 printf 'models\t%s\n' "$m/$USER.dat"
                 break
             done
+            # Hyprshell's face service: running, and what it knows of you.
+            if command -v hyprshell-face >/dev/null 2>&1; then
+                printf 'service\\t%s\\n' "$(hyprshell-face status 2>/dev/null | tr -d '\\n')"
+                printf 'servicelooks\\t%s\\n' "$(hyprshell-face list 2>/dev/null | tr -d '\\n')"
+            fi
             if command -v howdy >/dev/null 2>&1; then
                 out=$(howdy -U "$USER" list 2>/dev/null) && printf 'faces\\t%s\\n' "$(printf '%s\\n' "$out" | grep -cE '^[[:space:]]*[0-9]+')"
             fi
@@ -235,6 +254,7 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 let howdy = false, pam = false, greeter = false, faces = -1, device = "", models = "", webcamCheck = false, configPath = "";
+                let serviceText = "", serviceLooksText = "";
                 const cams = [];
                 for (const line of text.split("\n")) {
                     const t = line.split("\t");
@@ -248,6 +268,8 @@ Singleton {
                     else if (t[0] === "models") models = (t[1] || "").trim();
                     else if (t[0] === "webcamcheck") webcamCheck = true;
                     else if (t[0] === "config") configPath = (t[1] || "").trim();
+                    else if (t[0] === "service") serviceText = t.slice(1).join("\t").trim();
+                    else if (t[0] === "servicelooks") serviceLooksText = t.slice(1).join("\t").trim();
                 }
                 root.howdyInstalled = howdy;
                 root.pamModule = pam;
@@ -256,7 +278,17 @@ Singleton {
                 root.camera = device;
                 root.listedFaces = isFinite(faces) ? faces : -1;
                 root.modelsPath = models;
-                root.webcamCheck = webcamCheck;
+                root.howdyWebcamCheck = webcamCheck;
+                let service = null, serviceLooks = null;
+                try { if (serviceText !== "") service = JSON.parse(serviceText); } catch (e) {}
+                try {
+                    const l = serviceLooksText !== "" ? JSON.parse(serviceLooksText) : null;
+                    if (l && l.result === "ok")
+                        serviceLooks = l.looks.map(m => ({ id: m.id, label: String(m.label || "Face"),
+                                                           time: new Date(Number(m.time) * 1000), ir: m.ir, webcam: m.webcam }));
+                } catch (e) {}
+                root.service = service;
+                root.serviceLooks = serviceLooks;
                 root.configPath = configPath;
                 if (configPath !== "") configFile.reload();
                 if (models !== "") { modelsFile.reload(); webcamFile.reload(); }
@@ -429,7 +461,32 @@ Singleton {
         onTriggered: { root.busy = false; root.startAdding(); }
     }
 
-    function removeLook(id) { run(["--remove-face", String(id)], "Removing that look…", "That look is removed"); }
+    // The service's own looks are yours to remove without a password (it
+    // checks it's you asking); Howdy's need root.
+    function removeLook(id) {
+        if (root.engine !== "service") {
+            run(["--remove-face", String(id)], "Removing that look…", "That look is removed");
+            return;
+        }
+        if (root.busy) return;
+        removeProc.command = ["hyprshell-face", "remove", String(id)];
+        removeProc.running = true;
+    }
+    Process {
+        id: removeProc
+        stdout: StdioCollector { id: removeOut }
+        onExited: code => {
+            root.failed = code !== 0;
+            let said = "";
+            try { said = JSON.parse(removeOut.text).message || ""; } catch (e) {}
+            root.status = code === 0 ? "That look is removed" : (said || "That look couldn't be removed");
+            root.refresh();
+        }
+    }
+    // The service's settings (/etc/hyprshell-face.conf), straight away.
+    function setService(key, value) {
+        run(["--face-set", key + "=" + value], "Changing the face service's settings…", "Changed");
+    }
     function clearFaces() { run(["--clear-faces"], "Removing your faces…", "Your faces are removed"); }
 
     // The change being made, and what came of it.

@@ -1,0 +1,43 @@
+[Unit]
+Description=Hyprshell face unlock (the face models, kept loaded)
+Documentation=file:///usr/local/share/hyprshell-face/README.md
+
+[Service]
+ExecStart=/usr/local/libexec/hyprshell-faced
+Restart=on-failure
+RestartSec=2
+
+# /run/hyprshell-face (its socket) and /var/lib/hyprshell-face (your faces,
+# root only).
+RuntimeDirectory=hyprshell-face
+RuntimeDirectoryMode=0755
+StateDirectory=hyprshell-face
+StateDirectoryMode=0700
+
+# It needs the cameras, its own folders and a Unix socket; nothing else.
+DevicePolicy=closed
+DeviceAllow=char-video4linux rw
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+
+[Install]
+WantedBy=multi-user.target

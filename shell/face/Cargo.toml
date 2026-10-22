@@ -1,0 +1,22 @@
+# Face unlock for Hyprshell: the IR camera, two small ONNX models, and a
+# service that keeps them loaded, so an unlock doesn't start from nothing.
+# Built and installed by ./install.sh (see README.md).
+#
+#   hyprshell-faced      the service (faced/): models in memory, cameras on
+#                        request only, a socket for the rest
+#   hyprshell-face       its command line (faced/): add, list and remove
+#                        faces, try it, status
+#   pam_hyprshell_face   the PAM module (pam/): asks the service, and says
+#                        "unavailable" when it can't, so Howdy takes over
+[workspace]
+members = ["faced", "pam"]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+# Unwinding, not aborting: the PAM module runs inside greetd, the lock
+# screen and sudo, and a fault in it must come back as "unavailable".
+panic = "unwind"

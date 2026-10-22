@@ -1,0 +1,21 @@
+[package]
+name = "hyprshell-faced"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[[bin]]
+name = "hyprshell-faced"
+path = "src/main.rs"
+
+[[bin]]
+name = "hyprshell-face"
+path = "src/cli.rs"
+
+[dependencies]
+tract-onnx = "0.21"
+zune-jpeg = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+base64 = "0.22"

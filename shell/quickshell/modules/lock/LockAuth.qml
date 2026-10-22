@@ -37,7 +37,7 @@ Scope {
     FileView {
         path: "/etc/pam.d/hyprshell-lock"
         printErrors: false
-        onLoaded: root.faceEnabled = text().indexOf("pam_howdy") >= 0
+        onLoaded: root.faceEnabled = /pam_howdy|pam_hyprshell_face/.test(text())
         onLoadFailed: root.faceEnabled = false
     }
     // What the face attempt is doing, for the line under the field.

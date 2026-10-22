@@ -200,7 +200,7 @@ Scope {
     FileView {
         path: "/etc/pam.d/greetd"
         printErrors: false
-        onLoaded: g.faceEnabled = text().indexOf("pam_howdy") >= 0
+        onLoaded: g.faceEnabled = /pam_howdy|pam_hyprshell_face/.test(text())
         onLoadFailed: g.faceEnabled = false
     }
     property string info: ""

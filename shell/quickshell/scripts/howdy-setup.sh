@@ -11,6 +11,7 @@
 #   sudo ./howdy-setup.sh --webcam-check on DEVICE  the webcam has to know you too
 #   sudo ./howdy-setup.sh --webcam-check off        the infrared camera alone
 #   sudo ./howdy-setup.sh --set video.certainty=3.2 …  Howdy's settings (scripts/howdy-config.py)
+#   sudo ./howdy-setup.sh --face-set threshold=0.5 …   Hyprshell's face service's (shell/face)
 #   sudo ./howdy-setup.sh --remove-face ID forget one look (the ID from --list-faces)
 #   pkexec … --serve                         Settings: one password for a while of changes
 #   sudo ./howdy-setup.sh --clear-faces    forget every face of yours
@@ -69,6 +70,11 @@ case ${1:-} in
             shift
         done
         ;;
+    --face-set)
+        mode=faceset; shift
+        settings=("$@")
+        [ ${#settings[@]} -gt 0 ] || die "--face-set key=value …"
+        ;;
     --set)
         mode=set; shift
         settings=("$@")
@@ -98,7 +104,7 @@ case ${1:-} in
         [ -c "$camera" ] || die "no such camera: $camera"
         ;;
     "") ;;
-    *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
 
 # Whose faces: the person behind pkexec or sudo.
@@ -125,6 +131,12 @@ howdy_dir() {
 }
 here=$(cd "${0%/*}" && pwd)
 STAMP=hyprshell_webcam.py
+# Hyprshell's own face service (shell/face), when it's installed and
+# running: faces are added to it first, and to Howdy too, its fallback.
+FACE=/usr/local/bin/hyprshell-face
+svc_up() { [ -x "$FACE" ] && "$FACE" status >/dev/null 2>&1; }
+has_howdy() { command -v howdy >/dev/null 2>&1; }
+need_engine() { has_howdy || svc_up || die "neither Howdy nor Hyprshell's face service is installed"; }
 webcam_py() { python3 -I "$here/howdy-webcam.py" "$@"; }
 
 # Settings → Login screen asks for the password once, then sends the
@@ -156,17 +168,19 @@ fi
 
 case $mode in
     camera)
-        need_howdy
-        [ -n "$CONFIG" ] || die "Howdy's config.ini wasn't found"
-        if grep -Eq '^[[:space:]]*device_path[[:space:]]*=' "$CONFIG"; then
-            sed -i -E "s|^[[:space:]]*device_path[[:space:]]*=.*|device_path = $camera|" "$CONFIG"
-        else
-            die "no device_path in $CONFIG"
+        need_engine
+        if svc_up; then "$FACE" set "ir_device=$camera" || exit 1; fi
+        if has_howdy && [ -n "$CONFIG" ]; then
+            if grep -Eq '^[[:space:]]*device_path[[:space:]]*=' "$CONFIG"; then
+                sed -i -E "s|^[[:space:]]*device_path[[:space:]]*=.*|device_path = $camera|" "$CONFIG"
+            else
+                die "no device_path in $CONFIG"
+            fi
         fi
-        say "Howdy uses $camera"
+        say "Face unlock uses $camera"
         exit 0 ;;
     add)
-        need_person; need_howdy
+        need_person; need_engine
         # Howdy asks for a name for the new face (24 characters at most);
         # this gives it one.
         if [ "$alt" = 1 ]; then label="Alt look $(date +%Y-%m-%d)"; else label="Face $(date +%Y-%m-%d)"; fi
@@ -179,10 +193,20 @@ case $mode in
         fi
         # (For Settings: the camera is being recorded from now.)
         echo recording
-        printf '%s\n' "$label" | howdy -U "$person" add || exit $?
-        if [ -n "$stills" ]; then
-            hdir=$(howdy_dir) && webcam_py enrol "$hdir" "$person" "$label" "$stills" \
-                || echo "webcam: the webcam pictures couldn't be kept; the infrared camera decides alone for this look"
+        # Hyprshell's face service first: it decides, when it's there.
+        if svc_up; then
+            "$FACE" enrol "$person" "$label" ${stills:+"$stills"} || die "$("$FACE" status >/dev/null 2>&1 && echo "the face service couldn't add your face: look straight at the camera" || echo "the face service stopped")"
+        fi
+        # Howdy too, so its fallback knows you as well.
+        if has_howdy; then
+            if printf '%s\n' "$label" | howdy -U "$person" add; then
+                if [ -n "$stills" ]; then
+                    hdir=$(howdy_dir) && webcam_py enrol "$hdir" "$person" "$label" "$stills" \
+                        || echo "webcam: the webcam pictures couldn't be kept for Howdy"
+                fi
+            elif ! svc_up; then
+                exit 1
+            fi
         fi
         exit 0 ;;
     forget)
@@ -191,9 +215,12 @@ case $mode in
         { hdir=$(howdy_dir) && webcam_py forget "$hdir" "$person" "$id"; } || true
         exit 0 ;;
     clear)
-        need_person; need_howdy
-        howdy -U "$person" -y clear || exit $?
-        { hdir=$(howdy_dir) && webcam_py clear "$hdir" "$person"; } || true
+        need_person; need_engine
+        if svc_up; then "$FACE" clear "$person" >/dev/null || exit 1; fi
+        if has_howdy; then
+            howdy -U "$person" -y clear || exit $?
+            { hdir=$(howdy_dir) && webcam_py clear "$hdir" "$person"; } || true
+        fi
         exit 0 ;;
     set)
         need_howdy
@@ -202,18 +229,27 @@ case $mode in
         python3 -I "$here/howdy-config.py" "$CONFIG" "${settings[@]}" || exit 1
         exit 0 ;;
     webcam)
-        need_howdy
-        [ -n "$CONFIG" ] || die "Howdy's config.ini wasn't found"
-        hdir=$(howdy_dir) || die "Howdy's rubberstamps folder wasn't found"
-        if [ "$webcam" = on ]; then
-            install -m 644 -o root -g root "$here/$STAMP" "$hdir/rubberstamps/$STAMP"
-            webcam_py rule "$CONFIG" on "$camera"
-            say "The webcam has to recognise you too ($camera); in low light the infrared camera decides alone"
-        else
-            webcam_py rule "$CONFIG" off
-            rm -f "$hdir/rubberstamps/$STAMP"
-            say "The infrared camera decides alone"
+        need_engine
+        if svc_up; then
+            if [ "$webcam" = on ]; then "$FACE" set webcam_check=true "webcam_device=$camera" || exit 1
+            else "$FACE" set webcam_check=false || exit 1; fi
         fi
+        # Howdy's rubberstamp too, for when it's the fallback.
+        if has_howdy && [ -n "$CONFIG" ] && hdir=$(howdy_dir); then
+            if [ "$webcam" = on ]; then
+                install -m 644 -o root -g root "$here/$STAMP" "$hdir/rubberstamps/$STAMP"
+                webcam_py rule "$CONFIG" on "$camera"
+            else
+                webcam_py rule "$CONFIG" off
+                rm -f "$hdir/rubberstamps/$STAMP"
+            fi
+        fi
+        [ "$webcam" = on ] && say "The webcam has to recognise you too ($camera); in low light the infrared camera decides alone" \
+                           || say "The infrared camera decides alone"
+        exit 0 ;;
+    faceset)
+        svc_up || die "Hyprshell's face service isn't running"
+        "$FACE" set "${settings[@]}" || exit 1
         exit 0 ;;
     list)
         need_person; need_howdy
@@ -221,13 +257,19 @@ case $mode in
         exit $? ;;
 esac
 
-module=""
+module="" ours=""
 for d in /usr/lib/security /lib/security /usr/lib64/security /lib64/security /usr/lib/x86_64-linux-gnu/security; do
-    [ -f "$d/pam_howdy.so" ] && { module="$d/pam_howdy.so"; break; }
+    [ -z "$module" ] && [ -f "$d/pam_howdy.so" ] && module="$d/pam_howdy.so"
+    [ -z "$ours" ] && [ -f "$d/pam_hyprshell_face.so" ] && ours="$d/pam_hyprshell_face.so"
 done
+# Hyprshell's own face service (shell/face): asked first when it's there,
+# with Howdy after it only when it can't say (not running, no face of
+# yours added to it).
+ours_up() { [ -n "$ours" ] && systemctl is-enabled --quiet hyprshell-faced.service 2>/dev/null; }
 
 if [ "$mode" = check ]; then
     say "Howdy's PAM module: ${module:-not found (install howdy-git: Howdy 3)}"
+    say "Hyprshell's face service: $(ours_up && echo "installed ($ours)" || echo "not installed (shell/face/install.sh)")"
     say "lock screen service: $([ -f "$LOCK" ] && echo "$LOCK" || echo "not set up")"
     say "login screen: $(grep -q "$MARK" "$GREETD" 2>/dev/null && echo "face first" || echo "password only")"
     command -v howdy >/dev/null 2>&1 && say "faces enrolled for ${SUDO_USER:-root}: $(howdy -U "${SUDO_USER:-root}" list 2>/dev/null | tail -n +2 | wc -l)"
@@ -249,28 +291,48 @@ if [ "$mode" = remove ]; then
     exit 0
 fi
 
-[ -n "$module" ] || die "Howdy 3's pam_howdy.so isn't installed — paru -S howdy-git (see the top of this file)"
+ours_up || ours=""
+[ -n "$module" ] || [ -n "$ours" ] || die "neither Howdy 3's pam_howdy.so nor Hyprshell's face service is installed — paru -S howdy-git, or shell/face/install.sh"
 
-cat > "$LOCK" <<PAM
-#%PAM-1.0
-# Hyprshell's lock screen: your face, with Howdy (scripts/howdy-setup.sh).
-# Only the face: the password goes through \`login\`, as before.
-auth      required     pam_howdy.so
-account   include      login
-PAM
-chmod 644 "$LOCK"
-say "lock screen: looks for your face as it locks ($LOCK)"
+# The lock screen's face-only service: ours, and Howdy only if ours can't
+# say; or whichever of them there is.
+{
+    echo "#%PAM-1.0"
+    echo "# Hyprshell's lock screen: your face (scripts/howdy-setup.sh)."
+    echo "# Only the face: the password goes through \`login\`, as before."
+    if [ -n "$ours" ] && [ -n "$module" ]; then
+        echo "auth      [success=done authinfo_unavail=ignore default=die]  pam_hyprshell_face.so"
+        echo "auth      required     pam_howdy.so"
+    elif [ -n "$ours" ]; then
+        echo "auth      required     pam_hyprshell_face.so"
+    else
+        echo "auth      required     pam_howdy.so"
+    fi
+    echo "account   include      login"
+} > "$LOCK.new"
+chmod 644 "$LOCK.new"
+mv -f "$LOCK.new" "$LOCK"
+say "lock screen: looks for your face as it locks ($LOCK$([ -n "$ours" ] && echo ", Hyprshell's face service first"))"
 
+# The login screen's lines, marked so they can be found again: the face
+# first; on "not you", straight on to the password (default=1 jumps over
+# Howdy's line).
+if [ -n "$ours" ] && [ -n "$module" ]; then
+    face_lines="auth       [success=done authinfo_unavail=ignore default=1]  pam_hyprshell_face.so $MARK
+auth       sufficient   pam_howdy.so $MARK"
+elif [ -n "$ours" ]; then
+    face_lines="auth       [success=done default=ignore]  pam_hyprshell_face.so $MARK"
+else
+    face_lines="auth       sufficient   pam_howdy.so $MARK"
+fi
 if [ ! -f "$GREETD" ]; then
     say "no $GREETD (is greetd installed?) — the login screen is left as it is"
-elif grep -q "$MARK" "$GREETD"; then
-    say "login screen: already face first"
 else
     [ -f "$GREETD.before-hyprshell-face" ] || cp -p "$GREETD" "$GREETD.before-hyprshell-face"
-    # Just before the password: after the checks that come first (no
-    # logins during maintenance, root only on secure terminals), which a
-    # face must not skip either.
-    awk -v line="auth       sufficient   pam_howdy.so $MARK" '
+    # Ours from before taken out, then put in just before the password:
+    # after the checks that come first (no logins during maintenance, root
+    # only on secure terminals), which a face must not skip either.
+    grep -v "$MARK" "$GREETD" | awk -v block="$face_lines" '
         { lines[NR] = $0 }
         /^[[:space:]]*-?auth[[:space:]]/ {
             if (!first) first = NR
@@ -278,9 +340,9 @@ else
         }
         END {
             if (!at) at = first
-            for (i = 1; i <= NR; i++) { if (i == at) print line; print lines[i] }
-            if (!at) print line
-        }' "$GREETD" > "$GREETD.new"
+            for (i = 1; i <= NR; i++) { if (i == at) print block; print lines[i] }
+            if (!at) print block
+        }' > "$GREETD.new"
     chmod --reference="$GREETD" "$GREETD.new"
     mv -f "$GREETD.new" "$GREETD"
     say "login screen: your face first, then the password ($GREETD; the old file is greetd.before-hyprshell-face)"
