@@ -210,7 +210,10 @@ Scope {
     property bool awaitingPassword: false
     // Enter was pressed before PAM asked.
     property bool pending: false
-    readonly property bool canRetryFace: faceEnabled && !g.preview && !faceStarted && !g.busy
+    // Again: before any attempt, or after one that didn't find you and is
+    // waiting for the password (that attempt is let go, a new one begun).
+    readonly property bool canRetryFace: faceEnabled && !g.preview && !g.busy && !g.pending && !g.passwordSent
+                                         && (!faceStarted || awaitingPassword)
     // For the glyph at the top of the screen (FaceScan).
     property bool faceFound: false
     property bool faceMissed: false
@@ -229,7 +232,32 @@ Scope {
         g.info = "Looking for you…";
         Greetd.createSession(g.user.name);
     }
-    function retryFace() { g.beginFace(); }
+    function retryFace() {
+        if (!g.canRetryFace) return;
+        if (g.faceStarted) {
+            // The waiting attempt goes first; a new one a moment later,
+            // once greetd has let it go.
+            g.letGo = true;
+            if (!g.preview && Greetd.state !== GreetdState.Inactive) Greetd.cancelSession();
+            g.faceDone();
+            g.faceMissed = false;
+            afterCancel.restart();
+            return;
+        }
+        g.beginFace();
+    }
+    Timer { id: afterCancel; interval: 250; onTriggered: { g.letGo = false; g.beginFace(); } }
+    // An attempt being let go for a new scan: whatever greetd says of its
+    // end isn't a failure to show.
+    property bool letGo: false
+    // You're back (the pointer moved) after a scan that didn't find you,
+    // with nothing typed: it looks again, as the lock screen does.
+    property real faceMissedAt: 0
+    function wake() {
+        if (!g.canRetryFace || g.entered !== "" || g.faceFound || !g.faceMissed) return;
+        if (Date.now() - g.faceMissedAt < 4000) return;
+        g.retryFace();
+    }
     // As soon as a person is picked (or the greeter comes up): just after,
     // so picking someone else straight away doesn't start two.
     Timer { id: faceSoon; interval: 1; onTriggered: g.beginFace() }
@@ -264,7 +292,7 @@ Scope {
             return;
         }
         // Enter on an empty field looks for your face again.
-        if (g.entered.length === 0) { if (g.canRetryFace) g.beginFace(); return; }
+        if (g.entered.length === 0) { g.retryFace(); return; }
         if (g.preview) {
             g.failed = true;
             g.status = "Preview — greetd isn't running, so nothing can log in";
@@ -323,7 +351,7 @@ Scope {
                 if (!g.passwordSent && !echoResponse) {
                     // Howdy didn't find them: wait for the password, unless
                     // it has already been typed and Enter pressed.
-                    if (g.faceStarted) g.faceMissed = true;
+                    if (g.faceStarted) { g.faceMissed = true; g.faceMissedAt = Date.now(); }
                     if (g.faceStarted && !g.pending) {
                         g.awaitingPassword = true;
                         g.info = "Face not recognised · type your password";
@@ -341,14 +369,17 @@ Scope {
                 g.busy = false;
                 return;
             }
-            // Information, or a problem PAM can carry on from. Howdy's own
-            // words while it looks are left out: the line already says so.
-            if (g.faceStarted && !error) return;
+            // Information, or a problem PAM can carry on from. What the face
+            // modules say while they look ("Failure, timeout reached") is
+            // left out: the glyph at the top says how that went.
+            if (g.faceStarted && !g.passwordSent
+                    && (!error || /face|howdy|timeout|camera|recogni|frame|infrared/i.test(message))) return;
             g.status = message.trim();
             g.failed = error;
         }
 
         function onAuthFailure(message) {
+            if (g.letGo) return;
             const facing = g.faceStarted;
             g.faceDone();
             g.info = "";
@@ -363,6 +394,7 @@ Scope {
         }
 
         function onError(message) {
+            if (g.letGo) return;
             g.faceDone();
             g.info = "";
             g.busy = false;

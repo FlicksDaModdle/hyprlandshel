@@ -104,8 +104,9 @@ fn print(reply: Value) -> i32 {
 /// Settings in /etc/hyprshell-face.conf, each checked before any is
 /// written; the rest of the file kept as it is.
 fn set(pairs: &[String]) -> i32 {
-    const NUMBERS: [(&str, f32, f32); 6] = [("threshold", 0.2, 0.9), ("webcam_threshold", 0.2, 0.9), ("timeout", 1.0, 20.0),
-                                             ("min_light", 0.0, 200.0), ("dark_frame", 0.0, 100.0), ("detect_score", 0.5, 0.99)];
+    const NUMBERS: [(&str, f32, f32); 9] = [("threshold", 0.2, 0.9), ("webcam_threshold", 0.2, 0.9), ("timeout", 1.0, 20.0),
+                                             ("min_light", 0.0, 200.0), ("dark_frame", 0.0, 100.0), ("detect_score", 0.5, 0.99),
+                                             ("confirm_frames", 1.0, 5.0), ("lockout_after", 0.0, 20.0), ("lockout_minutes", 1.0, 120.0)];
     let mut changes = Vec::new();
     for pair in pairs {
         let Some((k, v)) = pair.split_once('=') else {
@@ -114,7 +115,7 @@ fn set(pairs: &[String]) -> i32 {
         };
         let ok = match k {
             "ir_device" | "webcam_device" => v.is_empty() || is_video_device(v),
-            "webcam_check" => v == "true" || v == "false",
+            "webcam_check" | "require_facing" => v == "true" || v == "false",
             _ => NUMBERS.iter().any(|(n, lo, hi)| *n == k && v.parse::<f32>().is_ok_and(|x| (*lo..=*hi).contains(&x))),
         };
         if !ok {

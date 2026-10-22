@@ -26,6 +26,10 @@ its own faces (Howdy's stay, for the fallback).
 * The infrared camera is read directly (V4L2). A frame too dark to use
   (the emitter flashes) is skipped. Your face has to be close enough to one
   you added (cosine similarity, `threshold`).
+* It has to know you in **two lit frames in a row**, facing the camera
+  (the nose between the eyes, not off to one side), so one lucky frame or
+  a head turned away doesn't unlock it. After five faces in a row that
+  aren't yours, it steps aside for ten minutes and the password is needed.
 * With the **webcam check** on, the webcam is opened at the same moment,
   and it has to recognise you too, against pictures taken while you were
   added. If it's too dark for the webcam, or another app has it, the
@@ -73,6 +77,10 @@ network, no capabilities, no devices but cameras.
 | `min_light` | `45` | darker webcam frames don't count (0-255) |
 | `dark_frame` | `8` | darker infrared frames are skipped |
 | `detect_score` | `0.8` | how sure it has to be that there's a face |
+| `confirm_frames` | `2` | lit frames in a row that have to know you |
+| `require_facing` | `true` | a head turned away doesn't count |
+| `lockout_after` | `5` | faces that aren't yours in a row before face unlock steps aside (0: never) |
+| `lockout_minutes` | `10` | for how long |
 
 ## Trying it
 

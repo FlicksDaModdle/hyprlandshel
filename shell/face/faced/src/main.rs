@@ -88,6 +88,9 @@ fn main() {
     // Anyone may connect; what each may ask is checked per request.
     let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666));
     eprintln!("hyprshell-faced: listening on {path}");
+    // Ready, with the models loaded and the socket there (Type=notify):
+    // the login screen, ordered after this, can ask at once.
+    notify_ready();
 
     for stream in listener.incoming().flatten() {
         let engine = engine.clone();
@@ -96,6 +99,22 @@ fn main() {
                 eprintln!("hyprshell-faced: {e}");
             }
         });
+    }
+}
+
+/// sd_notify(READY=1), without libsystemd: a datagram to $NOTIFY_SOCKET.
+fn notify_ready() {
+    use std::os::linux::net::SocketAddrExt;
+    use std::os::unix::net::{SocketAddr, UnixDatagram};
+    let Some(target) = std::env::var_os("NOTIFY_SOCKET") else { return };
+    let target = target.to_string_lossy().into_owned();
+    let Ok(socket) = UnixDatagram::unbound() else { return };
+    let addr = match target.strip_prefix('@') {
+        Some(name) => SocketAddr::from_abstract_name(name.as_bytes()),
+        None => SocketAddr::from_pathname(&target),
+    };
+    if let Ok(addr) = addr {
+        let _ = socket.send_to_addr(b"READY=1", &addr);
     }
 }
 
@@ -168,7 +187,9 @@ fn handle(request: &Value, uid: u32, engine: &Mutex<Option<Engine>>) -> Value {
             let r = |v: f32| (v as f64 * 100.0).round() / 100.0;
             json!({ "result": "ok", "models": ready, "ir_device": config.ir_device, "webcam_device": config.webcam_device,
                     "webcam_check": config.webcam_check, "threshold": r(config.threshold), "webcam_threshold": r(config.webcam_threshold),
-                    "timeout": r(config.timeout), "min_light": r(config.min_light), "dark_frame": r(config.dark_frame) })
+                    "timeout": r(config.timeout), "min_light": r(config.min_light), "dark_frame": r(config.dark_frame),
+                    "confirm_frames": config.confirm_frames, "require_facing": config.require_facing,
+                    "lockout_after": config.lockout_after, "lockout_minutes": config.lockout_minutes })
         }
         "list" => {
             let faces = Faces::load(&user);
@@ -203,10 +224,32 @@ fn handle(request: &Value, uid: u32, engine: &Mutex<Option<Engine>>) -> Value {
             if faces.looks.is_empty() {
                 return unavailable("no face of yours is added here yet");
             }
+            if config.lockout_after > 0 {
+                let mut list = strangers().lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(&(n, last)) = list.get(&user) {
+                    let window = Duration::from_secs(u64::from(config.lockout_minutes) * 60);
+                    if last.elapsed() >= window {
+                        list.remove(&user);
+                    } else if n >= config.lockout_after {
+                        let left = (window - last.elapsed()).as_secs().div_ceil(60);
+                        return json!({ "result": "nomatch", "message": format!("too many faces that weren't yours: the password, for {left} more min") });
+                    }
+                }
+            }
             let mut guard = engine.lock().unwrap_or_else(|e| e.into_inner());
             let Some(engine) = guard.as_mut() else { return unavailable("the face models aren't installed") };
             let t = Instant::now();
             let reply = verify(engine, &config, &faces);
+            {
+                let mut list = strangers().lock().unwrap_or_else(|e| e.into_inner());
+                if reply["result"] == "match" {
+                    list.remove(&user);
+                } else if reply["stranger"] == true {
+                    let entry = list.entry(user.clone()).or_insert((0, Instant::now()));
+                    *entry = (entry.0 + 1, Instant::now());
+                    eprintln!("hyprshell-faced: {user}: a face that wasn't theirs ({} in a row)", entry.0);
+                }
+            }
             eprintln!("hyprshell-faced: {user}: {} in {} ms ({})", reply["result"].as_str().unwrap_or("?"), t.elapsed().as_millis(),
                       reply["message"].as_str().unwrap_or(""));
             let mut reply = reply;
@@ -226,11 +269,41 @@ fn saved(r: std::io::Result<()>) -> Value {
 
 /// The face in a picture, if there's exactly one sure face.
 fn one_face(det: &mut Detector, rec: &Recognizer, picture: &Rgb, score: f32) -> Option<Vec<f32>> {
+    found_face(det, rec, picture, score).map(|(_, v)| v)
+}
+
+/// The biggest face, so one in the background doesn't decide, and its
+/// 128 numbers.
+fn found_face(det: &mut Detector, rec: &Recognizer, picture: &Rgb, score: f32) -> Option<(models::Face, Vec<f32>)> {
     det.threshold = score;
     let faces = det.detect(picture).ok()?;
-    // The biggest, so a face in the background doesn't decide.
-    let face = faces.first()?;
-    rec.describe(picture, face).ok()
+    let face = faces.into_iter().next()?;
+    let v = rec.describe(picture, &face).ok()?;
+    Some((face, v))
+}
+
+/// Facing the camera: the nose about halfway along the line between the
+/// eyes, not off towards one of them (a head turned away). Measured along
+/// that line, so a tilted head (lying down, say) still counts. From the
+/// five points: no extra model, nothing to slow it.
+fn facing(face: &models::Face) -> bool {
+    let [right_eye, left_eye, nose, _, _] = face.points;
+    let (ex, ey) = (left_eye[0] - right_eye[0], left_eye[1] - right_eye[1]);
+    let span = ex * ex + ey * ey;
+    if span < 1.0 {
+        return false;
+    }
+    let along = ((nose[0] - right_eye[0]) * ex + (nose[1] - right_eye[1]) * ey) / span;
+    (0.25..=0.75).contains(&along)
+}
+
+/// Repeated strangers: after `lockout_after` faces that weren't yours in a
+/// row, face unlock steps aside for `lockout_minutes`, and the password is
+/// what's left. A face that is yours starts the count again. Not seeing
+/// anyone doesn't count: walking away isn't an attempt.
+fn strangers() -> &'static Mutex<std::collections::HashMap<String, (u32, Instant)>> {
+    static STRANGERS: std::sync::OnceLock<Mutex<std::collections::HashMap<String, (u32, Instant)>>> = std::sync::OnceLock::new();
+    STRANGERS.get_or_init(Default::default)
 }
 
 enum Webcam {
@@ -291,7 +364,7 @@ fn verify(engine: &mut Engine, config: &Config, faces: &Faces) -> Value {
         // The webcam alongside, not after.
         let web = use_webcam.then(|| scope.spawn(|| watch_webcam(webcam, recognizer, config, &web_known, deadline, &stop)));
 
-        let mut camera = match Camera::open(&config.ir_device, &Want { mjpeg: None }) {
+        let mut camera = match open_patiently(&config.ir_device, &Want { mjpeg: None }, Duration::from_millis(1500)) {
             Ok(c) => c,
             Err(e) => {
                 stop.store(true, Ordering::Relaxed);
@@ -300,33 +373,74 @@ fn verify(engine: &mut Engine, config: &Config, faces: &Faces) -> Value {
         };
         let mut best = -1.0f32;
         let mut ir_match = None;
+        // Lit frames in a row that knew you: `confirm` of them, not one
+        // lucky frame.
+        let mut in_a_row = 0;
+        let mut lowest = f32::MAX;
+        let mut turned_away = false;
+        let mut stranger = false;
         while Instant::now() < deadline {
             let Ok(Some(picture)) = camera.frame(Duration::from_millis(200)) else { continue };
             if picture.light() < config.dark_frame {
                 continue;
             }
-            if let Some(face) = one_face(ir, recognizer, &picture, config.detect_score) {
-                let s = models::best(&face, &ir_known);
-                best = best.max(s);
-                if s >= config.threshold {
-                    ir_match = Some(s);
+            let Some((face, v)) = found_face(ir, recognizer, &picture, config.detect_score) else { continue };
+            if config.require_facing && !facing(&face) {
+                turned_away = true;
+                continue;
+            }
+            let s = models::best(&v, &ir_known);
+            best = best.max(s);
+            if s >= config.threshold {
+                in_a_row += 1;
+                lowest = lowest.min(s);
+                if in_a_row >= config.confirm_frames {
+                    ir_match = Some(lowest);
                     break;
+                }
+            } else {
+                in_a_row = 0;
+                lowest = f32::MAX;
+                // Clearly someone else (strangers score near 0), not you
+                // at a bad angle or in odd light (around 0.3).
+                if s < (config.threshold - 0.15).min(0.2) {
+                    stranger = true;
                 }
             }
         }
         drop(camera);
         let Some(ir_score) = ir_match else {
             stop.store(true, Ordering::Relaxed);
-            return json!({ "result": "nomatch", "message": format!("not recognised (best {best:.2}, {:.2} needed)", config.threshold) });
+            let why = if best < -0.5 && turned_away { "you weren't facing the camera".to_string() }
+                      else if best < -0.5 { "no face seen".to_string() }
+                      else { format!("not recognised (best {best:.2}, {:.2} needed)", config.threshold) };
+            return json!({ "result": "nomatch", "message": why, "stranger": stranger });
         };
         match web.map(|h| h.join().unwrap_or(Webcam::Aside("webcam: failed".into()))) {
             None => json!({ "result": "match", "message": format!("infrared {ir_score:.2}") }),
             Some(Webcam::Match(w)) => json!({ "result": "match", "message": format!("infrared {ir_score:.2}, webcam {w:.2}") }),
             Some(Webcam::Aside(why)) => json!({ "result": "match", "message": format!("infrared {ir_score:.2}; {why}: infrared alone") }),
-            Some(Webcam::NoMatch(w)) => json!({ "result": "nomatch",
+            Some(Webcam::NoMatch(w)) => json!({ "result": "nomatch", "stranger": true,
                 "message": format!("infrared knew you ({ir_score:.2}), the webcam didn't (best {w:.2}, {:.2} needed)", config.webcam_threshold) }),
         }
     })
+}
+
+/// A camera, tried again for a moment if it's busy (Settings' picture, a
+/// Howdy test letting go of it) or not there yet (just after boot or
+/// resume, while the kernel brings it back).
+fn open_patiently(device: &str, want: &Want, patience: Duration) -> std::io::Result<Camera> {
+    let until = Instant::now() + patience;
+    loop {
+        match Camera::open(device, want) {
+            Ok(c) => return Ok(c),
+            Err(e) if Instant::now() < until
+                && matches!(e.raw_os_error(), Some(libc::EBUSY) | Some(libc::ENOENT) | Some(libc::ENODEV) | Some(libc::EIO)) => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 /// A new look: the infrared camera's faces of you over a few seconds,

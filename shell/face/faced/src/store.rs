@@ -31,6 +31,14 @@ pub struct Config {
     pub dark_frame: f32,
     /// How sure the face finder has to be that a face is there (0-1).
     pub detect_score: f32,
+    /// Frames in a row that have to know you (1 to 5).
+    pub confirm_frames: u32,
+    /// Only a face turned to the camera counts.
+    pub require_facing: bool,
+    /// Faces that aren't yours in a row before face unlock steps aside
+    /// (0: never), and for how long.
+    pub lockout_after: u32,
+    pub lockout_minutes: u32,
     pub models: PathBuf,
 }
 
@@ -46,6 +54,10 @@ impl Default for Config {
             min_light: 45.0,
             dark_frame: 8.0,
             detect_score: 0.8,
+            confirm_frames: 2,
+            require_facing: true,
+            lockout_after: 5,
+            lockout_minutes: 10,
             models: PathBuf::from(MODELS),
         }
     }
@@ -75,6 +87,10 @@ impl Config {
                 "min_light" => c.min_light = num(0.0, 200.0).unwrap_or(c.min_light),
                 "dark_frame" => c.dark_frame = num(0.0, 100.0).unwrap_or(c.dark_frame),
                 "detect_score" => c.detect_score = num(0.5, 0.99).unwrap_or(c.detect_score),
+                "confirm_frames" => c.confirm_frames = num(1.0, 5.0).map(|n| n as u32).unwrap_or(c.confirm_frames),
+                "require_facing" => c.require_facing = v != "false",
+                "lockout_after" => c.lockout_after = num(0.0, 20.0).map(|n| n as u32).unwrap_or(c.lockout_after),
+                "lockout_minutes" => c.lockout_minutes = num(1.0, 120.0).map(|n| n as u32).unwrap_or(c.lockout_minutes),
                 "models" => c.models = PathBuf::from(v),
                 _ => {}
             }

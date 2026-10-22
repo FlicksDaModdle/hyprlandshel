@@ -80,11 +80,26 @@ fn plain(name: &str) -> bool {
     !name.is_empty() && name.len() <= 64 && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
 }
 
+/// The service's socket. If the service is installed but not answering
+/// yet (it's still loading, just after boot), it's given a few seconds,
+/// rather than handing the login to Howdy at once.
+fn connect() -> Option<UnixStream> {
+    let installed = std::path::Path::new("/usr/local/libexec/hyprshell-faced").exists();
+    let until = std::time::Instant::now() + Duration::from_secs(if installed { 6 } else { 0 });
+    loop {
+        match UnixStream::connect(SOCKET) {
+            Ok(s) => return Some(s),
+            Err(_) if std::time::Instant::now() < until => std::thread::sleep(Duration::from_millis(100)),
+            Err(_) => return None,
+        }
+    }
+}
+
 fn ask(user: &str) -> Option<Answer> {
     if !plain(user) {
         return None;
     }
-    let mut stream = UnixStream::connect(SOCKET).ok()?;
+    let mut stream = connect()?;
     // Generous: the service has its own, shorter, timeout.
     stream.set_read_timeout(Some(Duration::from_secs(20))).ok()?;
     stream.set_write_timeout(Some(Duration::from_secs(2))).ok()?;

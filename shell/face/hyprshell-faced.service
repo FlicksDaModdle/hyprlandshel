@@ -1,8 +1,12 @@
 [Unit]
 Description=Hyprshell face unlock (the face models, kept loaded)
 Documentation=file:///usr/local/share/hyprshell-face/README.md
+# Ready before the login screen comes up, so its first face scan finds it.
+Before=greetd.service display-manager.service
 
 [Service]
+# Ready once the models are loaded and the socket is there.
+Type=notify
 ExecStart=/usr/local/libexec/hyprshell-faced
 Restart=on-failure
 RestartSec=2

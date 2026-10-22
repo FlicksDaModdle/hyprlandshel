@@ -2095,6 +2095,20 @@ Scope {
             { n: "Give up after", s: "How long it looks for you before the password is asked for",
               type: "slider", min: 1, max: 10, step: 0.5, unit: "s",
               value: Number(S.timeout || 4), set: v => F.setService("timeout", Number(v).toFixed(1)) }];
+        rows.push(
+            { n: "Frames that have to know you",
+              s: "In a row, before it unlocks: more is harder to fool with one lucky frame, a little slower",
+              type: "seg", options: [{ label: "1", value: "1" }, { label: "2", value: "2" }, { label: "3", value: "3" }],
+              value: String(S.confirm_frames || 2), set: v => F.setService("confirm_frames", v) },
+            { n: "Only when you face the camera",
+              s: "A head turned away doesn't unlock it: someone can't hold the laptop up to you while you look elsewhere",
+              type: "toggle", value: S.require_facing !== false, set: v => F.setService("require_facing", v ? "true" : "false") },
+            { n: "After faces that aren't yours",
+              s: "That many in a row, and face unlock steps aside for " + (S.lockout_minutes || 10)
+                 + " minutes: the password is needed. Not seeing anyone doesn't count",
+              type: "seg", options: [{ label: "Off", value: "0" }, { label: "3", value: "3" }, { label: "5", value: "5" },
+                                     { label: "10", value: "10" }],
+              value: String(S.lockout_after === undefined ? 5 : S.lockout_after), set: v => F.setService("lockout_after", v) });
         if (F.webcamCheck)
             rows.push({ n: "Webcam: how alike", s: "For the webcam check; colour pictures vary more with the light",
                         type: "slider", min: 0.3, max: 0.7, step: 0.01, unit: "",
