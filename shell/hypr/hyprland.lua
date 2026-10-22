@@ -308,6 +308,11 @@ hl.on("hyprland.start", function()
     -- and nothing else is answering for it — KeePassXC, a PAM-started
     -- gnome-keyring, KWallet's bridge.
     hl.exec_cmd([[busctl --user status org.freedesktop.secrets >/dev/null 2>&1 || { command -v gnome-keyring-daemon >/dev/null 2>&1 && exec gnome-keyring-daemon --start --components=secrets; }]])
+    -- After a login with your face, its password (sealed with the TPM, from
+    -- Settings → Login screen → Keyring) opens it — here, at once, before
+    -- Mail and the rest ask for it and put up an unlock window. Nothing
+    -- happens when none is kept. The shell tries again as it starts.
+    hl.exec_cmd([[f="$HOME/.config/quickshell/hyprshell/scripts/face-keyring.sh"; [ -s "${XDG_DATA_HOME:-$HOME/.local/share}/hyprshell/keyring.cred" ] && [ -f "$f" ] && exec bash "$f" --unlock >/dev/null 2>&1]])
     -- The programs set to start at login (~/.config/autostart and
     -- /etc/xdg/autostart — the list the task manager's Startup apps view
     -- edits). Desktops like GNOME and KDE run these themselves; Hyprland

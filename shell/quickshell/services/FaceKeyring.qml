@@ -29,6 +29,7 @@ Singleton {
     property bool probed: false
 
     property bool busy: false
+    property bool toldFailure: false
     property string status: ""
     property bool failed: false
 
@@ -117,7 +118,16 @@ Singleton {
             } else {
                 root.failed = true;
                 root.status = said || "That didn't work";
-                if (run.mode === "unlock") console.warn("FaceKeyring:", root.status);
+                if (run.mode === "unlock") {
+                    console.warn("FaceKeyring:", root.status);
+                    // Said once, so a keyring that asks for its password
+                    // anyway isn't a mystery.
+                    if (!root.toldFailure) {
+                        root.toldFailure = true;
+                        Quickshell.execDetached(["notify-send", "-a", "Keyring", "-i", "dialog-password",
+                                                 "The keyring didn't open with your face", root.status]);
+                    }
+                }
             }
             root.refresh();
         }

@@ -37,9 +37,31 @@ async fn timed<T>(secs: u64, f: impl std::future::Future<Output = Result<T, oo7:
     }
 }
 
+/// After a login with your face the shell opens the keyring itself, with
+/// its password sealed by the TPM (shell scripts/face-keyring.sh) — a few
+/// seconds into the session, while this service starts with it. The first
+/// time it's needed, then, a locked keyring is given that long to open
+/// before an unlock window is put up over it.
+fn face_keyring_kept() -> bool {
+    let data = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| format!("{}/.local/share", std::env::var("HOME").unwrap_or_default()));
+    std::fs::metadata(format!("{data}/hyprshell/keyring.cred")).map(|m| m.len() > 0).unwrap_or(false)
+}
+
 /// Unlocks, with long enough to type a password into the window if one
 /// comes up.
 async fn unlock(keyring: &oo7::Keyring) -> Result<(), String> {
+    static FIRST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+    if FIRST.swap(false, std::sync::atomic::Ordering::SeqCst) && face_keyring_kept() {
+        for _ in 0..60 {
+            if let Ok(Ok(false)) = tokio::time::timeout(Duration::from_secs(2), keyring.is_locked()).await {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
     if let Ok(Ok(false)) = tokio::time::timeout(Duration::from_secs(10), keyring.is_locked()).await {
         return Ok(());
     }

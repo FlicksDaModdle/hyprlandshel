@@ -94,6 +94,9 @@ Scope {
             if (result === PamResult.Success) {
                 root.info = "";
                 root.faceState = "found";
+                // The keyring too, if it was locked meanwhile (a no-op when
+                // it's open, or when no password is kept for it).
+                Services.FaceKeyring.unlock();
                 if (Config.Appearance.animated) unlockSoon.restart();
                 else unlockSoon.triggered();
             } else if (!pam.active && !root.sleeping && !afterSleep.running) {

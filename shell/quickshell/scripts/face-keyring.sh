@@ -26,7 +26,18 @@ here=$(cd "${0%/*}" && pwd)
 file=${XDG_DATA_HOME:-$HOME/.local/share}/hyprshell/keyring.cred
 name=hyprshell-keyring
 
-die() { printf 'face-keyring.sh: %s\n' "$2" >&2; exit "$1"; }
+log=${XDG_STATE_HOME:-$HOME/.local/state}/hyprshell/face-keyring.log
+
+die() { printf 'face-keyring.sh: %s\n' "$2" >&2; note "$2"; exit "$1"; }
+# What each unlock came to, with the time, for when it didn't work (never
+# the password). The last hundred lines are kept.
+note() {
+    [ "${mode:-}" = --unlock ] || return 0
+    mkdir -p "${log%/*}" 2>/dev/null || return 0
+    printf '%s %s\n' "$(date '+%F %T')" "$1" >>"$log" 2>/dev/null
+    [ "$(wc -l <"$log" 2>/dev/null || echo 0)" -gt 200 ] && { tail -n 100 "$log" >"$log.new" && mv -f "$log.new" "$log"; }
+    return 0
+}
 unlock_with() { python3 -I "$here/keyring-unlock.py"; }
 # The keyring's daemon, started if it isn't yet (D-Bus starts it).
 wake_keyring() {
@@ -48,7 +59,8 @@ unlock_waiting() {
     return 5
 }
 
-case ${1:-} in
+mode=${1:-}
+case $mode in
     --check)
         v=$(systemd-creds --version 2>/dev/null | sed -n '1s/^systemd \([0-9]*\).*/\1/p')
         printf 'creds\t%s\n' "${v:-0}"
@@ -83,11 +95,26 @@ case ${1:-} in
 
     --unlock)
         [ -s "$file" ] || exit 0
-        pw=$(systemd-creds decrypt --user --name="$name" "$file" - 2>/dev/null) \
-            || die 6 "Couldn't unseal the keyring's password: the TPM or the system has changed"
+        # One at a time: the session's start and the shell both ask.
+        if command -v flock >/dev/null 2>&1; then
+            exec 9>"${XDG_RUNTIME_DIR:-/tmp}/hyprshell-face-keyring.lock" && flock -w 30 9
+        fi
+        # At login the TPM and systemd's credential service can still be
+        # starting: tried for a few seconds before giving up.
+        for i in 1 2 3 4 5 6; do
+            pw=$(systemd-creds decrypt --user --name="$name" "$file" - 2>"${XDG_RUNTIME_DIR:-/tmp}/hyprshell-face-keyring.err") && break
+            pw=""
+            sleep 1
+        done
+        if [ -z "$pw" ]; then
+            why=$(tail -n 1 "${XDG_RUNTIME_DIR:-/tmp}/hyprshell-face-keyring.err" 2>/dev/null)
+            rm -f "${XDG_RUNTIME_DIR:-/tmp}/hyprshell-face-keyring.err"
+            die 6 "Couldn't unseal the keyring's password (${why:-systemd-creds failed}): store it again in Settings"
+        fi
+        rm -f "${XDG_RUNTIME_DIR:-/tmp}/hyprshell-face-keyring.err"
         printf '%s' "$pw" | unlock_waiting
         case $? in
-            0) echo unlocked; exit 0 ;;
+            0) note unlocked; echo unlocked; exit 0 ;;
             3) die 3 "The keyring's password has changed: store it again" ;;
             5) die 5 "The keyring isn't running" ;;
             *) die 4 "Couldn't reach the keyring" ;;

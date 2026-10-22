@@ -2,8 +2,9 @@
 """Unlock the running gnome-keyring-daemon's login keyring.
 
 The password comes on standard input, never on the command line. It is
-handed to the daemon over its control socket ($XDG_RUNTIME_DIR/keyring/
-control), the same way pam_gnome_keyring does it at a password login:
+handed to the daemon over its control socket ($GNOME_KEYRING_CONTROL/
+control, as PAM passes it on, else $XDG_RUNTIME_DIR/keyring/control), the
+same way pam_gnome_keyring does it at a password login:
 
     a nul byte (the daemon checks who we are with SO_PEERCRED), then
     uint32 length, uint32 op (1: unlock), uint32 password length, password
@@ -34,10 +35,17 @@ def main():
         return 4
 
     runtime = os.environ.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid()
-    path = os.path.join(runtime, "keyring", "control")
-    try:
-        st = os.lstat(path)
-    except FileNotFoundError:
+    places = [os.path.join(runtime, "keyring", "control")]
+    if os.environ.get("GNOME_KEYRING_CONTROL"):
+        places.insert(0, os.path.join(os.environ["GNOME_KEYRING_CONTROL"], "control"))
+    path, st = None, None
+    for p in places:
+        try:
+            path, st = p, os.lstat(p)
+            break
+        except FileNotFoundError:
+            continue
+    if st is None:
         return 5
     # Ours, and a socket: nothing else gets the password.
     if st.st_uid != os.getuid() or not stat.S_ISSOCK(st.st_mode):
