@@ -69,8 +69,12 @@ else
     [ -d /opt/spotify ] && note "a system Spotify (/opt/spotify) is installed; this sets up spotify-launcher beside it, which Spicetify can theme without making /opt/spotify writable"
     command -v flatpak >/dev/null 2>&1 && flatpak info com.spotify.Client >/dev/null 2>&1 \
         && note "the Spotify Flatpak is installed; Spicetify can't reach it, so spotify-launcher goes beside it"
-    printf '    installing spotify-launcher (sudo pacman)…\n'
-    sudo pacman -S --needed spotify-launcher || die "couldn't install spotify-launcher"
+    # With the system brought up to date in the same step: a package list
+    # older than the mirrors' asks for files they no longer have (404s),
+    # and Arch doesn't do partial upgrades (-Sy with one package).
+    printf '    updating the system and installing spotify-launcher (sudo pacman -Syu)…\n'
+    sudo pacman -Syu --needed spotify-launcher \
+        || die "couldn't install spotify-launcher — if pacman said 404, a mirror is behind: try again later, or refresh your mirrors (cachyos-rate-mirrors), then run this again"
     did "spotify-launcher installed"
 fi
 
@@ -88,8 +92,8 @@ if S=$(spicetify_bin); then
     did "Spicetify is installed ($S)"
 else
     if pacman -Si spicetify-cli >/dev/null 2>&1; then
-        printf '    installing spicetify-cli (sudo pacman)…\n'
-        sudo pacman -S --needed spicetify-cli || die "couldn't install spicetify-cli"
+        printf '    updating the system and installing spicetify-cli (sudo pacman -Syu)…\n'
+        sudo pacman -Syu --needed spicetify-cli || die "couldn't install spicetify-cli"
     elif command -v paru >/dev/null 2>&1 || command -v yay >/dev/null 2>&1; then
         h=$(command -v paru || command -v yay)
         printf '    installing spicetify-cli from the AUR (%s) — it shows the PKGBUILD first…\n' "$(basename "$h")"
