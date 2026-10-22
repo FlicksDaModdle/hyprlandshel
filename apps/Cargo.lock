@@ -2344,6 +2344,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyprshell-text"
+version = "0.1.0"
+dependencies = [
+ "hyprshell-kit",
+ "serde",
+ "serde_json",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "hyprshell-video"
 version = "0.1.0"
 dependencies = [

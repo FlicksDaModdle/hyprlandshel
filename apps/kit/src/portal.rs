@@ -13,6 +13,18 @@ use zbus::zvariant::{OwnedValue, Value};
 pub type Filter<'a> = (&'a str, &'a [&'a str]);
 
 fn chooser(method: &str, title: &str, filters: &[Filter], folder: bool, multiple: bool) -> Vec<PathBuf> {
+    chooser_with(method, title, filters, folder, multiple, None, None)
+}
+
+fn chooser_with(
+    method: &str,
+    title: &str,
+    filters: &[Filter],
+    folder: bool,
+    multiple: bool,
+    name: Option<&str>,
+    in_folder: Option<&std::path::Path>,
+) -> Vec<PathBuf> {
     let Ok(conn) = Connection::session() else { return Vec::new() };
     let token = format!("hyprshell{}", std::process::id());
     let mut opts: HashMap<&str, Value> = HashMap::new();
@@ -23,6 +35,16 @@ fn chooser(method: &str, title: &str, filters: &[Filter], folder: bool, multiple
     }
     if folder {
         opts.insert("directory", Value::from(true));
+    }
+    if let Some(n) = name {
+        opts.insert("current_name", Value::from(n.to_string()));
+    }
+    // A byte string with its NUL, as the spec has it.
+    if let Some(d) = in_folder {
+        use std::os::unix::ffi::OsStrExt;
+        let mut b = d.as_os_str().as_bytes().to_vec();
+        b.push(0);
+        opts.insert("current_folder", Value::from(b));
     }
     if !filters.is_empty() {
         let list: Vec<(String, Vec<(u32, String)>)> = filters
@@ -97,4 +119,9 @@ pub fn open_files(title: &str, filters: &[Filter]) -> Vec<PathBuf> {
 /// A folder.
 pub fn open_folder(title: &str) -> Option<PathBuf> {
     chooser("OpenFile", title, &[], true, false).into_iter().next()
+}
+
+/// Where to save a file: the chooser opened on `folder`, offering `name`.
+pub fn save_file(title: &str, name: &str, folder: Option<&std::path::Path>) -> Option<PathBuf> {
+    chooser_with("SaveFile", title, &[], false, false, Some(name), folder).into_iter().next()
 }

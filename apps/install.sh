@@ -14,7 +14,7 @@
 #   ./install.sh --prefix /usr/local
 #   ./install.sh --remove           take them out again
 #
-# Names: rog notes snapshots disks keys docs music video recorder chats weather calendar fonts
+# Names: rog notes snapshots disks keys docs music video recorder chats weather calendar fonts text
 #
 # Not `set -e`: most of this probes for things that may be absent, and a
 # probe saying "no" must not end the run.
@@ -70,6 +70,7 @@ LIST=(
     "weather|Weather|Weather Forecast|The weather now, by the hour and ten days ahead, for the places you keep|weather-few-clouds|Utility;|||Forecast;Temperature;Rain;"
     "calendar|Calendar|Calendar|Your calendars, subscriptions and invitations, by month, week or list|x-office-calendar|Office;Calendar;|||Events;Agenda;Schedule;"
     "fonts|Fonts|Font Viewer|Every font on the computer, shown in itself; add your own|preferences-desktop-font|Utility;|%f|font/ttf;font/otf;font/collection;font/sfnt;application/x-font-ttf;application/x-font-otf;application/x-font-ttx;application/x-font-type1;|Typeface;Type;Text;"
+    "text|Text Editor|Text Editor|Plain text and code, in tabs, with find and replace|accessories-text-editor|Utility;TextEditor;Development;|%F|text/plain;text/markdown;text/x-log;text/csv;text/x-csrc;text/x-chdr;text/x-c++src;text/x-c++hdr;text/x-python;text/x-rust;text/x-go;text/x-java;text/x-shellscript;application/x-shellscript;application/json;application/x-yaml;application/toml;application/xml;text/css;text/x-makefile;text/x-cmake;application/x-desktop;|Notepad;Code;Editor;Plain;"
 )
 field() { local n=$2 IFS='|'; local f=($1); printf '%s' "${f[$((n - 1))]:-}"; }
 SKIP=""
@@ -83,7 +84,7 @@ if [ -n "$ONLY" ]; then
     for k in ${ONLY//,/ }; do
         known=0
         for a in "${LIST[@]}"; do [ "$(field "$a" 1)" = "$k" ] && known=1; done
-        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats weather calendar fonts)" >&2; exit 2; }
+        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats weather calendar fonts text)" >&2; exit 2; }
     done
 fi
 

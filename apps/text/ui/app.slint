@@ -1,0 +1,465 @@
+// Text Editor: plain text and code, in tabs, with find and replace.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Card, Caption, Label, Dim, Heading,
+         Button, IconButton, Seg, Field, Switch, Empty, Toast, Rule, Icon, Dialog, Menu, MenuEntry } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct TabItem {
+    title: string,
+    path: string,
+    dirty: bool,
+}
+
+export struct RecentItem {
+    name: string,
+    folder: string,
+}
+
+export global Ed {
+    in-out property <string> text;
+    in property <[TabItem]> tabs;
+    in property <int> current: -1;
+    in property <[RecentItem]> recent;
+    in property <string> position;
+    in property <string> info;
+    in-out property <bool> wrap: true;
+    in-out property <bool> mono: true;
+    // The fixed-width family fontconfig picks for "monospace".
+    in property <string> mono-family: "monospace";
+    in-out property <float> font-size: 14;
+    in property <string> lines;
+    // Find and replace.
+    in-out property <bool> find-open;
+    in-out property <int> find-focus;
+    in-out property <bool> replace-open;
+    in-out property <string> find-text;
+    in-out property <string> replace-text;
+    in-out property <bool> match-case;
+    in property <string> find-note;
+    // The file changed on disk while it has changes here.
+    in property <bool> changed-on-disk;
+    // Asked before closing a tab, or the window, with unsaved changes.
+    in property <bool> ask-close;
+    in property <string> ask-title;
+    in property <string> ask-text;
+    in property <string> toast;
+
+    callback edited();
+    callback moved(int, int);
+    callback new-tab();
+    callback open();
+    callback open-recent(int);
+    callback save();
+    callback save-as();
+    callback pick(int);
+    callback close-tab(int);
+    callback find(string, int);
+    callback replace-one();
+    callback replace-all();
+    callback indent(bool);
+    callback reload();
+    callback keep-mine();
+    callback answer(int);
+    callback settings-changed();
+}
+
+// The page: a text input that wraps or scrolls sideways, with line numbers
+// when it doesn't wrap (wrapped lines would put them out of step).
+component Page inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    out property <int> cursor: input.cursor-position-byte-offset;
+    out property <int> anchor: input.anchor-position-byte-offset;
+    in property <bool> wrap;
+    in property <string> family;
+    in property <length> size;
+    in property <string> lines;
+    callback edited();
+    callback key(KeyEvent) -> EventResult;
+    public function select(a: int, c: int) { input.set-selection-offsets(a, c); input.focus(); }
+    public function mark(a: int, c: int) { input.set-selection-offsets(a, c); }
+    public function focus-input() { input.focus(); }
+    property <length> pad: 16px;
+    property <length> gutter: root.wrap ? 0px : nums.preferred-width + 24px;
+    clip: true;
+    forward-focus: input;
+    changed cursor => { Ed.moved(self.cursor, self.anchor); }
+    changed anchor => { Ed.moved(self.cursor, self.anchor); }
+    f := Flickable {
+        width: parent.width;
+        height: parent.height;
+        content-width: root.wrap ? self.width : max(self.width, input.preferred-width + root.gutter + 2 * root.pad);
+        content-height: max(self.height, input.preferred-height + 2 * root.pad);
+        input := TextInput {
+            x: root.gutter + root.pad;
+            y: root.pad;
+            width: root.wrap ? parent.width - 2 * root.pad : max(self.preferred-width, f.width - root.gutter - 2 * root.pad);
+            height: max(self.preferred-height, f.height - 2 * root.pad);
+            single-line: false;
+            wrap: root.wrap ? word-wrap : no-wrap;
+            color: Theme.ink;
+            selection-background-color: Theme.accent.transparentize(0.6);
+            font-size: root.size;
+            font-family: root.family;
+            page-height: f.height;
+            edited => { root.edited(); }
+            key-pressed(e) => { root.key(e) }
+            cursor-position-changed(c) => {
+                // Not laid out yet: nothing to keep in sight.
+                if (f.width <= 0px || f.height <= 0px) { return; }
+                let line = root.size * 1.6;
+                if (c.y + root.pad + f.content-y < 0px) {
+                    f.content-y = min(0px, -(c.y + root.pad) + 8px);
+                } else if (c.y + root.pad + line + f.content-y > f.height) {
+                    f.content-y = max(f.height - f.content-height, f.height - c.y - root.pad - line - 8px);
+                }
+                if (!root.wrap) {
+                    let left = c.x + root.gutter + root.pad;
+                    if (left + f.content-x < root.gutter + 8px) {
+                        f.content-x = min(0px, -(c.x) + 8px);
+                    } else if (left + f.content-x > f.width - 24px) {
+                        f.content-x = max(f.width - f.content-width, f.width - left - 24px);
+                    }
+                }
+            }
+        }
+    }
+    // Line numbers, outside the page's scrolling sideways, along with it
+    // up and down.
+    Rectangle {
+        visible: !root.wrap;
+        x: 0;
+        y: 0;
+        width: root.gutter;
+        height: parent.height;
+        clip: true;
+        background: Theme.ground.transparentize(0.6);
+        nums := Text {
+            x: 12px;
+            y: root.pad + f.content-y;
+            width: self.preferred-width;
+            text: root.lines;
+            font-family: root.family;
+            font-size: root.size;
+            color: Theme.ink3;
+            horizontal-alignment: right;
+        }
+    }
+    if f.content-height > f.height: Rectangle {
+        x: parent.width - 8px;
+        width: 4px;
+        border-radius: 2px;
+        background: Theme.sel;
+        height: max(24px, f.height * f.height / f.content-height);
+        y: -f.content-y / (f.content-height - f.height) * (f.height - self.height);
+    }
+}
+
+component Tab inherits Rectangle {
+    in property <TabItem> tab;
+    in property <bool> selected;
+    callback clicked();
+    callback close();
+    height: 34px;
+    min-width: 110px;
+    max-width: 220px;
+    preferred-width: lay.preferred-width;
+    border-radius: Theme.r-sm;
+    background: selected ? Theme.sel : ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: Theme.t(160); easing: spring(0); }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.middle) { root.close(); }
+        }
+    }
+    lay := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 4px;
+        spacing: 6px;
+        Text {
+            text: root.tab.title;
+            overflow: elide;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            font-size: Theme.fs(12.5);
+            font-weight: root.selected ? 600 : 400;
+            color: root.selected ? Theme.ink : Theme.ink2;
+        }
+        Rectangle {
+            width: 24px;
+            if root.tab.dirty && !x.has-hover: Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: Theme.accent;
+            }
+            x := TouchArea { mouse-cursor: pointer; clicked => { root.close(); } }
+            if !root.tab.dirty || x.has-hover: Icon {
+                name: "x";
+                size: 13px;
+                ink: x.has-hover ? Theme.ink : Theme.ink3;
+                opacity: root.selected || ta.has-hover || x.has-hover ? 1 : 0;
+            }
+        }
+    }
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Text Editor";
+    preferred-width: 1000px;
+    preferred-height: 720px;
+    property <bool> menu-open;
+
+    public function select(a: int, c: int) { page.select(a, c); }
+    public function mark(a: int, c: int) { page.mark(a, c); }
+    public function focus-page() { page.focus-input(); }
+    public function focus-find() { Ed.find-focus += 1; }
+
+    function shortcut(e: KeyEvent) -> EventResult {
+        if (e.modifiers.control) {
+            if (e.text == "s" || e.text == "S") { if (e.modifiers.shift) { Ed.save-as(); } else { Ed.save(); } return accept; }
+            if (e.text == "o") { Ed.open(); return accept; }
+            if (e.text == "n" || e.text == "t") { Ed.new-tab(); return accept; }
+            if (e.text == "w") { Ed.close-tab(Ed.current); return accept; }
+            if (e.text == "f") { Ed.find-open = true; Ed.replace-open = false; root.focus-find(); return accept; }
+            if (e.text == "h") { Ed.find-open = true; Ed.replace-open = true; root.focus-find(); return accept; }
+            if (e.text == "g") { Ed.find(Ed.find-text, e.modifiers.shift ? -1 : 1); return accept; }
+            if (e.text == "=" || e.text == "+") { Ed.font-size = min(40, Ed.font-size + 1); Ed.settings-changed(); return accept; }
+            if (e.text == "-") { Ed.font-size = max(8, Ed.font-size - 1); Ed.settings-changed(); return accept; }
+            if (e.text == "0") { Ed.font-size = 14; Ed.settings-changed(); return accept; }
+            if (e.text == Key.Tab) { Ed.pick(mod(Ed.current + (e.modifiers.shift ? Ed.tabs.length - 1 : 1), max(1, Ed.tabs.length))); return accept; }
+        }
+        if (e.text == Key.Escape && Ed.find-open) { Ed.find-open = false; root.focus-page(); return accept; }
+        return reject;
+    }
+
+    forward-focus: page;
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Text Editor";
+            app-icon: "doc";
+            subtitle: Ed.current >= 0 && Ed.current < Ed.tabs.length ? Ed.tabs[Ed.current].path : "";
+            Button { small: true; icon: "folder"; text: "Open"; clicked => { Ed.open(); } }
+            Button { small: true; icon: "download"; text: "Save"; enabled: Ed.tabs.length > 0; clicked => { Ed.save(); } }
+            IconButton {
+                icon: "sliders";
+                tip: "View";
+                checked: root.menu-open;
+                clicked => { root.menu-open = !root.menu-open; }
+            }
+        }
+        Rule {}
+        // Tabs.
+        if Ed.tabs.length > 0: HorizontalLayout {
+            padding: 6px;
+            padding-left: 8px;
+            spacing: 3px;
+            alignment: start;
+            for t[i] in Ed.tabs: Tab {
+                tab: t;
+                selected: i == Ed.current;
+                clicked => { Ed.pick(i); }
+                close => { Ed.close-tab(i); }
+            }
+            VerticalLayout { alignment: center; IconButton { icon: "plus"; size: 28px; glyph: 15px; tip: "New"; clicked => { Ed.new-tab(); } } }
+        }
+        if Ed.tabs.length > 0: Rule {}
+
+        // Changed on disk, with changes here.
+        if Ed.changed-on-disk: Rectangle {
+            background: Theme.warn.transparentize(0.85);
+            height: 42px;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 10px;
+                spacing: 8px;
+                VerticalLayout { alignment: center; Icon { name: "alert"; size: 16px; ink: Theme.warn; } }
+                Text { text: "This file was changed by something else, and it has changes here too."; vertical-alignment: center; color: Theme.ink; font-size: Theme.fs(12.5); horizontal-stretch: 1; overflow: elide; }
+                VerticalLayout { alignment: center; Button { small: true; text: "Load theirs"; clicked => { Ed.reload(); } } }
+                VerticalLayout { alignment: center; Button { small: true; kind: "primary"; text: "Keep mine"; clicked => { Ed.keep-mine(); } } }
+            }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            page := Page {
+                visible: Ed.tabs.length > 0;
+                text <=> Ed.text;
+                wrap: Ed.wrap;
+                family: Ed.mono ? Ed.mono-family : Theme.font-family;
+                size: Ed.font-size * 1px * Theme.font-factor;
+                lines: Ed.lines;
+                edited => { Ed.edited(); }
+                key(e) => {
+                    // A question is up: Enter saves, Escape doesn't close;
+                    // nothing reaches the text behind it.
+                    if (Ed.ask-close) {
+                        if (e.text == Key.Return) { Ed.answer(2); }
+                        if (e.text == Key.Escape) { Ed.answer(0); }
+                        return accept;
+                    }
+                    if (e.text == Key.Tab && !e.modifiers.control) { Ed.indent(false); return accept; }
+                    if (e.text == Key.Backtab) { Ed.indent(true); return accept; }
+                    return root.shortcut(e);
+                }
+            }
+            if Ed.tabs.length == 0: FocusScope {
+                key-pressed(e) => { root.shortcut(e) }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 18px;
+                    Empty { icon: "doc"; title: "Nothing open"; text: "Open a file, or start a new one."; }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 8px;
+                        Button { kind: "primary"; icon: "plus"; text: "New"; clicked => { Ed.new-tab(); } }
+                        Button { icon: "folder"; text: "Open…"; clicked => { Ed.open(); } }
+                    }
+                    if Ed.recent.length > 0: HorizontalLayout {
+                        alignment: center;
+                        Card {
+                            width: 420px;
+                            VerticalLayout {
+                                padding: 6px;
+                                padding-top: 12px;
+                                HorizontalLayout { padding-left: 10px; padding-bottom: 6px; Caption { text: "RECENT"; } }
+                                for r[i] in Ed.recent: Rectangle {
+                                    height: 44px;
+                                    border-radius: Theme.r-sm;
+                                    background: rta.has-hover ? Theme.hover : transparent;
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        spacing: 10px;
+                                        VerticalLayout { alignment: center; Icon { name: "file"; size: 16px; ink: Theme.ink3; } }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text { text: r.name; color: Theme.ink; font-size: Theme.fs(13); overflow: elide; }
+                                            Text { text: r.folder; color: Theme.ink3; font-size: Theme.fs(11); overflow: elide; }
+                                        }
+                                    }
+                                    rta := TouchArea { mouse-cursor: pointer; clicked => { Ed.open-recent(i); } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // View settings.
+            if root.menu-open: Rectangle {
+                TouchArea { clicked => { root.menu-open = false; } }
+                Rectangle {
+                    x: parent.width - self.width - 10px;
+                    y: 6px;
+                    width: 250px;
+                    height: vl.preferred-height;
+                    background: Theme.dialog;
+                    border-radius: Theme.r;
+                    border-width: 1px;
+                    border-color: Theme.edge;
+                    drop-shadow-blur: 20px;
+                    drop-shadow-color: #00000059;
+                    TouchArea {}
+                    vl := VerticalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+                        HorizontalLayout {
+                            Label { text: "Wrap long lines"; vertical-alignment: center; horizontal-stretch: 1; }
+                            Switch { on <=> Ed.wrap; toggled => { Ed.settings-changed(); } }
+                        }
+                        HorizontalLayout {
+                            Label { text: "Fixed-width font"; vertical-alignment: center; horizontal-stretch: 1; }
+                            Switch { on <=> Ed.mono; toggled => { Ed.settings-changed(); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Label { text: "Text size"; vertical-alignment: center; horizontal-stretch: 1; }
+                            IconButton { icon: "minus"; size: 28px; glyph: 14px; clicked => { Ed.font-size = max(8, Ed.font-size - 1); Ed.settings-changed(); } }
+                            Text { text: round(Ed.font-size); color: Theme.ink; vertical-alignment: center; horizontal-alignment: center; min-width: 24px; }
+                            IconButton { icon: "plus"; size: 28px; glyph: 14px; clicked => { Ed.font-size = min(40, Ed.font-size + 1); Ed.settings-changed(); } }
+                        }
+                        Rule {}
+                        Button { icon: "download"; text: "Save as…"; enabled: Ed.tabs.length > 0; clicked => { root.menu-open = false; Ed.save-as(); } }
+                    }
+                }
+            }
+        }
+
+        // Find and replace.
+        if Ed.find-open && Ed.tabs.length > 0: Rule {}
+        if Ed.find-open && Ed.tabs.length > 0: VerticalLayout {
+            padding: 8px;
+            padding-left: 10px;
+            padding-right: 10px;
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 6px;
+                Field {
+                    // Asked for (Ctrl+F) when it opens, and again while open.
+                    property <int> asked: Ed.find-focus;
+                    init => { self.focus-input(); self.select-all(); }
+                    changed asked => { self.focus-input(); self.select-all(); }
+                    icon: "search";
+                    placeholder: "Find";
+                    text <=> Ed.find-text;
+                    edited(t) => { Ed.find(t, 0); }
+                    accepted(t) => { Ed.find(t, 1); }
+                    escape => { Ed.find-open = false; root.focus-page(); }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text { text: Ed.find-note; color: Theme.ink3; font-size: Theme.fs(11.5); min-width: 70px; horizontal-alignment: center; }
+                }
+                IconButton { icon: "chevronUp"; tip: "Previous"; clicked => { Ed.find(Ed.find-text, -1); } }
+                IconButton { icon: "chevronDown"; tip: "Next"; clicked => { Ed.find(Ed.find-text, 1); } }
+                IconButton { icon: "font"; tip: "Match case"; checked: Ed.match-case; clicked => { Ed.match-case = !Ed.match-case; Ed.find(Ed.find-text, 0); } }
+                IconButton { icon: "repeat"; tip: "Replace"; checked: Ed.replace-open; clicked => { Ed.replace-open = !Ed.replace-open; } }
+                IconButton { icon: "x"; tip: "Close"; clicked => { Ed.find-open = false; root.focus-page(); } }
+            }
+            if Ed.replace-open: HorizontalLayout {
+                spacing: 6px;
+                Field {
+                    icon: "pen";
+                    placeholder: "Replace with";
+                    text <=> Ed.replace-text;
+                    accepted => { Ed.replace-one(); }
+                    escape => { Ed.find-open = false; root.focus-page(); }
+                }
+                Button { small: true; text: "Replace"; clicked => { Ed.replace-one(); } }
+                Button { small: true; text: "Replace all"; clicked => { Ed.replace-all(); } }
+            }
+        }
+
+        // Status.
+        if Ed.tabs.length > 0: Rule {}
+        if Ed.tabs.length > 0: HorizontalLayout {
+            height: 28px;
+            padding-left: 14px;
+            padding-right: 14px;
+            spacing: 18px;
+            Text { text: Ed.position; color: Theme.ink3; font-size: Theme.fs(11.5); vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+            Text { text: Ed.info; color: Theme.ink3; font-size: Theme.fs(11.5); vertical-alignment: center; }
+        }
+    }
+
+    Dialog {
+        open: Ed.ask-close;
+        title: Ed.ask-title;
+        text: Ed.ask-text;
+        dismissed => { Ed.answer(0); }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { Ed.answer(0); } }
+            Button { kind: "danger"; text: "Don't save"; clicked => { Ed.answer(1); } }
+            Button { kind: "primary"; text: "Save"; clicked => { Ed.answer(2); } }
+        }
+    }
+
+    Toast { text: Ed.toast; }
+}
