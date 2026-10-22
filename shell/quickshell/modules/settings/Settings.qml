@@ -2009,6 +2009,15 @@ Scope {
                         type: "buttons", buttons: [{ label: "Check again", set: () => F.refresh() }] });
             return rows;
         }
+        // One password for a while of changes (services/FaceUnlock.qml run()).
+        rows.push(F.unlocked
+            ? { n: "Unlocked for changes",
+                s: "Changes on this page don't ask for your password again, until you lock it or five minutes "
+                   + "pass without one",
+                type: "buttons", buttons: [{ label: "Lock", quiet: true, set: () => F.lock() }] }
+            : { n: "Changes ask for your password once",
+                s: "The first change asks; the ones after it go straight through, for as long as you keep making them",
+                type: "info", value: "Locked" });
         rows.push({ n: "Unlock with my face",
                     s: F.lockOn && F.greeterOn ? "At the lock screen and when you log in; the password always works too"
                        : F.lockOn ? "At the lock screen (the login screen isn't set up: is greetd installed?)"
@@ -2067,17 +2076,17 @@ Scope {
     // with one password (scripts/howdy-config.py checks every one).
     function howdyRows() {
         const F = Services.FaceUnlock;
-        const rows = [{ type: "header", n: "Howdy",
-                        s: "Howdy's own settings. Changes wait until you apply them, then ask for your password once" }];
+        const rows = [{ type: "header", n: "Howdy", s: "Howdy's own settings, changed as you change them" }];
         if (F.configPath === "") {
             rows.push({ n: "Howdy's settings", type: "info", value: "Not readable",
                         s: "Its config.ini wasn't found, or can't be read: sudo howdy config edits it by hand" });
             return rows;
         }
-        const n = Object.keys(F.pending).length;
+        // Waiting only when the password wasn't given (or while one goes in).
+        const n = F.busy ? 0 : Object.keys(F.pending).length;
         if (n > 0)
-            rows.push({ n: n === 1 ? "1 change waiting" : n + " changes waiting",
-                        s: "Applying asks for your password", type: "buttons",
+            rows.push({ n: n === 1 ? "1 change not made yet" : n + " changes not made yet",
+                        s: "Your password is needed for them", type: "buttons",
                         buttons: [{ label: F.busy ? "Applying…" : "Apply", set: () => F.applyConfig() },
                                   { label: "Discard", quiet: true, set: () => F.discardConfig() }] });
         const num = (key, fallback, round) => v => F.setCfg(key, round ? Math.round(v) : Number(v).toFixed(1));
@@ -2154,7 +2163,7 @@ Scope {
             { n: "Timing report", s: "Howdy prints how long each step took (in a terminal; can upset some apps)",
               type: "toggle", value: F.cfgBool("debug.end_report", false), set: v => F.setCfg("debug.end_report", v) });
         if (n > 0)
-            rows.push({ n: n === 1 ? "1 change waiting" : n + " changes waiting", type: "buttons",
+            rows.push({ n: n === 1 ? "1 change not made yet" : n + " changes not made yet", type: "buttons",
                         buttons: [{ label: F.busy ? "Applying…" : "Apply", set: () => F.applyConfig() },
                                   { label: "Discard", quiet: true, set: () => F.discardConfig() }] });
         return rows;

@@ -12,6 +12,7 @@
 #   sudo ./howdy-setup.sh --webcam-check off        the infrared camera alone
 #   sudo ./howdy-setup.sh --set video.certainty=3.2 …  Howdy's settings (scripts/howdy-config.py)
 #   sudo ./howdy-setup.sh --remove-face ID forget one look (the ID from --list-faces)
+#   pkexec … --serve                         Settings: one password for a while of changes
 #   sudo ./howdy-setup.sh --clear-faces    forget every face of yours
 #   sudo ./howdy-setup.sh --list-faces     the faces enrolled for you
 #
@@ -55,6 +56,7 @@ mode=install camera="" alt=0 id="" stills="" webcam=""
 settings=()
 case ${1:-} in
     --check) mode=check ;;
+    --serve) mode=serve ;;
     --remove) mode=remove ;;
     --add-face)
         mode=add; shift
@@ -96,7 +98,7 @@ case ${1:-} in
         [ -c "$camera" ] || die "no such camera: $camera"
         ;;
     "") ;;
-    *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
 
 # Whose faces: the person behind pkexec or sudo.
@@ -124,6 +126,33 @@ howdy_dir() {
 here=$(cd "${0%/*}" && pwd)
 STAMP=hyprshell_webcam.py
 webcam_py() { python3 -I "$here/howdy-webcam.py" "$@"; }
+
+# Settings → Login screen asks for the password once, then sends the
+# changes it makes here, one a line (arguments separated by tabs), while
+# this keeps running as root. It answers each with what was said and
+# "\037EXIT code". Five minutes without one, or Settings letting go of it
+# (its end of the pipe closing), and it's done: the next change asks
+# again.
+#
+# It runs the copies it takes now, into a folder only root can touch:
+# the scripts in your config folder can't be changed under it while it's
+# open.
+if [ "$mode" = serve ]; then
+    dir=$(mktemp -d /run/hyprshell-face.XXXXXX) || die "no folder to work in"
+    trap 'rm -rf -- "${dir:?}"' EXIT
+    for f in howdy-setup.sh howdy-webcam.py howdy-config.py hyprshell_webcam.py; do
+        install -m 600 -o root -g root "$here/$f" "$dir/$f"
+    done
+    printf '\037READY\n'
+    while IFS=$'\t' read -r -t 300 -a args; do
+        [ ${#args[@]} -gt 0 ] || continue
+        [ "${args[0]}" = --serve ] && { printf 'howdy-setup.sh: already serving\n\037EXIT 1\n'; continue; }
+        rc=0
+        bash "$dir/howdy-setup.sh" "${args[@]}" 2>&1 || rc=$?
+        printf '\037EXIT %d\n' "$rc"
+    done
+    exit 0
+fi
 
 case $mode in
     camera)

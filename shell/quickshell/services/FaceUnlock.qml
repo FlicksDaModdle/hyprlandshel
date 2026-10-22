@@ -56,8 +56,9 @@ Singleton {
     // ── Howdy's settings ────────────────────────────────────────────────
     // Read from its config.ini as it is; changed through howdy-setup.sh
     // --set (scripts/howdy-config.py, which takes only the settings it
-    // knows, within their ranges). Changes wait in `pending` and go in
-    // together, so the password is asked for once, not at every slider.
+    // knows, within their ranges), straight away. `pending` holds what
+    // hasn't gone in yet: a moment's worth, or what waits because the
+    // password wasn't given.
     property string configPath: ""
     // { "video.certainty": "3.5", "webcam.min_light": "45", … }
     property var config: ({})
@@ -101,6 +102,17 @@ Singleton {
         if (root.config[name] === v) delete next[name];
         else next[name] = v;
         root.pending = next;
+        // Made straight away (a moment later, so a few toggles in a row
+        // go in together).
+        applySoon.restart();
+    }
+    Timer {
+        id: applySoon
+        interval: 400
+        onTriggered: {
+            if (root.busy) { applySoon.restart(); return; }
+            root.applyConfig();
+        }
     }
     function discardConfig() { root.pending = ({}); }
     function applyConfig() {
@@ -114,7 +126,16 @@ Singleton {
     // (Later: whether it failed is set after busy goes.)
     onBusyChanged: if (!root.busy && applying.args.length > 0) Qt.callLater(root.afterApply)
     function afterApply() {
-        if (!root.failed) root.pending = ({});
+        if (!root.failed) {
+            // Only what went in: anything changed meanwhile goes next.
+            const next = Object.assign({}, root.pending);
+            for (const arg of applying.args) {
+                const k = arg.slice(0, arg.indexOf("=")), v = arg.slice(arg.indexOf("=") + 1);
+                if (next[k] === v) delete next[k];
+            }
+            root.pending = next;
+            if (Object.keys(next).length > 0) applySoon.restart();
+        }
         applying.args = [];
         configFile.reload();
     }
@@ -246,14 +267,74 @@ Singleton {
     function cameraLabel(c) { return c.name + (c.ir ? " (IR)" : "") + " · " + c.path.replace("/dev/", ""); }
 
     // ── changes, through pkexec ─────────────────────────────────────────
+    // Every change goes to a helper running as root (howdy-setup.sh
+    // --serve), started through pkexec the first time: the password is
+    // asked for once, and the changes after it go straight through, until
+    // five minutes pass without one or it's locked again (lock()).
     function run(args, working, done) {
         if (root.busy) return;
+        if (args.some(a => /[\t\n]/.test(String(a)))) return;
         root.busy = true;
         root.failed = false;
         root.status = working;
         runProc.done = done;
-        runProc.command = ["pkexec", "bash", root.script].concat(args);
-        runProc.running = true;
+        runProc.out = "";
+        runProc.waiting = true;
+        if (helper.ready) {
+            helper.write(args.join("\t") + "\n");
+        } else {
+            helper.queued = args;
+            if (!helper.running) helper.running = true;
+        }
+    }
+    // Unlocked: changes don't ask for the password.
+    readonly property bool unlocked: helper.ready
+    function lock() {
+        if (!helper.running || root.busy) return;
+        // Its end of the pipe closes, and it's done.
+        helper.stdinEnabled = false;
+    }
+    Process {
+        id: helper
+        property bool ready: false
+        property var queued: null
+        command: ["pkexec", "bash", root.script, "--serve"]
+        stdinEnabled: true
+        stdout: SplitParser {
+            onRead: line => {
+                if (line === "\x1fREADY") {
+                    helper.ready = true;
+                    console.info("FaceUnlock: unlocked for changes");
+                    if (helper.queued) {
+                        helper.write(helper.queued.join("\t") + "\n");
+                        helper.queued = null;
+                    }
+                    return;
+                }
+                const end = /^\x1fEXIT (\d+)$/.exec(line);
+                if (end) {
+                    runProc.waiting = false;
+                    root.finish(parseInt(end[1], 10));
+                    return;
+                }
+                if (line.trim() === "recording") runProc.recordingAt = Date.now();
+                else runProc.out += line + "\n";
+            }
+        }
+        // pkexec's own words, before it's running.
+        stderr: SplitParser { onRead: line => runProc.out += line + "\n" }
+        onExited: code => {
+            helper.ready = false;
+            helper.queued = null;
+            helper.stdinEnabled = true;
+            console.info("FaceUnlock: locked again (" + code + ")");
+            // Gone with a change still waiting: the password wasn't given
+            // (pkexec 126, 127), or it ended some other way.
+            if (runProc.waiting) {
+                runProc.waiting = false;
+                root.finish(code === 126 || code === 127 ? code : (code === 0 ? 1 : code));
+            }
+        }
     }
     function enable() { run([], "Setting up face unlock…", "Face unlock is on: lock the screen to try it"); }
     function disable() { run(["--remove"], "Turning face unlock off…", "Face unlock is off"); }
@@ -351,70 +432,65 @@ Singleton {
     function removeLook(id) { run(["--remove-face", String(id)], "Removing that look…", "That look is removed"); }
     function clearFaces() { run(["--clear-faces"], "Removing your faces…", "Your faces are removed"); }
 
-    Process {
+    // The change being made, and what came of it.
+    QtObject {
         id: runProc
         property string done: ""
         property bool adding: false
+        // Sent, with no answer yet.
+        property bool waiting: false
         // When recording began ("recording", from howdy-setup.sh), and
         // what else it said.
         property real recordingAt: 0
         property string out: ""
-        stdout: SplitParser {
-            onRead: line => {
-                if (line.trim() === "recording") runProc.recordingAt = Date.now();
-                else runProc.out += line + "\n";
-            }
+    }
+    function finish(code) {
+        root.busy = false;
+        root.refresh();
+        const adding = runProc.adding;
+        runProc.adding = false;
+        const said = runProc.out.trim().split("\n").filter(l => l.trim() !== "");
+        // The webcam in Howdy's way (the camera busy, or no USB
+        // bandwidth left for it): again, with the webcam off. Not for
+        // anything else Howdy says — too dark, no face — which the
+        // webcam has nothing to do with.
+        if (adding && code !== 0 && code !== 126 && code !== 127 && !root.addingAlone && !root.retriedAlone
+                && /No space left on device|Device or resource busy|Failed to (read|open) (the )?camera/i.test(said.join(" "))) {
+            console.info("FaceUnlock: Howdy couldn't open its camera beside the webcam; again without it:", said.join(" | "));
+            root.retriedAlone = true;
+            root.addingAlone = true;
+            root.stopPreview();
+            root.busy = true;
+            runProc.adding = true;
+            root.status = "Trying again with the webcam off…";
+            retryAlone.restart();
+            return;
         }
-        onStarted: runProc.out = ""
-        stderr: StdioCollector { id: runErr }
-        onExited: code => {
-            root.busy = false;
-            root.refresh();
-            const adding = runProc.adding;
-            runProc.adding = false;
-            const said = (runErr.text.trim() || runProc.out.trim()).split("\n").filter(l => l.trim() !== "");
-            // The webcam in Howdy's way (the camera busy, or no USB
-            // bandwidth left for it): again, with the webcam off. Not for
-            // anything else Howdy says — too dark, no face — which the
-            // webcam has nothing to do with.
-            if (adding && code !== 0 && code !== 126 && code !== 127 && !root.addingAlone && !root.retriedAlone
-                    && /No space left on device|Device or resource busy|Failed to (read|open) (the )?camera/i.test(said.join(" "))) {
-                console.info("FaceUnlock: Howdy couldn't open its camera beside the webcam; again without it:", said.join(" | "));
-                root.retriedAlone = true;
-                root.addingAlone = true;
-                root.stopPreview();
-                root.busy = true;
-                runProc.adding = true;
-                root.status = "Trying again with the webcam off…";
-                retryAlone.restart();
-                return;
-            }
+        if (adding) {
+            root.retriedAlone = false;
+            if (code !== 0) { root.addFailed = true; addFailedClear.restart(); }
+        }
+        if (code === 0) {
+            root.status = runProc.done;
             if (adding) {
-                root.retriedAlone = false;
-                if (code !== 0) { root.addFailed = true; addFailedClear.restart(); }
-            }
-            if (code === 0) {
-                root.status = runProc.done;
-                if (adding) {
-                    const shown = Date.now() - (runProc.recordingAt || Date.now());
-                    if (shown < 3000) {
-                        root.heldStatus = root.status;
-                        root.status = "Hold still and look at the camera…";
-                        root.holding = true;
-                        holdTimer.interval = 3000 - shown;
-                        holdTimer.restart();
-                    } else {
-                        root.justAdded = true;
-                        justAddedClear.restart();
-                    }
+                const shown = Date.now() - (runProc.recordingAt || Date.now());
+                if (shown < 3000) {
+                    root.heldStatus = root.status;
+                    root.status = "Hold still and look at the camera…";
+                    root.holding = true;
+                    holdTimer.interval = 3000 - shown;
+                    holdTimer.restart();
+                } else {
+                    root.justAdded = true;
+                    justAddedClear.restart();
                 }
-                return;
             }
-            root.failed = true;
-            // pkexec: 126 a dismissed or wrong password, 127 not allowed.
-            if (code === 126 || code === 127) { root.status = "Not changed: the password wasn't given"; return; }
-            root.status = (said.length ? said[said.length - 1] : "That didn't work").replace(/^howdy-(setup\.sh|config): /, "");
+            return;
         }
+        root.failed = true;
+        // pkexec: 126 a dismissed or wrong password, 127 not allowed.
+        if (code === 126 || code === 127) { root.status = "Not changed: the password wasn't given"; return; }
+        root.status = (said.length ? said[said.length - 1] : "That didn't work").replace(/^howdy-(setup\.sh|config): /, "");
     }
 
     // ── the camera, seen ────────────────────────────────────────────────
