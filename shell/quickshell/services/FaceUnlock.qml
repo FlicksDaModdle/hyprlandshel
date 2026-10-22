@@ -634,6 +634,7 @@ Singleton {
         root.stopPreview();
         root.failed = false;
         root.status = "Look at the camera…";
+        testPam.startedAt = Date.now();
         if (!testPam.start()) { root.failed = true; root.status = "Couldn't start the face check"; }
     }
     readonly property bool testing: testPam.active
@@ -643,13 +644,16 @@ Singleton {
         user: Services.SysInfo.user
         // What Howdy said on the way, so a failure says why.
         property string said: ""
+        // How long it took, to see what a setting does to it.
+        property real startedAt: 0
         onPamMessage: if (message && message.trim() !== "") said = message.trim()
         onActiveChanged: if (active) said = ""
         onResponseRequiredChanged: if (responseRequired) abort()
         onCompleted: result => {
             root.failed = result !== PamResult.Success;
-            root.status = result === PamResult.Success ? "Recognised you"
-                : "Didn't recognise you" + (testPam.said !== "" ? " · Howdy says: " + testPam.said : "");
+            const took = (Math.max(0, Date.now() - testPam.startedAt) / 1000).toFixed(1) + " s";
+            root.status = result === PamResult.Success ? "Recognised you in " + took
+                : "Didn't recognise you (" + took + ")" + (testPam.said !== "" ? " · Howdy says: " + testPam.said : "");
         }
         onError: err => { root.failed = true; root.status = "The face check couldn't run"; }
     }
