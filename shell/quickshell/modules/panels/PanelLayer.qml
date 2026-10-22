@@ -103,14 +103,21 @@ Variants {
             }
         }
 
-        // Every dropdown right-aligns to the same gutter and hangs the same
-        // distance below the bar, as in the mockup.
+        // Every dropdown hangs the same distance below the bar, centred under
+        // the button that opened it (the Entrance keeps where that was, as
+        // originAbs) and kept a gutter in from the screen's edges. Opened
+        // from the keyboard, with no button, it takes its usual place.
         readonly property real panelRight: layer.width - Config.Appearance.panelEdgeGap
         readonly property real panelTop: Config.Appearance.panelTop
+        function atButton(origin, w, otherwise) {
+            if (origin < 0) return otherwise;
+            const gap = Config.Appearance.panelEdgeGap;
+            return Math.round(Math.max(gap, Math.min(origin - w / 2, layer.width - w - gap)));
+        }
 
         Entrance {
             shown: Config.UiState.controlCenterOpen
-            x: layer.panelRight - width
+            x: layer.atButton(originAbs, width, layer.panelRight - width)
             y: layer.panelTop
             LazyPanel {
                 wanted: Config.UiState.controlCenterOpen
@@ -124,7 +131,7 @@ Variants {
 
         Entrance {
             shown: Config.UiState.notificationsOpen
-            x: layer.panelRight - width
+            x: layer.atButton(originAbs, width, layer.panelRight - width)
             y: layer.panelTop
             LazyPanel {
                 wanted: Config.UiState.notificationsOpen
@@ -136,7 +143,7 @@ Variants {
 
         Entrance {
             shown: Config.UiState.calendarOpen
-            x: layer.panelRight - width
+            x: layer.atButton(originAbs, width, layer.panelRight - width)
             y: layer.panelTop
             LazyPanel {
                 wanted: Config.UiState.calendarOpen
@@ -146,11 +153,10 @@ Variants {
             }
         }
 
-        // Centred under the bar, where its pill is, rather than at the
-        // right gutter the other dropdowns share.
+        // Under its pill; centred on the bar when opened from the keyboard.
         Entrance {
             shown: Config.UiState.mediaOpen
-            x: Math.round((layer.width - width) / 2)
+            x: layer.atButton(originAbs, width, Math.round((layer.width - width) / 2))
             y: layer.panelTop
             LazyPanel {
                 wanted: Config.UiState.mediaOpen
@@ -178,7 +184,7 @@ Variants {
 
         Entrance {
             shown: Config.UiState.drivesOpen
-            x: layer.panelRight - width
+            x: layer.atButton(originAbs, width, layer.panelRight - width)
             y: layer.panelTop
             LazyPanel {
                 wanted: Config.UiState.drivesOpen
@@ -190,7 +196,7 @@ Variants {
 
         Entrance {
             shown: Config.UiState.timersOpen
-            x: layer.panelRight - width
+            x: layer.atButton(originAbs, width, layer.panelRight - width)
             y: layer.panelTop
             LazyPanel {
                 wanted: Config.UiState.timersOpen
@@ -202,7 +208,7 @@ Variants {
 
         Entrance {
             shown: Config.UiState.privacyOpen
-            x: layer.panelRight - width
+            x: layer.atButton(originAbs, width, layer.panelRight - width)
             y: layer.panelTop
             LazyPanel {
                 wanted: Config.UiState.privacyOpen
@@ -214,7 +220,7 @@ Variants {
 
         Entrance {
             shown: Config.UiState.updatesOpen
-            x: layer.panelRight - width
+            x: layer.atButton(originAbs, width, layer.panelRight - width)
             y: layer.panelTop
             LazyPanel {
                 wanted: Config.UiState.updatesOpen
@@ -241,7 +247,7 @@ Variants {
 
         Entrance {
             shown: Config.UiState.powerOpen
-            x: layer.panelRight - width
+            x: layer.atButton(originAbs, width, layer.panelRight - width)
             y: layer.panelTop
             LazyPanel {
                 wanted: Config.UiState.powerOpen

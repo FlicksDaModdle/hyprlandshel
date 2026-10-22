@@ -56,7 +56,12 @@ Item {
         // top of it and take their own clicks.
         MouseArea {
             anchors.fill: parent
-            onClicked: Config.UiState.toggleMedia()
+            onClicked: {
+                // The panel opens under the pill, as BarButton's do.
+                Config.UiState.panelOriginX = mapToItem(null, width / 2, 0).x;
+                Config.UiState.panelOriginAt = Date.now();
+                Config.UiState.toggleMedia();
+            }
         }
 
         Row {
