@@ -1,0 +1,266 @@
+// Camera: the webcam, photos and videos, kept in Pictures and Videos.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Seg, Button, IconButton, Switch, Label, Dim, Empty, Toast, Rule, Icon, Spinner, Menu, MenuEntry } from "@kit";
+
+export { Theme, Icons, Win }
+
+export global Cam {
+    in property <image> frame;
+    in property <bool> live;
+    in property <string> state;     // what's wrong, when there's no picture
+    in property <[string]> cameras;
+    in-out property <int> camera;
+    // 0 photo, 1 video
+    in-out property <int> mode;
+    in property <bool> recording;
+    in property <string> elapsed;
+    in-out property <int> timer;    // seconds: 0, 3 or 10
+    in property <int> countdown;
+    in-out property <bool> mirror: true;
+    in-out property <bool> sound: true;
+    in property <image> last;
+    in property <bool> has-last;
+    in property <int> flash;        // bumped on each photo
+    in property <string> toast;
+
+    callback shutter();
+    callback pick-camera(int);
+    callback open-last();
+    callback open-folder();
+    callback settings-changed();
+}
+
+component Round inherits Rectangle {
+    in property <bool> enabled: true;
+    callback clicked();
+    border-radius: self.width / 2;
+    opacity: enabled ? 1 : 0.4;
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+    out property <bool> hovered: ta.has-hover;
+    out property <bool> down: ta.pressed;
+    @children
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Camera";
+    preferred-width: 980px;
+    preferred-height: 700px;
+    property <bool> menu-open;
+    property <int> seen-flash: Cam.flash;
+    property <float> flash-level;
+    changed seen-flash => { self.flash-level = 1; flash-off.running = true; }
+    flash-off := Timer {
+        interval: 60ms;
+        running: false;
+        triggered => { root.flash-level = 0; self.running = false; }
+    }
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " " || e.text == Key.Return) { Cam.shutter(); return accept; }
+            if (!Cam.recording && (e.text == "p" || e.text == "P")) { Cam.mode = 0; Cam.settings-changed(); return accept; }
+            if (!Cam.recording && (e.text == "v" || e.text == "V")) { Cam.mode = 1; Cam.settings-changed(); return accept; }
+            return reject;
+        }
+    }
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Camera";
+            app-icon: "camera";
+            subtitle: Cam.recording ? "Recording " + Cam.elapsed : "";
+            if Cam.cameras.length > 1: Seg {
+                options: Cam.cameras;
+                current <=> Cam.camera;
+                picked(i) => { Cam.pick-camera(i); }
+            }
+            IconButton { icon: "sliders"; tip: "Settings"; checked: root.menu-open; clicked => { root.menu-open = !root.menu-open; } }
+        }
+        Rule {}
+        Rectangle {
+            vertical-stretch: 1;
+            background: #000000;
+            clip: true;
+
+            if Cam.live: Image {
+                width: parent.width;
+                height: parent.height;
+                source: Cam.frame;
+                image-fit: contain;
+            }
+            if !Cam.live: VerticalLayout {
+                alignment: center;
+                spacing: 10px;
+                if Cam.state == "": HorizontalLayout { alignment: center; Spinner {} }
+                if Cam.state != "": Empty { icon: "camera"; title: "No picture"; text: Cam.state; }
+            }
+
+            // The countdown.
+            if Cam.countdown > 0: Text {
+                text: Cam.countdown;
+                font-size: 120px;
+                font-weight: 300;
+                color: #ffffff;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            // A photo taken: a blink of white.
+            Rectangle {
+                background: #ffffff;
+                opacity: root.flash-level * 0.85;
+                animate opacity { duration: 260ms; easing: ease-out; }
+            }
+
+            // Recording.
+            if Cam.recording: Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: 16px;
+                width: rl.preferred-width + 24px;
+                height: 30px;
+                border-radius: 15px;
+                background: #000000a0;
+                rl := HorizontalLayout {
+                    padding-left: 12px;
+                    spacing: 8px;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: #ff3b30;
+                            opacity: mod(animation-tick() / 1s, 1) < 0.5 ? 1 : 0.35;
+                        }
+                    }
+                    Text { text: Cam.elapsed; color: #ffffff; font-size: 13px; vertical-alignment: center; }
+                }
+            }
+
+            // The controls, over the bottom of the picture.
+            Rectangle {
+                y: parent.height - self.height;
+                height: 128px;
+                background: @linear-gradient(0deg, #000000b0 0%, #00000000 100%);
+                HorizontalLayout {
+                    padding-left: 28px;
+                    padding-right: 28px;
+                    padding-bottom: 16px;
+                    // Photo or video, and the timer.
+                    VerticalLayout {
+                        alignment: end;
+                        spacing: 8px;
+                        width: 200px;
+                        Seg {
+                            width: 170px;
+                            options: ["Photo", "Video"];
+                            current <=> Cam.mode;
+                            enabled: !Cam.recording;
+                            picked => { Cam.settings-changed(); }
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    // The shutter.
+                    VerticalLayout {
+                        alignment: end;
+                        shutter := Round {
+                            width: 76px;
+                            height: 76px;
+                            enabled: Cam.live && Cam.countdown == 0;
+                            border-width: 4px;
+                            border-color: #ffffff;
+                            background: transparent;
+                            clicked => { Cam.shutter(); }
+                            Rectangle {
+                                width: Cam.mode == 1 && Cam.recording ? 28px : shutter.down ? 54px : 60px;
+                                height: self.width;
+                                border-radius: Cam.mode == 1 && Cam.recording ? 6px : self.width / 2;
+                                background: Cam.mode == 1 ? #ff3b30 : shutter.hovered ? #ffffffe0 : #ffffff;
+                                animate width, border-radius { duration: Theme.t(260); easing: spring(0.3); }
+                            }
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    // The last one taken.
+                    VerticalLayout {
+                        alignment: end;
+                        width: 200px;
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: 10px;
+                            VerticalLayout {
+                                alignment: center;
+                                folder := Round {
+                                    width: 40px;
+                                    height: 40px;
+                                    background: folder.hovered ? #ffffff40 : #ffffff26;
+                                    clicked => { Cam.open-folder(); }
+                                    Icon { name: "folder"; size: 20px; ink: #ffffff; acc: #ffffff; }
+                                }
+                            }
+                            Round {
+                                width: 56px;
+                                height: 56px;
+                                visible: Cam.has-last;
+                                border-width: 2px;
+                                border-color: #ffffffd0;
+                                background: #00000080;
+                                clip: true;
+                                clicked => { Cam.open-last(); }
+                                Image {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    source: Cam.last;
+                                    image-fit: cover;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Settings.
+            if root.menu-open: Rectangle {
+                TouchArea { clicked => { root.menu-open = false; } }
+                Rectangle {
+                    x: parent.width - self.width - 10px;
+                    y: 8px;
+                    width: 270px;
+                    height: vl.preferred-height;
+                    background: Theme.dialog;
+                    border-radius: Theme.r;
+                    border-width: 1px;
+                    border-color: Theme.edge;
+                    drop-shadow-blur: 20px;
+                    drop-shadow-color: #00000059;
+                    TouchArea {}
+                    vl := VerticalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+                        HorizontalLayout {
+                            Label { text: "Mirror the picture"; vertical-alignment: center; horizontal-stretch: 1; }
+                            Switch { on <=> Cam.mirror; toggled => { Cam.settings-changed(); } }
+                        }
+                        HorizontalLayout {
+                            Label { text: "Record sound"; vertical-alignment: center; horizontal-stretch: 1; }
+                            Switch { on <=> Cam.sound; enabled: !Cam.recording; toggled => { Cam.settings-changed(); } }
+                        }
+                        VerticalLayout {
+                            spacing: 6px;
+                            Label { text: "Photo timer"; }
+                            Seg {
+                                options: ["Off", "3 s", "10 s"];
+                                current: Cam.timer == 3 ? 1 : Cam.timer == 10 ? 2 : 0;
+                                picked(i) => { Cam.timer = i == 1 ? 3 : i == 2 ? 10 : 0; Cam.settings-changed(); }
+                            }
+                        }
+                        Dim { text: "Photos go in Pictures/Camera, videos in Videos/Camera."; wrap: word-wrap; font-size: Theme.fs(11.5); }
+                    }
+                }
+            }
+        }
+    }
+
+    Toast { text: Cam.toast; }
+}

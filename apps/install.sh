@@ -14,7 +14,7 @@
 #   ./install.sh --prefix /usr/local
 #   ./install.sh --remove           take them out again
 #
-# Names: rog notes snapshots disks keys docs music video recorder chats weather calendar fonts text
+# Names: rog notes snapshots disks keys docs music video recorder chats weather calendar fonts text camera
 #
 # Not `set -e`: most of this probes for things that may be absent, and a
 # probe saying "no" must not end the run.
@@ -71,6 +71,7 @@ LIST=(
     "calendar|Calendar|Calendar|Your calendars, subscriptions and invitations, by month, week or list|x-office-calendar|Office;Calendar;|||Events;Agenda;Schedule;"
     "fonts|Fonts|Font Viewer|Every font on the computer, shown in itself; add your own|preferences-desktop-font|Utility;|%f|font/ttf;font/otf;font/collection;font/sfnt;application/x-font-ttf;application/x-font-otf;application/x-font-ttx;application/x-font-type1;|Typeface;Type;Text;"
     "text|Text Editor|Text Editor|Plain text and code, in tabs, with find and replace|accessories-text-editor|Utility;TextEditor;Development;|%F|text/plain;text/markdown;text/x-log;text/csv;text/x-csrc;text/x-chdr;text/x-c++src;text/x-c++hdr;text/x-python;text/x-rust;text/x-go;text/x-java;text/x-shellscript;application/x-shellscript;application/json;application/x-yaml;application/toml;application/xml;text/css;text/x-makefile;text/x-cmake;application/x-desktop;|Notepad;Code;Editor;Plain;"
+    "camera|Camera|Webcam|Photos and videos from the webcam|camera-photo|AudioVideo;Video;Recorder;|||Webcam;Photo;Selfie;Video;"
 )
 field() { local n=$2 IFS='|'; local f=($1); printf '%s' "${f[$((n - 1))]:-}"; }
 SKIP=""
@@ -84,7 +85,7 @@ if [ -n "$ONLY" ]; then
     for k in ${ONLY//,/ }; do
         known=0
         for a in "${LIST[@]}"; do [ "$(field "$a" 1)" = "$k" ] && known=1; done
-        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats weather calendar fonts text)" >&2; exit 2; }
+        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats weather calendar fonts text camera)" >&2; exit 2; }
     done
 fi
 
@@ -152,6 +153,8 @@ if fc-list :charset=1f600 family 2>/dev/null | grep -qi "color emoji\|twemoji\|j
 else warn "colour emoji" "Chats shows emoji in colour with one — sudo pacman -S --needed noto-fonts-emoji"; fi
 if command -v curl >/dev/null 2>&1; then ok "curl" "Weather fetches forecasts with it"
 else warn "curl" "Weather needs it — sudo pacman -S --needed curl"; fi
+if command -v ffmpeg >/dev/null 2>&1; then ok "ffmpeg" "Camera"
+else warn "ffmpeg" "Camera needs it — sudo pacman -S --needed ffmpeg"; fi
 if command -v fc-list >/dev/null 2>&1 && command -v fc-cache >/dev/null 2>&1; then ok "fontconfig" "Fonts"
 else warn "fontconfig" "Fonts needs it — sudo pacman -S --needed fontconfig"; fi
 if command -v asusd >/dev/null 2>&1 || [ -e /usr/bin/asusd ]; then ok "asusd" "ROG Control Center"

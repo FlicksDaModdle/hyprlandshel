@@ -2201,6 +2201,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyprshell-camera"
+version = "0.1.0"
+dependencies = [
+ "hyprshell-kit",
+ "libc",
+ "serde",
+ "serde_json",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "hyprshell-chats"
 version = "0.1.0"
 dependencies = [
