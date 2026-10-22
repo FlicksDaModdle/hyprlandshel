@@ -200,7 +200,9 @@ PanelSurface {
             border.width: 1
             border.color: Appearance.rule
             clip: true
+            SmoothScroll { target: msgFlick; anchors.fill: msgFlick; z: 5 }
             Flickable {
+                id: msgFlick
                 anchors.fill: parent
                 anchors.margins: 8
                 contentHeight: msgText.implicitHeight

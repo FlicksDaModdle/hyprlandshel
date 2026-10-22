@@ -166,6 +166,7 @@ Item {
         width: Math.min(560, parent.width - 40)
         height: Math.min(parent.height - 40, content.implicitHeight + 40)
         MouseArea { anchors.fill: parent }
+        SmoothScroll { target: boxFlick; anchors.fill: boxFlick; z: 5 }
         Flickable {
             id: boxFlick
             anchors.fill: parent

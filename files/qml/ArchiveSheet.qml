@@ -1467,7 +1467,9 @@ PanelSurface {
                 border.width: 1
                 border.color: Appearance.rule
                 clip: true
+                SmoothScroll { target: hashFlick; anchors.fill: hashFlick; z: 5 }
                 Flickable {
+                    id: hashFlick
                     anchors.fill: parent
                     anchors.margins: 8
                     contentWidth: hashEdit.implicitWidth

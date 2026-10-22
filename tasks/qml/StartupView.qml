@@ -139,28 +139,33 @@ Item {
             width: parent.width
             spacing: 10
             SearchField { width: parent.width; placeholder: "Find an app"; onEdited: t => addDialog.q = t }
-            ListView {
+            Item {
                 width: parent.width
                 height: 320
-                clip: true
-                model: addDialog.apps.filter(a => addDialog.q === "" || a.name.toLowerCase().indexOf(addDialog.q.toLowerCase()) >= 0)
-                delegate: Rectangle {
-                    required property var modelData
-                    width: ListView.view.width
-                    height: 32
-                    radius: Appearance.rSm
-                    color: ar.containsMouse ? Appearance.hover : "transparent"
-                    MonoIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: Tasks.glyph(modelData.id + " " + modelData.name); size: 15; inkColor: Appearance.ink2; accentColor: Appearance.accent }
-                    StyledText { x: 34; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 40; elide: Text.ElideRight; text: modelData.name; font.pixelSize: Appearance.fs(12) }
-                    MouseArea {
-                        id: ar
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (Tools.addAutostart(modelData.id)) view.frame.toast.show(modelData.name + " will start at login.", false);
-                            addDialog.open = false;
-                            view.load();
+                SmoothScroll { target: appList; anchors.fill: appList; z: 5 }
+                ListView {
+                    id: appList
+                    anchors.fill: parent
+                    clip: true
+                    model: addDialog.apps.filter(a => addDialog.q === "" || a.name.toLowerCase().indexOf(addDialog.q.toLowerCase()) >= 0)
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: ListView.view.width
+                        height: 32
+                        radius: Appearance.rSm
+                        color: ar.containsMouse ? Appearance.hover : "transparent"
+                        MonoIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: Tasks.glyph(modelData.id + " " + modelData.name); size: 15; inkColor: Appearance.ink2; accentColor: Appearance.accent }
+                        StyledText { x: 34; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 40; elide: Text.ElideRight; text: modelData.name; font.pixelSize: Appearance.fs(12) }
+                        MouseArea {
+                            id: ar
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (Tools.addAutostart(modelData.id)) view.frame.toast.show(modelData.name + " will start at login.", false);
+                                addDialog.open = false;
+                                view.load();
+                            }
                         }
                     }
                 }

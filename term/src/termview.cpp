@@ -21,6 +21,7 @@ TermView::TermView(QQuickItem *parent) : QQuickPaintedItem(parent) {
     m_glide.setInterval(8);
     m_glide.setTimerType(Qt::PreciseTimer);
     connect(&m_glide, &QTimer::timeout, this, &TermView::glideTick);
+    m_touchClock.start();
 
     setFlag(ItemHasContents, true);
     // The right button too, for the context menu. A QQuickItem is only
@@ -107,6 +108,7 @@ void TermView::setTerm(Term *t) {
     if (m_term) m_term->disconnect(this);
     m_term = t;
     m_glide.stop();
+    m_coasting = false;
     m_pos = m_target = m_term ? m_term->scrollOffset() : 0;
     if (m_term) {
         connect(m_term, &Term::damaged, this, [this] { update(); });
@@ -120,6 +122,7 @@ void TermView::setTerm(Term *t) {
             // lines and no glide.
             if (!m_movingOffset) {
                 m_glide.stop();
+                m_coasting = false;
                 m_pos = m_target = m_term->scrollOffset();
             }
             update();
@@ -859,18 +862,70 @@ QString TermView::clipboardText() const {
 void TermView::wheelEvent(QWheelEvent *event) {
     if (!m_term) return;
     const QPoint px = event->pixelDelta();
-    if (!px.isNull()) {
-        // A touchpad (or a high-resolution wheel that says how far in
-        // pixels): the text follows the fingers exactly, pixel for pixel.
-        // It sends many small movements, which whole-line scrolling threw
-        // away below a third of a line — the stutter and the dead zone.
+    // A touchpad is told apart by its scroll phases, which only a touchpad
+    // sends — not by pixel deltas: on Wayland Qt gives those for an
+    // ordinary mouse wheel too, which then lost its glide.
+    const Qt::ScrollPhase phase = event->phase();
+    if (phase != Qt::NoScrollPhase) {
+        const qint64 now = m_touchClock.elapsed();
+        if (phase == Qt::ScrollBegin) {
+            // Fingers down catch whatever is still coasting.
+            m_glide.stop();
+            m_coasting = false;
+            m_velocity = 0;
+            m_lastTouch = -1;
+        }
+        if (phase == Qt::ScrollEnd) {
+            // Fingers off: carry on at the speed they were moving, unless
+            // they had stopped before lifting.
+            if (m_lastTouch < 0 || now - m_lastTouch > 60 || std::abs(m_velocity) < 4) {
+                m_velocity = 0;
+            } else {
+                m_coasting = true;
+                m_target = m_pos;
+                m_glideClock.start();
+                m_glide.start();
+            }
+            if (m_selecting) extendSelection();
+            event->accept();
+            return;
+        }
+        const qreal d = !px.isNull() ? px.y() / m_cellH : event->angleDelta().y() / 120.0 * 3.0;
+        if (phase == Qt::ScrollMomentum) {
+            // The system's own momentum, where there is one: followed, with
+            // none of ours added.
+            m_glide.stop();
+            m_coasting = false;
+            scrollTo(m_pos + d);
+            m_target = m_pos;
+        } else if (d != 0) {
+            // Under the fingers: the text follows them exactly, and how
+            // fast they move is kept (smoothed over a few events) for the
+            // coast.
+            m_glide.stop();
+            m_coasting = false;
+            if (m_lastTouch >= 0) {
+                const qreal dt = qMax<qint64>(4, now - m_lastTouch) / 1000.0;
+                const qreal v = d / dt;
+                m_velocity = dt > 0.1 ? 0 : (m_velocity == 0 ? v : m_velocity * 0.6 + v * 0.4);
+                m_velocity = qBound<qreal>(-400, m_velocity, 400);
+            }
+            m_lastTouch = now;
+            scrollTo(m_pos + d);
+            m_target = m_pos;
+        }
+    } else if (event->angleDelta().y() != 0) {
+        // A wheel: three lines a notch, glided there rather than jumped.
+        // Finer wheels send fractions of a notch, kept too.
+        m_coasting = false;
+        glideBy(event->angleDelta().y() / 120.0 * 3.0);
+    } else if (!px.isNull()) {
+        // Pixels and no phases or notches: a touchpad that says nothing
+        // else. Followed exactly, without a coast (there is no "lifted").
         m_glide.stop();
+        m_coasting = false;
         scrollTo(m_pos + px.y() / m_cellH);
         m_target = m_pos;
-    } else if (event->angleDelta().y() != 0) {
-        // A wheel: three lines a notch, as before, but glided there rather
-        // than jumped. Finer wheels send fractions of a notch, kept too.
-        glideBy(event->angleDelta().y() / 120.0 * 3.0);
     }
     // Scrolling in the middle of a drag is "select more", so the far end
     // follows whatever has arrived under the pointer. Without this it
@@ -911,6 +966,22 @@ void TermView::glideBy(qreal lines) {
 
 void TermView::glideTick() {
     if (!m_term) { m_glide.stop(); return; }
+    if (m_coasting) {
+        // The coast: on at its speed, slowing under friction (a time
+        // constant of 0.45 s, as the other apps' SmoothScroll), stopped by
+        // the ends of the scrollback.
+        const qreal dt = qMax<qreal>(1, m_glideClock.restart()) / 1000.0;
+        const qreal before = m_pos;
+        scrollTo(m_pos + m_velocity * dt);
+        m_velocity *= std::exp(-dt / 0.45);
+        if (std::abs(m_velocity) < 0.3 || m_pos == before) {
+            m_coasting = false;
+            m_velocity = 0;
+            m_target = m_pos;
+            m_glide.stop();
+        }
+        return;
+    }
     // Eases out: each tick covers a share of what is left, scaled by the
     // time since the last so a late tick doesn't make it stutter. Settles
     // in about a fifth of a second.

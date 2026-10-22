@@ -253,7 +253,9 @@ Item {
                 color: Appearance.hover
                 border.width: 1
                 border.color: Appearance.rule
+                SmoothScroll { target: tBodyFlick; anchors.fill: tBodyFlick; z: 5 }
                 Flickable {
+                    id: tBodyFlick
                     anchors.fill: parent
                     anchors.margins: 8
                     contentHeight: tBody.implicitHeight

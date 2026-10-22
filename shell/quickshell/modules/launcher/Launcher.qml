@@ -1331,11 +1331,14 @@ Variants {
                         boundsBehavior: Flickable.StopAtBounds
                         model: launcher.appResults
                         currentIndex: launcher.selectedIndex
-                        highlightMoveDuration: 120
-                        // Keep the keyboard selection in view as it moves.
-                        highlightRangeMode: ListView.ApplyRange
-                        preferredHighlightBegin: 40
-                        preferredHighlightEnd: height - 40
+                        // The selection is brought into view by the arrow
+                        // keys (moveSelection), and nothing else. A
+                        // highlight range held it in view all the time,
+                        // which pulled the list back towards it under every
+                        // scroll — and the pointer selects what it is over,
+                        // so a glide kept being tugged at by the row under
+                        // it. Wheel and trackpad momentum fought that, and
+                        // scrolling was stiff where Settings is smooth.
 
                         delegate: Item {
                             id: resultRow
@@ -1776,6 +1779,7 @@ Variants {
                 }
             }
             selectedIndex = Math.max(0, Math.min(count - 1, next));
+            if (showingList) results.positionViewAtIndex(selectedIndex, ListView.Contain);
         }
     }
 }

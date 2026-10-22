@@ -93,6 +93,7 @@ Item {
     }
 
     // ── days ──
+    SmoothScroll { target: days; anchors.fill: days; z: 5; visible: days.visible }
     ListView {
         id: days
         visible: Recorder.days.length > 0

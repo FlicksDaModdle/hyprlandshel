@@ -131,6 +131,7 @@ Item {
             clip: true
             Keys.onEscapePressed: e => { e.accepted = true; combo.open = false; }
 
+            SmoothScroll { target: list; anchors.fill: list; z: 5 }
             ListView {
                 id: list
                 anchors.fill: parent

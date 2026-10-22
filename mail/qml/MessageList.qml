@@ -187,6 +187,7 @@ Item {
     }
 
     // ── drafts and scheduled mail ─────────────────────────────────────────
+    SmoothScroll { target: sideList; anchors.fill: sideList; z: 5; visible: sideList.visible }
     ListView {
         id: sideList
         visible: list.special

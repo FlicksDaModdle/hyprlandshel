@@ -203,6 +203,12 @@ private:
     qreal m_target = 0;
     QTimer m_glide;
     QElapsedTimer m_glideClock;
+    // A touchpad's coast once the fingers lift: lines a second, slowing
+    // under friction. Wayland sends no momentum; the client carries it.
+    qreal m_velocity = 0;
+    bool m_coasting = false;
+    QElapsedTimer m_touchClock;
+    qint64 m_lastTouch = -1;
     bool m_movingOffset = false;
     // Where a keyboard selection was started: its fixed end.
     // and its moving end — kept, not worked out again from the cells,
