@@ -30,7 +30,10 @@ Column {
     readonly property bool seeing: root.face.previewReady && picture.status === Image.Ready
 
     // ── you, in the circle ──────────────────────────────────────────────
-    Rectangle {
+    // The webcam's picture fills the whole card, as in Windows Hello,
+    // centred on the circle and dimmed outside it, so the circle is where
+    // the eye goes and the words below stay readable.
+    ClippingRectangle {
         id: stage
         width: root.width
         height: 318
@@ -39,27 +42,54 @@ Column {
 
         readonly property real d: 196
 
-        ClippingRectangle {
+        // The webcam's latest frame, only while a face is being added: at
+        // its own shape, full width, with its middle on the circle's.
+        Image {
+            id: picture
+            width: stage.width
+            height: stage.width * (implicitWidth > 0 ? implicitHeight / implicitWidth : 0.75)
+            y: circle.y + circle.height / 2 - height / 2
+            visible: root.seeing
+            // As in a mirror.
+            mirror: true
+            cache: false
+            asynchronous: false
+            source: root.face.previewReady ? "file://" + root.face.previewFile + "?" + root.face.previewFrame : ""
+        }
+
+        // Dim everywhere but the circle.
+        Canvas {
+            anchors.fill: parent
+            visible: root.seeing
+            readonly property real cx: circle.x + circle.width / 2
+            readonly property real cy: circle.y + circle.height / 2
+            onCxChanged: requestPaint()
+            onCyChanged: requestPaint()
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onVisibleChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d");
+                ctx.reset();
+                ctx.fillStyle = Qt.rgba(0.05, 0.047, 0.047, 0.62);
+                ctx.fillRule = Qt.OddEvenFill;
+                ctx.beginPath();
+                ctx.rect(0, 0, width, height);
+                ctx.arc(cx, cy, circle.width / 2, 0, 2 * Math.PI, false);
+                ctx.fill();
+            }
+        }
+
+        // The circle itself: where to put your face, and its ground while
+        // there's no picture.
+        Rectangle {
             id: circle
             anchors.horizontalCenter: parent.horizontalCenter
             y: 34
             width: stage.d
             height: stage.d
             radius: stage.d / 2
-            color: "#191817"
-
-            // The webcam's latest frame, only while a face is being added.
-            Image {
-                id: picture
-                anchors.fill: parent
-                visible: root.seeing
-                fillMode: Image.PreserveAspectCrop
-                // As in a mirror.
-                mirror: true
-                cache: false
-                asynchronous: false
-                source: root.face.previewReady ? "file://" + root.face.previewFile + "?" + root.face.previewFrame : ""
-            }
+            color: root.seeing ? "transparent" : "#191817"
         }
 
         // The lens around the circle: still while nothing happens, turning
