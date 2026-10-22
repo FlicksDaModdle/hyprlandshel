@@ -165,10 +165,15 @@ Singleton {
         '  window) g=$(printf "%s\\n" "$boxes" | slurp -r) || exit 1 ;;',
         'esac',
         '[ "$delay" -gt 0 ] 2>/dev/null && sleep "$delay"',
+        'hide() { [ "$pointer" = 1 ] || hyprctl eval "hl.config({ cursor = { invisible = true } })" >/dev/null 2>&1; }',
+        'show() { [ "$pointer" = 1 ] || hyprctl eval "hl.config({ cursor = { invisible = false } })" >/dev/null 2>&1; }',
+        'trap show EXIT',
         'c=""; [ "$pointer" = 1 ] && c="-c"',
+        'hide; [ "$pointer" = 1 ] || sleep 0.07',
         'if [ -n "$g" ]; then grim $c -g "$g" "$f"',
         'elif [ "$mode" = screen ] && [ -n "$out" ]; then grim $c -o "$out" "$f"',
         'else grim $c "$f"; fi || exit 2',
+        'show',
         'wl-copy --type image/png < "$f" 2>/dev/null',
         'printf "%s\\n" "$f"'
     ].join("\n")
@@ -229,11 +234,44 @@ Singleton {
         snipDirProc.command = ["mkdir", "-p", dir, picturesDir];
         snipDirProc.running = true;
         shownOnce = false;
+        frozenDir = dir;
+        if (freezeWant.pointer) { beginFrozen(); return; }
+        // Without the pointer: hidden first, and a beat for Hyprland to
+        // draw a frame without it, then the copy.
+        cursorHide();
+        cursorGone.restart();
+    }
+    property string frozenDir: ""
+    Timer { id: cursorGone; interval: 70; onTriggered: root.beginFrozen() }
+    function beginFrozen() {
         snipWatch.interval = 800;
         snipWatch.restart();
-        snip = { kind: freezeWant.kind, dir: dir, files: {}, list: [], copy: true, pointer: freezeWant.pointer };
+        snip = { kind: freezeWant.kind, dir: frozenDir, files: {}, list: [], copy: true, pointer: freezeWant.pointer };
         trace("freezing in the shell");
     }
+
+    // ── keeping the pointer out ───────────────────────────────────────────
+    // "Show the pointer" off is asked of the capture (grim without -c, the
+    // copy without the cursor), but a cursor Hyprland draws in software is
+    // part of the picture itself and comes out anyway — usual on NVIDIA.
+    // So it is hidden outright (cursor:invisible) for the moment of the
+    // capture and shown again as soon as the picture is taken: the frozen
+    // screen is chosen over with the cursor back. Never left hidden: a
+    // watch puts it back after a few seconds whatever happens.
+    property bool cursorHidden: false
+    function cursorHide() {
+        if (cursorHidden) return;
+        cursorHidden = true;
+        Services.Compositor.setConfig({ cursor: { invisible: true } });
+        cursorBack.restart();
+    }
+    function cursorShow() {
+        cursorBack.stop();
+        if (!cursorHidden) return;
+        cursorHidden = false;
+        Services.Compositor.setConfig({ cursor: { invisible: false } });
+    }
+    Timer { id: cursorBack; interval: 3000; onTriggered: root.cursorShow() }
     Process { id: snipDirProc }
     function runFreeze() {
         const w = Object.assign({}, freezeWant, { delay: 0 });
@@ -245,7 +283,10 @@ Singleton {
             + 'mkdir -p "$dir" "$pics" || exit 3; '
             + '[ "$delay" -gt 0 ] 2>/dev/null && sleep "$delay"; '
             + 'c=""; [ "$ptr" = 1 ] && c="-c"; '
-            + 'for o in "$@"; do grim $c -o "$o" "$dir/$o.png" & done; wait; '
+            // Without the pointer: hidden around grim, back on any exit.
+            + 'show() { [ "$ptr" = 1 ] || hyprctl eval "hl.config({ cursor = { invisible = false } })" >/dev/null 2>&1; }; trap show EXIT; '
+            + '[ "$ptr" = 1 ] || { hyprctl eval "hl.config({ cursor = { invisible = true } })" >/dev/null 2>&1; sleep 0.07; }; '
+            + 'for o in "$@"; do grim $c -o "$o" "$dir/$o.png" & done; wait; show; '
             + 'for o in "$@"; do [ -s "$dir/$o.png" ] && printf "%s\t%s\n" "$o" "$dir/$o.png"; done',
             "freeze", dir, String(w.delay), w.pointer ? "1" : "0", picturesDir].concat(outs);
         freezeProc.dir = dir;
@@ -301,7 +342,7 @@ Singleton {
     // it is not, choose over the live screen rather than leave the key
     // doing nothing.
     property bool shownOnce: false
-    function snipShown(screen) { trace("frozen screen up on", screen || "?"); shownOnce = true; snipWatch.stop(); }
+    function snipShown(screen) { trace("frozen screen up on", screen || "?"); shownOnce = true; snipWatch.stop(); cursorShow(); }
     Timer {
         id: snipWatch
         interval: 800
@@ -320,6 +361,7 @@ Singleton {
             return;
         }
         root.trace("the frozen screen never came up; choosing live");
+        root.cursorShow();
         root.liveFallback();
     }
     function liveFallback() {
@@ -339,6 +381,7 @@ Singleton {
     }
     function cancelSnip(why) {
         trace("cancelled:", why || "?");
+        cursorShow();
         if (!snip) return;
         const dir = snip.dir;
         snip = null;
@@ -369,6 +412,7 @@ Singleton {
     }
     function snipFailed(why) {
         trace("cut failed:", why);
+        cursorShow();
         const dir = snip ? snip.dir : "";
         snip = null;
         busy = false;

@@ -184,7 +184,8 @@ Scope {
         "Launcher":      { icon: "search",    group: "Shell",  note: "Size of the start menu, its grid, and its text." },
         "Fonts":         { icon: "font",      group: "Shell",  note: "Every typeface the shell uses, and one scale over all of them." },
         "Keybinds":      { icon: "keyboard",  group: "Shell",  note: "Hyprland bindings this shell listens for." },
-        "Clipboard":     { icon: "clipboard", group: "Shell",  note: "What you copied, kept to paste again — Super+Shift+V." }
+        "Clipboard":     { icon: "clipboard", group: "Shell",  note: "What you copied, kept to paste again — Super+Shift+V." },
+        "Screenshots":   { icon: "camera",    group: "Shell",  note: "Print and Super+Shift+S: the pointer, freezing the screen, the timer and the editor." }
     })
 
     // System first, then Shell. The device panes are the ones people open
@@ -197,7 +198,7 @@ Scope {
                                   .concat(["Hyprland", "Login screen", "About"]) },
         { label: "Shell",  items: ["Appearance", "Wallpaper", "Icons", "Fonts",
                                    "App theming", "Bar", "Dock", "Alt+Tab", "Launcher",
-                                   "Notifications", "Clipboard", "Keybinds"] }
+                                   "Notifications", "Clipboard", "Screenshots", "Keybinds"] }
     ]
 
 
@@ -839,6 +840,24 @@ Scope {
               type: "info", value: Services.Clipboard.entries.length },
             { n: "Forget everything", s: "Empties the history now",
               type: "action", label: "Clear", set: () => Services.Clipboard.clear() }
+        ];
+
+        case "Screenshots": return [
+            { n: "Show the pointer",
+              s: A.capturePointer ? "The mouse pointer is in the picture"
+                 : "Kept out of the picture — hidden for the moment it is taken, even where Hyprland draws it into the screen itself",
+              type: "toggle", value: A.capturePointer, set: v => A.capturePointer = v },
+            { n: "Freeze the screen",
+              s: "Menus, tooltips and video hold still while you choose what to take",
+              type: "toggle", value: A.captureFreeze, set: v => A.captureFreeze = v },
+            { n: "Delay", s: "How long after asking the picture is taken",
+              type: "seg", options: [{ label: "Off", value: "0" }, { label: "3 s", value: "3" },
+                                     { label: "5 s", value: "5" }, { label: "10 s", value: "10" }],
+              value: String(A.captureDelay), set: v => A.captureDelay = parseInt(v) },
+            { n: "Open the editor afterwards",
+              s: "Straight into marking it up; otherwise it's saved and copied, and a notification offers the editor",
+              type: "toggle", value: A.captureEdit === "always", set: v => A.captureEdit = v ? "always" : "ask" },
+            { n: "Saved to", s: "And copied to the clipboard", type: "info", value: "Pictures/Screenshots" }
         ];
 
         case "Notifications": return [
