@@ -14,7 +14,7 @@
 #   ./install.sh --prefix /usr/local
 #   ./install.sh --remove           take them out again
 #
-# Names: rog notes snapshots disks keys docs music video recorder chats weather calendar
+# Names: rog notes snapshots disks keys docs music video recorder chats weather calendar fonts
 #
 # Not `set -e`: most of this probes for things that may be absent, and a
 # probe saying "no" must not end the run.
@@ -69,6 +69,7 @@ LIST=(
     "chats|Chats|Messaging|WhatsApp on this computer, as a linked device|internet-chat|Network;InstantMessaging;Chat;|||WhatsApp;Messages;"
     "weather|Weather|Weather Forecast|The weather now, by the hour and ten days ahead, for the places you keep|weather-few-clouds|Utility;|||Forecast;Temperature;Rain;"
     "calendar|Calendar|Calendar|Your calendars, subscriptions and invitations, by month, week or list|x-office-calendar|Office;Calendar;|||Events;Agenda;Schedule;"
+    "fonts|Fonts|Font Viewer|Every font on the computer, shown in itself; add your own|preferences-desktop-font|Utility;|%f|font/ttf;font/otf;font/collection;font/sfnt;application/x-font-ttf;application/x-font-otf;application/x-font-ttx;application/x-font-type1;|Typeface;Type;Text;"
 )
 field() { local n=$2 IFS='|'; local f=($1); printf '%s' "${f[$((n - 1))]:-}"; }
 SKIP=""
@@ -82,7 +83,7 @@ if [ -n "$ONLY" ]; then
     for k in ${ONLY//,/ }; do
         known=0
         for a in "${LIST[@]}"; do [ "$(field "$a" 1)" = "$k" ] && known=1; done
-        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats weather calendar)" >&2; exit 2; }
+        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats weather calendar fonts)" >&2; exit 2; }
     done
 fi
 
@@ -150,6 +151,8 @@ if fc-list :charset=1f600 family 2>/dev/null | grep -qi "color emoji\|twemoji\|j
 else warn "colour emoji" "Chats shows emoji in colour with one — sudo pacman -S --needed noto-fonts-emoji"; fi
 if command -v curl >/dev/null 2>&1; then ok "curl" "Weather fetches forecasts with it"
 else warn "curl" "Weather needs it — sudo pacman -S --needed curl"; fi
+if command -v fc-list >/dev/null 2>&1 && command -v fc-cache >/dev/null 2>&1; then ok "fontconfig" "Fonts"
+else warn "fontconfig" "Fonts needs it — sudo pacman -S --needed fontconfig"; fi
 if command -v asusd >/dev/null 2>&1 || [ -e /usr/bin/asusd ]; then ok "asusd" "ROG Control Center"
 else warn "asusd" "ROG Control Center needs asusctl (ASUS laptops; from the g14 repository or the AUR)"; fi
 

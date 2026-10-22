@@ -1,0 +1,13 @@
+[package]
+name = "hyprshell-fonts"
+version = "0.1.0"
+edition = "2021"
+description = "Fonts for Hyprshell: every font, shown in itself, and fonts added to or removed from your own"
+
+[dependencies]
+hyprshell-kit = { workspace = true }
+slint = { workspace = true }
+ab_glyph = "0.2"
+
+[build-dependencies]
+slint-build = { workspace = true }

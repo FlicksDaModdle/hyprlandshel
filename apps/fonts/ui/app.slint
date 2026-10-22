@@ -1,0 +1,249 @@
+// Fonts: every font on the computer, each shown in itself, a family's
+// styles and sizes, and fonts put in or taken out of your own folder.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Sidebar, NavItem, Card, Caption, Label, Dim, Heading,
+         Button, IconButton, Slider, Field, Scroll, Empty, Toast, Rule, Icon, Spinner, Dialog } from "@kit";
+
+export { Theme, Icons, Win }
+
+export struct FamilyRow {
+    name: string,
+    note: string,
+    sample: image,
+    // The sample is still being drawn.
+    pending: bool,
+    yours: bool,
+}
+
+export struct Sample {
+    label: string,
+    image: image,
+}
+
+export global Fonts {
+    in property <[FamilyRow]> families;
+    in property <int> total;
+    in property <int> mono-count;
+    in property <int> yours-count;
+    // 0 all, 1 monospace, 2 yours
+    in-out property <int> filter;
+    in-out property <string> query;
+    in-out property <string> sample-text: "The quick brown fox jumps over the lazy dog";
+    in-out property <float> size: 28;
+    // Device pixels per logical pixel: the samples are drawn at it.
+    in property <float> scale: 1;
+    in property <bool> loading;
+
+    // One family, open.
+    in property <bool> open;
+    in property <string> name;
+    in property <string> info;
+    in property <[Sample]> styles;
+    in property <[Sample]> sizes;
+    in property <[Sample]> glyphs;
+    in property <bool> drawing;
+    // Shown from a file that isn't installed: it can be.
+    in property <bool> can-install;
+    // In your own fonts folder: it can be taken out.
+    in property <bool> can-remove;
+    in property <string> toast;
+
+    callback search(string);
+    callback set-filter(int);
+    callback set-sample(string);
+    callback set-size(float);
+    callback pick(int);
+    callback back();
+    callback add-files();
+    callback install-shown();
+    callback remove-shown();
+}
+
+component Preview inherits Image {
+    in property <image> picture;
+    source: picture;
+    colorize: Theme.ink;
+    image-fit: preserve;
+    width: picture.width * 1px / Fonts.scale;
+    height: picture.height * 1px / Fonts.scale;
+}
+
+component FamilyItem inherits Rectangle {
+    in property <FamilyRow> family;
+    callback clicked();
+    height: max(64px, lay.preferred-height);
+    border-radius: Theme.r-sm;
+    background: ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: Theme.t(160); easing: spring(0); }
+    clip: true;
+    lay := VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 10px;
+        padding-bottom: 12px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: root.family.name; font-size: Theme.fs(12); font-weight: 600; color: Theme.ink2; vertical-alignment: center; }
+            Text { text: root.family.note; font-size: Theme.fs(11.5); color: Theme.ink3; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+            if root.family.yours: Rectangle {
+                width: yt.preferred-width + 14px;
+                height: 18px;
+                border-radius: 9px;
+                background: Theme.sel;
+                yt := Text { text: "Yours"; font-size: Theme.fs(10.5); color: Theme.ink2; }
+            }
+        }
+        HorizontalLayout {
+            alignment: start;
+            min-height: Fonts.size * 1.3px;
+            if !root.family.pending && root.family.sample.width > 0: Preview { picture: root.family.sample; }
+            if !root.family.pending && root.family.sample.width == 0: Text {
+                text: "No preview for this kind of font";
+                font-size: Theme.fs(12);
+                color: Theme.ink3;
+                vertical-alignment: center;
+            }
+            if root.family.pending: Rectangle {
+                width: 220px;
+                height: Fonts.size * 0.8px;
+                y: Fonts.size * 0.2px;
+                border-radius: 6px;
+                background: Theme.hover;
+            }
+        }
+    }
+    Rectangle { y: parent.height - 1px; height: 1px; x: 14px; width: parent.width - 28px; background: Theme.rule; }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component SampleBlock inherits VerticalLayout {
+    in property <Sample> sample;
+    spacing: 6px;
+    Text { text: root.sample.label; font-size: Theme.fs(11); color: Theme.ink3; }
+    HorizontalLayout { alignment: start; Preview { picture: root.sample.image; } }
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Fonts";
+    preferred-width: 1100px;
+    preferred-height: 760px;
+    property <bool> confirm-remove;
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Fonts";
+            app-icon: "font";
+            subtitle: Fonts.open ? Fonts.name : Fonts.total + " families";
+            Field {
+                width: 300px;
+                icon: "pen";
+                placeholder: "Type a sample…";
+                text <=> Fonts.sample-text;
+                edited(t) => { Fonts.set-sample(t); }
+            }
+            Icon { name: "font"; size: 14px; ink: Theme.ink3; }
+            Slider {
+                width: 140px;
+                minimum: 12;
+                maximum: 96;
+                value <=> Fonts.size;
+                moved(v) => { Fonts.set-size(v); }
+                released(v) => { Fonts.set-size(v); }
+            }
+            Icon { name: "font"; size: 20px; ink: Theme.ink3; }
+            Text { text: round(Fonts.size) + " px"; font-size: Theme.fs(12); color: Theme.ink3; vertical-alignment: center; min-width: 40px; }
+        }
+        Rule {}
+        HorizontalLayout {
+            Sidebar {
+                Field {
+                    icon: "search";
+                    placeholder: "Search fonts";
+                    text <=> Fonts.query;
+                    edited(t) => { Fonts.search(t); }
+                    escape => { Fonts.query = ""; Fonts.search(""); }
+                }
+                Rectangle { height: 6px; }
+                NavItem { icon: "font"; text: "All fonts"; badge: Fonts.total; selected: Fonts.filter == 0; clicked => { Fonts.set-filter(0); } }
+                NavItem { icon: "code"; text: "Monospace"; badge: Fonts.mono-count; selected: Fonts.filter == 1; clicked => { Fonts.set-filter(1); } }
+                NavItem { icon: "user"; text: "Yours"; badge: Fonts.yours-count; selected: Fonts.filter == 2; clicked => { Fonts.set-filter(2); } }
+                Rectangle { vertical-stretch: 1; }
+                Button { icon: "plus"; text: "Add fonts…"; clicked => { Fonts.add-files(); } }
+                Dim {
+                    text: "Fonts you add go in your own fonts folder, for every app.";
+                    wrap: word-wrap;
+                    font-size: Theme.fs(11);
+                }
+            }
+
+            // Every family.
+            if !Fonts.open: Rectangle {
+                horizontal-stretch: 1;
+                if Fonts.loading: VerticalLayout { alignment: center; HorizontalLayout { alignment: center; Spinner {} } }
+                if !Fonts.loading && Fonts.families.length == 0: Empty {
+                    icon: "font";
+                    title: Fonts.query != "" ? "No fonts match" : Fonts.filter == 2 ? "None of your own yet" : "No fonts";
+                    text: Fonts.filter == 2 && Fonts.query == "" ? "Add a font file and it goes here." : "";
+                }
+                if !Fonts.loading && Fonts.families.length > 0: Scroll {
+                    VerticalLayout {
+                        padding: 12px;
+                        padding-right: 16px;
+                        for f[i] in Fonts.families: FamilyItem { family: f; clicked => { Fonts.pick(i); } }
+                    }
+                }
+            }
+
+            // One family.
+            if Fonts.open: VerticalLayout {
+                horizontal-stretch: 1;
+                HorizontalLayout {
+                    padding: 14px;
+                    padding-bottom: 8px;
+                    spacing: 10px;
+                    IconButton { icon: "chevronLeft"; tip: "All fonts"; clicked => { Fonts.back(); } }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text { text: Fonts.name; font-size: Theme.fs(17); font-weight: 600; color: Theme.ink; overflow: elide; }
+                        Text { text: Fonts.info; font-size: Theme.fs(11.5); color: Theme.ink3; overflow: elide; }
+                    }
+                    if Fonts.drawing: VerticalLayout { alignment: center; Spinner {} }
+                    if Fonts.can-install: VerticalLayout { alignment: center; Button { kind: "primary"; icon: "download"; text: "Install"; clicked => { Fonts.install-shown(); } } }
+                    if Fonts.can-remove: VerticalLayout { alignment: center; Button { kind: "danger"; icon: "trash"; text: "Remove"; clicked => { root.confirm-remove = true; } } }
+                }
+                Scroll {
+                    VerticalLayout {
+                        padding: 22px;
+                        padding-top: 8px;
+                        spacing: 18px;
+                        Caption { text: "STYLES"; }
+                        for s in Fonts.styles: SampleBlock { sample: s; }
+                        Rule {}
+                        Caption { text: "SIZES"; }
+                        for s in Fonts.sizes: SampleBlock { sample: s; }
+                        Rule {}
+                        Caption { text: "CHARACTERS"; }
+                        for s in Fonts.glyphs: SampleBlock { sample: s; }
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        open: root.confirm-remove;
+        title: "Remove " + Fonts.name + "?";
+        text: "Its files go to the Trash, and apps stop offering it once they restart.";
+        dismissed => { root.confirm-remove = false; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button { text: "Cancel"; clicked => { root.confirm-remove = false; } }
+            Button { kind: "danger"; text: "Remove"; clicked => { root.confirm-remove = false; Fonts.remove-shown(); } }
+        }
+    }
+
+    Toast { text: Fonts.toast; }
+}

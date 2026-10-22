@@ -2244,6 +2244,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyprshell-fonts"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "hyprshell-kit",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "hyprshell-keys"
 version = "0.1.0"
 dependencies = [
