@@ -243,13 +243,182 @@ PanelSurface {
             color: Config.Appearance.rule
         }
 
+        // ── search ──────────────────────────────────────────────────────
+        // Every pane's rows, by name and description (Settings.rankSettings,
+        // the launcher's search too). While there is something typed, the
+        // matches stand where the list of panes was; picking one opens its
+        // pane at that row, flashed. Ctrl+F to get here, Escape to clear.
+        property string query: searchInput.text.trim().toLowerCase()
+        property var idx: []
+        onQueryChanged: if (query !== "" && idx.length === 0) idx = frame.app.searchIndex()
+        readonly property var hits: query.length < 1 ? [] : frame.app.rankSettings(query, idx, 40)
+        function pick(h) {
+            Config.UiState.openSettingsAt(h.e.pane, h.e.isPane ? "" : h.e.n);
+        }
+
+        Shortcut {
+            sequence: "Ctrl+F"
+            onActivated: { searchInput.forceActiveFocus(); searchInput.selectAll(); }
+        }
+
+        Rectangle {
+            id: searchBox
+            x: 8
+            y: 8
+            width: parent.width - 17
+            height: 34
+            radius: Config.Appearance.rSm
+            color: Config.Appearance.hover
+            border.width: 1
+            border.color: searchInput.activeFocus ? Config.Appearance.accent : Config.Appearance.rule
+
+            MonoIcon {
+                id: searchGlyph
+                anchors.left: parent.left
+                anchors.leftMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                name: "search"
+                size: 15
+                inkColor: Config.Appearance.ink3
+                monochrome: true
+            }
+            TextInput {
+                id: searchInput
+                anchors.left: searchGlyph.right
+                anchors.leftMargin: 8
+                anchors.right: clearBtn.left
+                anchors.rightMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
+                color: Config.Appearance.ink
+                selectionColor: Qt.rgba(Config.Appearance.accent.r, Config.Appearance.accent.g, Config.Appearance.accent.b, 0.35)
+                font.pixelSize: Config.Appearance.fs(13)
+                font.family: Config.Appearance.fontFamily
+                clip: true
+                Keys.onEscapePressed: event => {
+                    if (text !== "") { text = ""; event.accepted = true; }
+                    else event.accepted = false;
+                }
+                Keys.onReturnPressed: if (sidebar.hits.length > 0) sidebar.pick(sidebar.hits[0])
+                Keys.onEnterPressed: if (sidebar.hits.length > 0) sidebar.pick(sidebar.hits[0])
+                StyledText {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: searchInput.text === ""
+                    text: "Search settings"
+                    font.pixelSize: Config.Appearance.fs(13)
+                    color: Config.Appearance.ink3
+                }
+            }
+            Rectangle {
+                id: clearBtn
+                anchors.right: parent.right
+                anchors.rightMargin: 6
+                anchors.verticalCenter: parent.verticalCenter
+                visible: searchInput.text !== ""
+                width: visible ? 22 : 0
+                height: 22
+                radius: 11
+                color: clearHover.hovered ? Config.Appearance.sel : "transparent"
+                MonoIcon { anchors.centerIn: parent; name: "x"; size: 12; inkColor: Config.Appearance.ink2; monochrome: true }
+                HoverHandler { id: clearHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { searchInput.text = ""; searchInput.forceActiveFocus(); } }
+            }
+        }
+
+        // The matches, while something is typed.
+        Flickable {
+            id: hitsFlick
+            KineticScroll { flick: hitsFlick }
+            visible: sidebar.query !== ""
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.rightMargin: 1
+            anchors.top: searchBox.bottom
+            anchors.topMargin: 6
+            anchors.bottom: parent.bottom
+            contentHeight: hitsColumn.implicitHeight + 16
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            flickableDirection: Flickable.VerticalFlick
+
+            Column {
+                id: hitsColumn
+                x: 8
+                width: hitsFlick.width - 16
+                spacing: 1
+
+                StyledText {
+                    visible: sidebar.hits.length === 0
+                    width: parent.width
+                    wrapMode: Text.Wrap
+                    leftPadding: 10
+                    topPadding: 10
+                    text: "Nothing in Settings matches “" + searchInput.text.trim() + "”"
+                    font.pixelSize: Config.Appearance.fs(12)
+                    color: Config.Appearance.ink3
+                }
+                Repeater {
+                    model: sidebar.hits
+                    Rectangle {
+                        id: hit
+                        required property var modelData
+                        required property int index
+                        width: hitsColumn.width
+                        height: 46
+                        radius: Config.Appearance.rSm
+                        color: hitHover.hovered || (hit.index === 0 && searchInput.activeFocus)
+                               ? Config.Appearance.hover : "transparent"
+                        MonoIcon {
+                            id: hitIcon
+                            anchors.left: parent.left
+                            anchors.leftMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            name: (frame.app.paneMeta[hit.modelData.e.pane] || {}).icon || "settings"
+                            size: 17
+                            inkColor: Config.Appearance.ink2
+                            monochrome: true
+                        }
+                        Column {
+                            anchors.left: hitIcon.right
+                            anchors.leftMargin: 10
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 1
+                            StyledText {
+                                width: parent.width
+                                elide: Text.ElideRight
+                                text: hit.modelData.e.n
+                                font.pixelSize: Config.Appearance.fs(12.5)
+                                color: Config.Appearance.ink
+                            }
+                            StyledText {
+                                width: parent.width
+                                elide: Text.ElideRight
+                                text: hit.modelData.e.isPane ? "Page"
+                                      : hit.modelData.e.pane + (hit.modelData.e.section ? " › " + hit.modelData.e.section : "")
+                                font.pixelSize: Config.Appearance.fs(11)
+                                color: Config.Appearance.ink3
+                            }
+                        }
+                        HoverHandler { id: hitHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: sidebar.pick(hit.modelData) }
+                    }
+                }
+            }
+        }
+
         // Scrollable. With fourteen panes the list is taller than the
         // window at its default height, and a fixed Column would simply
         // clip the last entry with nothing to say so.
         Flickable {
             id: sidebarFlick
             KineticScroll { flick: sidebarFlick }
-            anchors.fill: parent
+            visible: sidebar.query === ""
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: searchBox.bottom
+            anchors.topMargin: 2
+            anchors.bottom: parent.bottom
             anchors.rightMargin: 1
             contentHeight: sidebarColumn.implicitHeight + 16
             clip: true

@@ -169,6 +169,7 @@ Item {
                                    : root.spec.panel === "sound" ? soundComponent
                                    : root.spec.panel === "focus" ? focusComponent
                                    : root.spec.panel === "notifApps" ? notifAppsComponent
+                                   : root.spec.panel === "shellUpdates" ? shellUpdatesComponent
                                    : root.spec.panel === "face" ? faceComponent
                                    : root.spec.panel === "animated" ? animatedComponent : wifiComponent;
                 case "color":  return colorComponent;
@@ -1074,6 +1075,10 @@ Item {
     Component {
         id: notifAppsComponent
         NotifAppsPanel { width: control.width }
+    }
+    Component {
+        id: shellUpdatesComponent
+        ShellUpdatesPanel { width: control.width }
     }
     Component {
         id: faceComponent

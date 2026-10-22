@@ -172,6 +172,7 @@ Scope {
         "Laptop":        { icon: "zap",       group: "System", note: "This ASUS laptop's own controls, through asusd: performance, charge limit, keyboard light, graphics and panel." },
         "Hyprland":      { icon: "grid",      group: "System", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
         "Login screen":  { icon: "lock",      group: "System", note: "Unlocking with your face, at the lock screen and when you log in." },
+        "Updates":       { icon: "download",  group: "System", note: "New versions of the shell, its login screen and its apps, from GitHub — installed when you say." },
         "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
         "Appearance":    { icon: "palette",   group: "Shell",  note: "How the shell looks and moves. Every change shows at once — in the preview, and everywhere else." },
         "Wallpaper":     { icon: "image",     group: "Shell",  note: "The desktop's ground — a tint, an image, or a live wallpaper." },
@@ -195,7 +196,7 @@ Scope {
         { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
                                    "Network", "Bluetooth", "Sound", "Power"]
                                   .concat(Services.Rog.available ? ["Laptop"] : [])
-                                  .concat(["Hyprland", "Login screen", "About"]) },
+                                  .concat(["Hyprland", "Login screen", "Updates", "About"]) },
         { label: "Shell",  items: ["Appearance", "Wallpaper", "Icons", "Fonts",
                                    "App theming", "Bar", "Dock", "Alt+Tab", "Launcher",
                                    "Notifications", "Clipboard", "Screenshots", "Keybinds"] }
@@ -1754,6 +1755,10 @@ Scope {
                           Services.Devices.applyInput(); } }
         ];
 
+        case "Updates": return [
+            { type: "panel", panel: "shellUpdates" }
+        ];
+
         case "About": return [
             { n: "Device", s: Services.SysInfo.distro || "Linux", type: "info",
               value: Services.SysInfo.host || "—" },
@@ -1820,6 +1825,8 @@ Scope {
     // The panes drawn by a component of their own (Network, Bluetooth,
     // Sound) have no rows to read, so what they hold is listed here.
     readonly property var panelIndex: ({
+        "Updates":   [["Check for updates", "Looks at GitHub for each part of the shell"],
+                      ["Update all", "Pulls and installs every part with something new"]],
         "Network":   [["Wi-Fi", "Turn Wi-Fi on or off and join a network"],
                       ["Hidden network", "Join a network that does not show its name"],
                       ["Saved networks", "Forget a network or stop joining it automatically"],
@@ -1835,6 +1842,33 @@ Scope {
                       ["Live level meters", "Show levels as sound plays"], ["Listen to this device", "Hear the microphone"],
                       ["Switch on connect", "Use Bluetooth or USB audio as soon as it connects"]]
     })
+    // The rows that match `q` (lowercase), best first: by the row's name,
+    // then its section and description. Settings' own search and the
+    // launcher's both ask here. [{ e, score }]
+    function rankSettings(q, idx, limit) {
+        // "wifi" finds "Wi-Fi", "alttab" finds "Alt+Tab".
+        const squash = t => t.replace(/[-+\s_.]/g, "");
+        const qs = squash(q);
+        const hits = [];
+        const seen = {};
+        for (const e of idx) {
+            const n = e.n.toLowerCase();
+            let score = -1;
+            if (n.startsWith(q)) score = 0;
+            else if (n.indexOf(" " + q) >= 0) score = 1;
+            else if (n.indexOf(q) >= 0 || (qs.length >= 2 && squash(n).indexOf(qs) >= 0)) score = 2;
+            else if (q.length >= 3 && (e.section.toLowerCase().indexOf(q) >= 0
+                                       || e.s.toLowerCase().indexOf(q) >= 0)) score = 3;
+            if (score < 0) continue;
+            // The same name twice (a row per display) is one result.
+            const key = e.pane + "/" + e.n;
+            if (seen[key]) continue;
+            seen[key] = true;
+            hits.push({ e: e, score: score + (e.isPane ? -0.5 : 0) });
+        }
+        hits.sort((a, b) => (a.score - b.score) || a.e.n.length - b.e.n.length);
+        return hits.slice(0, limit);
+    }
     function searchIndex() {
         const out = [];
         for (const g of root.paneGroups) {

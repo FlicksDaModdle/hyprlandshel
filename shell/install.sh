@@ -418,6 +418,14 @@ backup "$QS_DIR"
 cp -r -- "$SRC/quickshell" "$QS_DIR" || die "could not copy the Quickshell tree to $QS_DIR"
 printf '  installed %s\n' "$QS_DIR"
 
+# For Settings → Updates (scripts/hyprshell-update.py): where this checkout
+# is, and the commit the shell is now installed from.
+HS_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/hyprshell"
+if mkdir -p "$HS_STATE/installed" 2>/dev/null; then
+    printf '%s\n' "$(dirname "$SRC")" > "$HS_STATE/repo"
+    _head=$(git -C "$SRC" rev-parse HEAD 2>/dev/null) && printf '%s\n' "$_head" > "$HS_STATE/installed/shell"
+fi
+
 cp -- "$SRC/run.sh" "$QS_DIR/run.sh" 2>/dev/null && chmod +x "$QS_DIR/run.sh" \
     && printf '  installed %s/run.sh\n' "$QS_DIR"
 cp -- "$SRC/hyprshellctl" "$QS_DIR/hyprshellctl" 2>/dev/null \

@@ -334,30 +334,10 @@ Variants {
         // The best few, by the row's name first and its description after.
         readonly property var settingsResults: {
             const q = queryLower;
-            if (q.length < 2 || Config.UiState.appPickerFor !== "") return [];
-            // "wifi" finds "Wi-Fi", "alttab" finds "Alt+Tab".
-            const squash = t => t.replace(/[-+\s_.]/g, "");
-            const qs = squash(q);
-            const meta = Config.UiState.settingsApp ? Config.UiState.settingsApp.paneMeta : ({});
-            const hits = [];
-            const seen = {};
-            for (const e of settingsIdx) {
-                const n = e.n.toLowerCase();
-                let score = -1;
-                if (n.startsWith(q)) score = 0;
-                else if (n.indexOf(" " + q) >= 0) score = 1;
-                else if (n.indexOf(q) >= 0 || (qs.length >= 2 && squash(n).indexOf(qs) >= 0)) score = 2;
-                else if (q.length >= 3 && (e.section.toLowerCase().indexOf(q) >= 0
-                                           || e.s.toLowerCase().indexOf(q) >= 0)) score = 3;
-                if (score < 0) continue;
-                // The same name twice (a row per display) is one result.
-                const key = e.pane + "/" + e.n;
-                if (seen[key]) continue;
-                seen[key] = true;
-                hits.push({ e: e, score: score + (e.isPane ? -0.5 : 0) });
-            }
-            hits.sort((a, b) => (a.score - b.score) || a.e.n.length - b.e.n.length);
-            return hits.slice(0, 6).map(h => ({
+            const app = Config.UiState.settingsApp;
+            if (q.length < 2 || Config.UiState.appPickerFor !== "" || !app) return [];
+            const meta = app.paneMeta;
+            return app.rankSettings(q, settingsIdx, 6).map(h => ({
                 kind: "setting", pane: h.e.pane, row: h.e.isPane ? "" : h.e.n,
                 label: h.e.n, icon: (meta[h.e.pane] || {}).icon || "settings", appIcon: "",
                 cat: "Settings · " + h.e.pane + (h.e.section ? " › " + h.e.section : "")
