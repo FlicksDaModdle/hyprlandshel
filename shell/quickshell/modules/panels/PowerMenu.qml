@@ -16,7 +16,7 @@ PanelSurface {
         { n: "Suspend",    k: "",          icon: "moon",    run: () => Services.Session.suspend() },
         { n: "Log out",    k: "super ⇧ E", icon: "logOut",  run: () => Services.Session.logout() },
         { n: "Restart",    k: "",          icon: "reboot",  run: () => Services.Session.reboot() },
-        { n: "Power off",  k: "",          icon: "power",   run: () => Services.Session.powerOff() }
+        { n: "Shut down",  k: "",          icon: "power",   run: () => Services.Session.powerOff() }
     ]
 
     implicitWidth: 248

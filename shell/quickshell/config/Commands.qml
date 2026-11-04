@@ -36,6 +36,6 @@ Singleton {
         { key: "lock",       label: "Lock",         icon: "lock",          cat: "Session · lock the screen" },
         { key: "logout",     label: "Log out",      icon: "logOut",        cat: "Session · end this session" },
         { key: "suspend",    label: "Suspend",      icon: "moon",          cat: "Session · sleep" },
-        { key: "poweroff",   label: "Power off",    icon: "power",         cat: "Session · shut down" }
+        { key: "poweroff",   label: "Shut down",    icon: "power",         cat: "Session · shut down" }
     ]
 }
