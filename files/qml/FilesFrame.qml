@@ -385,6 +385,37 @@ PanelSurface {
                         count: frame.svc.placeCounts[modelData]
                     }
                 }
+
+                // The disks, and how full each is (FilesService.drives):
+                // read when you change folder, and every half minute while
+                // this is open, for a USB drive coming or going.
+                StyledText {
+                    x: 18
+                    visible: frame.svc.drives.length > 0
+                    text: "DRIVES"
+                    font.pixelSize: Appearance.fs(10.5)
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.26
+                    color: Appearance.ink3
+                    topPadding: 10
+                    bottomPadding: 6
+                }
+                Repeater {
+                    model: frame.svc.drives
+                    DriveRow {
+                        required property var modelData
+                        width: places.width
+                        drive: modelData
+                        app: frame.app
+                    }
+                }
+                Timer {
+                    interval: 30000
+                    running: frame.visible
+                    repeat: true
+                    triggeredOnStart: true
+                    onTriggered: frame.svc.readDrives()
+                }
             }
         }
 
@@ -1433,6 +1464,23 @@ PanelSurface {
             }
         }
 
+        // How full the disk you're on is, beside what's free of it.
+        Rectangle {
+            visible: frame.svc.usedFraction >= 0
+            anchors.right: freeLabel.left
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: 60
+            height: 4
+            radius: 2
+            color: Appearance.rule
+            Rectangle {
+                width: Math.max(height, parent.width * frame.svc.usedFraction)
+                height: parent.height
+                radius: 2
+                color: frame.svc.usedFraction > 0.9 ? Appearance.accent : Appearance.ink2
+            }
+        }
         StyledText {
             id: freeLabel
             anchors.right: parent.right

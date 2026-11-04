@@ -932,20 +932,70 @@ QtObject {
     }
 
     // ── free space ────────────────────────────────────────────────────────
+    // Where the folder you're in is: what's free, of how much.
     property string freeSpace: ""
+    property real usedFraction: -1
 
     property Proc dfProc: Proc {
         onFinished: (code, out, err) => {
-            // `df -B1 --output=avail` is one number and a header.
+            // `df -B1 --output=size,used,avail`: a header, then three numbers.
             const lines = out.trim().split("\n");
-            const n = parseInt(lines[lines.length - 1], 10);
-            root.freeSpace = isNaN(n) ? "" : root.humanSize(n) + " free";
+            const f = (lines[lines.length - 1] || "").trim().split(/\s+/).map(x => parseInt(x, 10));
+            if (f.length < 3 || f.some(isNaN) || f[0] <= 0) { root.freeSpace = ""; root.usedFraction = -1; return; }
+            root.freeSpace = root.humanSize(f[2]) + " free of " + root.humanSize(f[0]);
+            root.usedFraction = Math.max(0, Math.min(1, (f[0] - f[2]) / f[0]));
         }
     }
 
     function checkFree(path) {
-        dfProc.command = ["df", "-B1", "--output=avail", path];
+        dfProc.command = ["df", "-B1", "--output=size,used,avail", path];
         dfProc.running = true;
+        root.readDrives();
+    }
+
+    // ── drives ────────────────────────────────────────────────────────────
+    // The sidebar's Drives: each disk once — a btrfs disk is mounted as /,
+    // /home and more, all one device — with what's used of it. The system
+    // disk, any other partition you have mounted, and USB drives while they
+    // are in. [{ label, path, icon, size, used, avail, removable }]
+    property var drives: []
+    property Proc drivesProc: Proc {
+        onFinished: (code, out, err) => {
+            const seen = {};
+            const list = [];
+            for (const line of out.trim().split("\n").slice(1)) {
+                const f = line.trim().split(/\s+/);
+                if (f.length < 6) continue;
+                const [src, type] = f;
+                const size = parseInt(f[2], 10), used = parseInt(f[3], 10), avail = parseInt(f[4], 10);
+                const target = f.slice(5).join(" ");
+                if (!src.startsWith("/dev/") || isNaN(size) || size <= 0) continue;
+                // Not the boot partition, nor the system's own corners.
+                if (/^\/(boot|efi)(\/|$)/.test(target) || /^\/(var|snap|run\/(?!media))(\/|$)/.test(target)) continue;
+                const dev = src.replace(/\[.*\]$/, "");
+                const removable = /^\/run\/media\/|^\/media\//.test(target);
+                const label = target === "/" ? "System"
+                            : target === root.home ? "Home"
+                            : target.split("/").filter(x => x).pop() || target;
+                const d = { label: label, path: target, icon: "disk", size: size, used: used, avail: avail,
+                            removable: removable };
+                // One per device: the shortest mount point stands for it.
+                if (seen[dev] !== undefined) {
+                    if (target.length < list[seen[dev]].path.length) list[seen[dev]] = d;
+                    continue;
+                }
+                seen[dev] = list.length;
+                list.push(d);
+            }
+            list.sort((a, b) => (a.path === "/" ? -1 : b.path === "/" ? 1 : 0) || (a.removable - b.removable) || a.label.localeCompare(b.label));
+            root.drives = list;
+        }
+    }
+    function readDrives() {
+        if (drivesProc.running) return;
+        drivesProc.command = ["df", "-B1", "--output=source,fstype,size,used,avail,target",
+                              "-x", "tmpfs", "-x", "devtmpfs", "-x", "efivarfs", "-x", "squashfs", "-x", "overlay"];
+        drivesProc.running = true;
     }
 
     // ── acting on files ───────────────────────────────────────────────────
