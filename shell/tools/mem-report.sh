@@ -35,8 +35,9 @@ tr '\0' '\n' <"/proc/$(pgrep -xo Hyprland)/environ" 2>/dev/null | grep -E "^(AQ_
 hyprctl monitors 2>/dev/null | grep -E "^Monitor|currentFormat|scale:"
 echo
 echo "== the scale the shell draws at"
-grep -h "draws at" "${XDG_RUNTIME_DIR:-/tmp}/hyprshell.log" 2>/dev/null | tail -n 4 || echo "(not in the log)"
-tr '\0' '\n' <"/proc/$pid/environ" | grep -E "^QT_(SCALE|AUTO_SCREEN|ENABLE_HIGHDPI|WAYLAND)" || true
+grep -h "draws at" "${XDG_RUNTIME_DIR:-/tmp}/hyprshell.log" 2>/dev/null | tail -n 4 | grep . \
+    || echo "(not in the log: restart the shell with start-shell.sh --restart first)"
+pid=$(pgrep -xo qs) && tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -E "^QT_(SCALE|AUTO_SCREEN|ENABLE_HIGHDPI|WAYLAND)" || true
 
 if [ "${1:-}" = watch ]; then
     echo
