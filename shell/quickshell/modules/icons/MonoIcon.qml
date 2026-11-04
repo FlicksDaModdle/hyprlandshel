@@ -184,7 +184,7 @@ Item {
     onXChanged: resnapSoon()
     onYChanged: resnapSoon()
     onDrawSizeChanged: resnapSoon()
-    onDprChanged: resnapSoon()
+    onDprChanged: { resnapSoon(); rebuild.restart(); }
     onVisibleChanged: if (visible) { resnapSoon(); settle.restart(); }
     Component.onCompleted: { resnapSoon(); settle.restart(); }
     Timer { id: settle; interval: 450; onTriggered: root.resnap() }
@@ -225,8 +225,22 @@ Item {
 
     // ── as vector shapes ─────────────────────────────────────────────────
     // Only built when they are what is drawn.
+    // Built again when the window's scale changes. A window starts at one
+    // scale and is told its real one a moment later (2, then 1, then 5/3
+    // on a 1.67 display), and the curve renderer's shapes made before that
+    // were left drawing nothing: the dock's Start, Overview, Settings and
+    // Show desktop glyphs, made at once, went blank while the app tiles,
+    // made a moment later, were fine.
+    property bool shapesOn: true
+    function rebuildShapes() {
+        if (root.asImage) return;
+        root.shapesOn = false;
+        Qt.callLater(() => { root.shapesOn = true; });
+    }
+    Timer { id: rebuild; interval: 200; onTriggered: root.rebuildShapes() }
+
     Loader {
-        active: !root.asImage
+        active: !root.asImage && root.shapesOn
         sourceComponent: shapes
     }
     Component {
