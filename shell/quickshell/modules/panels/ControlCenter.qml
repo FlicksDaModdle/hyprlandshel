@@ -912,7 +912,7 @@ PanelSurface {
 
     function sliderValue(k) {
         if (k === "volume") return Services.Audio.volume;
-        if (k === "brightness") return Services.Brightness.value;
+        if (k === "brightness") return Services.Brightness.slider;
         if (k.startsWith("mon:")) { const d = root.monitorOf(k); return d ? d.value : 0; }
         return Services.Audio.inputVolume;
     }
@@ -920,7 +920,7 @@ PanelSurface {
     function sliderLabel(k) {
         if (k === "volume")
             return Services.Audio.muted ? "muted" : Services.Audio.volumePercent + "%";
-        if (k === "brightness") return Services.Brightness.percent + "%";
+        if (k === "brightness") return Services.Brightness.sliderLabel;
         if (k.startsWith("mon:")) {
             const d = root.monitorOf(k);
             if (!d) return "";
@@ -935,7 +935,7 @@ PanelSurface {
 
     function sliderSet(k, v) {
         if (k === "volume") Services.Audio.setVolume(v);
-        else if (k === "brightness") Services.Brightness.set(v);
+        else if (k === "brightness") Services.Brightness.setSlider(v);
         else if (k.startsWith("mon:")) Services.Monitors.set(k.slice(4), v);
         else Services.Audio.setInputVolume(v);
     }

@@ -1483,11 +1483,12 @@ Scope {
                    ? "No backlight on this machine"
                    : (Services.Brightness.lastError !== ""
                       ? "brightnessctl: " + Services.Brightness.lastError
-                      : "Backlight on " + Services.Brightness.device),
+                      : "Backlight on " + Services.Brightness.device
+                        + (Services.Brightness.canExtraDim ? ". The bottom fifth goes darker than its lowest, dimming the picture on top" : "")),
                 type: Services.Brightness.available ? "slider" : "info",
-                min: 1, max: 100, unit: "%",
-                value: Services.Brightness.percent,
-                set: v => Services.Brightness.set(v / 100) });
+                min: Services.Brightness.canExtraDim ? 0 : 1, max: 100, unit: "%",
+                value: Math.round(Services.Brightness.slider * 100),
+                set: v => Services.Brightness.setSlider(v / 100) });
             for (const r of root.nightRows()) rows.push(r);
             rows.push({ adv: true, n: "Forget saved layouts",
                 s: "Every output goes back to what hyprland.lua says at the next reload",
@@ -1668,9 +1669,9 @@ Scope {
             if (Services.Brightness.available)
                 rows.push({ n: "Brightness", s: Services.Brightness.device
                                 || "The backlight this machine exposes",
-                            type: "slider", min: 1, max: 100, unit: "%",
-                            value: Services.Brightness.percent,
-                            set: v => Services.Brightness.set(v / 100) });
+                            type: "slider", min: Services.Brightness.canExtraDim ? 0 : 1, max: 100, unit: "%",
+                            value: Math.round(Services.Brightness.slider * 100),
+                            set: v => Services.Brightness.setSlider(v / 100) });
             else
                 rows.push({ n: "Brightness", s: "No backlight device was found",
                             type: "info", value: "—" });

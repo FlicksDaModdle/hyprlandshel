@@ -143,8 +143,55 @@ Singleton {
 
     function clampedPending(pct) { return Math.max(0.01, Math.min(1, pct / 100)); }
 
+    // ── extra dim ─────────────────────────────────────────────────────────
+    // Below the backlight's own lowest: the bottom fifth of the slider
+    // keeps the backlight at 1% and dims the picture on top, through the
+    // daemon's gamma ramp (as Monitors.qml does for external monitors),
+    // down to a tenth. Kept with the monitors' levels, by the panel's name.
+    readonly property string panel: {
+        const m = (Services.Compositor.monitors || []).find(o => o && /^(eDP|LVDS|DSI)/.test(String(o.name)));
+        return m ? m.name : "";
+    }
+    readonly property bool canExtraDim: panel !== "" && Services.Daemon.running && Services.Daemon.modules.gamma === true
+    readonly property real split: canExtraDim ? 0.2 : 0
+    readonly property real floorDim: 0.1
+    function savedDim() {
+        try { const d = JSON.parse(Config.Appearance.monitorDims || "{}")[root.panel]; return d === undefined ? 1 : d; }
+        catch (e) { return 1; }
+    }
+    property real extraDim: 1
+    // Where the slider stands: the extra-dim range, then the backlight.
+    readonly property real slider: extraDim < 0.999
+        ? split * Math.max(0, (extraDim - floorDim) / (1 - floorDim))
+        : split + (1 - split) * value
+    readonly property string sliderLabel: extraDim < 0.999 ? "extra dim" : percent + "%"
+    function setSlider(v) {
+        if (!available) return;
+        v = Math.max(0, Math.min(1, v));
+        if (!canExtraDim || v >= split) {
+            set(split > 0 ? (v - split) / (1 - split) : v);
+            return;
+        }
+        const dim = floorDim + (v / split) * (1 - floorDim);
+        if (root.extraDim >= 0.999) set(0.01);
+        root.applyDim(dim);
+    }
+    function applyDim(dim) {
+        root.extraDim = dim;
+        Services.Daemon.send({ cmd: "gamma-dim", output: root.panel, value: Math.round(dim * 100) });
+        let all = {};
+        try { all = JSON.parse(Config.Appearance.monitorDims || "{}") || {}; } catch (e) { }
+        if (dim >= 0.999) delete all[root.panel]; else all[root.panel] = Math.round(dim * 100) / 100;
+        Config.Appearance.monitorDims = JSON.stringify(all);
+    }
+    // Back at login, once the daemon can do it.
+    onCanExtraDimChanged: if (canExtraDim) { const d = savedDim(); if (d < 0.999) applyDim(d); }
+
     function set(v) {
         if (!available) return;
+        // Any backlight change (a key, the slider above the extra-dim
+        // range) ends extra dim.
+        if (root.extraDim < 0.999) root.applyDim(1);
         const clamped = Math.max(0.01, Math.min(1, v));
         // Update optimistically so the slider tracks the pointer.
         current = Math.round(clamped * maximum);
