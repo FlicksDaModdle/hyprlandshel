@@ -134,10 +134,14 @@ Item {
     // then stretched by the display's scale (1.5, 2…) with linear
     // filtering: soft edges on every icon in the shell. Now the image is
     // made at size × the window's real scale (QsWindow: fractional scales
-    // included, which Screen's integer one is not), the item is sized so
-    // that's one-to-one, and it's sampled nearest so an icon that lands on
-    // half a pixel moves by half a pixel instead of being blurred across
-    // two.
+    // included, which Screen's integer one is not) and the item is sized so
+    // that's one-to-one.
+    //
+    // Sampled smoothly, not nearest. Nearest is exact only at a scale of
+    // exactly 1, and icons are often under one that isn't: the dock's tiles
+    // lift to 1.12 under the pointer and their springs settle a hair off 1.
+    // There nearest drops or doubles a row of pixels, and strokes come out
+    // uneven and jagged. Smooth at one-to-one is as sharp as nearest.
     readonly property real dpr: {
         const w = QsWindow.window;
         const r = w && w.devicePixelRatio > 0 ? w.devicePixelRatio : Screen.devicePixelRatio;
@@ -153,7 +157,7 @@ Item {
         source: root.svgSource
         sourceSize: Qt.size(root.texPx, root.texPx)
         cache: true
-        smooth: false
+        smooth: true
         mipmap: false
         asynchronous: false
         onStatusChanged: if (status === Image.Error) root.imageFailed = true
