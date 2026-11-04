@@ -90,6 +90,8 @@ fi
 # thread, and on a hybrid laptop Mesa's EGL driver rather than NVIDIA's —
 # only where Mesa has a GPU to drive (not with the MUX on NVIDIA alone).
 export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+# Freed memory handed back rather than kept (hyprland.lua's shell_env says why).
+export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.malloc.trim_threshold=131072:glibc.malloc.mmap_threshold=131072}"
 _mesa=/usr/share/glvnd/egl_vendor.d/50_mesa.json
 if [ -f "$_mesa" ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]; then
     _nv= _other=
@@ -102,6 +104,11 @@ if [ -f "$_mesa" ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]; then
     done
     if [ -n "$_nv" ] && [ -n "$_other" ]; then
         export __EGL_VENDOR_LIBRARY_FILENAMES="$_mesa" __GLX_VENDOR_LIBRARY_NAME=mesa
+        # Vulkan and video decoding too: Mesa's ICD and VA-API, not NVIDIA's.
+        for _icd in /usr/share/vulkan/icd.d/radeon_icd.x86_64.json /usr/share/vulkan/icd.d/intel_icd.x86_64.json; do
+            [ -f "$_icd" ] && { export VK_DRIVER_FILES="$_icd" VK_ICD_FILENAMES="$_icd"; break; }
+        done
+        export QT_FFMPEG_DECODING_HW_DEVICE_TYPES=vaapi
         note "hybrid graphics: the shell draws with Mesa, leaving the NVIDIA GPU asleep"
     fi
 fi

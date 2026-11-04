@@ -242,7 +242,11 @@ hl.env("TERMCMD", "hyprshell-term")
 --   glibc's per-thread arenas, one per thread up to eight per core, each
 --   holding on to what it once used. Two are plenty for a shell.
 local function shell_env()
-    local env = "MALLOC_ARENA_MAX=2"
+    -- glibc keeps what's freed for reuse and gives little back, so a shell
+    -- that once opened Settings stays at that size: memory past 128 KB at
+    -- the top of the heap is handed back, and allocations that big (images,
+    -- buffers) get pages of their own, returned the moment they're freed.
+    local env = "MALLOC_ARENA_MAX=2 GLIBC_TUNABLES=glibc.malloc.trim_threshold=131072:glibc.malloc.mmap_threshold=131072"
     local mesa = "/usr/share/glvnd/egl_vendor.d/50_mesa.json"
     local f = io.open(mesa, "r")
     if not f then return env end
@@ -260,6 +264,19 @@ local function shell_env()
     end
     if has_nvidia and has_mesa_gpu then
         env = env .. " __EGL_VENDOR_LIBRARY_FILENAMES=" .. mesa .. " __GLX_VENDOR_LIBRARY_NAME=mesa"
+        -- Vulkan and video decoding too (the lock screen's live wallpaper):
+        -- Mesa's driver for the integrated GPU and VA-API, not NVIDIA's ICD
+        -- or CUDA, each of which loads its own libraries into the process.
+        for _, icd in ipairs({ "/usr/share/vulkan/icd.d/radeon_icd.x86_64.json",
+                                "/usr/share/vulkan/icd.d/intel_icd.x86_64.json" }) do
+            local v = io.open(icd, "r")
+            if v then
+                v:close()
+                env = env .. " VK_DRIVER_FILES=" .. icd .. " VK_ICD_FILENAMES=" .. icd
+                break
+            end
+        end
+        env = env .. " QT_FFMPEG_DECODING_HW_DEVICE_TYPES=vaapi"
     end
     return env
 end
