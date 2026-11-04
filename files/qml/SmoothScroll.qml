@@ -7,7 +7,9 @@ import QtQuick
 //                   stop, and notches given quickly add up into one glide;
 //   a touchpad      the content follows the fingers exactly, and when they
 //                   lift it carries on at the speed they were moving and
-//                   slows to a stop under friction.
+//                   slows to a stop: Flickable's own flick, set up as the
+//                   shell's Settings has it (KineticScroll.qml), so the two
+//                   feel the same.
 //
 // Qt's own Flickable moves a fixed step per notch and stops dead the moment
 // a touchpad lets go: on Linux nothing synthesises the coasting, not the
@@ -24,24 +26,18 @@ MouseArea {
     // Seconds: how quickly a notch's glide settles (the time constant of an
     // exponential ease — most of the way there in about three of these).
     property real ease: 0.075
-    // Seconds: how long a touchpad's coast lasts (the time constant of the
-    // friction). Longer is slipperier.
-    property real glide: 0.45
 
     acceptedButtons: Qt.NoButton
 
     property real pos: 0            // where the content is, unrounded
     property real lastSet: 0        // what was last given to the target
     property real pending: 0        // wheel: distance still to travel
-    property real velocity: 0       // touchpad: px/s once the fingers lift
-    property bool fingers: false    // a touchpad gesture is in progress
-    property real lastAt: 0         // ms, the last touchpad movement
 
     readonly property real minY: ss.target.originY
     readonly property real maxY: ss.target.originY + Math.max(0, ss.target.contentHeight - ss.target.height)
-    readonly property bool moving: ss.pending !== 0 || (!ss.fingers && ss.velocity !== 0)
+    readonly property bool moving: ss.pending !== 0
 
-    function stop() { ss.pending = 0; ss.velocity = 0; }
+    function stop() { ss.pending = 0; }
 
     // Picks up from wherever the content is now — a scroll bar drag, a
     // folder change, a key — rather than from where this last left it.
@@ -50,7 +46,7 @@ MouseArea {
     }
     function place(y) {
         const c = Math.max(ss.minY, Math.min(ss.maxY, y));
-        if (c !== y) { ss.pending = 0; ss.velocity = 0; }     // the end stops it
+        if (c !== y) ss.pending = 0;     // the end stops it
         ss.pos = c;
         // Whole pixels, so text does not shimmer between them on the way.
         ss.lastSet = Math.round(c);
@@ -76,7 +72,6 @@ MouseArea {
         if (!touchpad) {
             // A wheel. Turning the other way drops what is left of the
             // last glide rather than fighting it.
-            ss.velocity = 0;
             const d = -wheel.angleDelta.y / 120 * ss.notch;
             if (d === 0) return;
             if (ss.pending !== 0 && Math.sign(d) !== Math.sign(ss.pending)) ss.pending = 0;
@@ -85,46 +80,50 @@ MouseArea {
             return;
         }
 
-        const now = Date.now();
-        // A new gesture catches whatever is still coasting, as a finger on
-        // a moving page does, and starts its speed afresh.
-        const fresh = wheel.phase === Qt.ScrollBegin || !ss.fingers;
-        if (fresh) { ss.stop(); ss.fingers = true; }
-        if (wheel.phase === Qt.ScrollEnd) {
-            // Fingers off. If they had stopped before lifting, so does this.
-            ss.fingers = false;
-            if (now - ss.lastAt > 60) ss.velocity = 0;
-            return;
-        }
+        // A touchpad, the way Settings in the shell does it
+        // (KineticScroll.qml): the content follows the fingers 1:1, and on
+        // lifting carries on at the speed they were moving, slowing under
+        // Flickable's own deceleration — unless they had stopped first.
+        if (wheel.phase === Qt.ScrollBegin) { ss.stop(); ss.target.cancelFlick(); ss.samples = []; }
         // Momentum from the system, where there is one (not on Linux):
-        // follow it, and add none of our own.
+        // followed, with none of our own added.
         if (wheel.phase === Qt.ScrollMomentum) {
-            ss.velocity = 0;
-            ss.place(ss.pos - (wheel.pixelDelta.y || wheel.angleDelta.y / 120 * ss.notch));
+            ss.place(ss.target.contentY - (wheel.pixelDelta.y || wheel.angleDelta.y / 120 * ss.notch));
             return;
         }
-
-        ss.pending = 0;
-        ss.fingers = true;
         const d = -(wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y : wheel.angleDelta.y / 120 * ss.notch);
-        const dt = Math.max(0.004, (now - ss.lastAt) / 1000);
-        const v = d / dt;
-        // Smoothed over the last few events: one jittery delta should not
-        // decide how far the coast goes. The first of a gesture has no
-        // interval to measure, so it sets none.
-        ss.velocity = fresh || dt > 0.1 ? 0 : (ss.velocity === 0 ? v : ss.velocity * 0.6 + v * 0.4);
-        ss.velocity = Math.max(-9000, Math.min(9000, ss.velocity));
-        ss.lastAt = now;
-        ss.place(ss.pos + d);
-        // A touchpad that sends no phases has no "lifted" either; a pause
-        // in its events stands in for one.
-        if (!phased) lift.restart();
+        if (d !== 0) {
+            ss.pending = 0;
+            ss.target.cancelFlick();
+            ss.pos = ss.target.contentY;
+            ss.place(ss.pos + d);
+            const list = ss.samples.length > 16 ? ss.samples.slice(-16) : ss.samples.slice();
+            list.push({ t: Date.now(), dy: d });
+            ss.samples = list;
+        }
+        if (wheel.phase === Qt.ScrollEnd) ss.release();
     }
 
-    Timer {
-        id: lift
-        interval: 70
-        onTriggered: ss.fingers = false
+    // Recent finger movement, { t, dy }.
+    property var samples: []
+    function release() {
+        const s = ss.samples;
+        ss.samples = [];
+        if (s.length === 0) return;
+        const last = s[s.length - 1];
+        // Fingers that stopped before lifting leave it where it is.
+        if (Date.now() - last.t > 50) return;
+        const win = s.filter(e => last.t - e.t <= 90);
+        const dt = (last.t - win[0].t) / 1000;
+        const v = win.length >= 2 && dt > 0 ? win.slice(1).reduce((a, e) => a + e.dy, 0) / dt : last.dy * 60;
+        if (Math.abs(v) < 120) return;
+        // flick() takes the content's velocity as a drag gives it: positive
+        // moves it down, which is scrolling up.
+        ss.target.flick(0, -v);
+    }
+    Component.onCompleted: {
+        ss.target.flickDeceleration = 1800;
+        ss.target.maximumFlickVelocity = 7000;
     }
 
     FrameAnimation {
@@ -137,11 +136,6 @@ MouseArea {
                 if (Math.abs(ss.pending - step) < 0.5) step = ss.pending;
                 ss.pending -= step;
                 y += step;
-            }
-            if (!ss.fingers && ss.velocity !== 0) {
-                y += ss.velocity * dt;
-                ss.velocity *= Math.exp(-dt / ss.glide);
-                if (Math.abs(ss.velocity) < 12) ss.velocity = 0;
             }
             ss.place(y);
         }
