@@ -408,32 +408,23 @@ Singleton {
         rememberColour(name, patch);
     }
 
-    // The calibration wizard (modules/settings/HdrCalibration.qml): each
-    // change saved and applied as it's made, and on Cancel everything put
-    // back as it was. Hyprland keeps a field it was once given until told
-    // otherwise, so going back means sending the old values — Hyprland's
-    // own defaults for the ones the entry never had — and only then
-    // dropping those keys from the entry again.
+    // The calibration wizard (modules/settings/HdrCalibration.qml) shows
+    // its test settings and the results without saving them: the output's
+    // rule with these values over it, sent and not kept. Save is
+    // previewColour; Cancel shows the values it started from again.
     readonly property var colourDefaults: ({
         sdr_eotf: "default", sdr_min_luminance: 0.2, sdr_max_luminance: 80,
         sdrbrightness: 1, sdrsaturation: 1
     })
+    function showColour(name, values) {
+        const spec = displaySpec(name);
+        if (!spec) return;
+        root.lastSend = Date.now();
+        Services.Compositor.setMonitor(Object.assign(spec, values));
+    }
     function previewColour(name, values) {
         saveDisplay(name, values);
         applyDisplay(name);
-    }
-    function restoreColour(name, had, touched) {
-        const full = ({}), back = ({});
-        for (const k of touched) {
-            back[k] = had[k];                       // undefined: dropped
-            if (had[k] !== undefined) full[k] = had[k];
-            else if (root.colourDefaults[k] !== undefined) full[k] = root.colourDefaults[k];
-            else if (k === "max_luminance" && (root.edidCaps[name] || {}).maxLum > 0)
-                full[k] = Math.round(root.edidCaps[name].maxLum);
-        }
-        saveDisplay(name, full);
-        applyDisplay(name);
-        saveDisplay(name, back);
         Services.Compositor.refreshMonitors();
     }
 
@@ -468,18 +459,31 @@ Singleton {
     function setHdr(name, on, anyway) {
         const c = root.edidCaps[name] || ({});
         if (!on) {
-            root.tryDisplay(name, { cm: "srgb" });
+            if (root.trial && root.trial.name === name) root.keepTrial();
+            root.rememberColour(name, { cm: "srgb" });
             return;
         }
         const patch = { bitdepth: 10, cm: "hdr" };
         if (anyway || c.via === "displayid" || (c.pq === true && c.bt2020 !== true)) {
             patch.supports_wide_color = 1;
             patch.supports_hdr = 1;
-            if (c.maxLum > 0) patch.max_luminance = Math.round(c.maxLum);
-            if (c.maxAvgLum > 0) patch.max_avg_luminance = Math.round(c.maxAvgLum);
-            if (c.minLum > 0) patch.min_luminance = c.minLum;
+            // The panel's own figures, unless calibration has measured them.
+            const had = displayMap()[name] || ({});
+            if (c.maxLum > 0 && had.max_luminance === undefined) patch.max_luminance = Math.round(c.maxLum);
+            if (c.maxAvgLum > 0 && had.max_avg_luminance === undefined) patch.max_avg_luminance = Math.round(c.maxAvgLum);
+            if (c.minLum > 0 && had.min_luminance === undefined) patch.min_luminance = c.minLum;
         }
-        root.tryDisplay(name, patch);
+        // Like Windows' switch, HDR on a display that says it can do it just
+        // stays on: no 15-second "keep these settings?" that turns it back
+        // off when it isn't answered. Only forcing it on a display that
+        // doesn't say so is a trial, since that one can leave it black.
+        const claims = c.pq === true || c.bt2020 === true || c.via === "displayid";
+        if (anyway && !claims) root.tryDisplay(name, patch);
+        else {
+            if (root.trial && root.trial.name === name) root.keepTrial();
+            root.hdrFixes = Object.assign({}, root.hdrFixes, { [name]: [] });
+            root.rememberColour(name, patch);
+        }
     }
 
     // ── keep these settings? ──────────────────────────────────────────────
@@ -602,6 +606,7 @@ Singleton {
     // starts over.
     property var fixes: ({})      // output → [times it was put back]
     property var contested: ({})  // output → the rate something else keeps setting
+    property var hdrFixes: ({})   // output → [times HDR was put back]
 
     function enforce() {
         if (!root.applied) return;
@@ -612,6 +617,24 @@ Singleton {
         const map = displayMap();
         const now = Date.now();
         for (const live of Services.Compositor.monitors || []) {
+            // HDR asked for and not running: back on. Hyprland drops back to
+            // its config's rule for an output after a reload, a DPMS wake or
+            // a replug, which for most outputs is plain sRGB; Windows keeps
+            // HDR on until you turn it off, and so does this.
+            const wantCm = live && map[live.name] ? String(map[live.name].cm || "") : "";
+            const liveCm = live ? String((live.lastIpcObject || {}).colorManagementPreset || "") : "";
+            if ((wantCm === "hdr" || wantCm === "hdredid") && liveCm !== "" && liveCm !== wantCm
+                    && !(root.trial && root.trial.name === live.name)) {
+                const tries = (root.hdrFixes[live.name] || []).filter(t => now - t < 60000);
+                if (tries.length < 3) {
+                    tries.push(now);
+                    root.hdrFixes = Object.assign({}, root.hdrFixes, { [live.name]: tries });
+                    console.log("Devices:", live.name, "is running", liveCm, "instead of", wantCm, "— putting HDR back");
+                    root.applyDisplay(live.name);
+                    root.checkSoon();
+                    continue;
+                }
+            }
             if (!live || !map[live.name] || !(map[live.name].mode || map[live.name].batteryRate)) continue;
             const ipc = live.lastIpcObject || ({});
             if (!ipc.refreshRate) continue;
@@ -684,6 +707,16 @@ Singleton {
             root.checkSoon();
             if (--left <= 0) stop();
         }
+    }
+
+    // HDR on somewhere: looked at every half minute, as a screen waking
+    // from DPMS comes back without an event and may come back in SDR.
+    readonly property bool wantsHdr: /"cm":"hdr/.test(prefs.displays || "")
+    Timer {
+        interval: 30000
+        repeat: true
+        running: root.applied && root.wantsHdr
+        onTriggered: root.checkSoon()
     }
 
     // A safety net only: outputs appearing and going are events (below).
