@@ -385,8 +385,28 @@ Singleton {
     readonly property var monitorFields: [
         "position", "bitdepth", "cm", "sdrbrightness", "sdrsaturation",
         "supports_wide_color", "supports_hdr",
-        "max_luminance", "max_avg_luminance", "min_luminance"
+        "max_luminance", "max_avg_luminance", "min_luminance",
+        "sdr_eotf", "sdr_min_luminance", "sdr_max_luminance"
     ]
+
+    // HDR as it should look on this display, from what its EDID says
+    // (Settings → Display → HDR calibration → Set up for this display):
+    // gamma 2.2 for SDR's shadows, its own black (an OLED's is all but 0 —
+    // Hyprland's default 0.2 nits is a grey that washes everything out),
+    // SDR white at 203 nits (BT.2408's reference white), and its peak.
+    function calibrateHdr(name) {
+        const c = root.edidCaps[name] || ({});
+        const oled = c.minLum !== undefined && c.minLum > 0 && c.minLum < 0.05;
+        const patch = {
+            sdr_eotf: "gamma22",
+            sdr_min_luminance: oled || c.minLum === undefined ? 0.005 : Math.max(0.005, Math.round(c.minLum * 1000) / 1000),
+            sdr_max_luminance: 203,
+            sdrbrightness: 1
+        };
+        if (c.maxLum > 0) patch.max_luminance = Math.round(c.maxLum);
+        if (c.minLum > 0) patch.min_luminance = c.minLum;
+        rememberColour(name, patch);
+    }
 
     // ── what each panel says it can do ────────────────────────────────────
     // From its own EDID (scripts/edid-caps.py): Hyprland's report of an

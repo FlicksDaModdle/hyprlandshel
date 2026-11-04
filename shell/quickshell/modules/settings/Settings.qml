@@ -309,6 +309,14 @@ Scope {
 
 
     // ══ the window ═══════════════════════════════════════════════════════
+    LazyLoader {
+        active: root.patternScreen !== ""
+        HdrPattern {
+            target: Quickshell.screens.find(x => x.name === root.patternScreen) || null
+            onDone: root.patternScreen = ""
+        }
+    }
+
     FloatingWindow {
         id: toplevel
 
@@ -1379,8 +1387,49 @@ Scope {
             // nothing outside one, and a slider that does nothing is worse
             // than no slider.
             if (livePreset === "hdr" || livePreset === "hdredid") {
-                rows.push({ n: "SDR brightness",
-                    s: "How bright ordinary windows are beside HDR. At 100% white is 80 nits, which can read as grey",
+                // HDR calibration. Washed out is nearly always SDR content's
+                // black (Hyprland's default 0.2 nits, grey on an OLED) and
+                // its shadow curve; dim and muddy, its white (80 nits).
+                const sdrMin = ipc.sdrMinLuminance !== undefined ? Number(ipc.sdrMinLuminance) : 0.2;
+                const sdrMax = ipc.sdrMaxLuminance !== undefined ? Number(ipc.sdrMaxLuminance) : 80;
+                const eotf = saved.sdr_eotf || "default";
+                rows.push({ type: "header", n: "HDR calibration",
+                    s: "How ordinary windows and the panel's range look with HDR on" });
+                rows.push({ n: "Set up for this display",
+                    s: "Deep blacks, natural shadows and SDR white at 203 nits, with "
+                       + (caps.maxLum > 0 ? "its " + Math.round(caps.maxLum) + "-nit peak" : "its peak") + " from its EDID",
+                    type: "buttons",
+                    buttons: [{ label: "Set up", set: () => Services.Devices.calibrateHdr(m.name) },
+                              { label: "Test pattern", quiet: true, set: () => root.patternScreen = m.name }] });
+                rows.push({ n: "Shadows",
+                    s: eotf === "gamma22" ? "Gamma 2.2, as SDR displays show it: deep, natural shadows"
+                       : "Gamma 2.2 is usually right; the sRGB curve lifts dark tones, which reads as washed out",
+                    type: "seg",
+                    options: [{ label: "Gamma 2.2", value: "gamma22" }, { label: "sRGB", value: "srgb" },
+                              { label: "Default", value: "default" }],
+                    value: eotf,
+                    set: v => Services.Devices.rememberColour(m.name, { sdr_eotf: v }) });
+                const blacks = [{ label: "Deepest", value: "0.005" }, { label: "Deep", value: "0.05" },
+                                { label: "Default", value: "0.2" }];
+                rows.push({ n: "Black level",
+                    s: sdrMin >= 0.15 ? "Hyprland's default, 0.2 nits: grey on an OLED, and the usual reason HDR looks washed out"
+                       : "SDR black at " + sdrMin + " nits. The test pattern shows whether it's right",
+                    type: "seg", options: blacks,
+                    value: sdrMin < 0.02 ? "0.005" : sdrMin < 0.15 ? "0.05" : "0.2",
+                    set: v => Services.Devices.rememberColour(m.name, { sdr_min_luminance: parseFloat(v) }) });
+                rows.push({ n: "SDR content brightness",
+                    s: "How bright ordinary windows are beside HDR highlights, in nits. Around 200 matches a bright SDR screen",
+                    type: "slider", min: 80, max: 480, unit: " nits",
+                    value: Math.round(sdrMax),
+                    set: v => Services.Devices.rememberColour(m.name, { sdr_max_luminance: Math.round(v) }) });
+                rows.push({ n: "Peak brightness",
+                    s: "The brightest the panel goes; HDR highlights are fitted to it"
+                       + (caps.maxLum > 0 ? ". Its EDID says " + Math.round(caps.maxLum) + " nits" : ""),
+                    type: "slider", min: 200, max: 2000, unit: " nits",
+                    value: Math.round(saved.max_luminance || caps.maxLum || 1000),
+                    set: v => Services.Devices.rememberColour(m.name, { max_luminance: Math.round(v) }) });
+                rows.push({ adv: true, n: "SDR brightness",
+                    s: "A further multiplier on SDR content's brightness, over the nits above",
                     type: "slider", min: 50, max: 300, unit: "%",
                     value: Math.round((ipc.sdrBrightness || 1) * 100),
                     set: v => Services.Devices.rememberColour(m.name,
@@ -2127,6 +2176,8 @@ Scope {
     }
 
     property string displayPickRaw: ""
+    // HDR calibration's test pattern, on this display (by name), while up.
+    property string patternScreen: ""
     readonly property string displayPick: displayPickRaw !== ""
         ? displayPickRaw : Services.Compositor.focusedMonitorName
 
