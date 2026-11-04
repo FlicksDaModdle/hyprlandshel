@@ -99,24 +99,61 @@ MouseArea {
         // (KineticScroll.qml): the content follows the fingers 1:1, and on
         // lifting carries on at the speed they were moving, slowing under
         // Flickable's own deceleration — unless they had stopped first.
-        if (wheel.phase === Qt.ScrollBegin) { ss.stop(); ss.target.cancelFlick(); ss.samples = []; }
         // Momentum from the system, where there is one (not on Linux):
         // followed, with none of our own added.
         if (wheel.phase === Qt.ScrollMomentum) {
             ss.place(ss.target.contentY - (wheel.pixelDelta.y || wheel.angleDelta.y / 120 * ss.notch));
             return;
         }
-        const d = -(wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y : wheel.angleDelta.y / 120 * ss.notch);
+        ss.finger(wheel.phase, -(wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y : wheel.angleDelta.y / 120 * ss.notch));
+    }
+
+    // Fingers on the touchpad: the phase, and how far they moved the
+    // content (in contentY's direction).
+    //
+    // Inside the list the content follows them 1:1. Past either end it
+    // stretches, less the further it goes, and springs back when they let
+    // go — rather than stopping dead, which on a short list (a side rail)
+    // was all a flick ever did.
+    property real raw: 0     // where the fingers would have it, unstretched
+    function finger(phase, d) {
+        if (phase === Qt.ScrollBegin) {
+            ss.stop();
+            ss.target.cancelFlick();
+            ss.samples = [];
+            ss.raw = ss.target.contentY;
+        }
         if (d !== 0) {
+            // A lone movement far beyond the ones before it is the touchpad
+            // glitching (here: 213 px among 10s): kept to their pace, or
+            // the list leaps.
+            const prev = ss.samples.length > 0 ? Math.abs(ss.samples[ss.samples.length - 1].dy) : 0;
+            if (Math.abs(d) > 60 && Math.abs(d) > 4 * Math.max(prev, 8))
+                d = Math.sign(d) * Math.max(prev, 8);
             ss.pending = 0;
             ss.target.cancelFlick();
-            ss.pos = ss.target.contentY;
-            ss.place(ss.pos + d);
+            // Picked up from wherever it is, unless this gesture is already
+            // stretching it.
+            if (ss.target.contentY >= ss.minY && ss.target.contentY <= ss.maxY) ss.raw = ss.target.contentY;
+            ss.raw += d;
+            ss.stretch(ss.raw);
             const list = ss.samples.length > 16 ? ss.samples.slice(-16) : ss.samples.slice();
             list.push({ t: Date.now(), dy: d });
             ss.samples = list;
         }
-        if (wheel.phase === Qt.ScrollEnd) ss.release();
+        if (phase === Qt.ScrollEnd) ss.release();
+    }
+    function rubber(x) {
+        const most = Math.min(90, ss.target.height * 0.18);
+        return most * (1 - 1 / (x / most * 0.6 + 1));
+    }
+    function stretch(y) {
+        let v = y;
+        if (y < ss.minY) v = ss.minY - ss.rubber(ss.minY - y);
+        else if (y > ss.maxY) v = ss.maxY + ss.rubber(y - ss.maxY);
+        ss.pos = v;
+        ss.lastSet = v;
+        ss.target.contentY = v;
     }
 
     // Recent finger movement, { t, dy }.
@@ -124,6 +161,12 @@ MouseArea {
     function release() {
         const s = ss.samples;
         ss.samples = [];
+        // Stretched past an end: back to it.
+        if (ss.target.contentY < ss.minY - 0.5 || ss.target.contentY > ss.maxY + 0.5) {
+            console.debug(log, "lifted while stretched: back to the end");
+            ss.target.returnToBounds();
+            return;
+        }
         if (s.length === 0) return;
         const last = s[s.length - 1];
         // Fingers that stopped before lifting leave it where it is.
@@ -152,6 +195,8 @@ MouseArea {
     Component.onCompleted: {
         ss.target.flickDeceleration = 1800;
         ss.target.maximumFlickVelocity = 7000;
+        // A flick that reaches an end goes a little past it and comes back.
+        ss.target.boundsBehavior = Flickable.OvershootBounds;
     }
 
     FrameAnimation {
