@@ -71,8 +71,13 @@ MouseArea {
         console.debug(log, "wheel phase", wheel.phase, "angle", wheel.angleDelta.y, "pixel", wheel.pixelDelta.y,
                       "inverted", wheel.inverted, "contentY", Math.round(ss.target.contentY), "max", Math.round(ss.maxY));
         wheel.accepted = true;
-        ss.target.cancelFlick();
-        ss.sync();
+        // Not on every event: a touchpad can send its "lifted" twice, and
+        // stopping here on the second one killed the coast the first had
+        // just started. A wheel stops it, and fingers that touch or move.
+        if (wheel.phase === Qt.NoScrollPhase) {
+            ss.target.cancelFlick();
+            ss.sync();
+        }
         // Only a touchpad sends scroll phases. Pixel deltas are no test:
         // on Wayland Qt gives them for a plain mouse wheel too, and the
         // mouse then coasted like a touchpad.
