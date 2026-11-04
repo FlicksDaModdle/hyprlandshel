@@ -593,7 +593,20 @@ Variants {
 
         // Where an app's tile is, in this screen's coordinates: what a
         // window minimises into and grows back out of. null if it has none.
+        // The scale this window really draws at, beside the one Hyprland
+        // gives the output, in the log: when they differ (Qt rounding 1.5
+        // up to 2, or not told about fractional scaling at all) Hyprland
+        // resamples the whole window, and everything in it — icons and
+        // text alike — comes out soft. bash shell/tools/mem-report.sh has
+        // it too.
+        function logScale() {
+            const m = (Services.Compositor.monitors || []).find(x => x && dock.modelData && x.name === dock.modelData.name);
+            console.log("Dock: " + (dock.modelData ? dock.modelData.name : "?") + " draws at " + dock.devicePixelRatio
+                        + "x; Hyprland's scale for it is " + (m ? m.scale : "?") + "; shell scale " + dock.us);
+        }
+        onDevicePixelRatioChanged: logScale()
         Component.onCompleted: if (dock.modelData) {
+            logScale();
             const d = Object.assign({}, Config.UiState.docks);
             d[dock.modelData.name] = dock;
             Config.UiState.docks = d;

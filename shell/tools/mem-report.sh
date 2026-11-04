@@ -32,7 +32,11 @@ awk '/^[0-9a-f]+-[0-9a-f]+ / { name = ($6 == "" ? "[anon]" : $6) } /^Rss:/ { rss
 echo
 echo "== Hyprland's GPU"
 tr '\0' '\n' <"/proc/$(pgrep -xo Hyprland)/environ" 2>/dev/null | grep -E "^(AQ_|WLR_DRM)" || echo "(no AQ_DRM_DEVICES set)"
-hyprctl monitors 2>/dev/null | grep -E "^Monitor|currentFormat"
+hyprctl monitors 2>/dev/null | grep -E "^Monitor|currentFormat|scale:"
+echo
+echo "== the scale the shell draws at"
+grep -h "draws at" "${XDG_RUNTIME_DIR:-/tmp}/hyprshell.log" 2>/dev/null | tail -n 4 || echo "(not in the log)"
+tr '\0' '\n' <"/proc/$pid/environ" | grep -E "^QT_(SCALE|AUTO_SCREEN|ENABLE_HIGHDPI|WAYLAND)" || true
 
 if [ "${1:-}" = watch ]; then
     echo
