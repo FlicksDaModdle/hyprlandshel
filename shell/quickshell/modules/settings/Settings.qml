@@ -2250,7 +2250,11 @@ Scope {
     function loginRows() {
         const F = Services.FaceUnlock;
         const rows = [{ type: "header", n: "Face unlock",
-                        s: "Your face, through the IR camera, at the lock screen and when you log in — with Howdy" }];
+                        s: "Your face, through the IR camera, at the lock screen and when you log in — "
+                           + (F.engine === "service"
+                              ? (F.howdyOff || !F.howdyInstalled ? "with Hyprshell's own face recognition"
+                                                                 : "with Hyprshell's own face recognition, and Howdy as a fallback")
+                              : "with Howdy") }];
         if (!F.installed) {
             rows.push({ n: "Howdy isn't installed",
                         s: "Install it, then check again: paru -S howdy-git — and linux-enable-ir-emitter if the "
@@ -2272,6 +2276,14 @@ Scope {
                        : F.lockOn ? "At the lock screen (the login screen isn't set up: is greetd installed?)"
                        : "Off: your password only. Turning it on asks for your password",
                     type: "toggle", value: F.on, set: v => v ? F.enable() : F.disable() });
+        // Howdy as the fallback, or Hyprshell's own face recognition alone.
+        if (F.engine === "service" && F.howdyInstalled)
+            rows.push({ n: "Use Howdy as a fallback",
+                        s: F.howdyOff
+                           ? "Off: Hyprshell's own face recognition alone. New faces are added to it only"
+                           : "When Hyprshell's face service can't answer (stopped, or no face of yours in it), Howdy looks instead. "
+                             + "Off, it's Hyprshell's own recognition alone",
+                        type: "toggle", value: !F.howdyOff, set: v => F.setHowdy(v) });
         if (F.cameras.length > 0) {
             const labels = F.cameras.map(c => F.cameraLabel(c));
             const cur = F.cameras.find(c => c.path === F.camera);

@@ -48,6 +48,9 @@ set -euo pipefail
 LOCK=/etc/pam.d/hyprshell-lock
 GREETD=/etc/pam.d/greetd
 MARK="# hyprshell-face"
+# There: Howdy is left out — Hyprshell's own face recognition alone, at
+# the lock and login screens, and new faces added to it only.
+NOHOWDY=/etc/hyprshell-face/no-howdy
 
 say() { printf '  %s\n' "$*"; }
 die() { printf 'howdy-setup.sh: %s\n' "$*" >&2; exit 1; }
@@ -96,6 +99,10 @@ case ${1:-} in
         [[ $id =~ ^[0-9]{1,5}$ ]] || die "not a face ID: $id"
         ;;
     --clear-faces) mode=clear ;;
+    --howdy)
+        mode=howdy; want=${2:-}
+        [ "$want" = on ] || [ "$want" = off ] || die "--howdy on|off"
+        ;;
     --list-faces) mode=list ;;
     --camera)
         mode=camera; camera=${2:-}
@@ -135,7 +142,8 @@ STAMP=hyprshell_webcam.py
 # running: faces are added to it first, and to Howdy too, its fallback.
 FACE=/usr/local/bin/hyprshell-face
 svc_up() { [ -x "$FACE" ] && "$FACE" status >/dev/null 2>&1; }
-has_howdy() { command -v howdy >/dev/null 2>&1; }
+howdy_off() { [ -f "$NOHOWDY" ]; }
+has_howdy() { ! howdy_off && command -v howdy >/dev/null 2>&1; }
 need_engine() { has_howdy || svc_up || die "neither Howdy nor Hyprshell's face service is installed"; }
 webcam_py() { python3 -I "$here/howdy-webcam.py" "$@"; }
 
@@ -267,8 +275,27 @@ done
 # yours added to it).
 ours_up() { [ -n "$ours" ] && systemctl is-enabled --quiet hyprshell-faced.service 2>/dev/null; }
 
+# Howdy left out, or back: remembered, and the lock and login screens set
+# up again to match if face login is on. Never off without the service,
+# or there'd be no face unlock at all.
+if [ "$mode" = howdy ]; then
+    if [ "$want" = off ]; then
+        ours_up && svc_up || die "Hyprshell's face service isn't running, so Howdy is the only face unlock here: it stays"
+        mkdir -p "${NOHOWDY%/*}"
+        printf '%s\n' "# Hyprshell: Howdy left out of face unlock (Settings → Login screen)" > "$NOHOWDY"
+        chmod 644 "$NOHOWDY"
+        say "Howdy is left out: Hyprshell's own face recognition alone"
+    else
+        rm -f "$NOHOWDY"
+        say "Howdy is back, as the fallback"
+    fi
+    [ -f "$LOCK" ] || exit 0
+    mode=install
+fi
+howdy_off && module=""
+
 if [ "$mode" = check ]; then
-    say "Howdy's PAM module: ${module:-not found (install howdy-git: Howdy 3)}"
+    say "Howdy's PAM module: ${module:-$(howdy_off && echo "left out ($NOHOWDY)" || echo "not found (install howdy-git: Howdy 3)")}"
     say "Hyprshell's face service: $(ours_up && echo "installed ($ours)" || echo "not installed (shell/face/install.sh)")"
     say "lock screen service: $([ -f "$LOCK" ] && echo "$LOCK" || echo "not set up")"
     say "login screen: $(grep -q "$MARK" "$GREETD" 2>/dev/null && echo "face first" || echo "password only")"

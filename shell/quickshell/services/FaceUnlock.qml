@@ -20,6 +20,22 @@ Singleton {
     readonly property string script: Services.Agent.shellDir + "/scripts/howdy-setup.sh"
 
     property bool howdyInstalled: false
+    // Howdy left out: Hyprshell's own face recognition alone
+    // (/etc/hyprshell-face/no-howdy, scripts/howdy-setup.sh --howdy).
+    property bool howdyOff: false
+    FileView {
+        id: howdyFlag
+        path: "/etc/hyprshell-face/no-howdy"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: root.howdyOff = true
+        onLoadFailed: root.howdyOff = false
+    }
+    function setHowdy(on) {
+        run(["--howdy", on ? "on" : "off"], on ? "Bringing Howdy back…" : "Leaving Howdy out…",
+            on ? "Howdy is the fallback again" : "Hyprshell's own face recognition alone: Howdy is left out");
+    }
     property bool pamModule: false
     readonly property bool installed: (howdyInstalled && pamModule) || root.engine === "service"
     property bool lockOn: false
@@ -303,6 +319,9 @@ Singleton {
     // --serve), started through pkexec the first time: the password is
     // asked for once, and the changes after it go straight through, until
     // five minutes pass without one or it's locked again (lock()).
+    // (setHowdy re-reads the flag once the change is made.)
+    onBusyChanged: if (!busy) howdyFlagSoon.restart()
+    Timer { id: howdyFlagSoon; interval: 300; onTriggered: howdyFlag.reload() }
     function run(args, working, done) {
         if (root.busy) return;
         if (args.some(a => /[\t\n]/.test(String(a)))) return;
