@@ -18,9 +18,15 @@ Item {
     //
     // The concept's numbers are the defaults; they are settings now,
     // dragged by the grips between the headings and kept per window.
-    readonly property real sizeWidth: FilesService.sizeWidth
-    readonly property real typeWidth: FilesService.typeWidth
-    readonly property real timeWidth: FilesService.timeWidth
+    // The columns that fit beside a name of at least nameMin: Type goes
+    // first as the list narrows, then Size, then Modified; each comes back
+    // as there's room. The widths set by dragging are kept meanwhile.
+    readonly property real nameMin: 170
+    readonly property real room: width - nameMin - 48
+    readonly property real timeWidth: room >= FilesService.timeWidth ? FilesService.timeWidth : 0
+    readonly property real sizeWidth: room >= FilesService.timeWidth + FilesService.sizeWidth ? FilesService.sizeWidth : 0
+    readonly property real typeWidth: room >= FilesService.timeWidth + FilesService.sizeWidth + FilesService.typeWidth
+                                      ? FilesService.typeWidth : 0
     readonly property real gutter: 14
 
     // Enough to still read a heading, and not so much that Name vanishes.

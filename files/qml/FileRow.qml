@@ -115,7 +115,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: Text.AlignRight
         width: row.app.inTrash ? 0 : row.sizeWidth
-        visible: !row.app.inTrash
+        visible: !row.app.inTrash && width > 0
         text: row.entry.dir ? "—" : row.svc.humanSize(row.entry.size)
         font.pixelSize: Appearance.fs(11)
         font.weight: Font.Normal
@@ -128,7 +128,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: Text.AlignRight
         width: row.app.inTrash ? 0 : row.typeWidth
-        visible: !row.app.inTrash
+        visible: !row.app.inTrash && width > 0
         elide: Text.ElideRight
         text: row.svc.typeLabel(row.entry)
         font.pixelSize: Appearance.fs(11)
@@ -143,6 +143,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: Text.AlignRight
         width: row.app.inTrash ? 280 : row.timeWidth
+        visible: width > 0
         elide: Text.ElideLeft
         // In the trash, where a thing came from is the only question worth
         // asking about it, so that replaces the three columns.

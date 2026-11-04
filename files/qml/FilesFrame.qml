@@ -302,6 +302,16 @@ PanelSurface {
     }
 
     // ── places sidebar ────────────────────────────────────────────────────
+    // In a narrow window it's out of the way, and the sidebar button slides
+    // it in over the files (peek) until a place is picked or you click
+    // elsewhere, rather than squeezing the files into what's left.
+    readonly property bool narrow: frame.width < 700
+    property bool peek: false
+    onNarrowChanged: frame.peek = false
+    Connections {
+        target: frame.app
+        function onCwdChanged() { frame.peek = false; }
+    }
     Item {
         id: sidebar
         anchors.left: parent.left
@@ -310,8 +320,17 @@ PanelSurface {
         width: widthSpring.value
         visible: width > 0
         clip: true
+        z: frame.narrow ? 20 : 0
 
-        Spring { id: widthSpring; to: frame.app.showSidebar ? 192 : 0; response: 210; bounce: 0 }
+        Spring { id: widthSpring; to: (frame.narrow ? frame.peek : frame.app.showSidebar) ? 192 : 0; response: 210; bounce: 0 }
+
+        // Over the files, it needs a ground of its own.
+        Rectangle {
+            visible: frame.narrow
+            anchors.fill: parent
+            color: Appearance.sheet
+            Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Appearance.rule }
+        }
 
         SmoothScroll {
             target: sideFlick
@@ -430,7 +449,10 @@ PanelSurface {
     // ── toolbar: back/forward, breadcrumb, view switch, New ───────────────
     Item {
         id: toolbar
-        anchors.left: sidebar.right
+        anchors.left: frame.narrow ? parent.left : sidebar.right
+        // Too little room for everything: New without its word, and the
+        // pin button gone (pinning is in every folder's menu too).
+        readonly property bool compact: width < 520
         anchors.right: parent.right
         anchors.top: titleBar.bottom
         height: 48
@@ -450,7 +472,7 @@ PanelSurface {
                 anchors.centerIn: parent
                 name: "panelsTopLeft"
                 size: 20
-                inkColor: frame.app.showSidebar ? Appearance.ink2 : Appearance.ink3
+                inkColor: (frame.narrow ? frame.peek : frame.app.showSidebar) ? Appearance.ink2 : Appearance.ink3
                 monochrome: true
             }
 
@@ -459,7 +481,10 @@ PanelSurface {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: frame.app.showSidebar = !frame.app.showSidebar
+                onClicked: {
+                    if (frame.narrow) frame.peek = !frame.peek;
+                    else frame.app.showSidebar = !frame.app.showSidebar;
+                }
             }
         }
 
@@ -906,7 +931,7 @@ PanelSurface {
             width: 30
             height: 30
             radius: Appearance.rSm
-            visible: !frame.app.inTrash && frame.app.cwd !== ""
+            visible: !frame.app.inTrash && frame.app.cwd !== "" && !toolbar.compact
             color: pinArea.containsMouse ? Appearance.hover : "transparent"
 
             MonoIcon {
@@ -932,7 +957,7 @@ PanelSurface {
             anchors.right: parent.right
             anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
-            width: newRow.implicitWidth + 24
+            width: newRow.implicitWidth + (toolbar.compact ? 12 : 24)
             height: 30
             radius: Appearance.rSm
             color: Appearance.accent
@@ -953,6 +978,7 @@ PanelSurface {
                 }
 
                 StyledText {
+                    visible: !toolbar.compact
                     anchors.verticalCenter: parent.verticalCenter
                     text: "New"
                     font.pixelSize: Appearance.fs(11.5)
@@ -1026,10 +1052,20 @@ PanelSurface {
         }
     }
 
+    MouseArea {
+        visible: frame.narrow && frame.peek
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: titleBar.bottom
+        anchors.bottom: parent.bottom
+        z: 19
+        onClicked: frame.peek = false
+    }
+
     // ── the files ─────────────────────────────────────────────────────────
     Item {
         id: body
-        anchors.left: sidebar.right
+        anchors.left: frame.narrow ? parent.left : sidebar.right
         anchors.right: parent.right
         anchors.top: toolbar.bottom
         anchors.bottom: deleteBar.top
@@ -1353,7 +1389,7 @@ PanelSurface {
     // it is asked for in the window rather than done on the keystroke.
     Rectangle {
         id: deleteBar
-        anchors.left: sidebar.right
+        anchors.left: frame.narrow ? parent.left : sidebar.right
         anchors.right: parent.right
         anchors.bottom: statusBar.top
         height: heightSpring.value
