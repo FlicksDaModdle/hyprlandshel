@@ -16,6 +16,9 @@ Singleton {
 
     // ── panels ────────────────────────────────────────────────────────────
     property bool launcherOpen: false
+    // Each screen's dock, by screen name, for where a minimised window
+    // goes (modules/minimize/MinimizeFx.qml asks dock.spotFor(class)).
+    property var docks: ({})
     // Where the dock's pill is, published by the focused screen's dock so
     // the launcher can grow out of it. Width and height only: the launcher
     // covers the whole screen and works the position out itself, which

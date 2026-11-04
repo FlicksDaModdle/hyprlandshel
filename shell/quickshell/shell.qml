@@ -21,6 +21,7 @@ import "modules/lock"
 import "modules/switcher"
 import "modules/corners"
 import "modules/capture"
+import "modules/minimize"
 
 // Entry point. Run as `qs -c hyprshell` (this directory should live at
 // ~/.config/quickshell/hyprshell/). hyprland.lua's autostart hook and
@@ -215,6 +216,11 @@ ShellRoot {
     LazyLoader {
         active: Services.Switcher.shown || shell.altTabWarm
         AltTab {}
+    }
+    // Minimising and bringing back, drawn — only while it's happening.
+    LazyLoader {
+        active: Services.Compositor.minAnim !== null
+        MinimizeFx {}
     }
     // Last: over everything, the screen's own corners rounded off.
     ScreenCorners {}

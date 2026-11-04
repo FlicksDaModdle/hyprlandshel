@@ -591,6 +591,32 @@ Variants {
             return t.mapToItem(null, t.width / 2, 0).x;
         }
 
+        // Where an app's tile is, in this screen's coordinates: what a
+        // window minimises into and grows back out of. null if it has none.
+        Component.onCompleted: if (dock.modelData) {
+            const d = Object.assign({}, Config.UiState.docks);
+            d[dock.modelData.name] = dock;
+            Config.UiState.docks = d;
+        }
+        function spotOf(t) {
+            if (!t || !t.visible) return null;
+            const p = t.mapToItem(null, t.width / 2, t.height / 2);
+            const sh = dock.modelData ? dock.modelData.height : 0;
+            return dock.isLeft ? Qt.point(p.x, p.y) : Qt.point(p.x, sh - dock.height + p.y);
+        }
+        function spotFor(cls) {
+            const c = String(cls || "");
+            for (let i = 0; i < pinnedTiles.count; i++) {
+                const t = pinnedTiles.itemAt(i);
+                if (t && t.modelData && t.modelData.match && t.modelData.match.test(c)) return dock.spotOf(t);
+            }
+            for (let i = 0; i < unpinnedTiles.count; i++) {
+                const t = unpinnedTiles.itemAt(i);
+                if (t && t.modelData === c) return dock.spotOf(t);
+            }
+            return null;
+        }
+
         function launchOrFocus(app) {
             const wins = windowsFor(app);
             if (wins.length > 0) {
@@ -806,6 +832,7 @@ Variants {
                 }
 
                 Repeater {
+                    id: unpinnedTiles
                     model: dock.unpinnedClasses
 
                     DockTile {

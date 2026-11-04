@@ -679,10 +679,35 @@ Singleton {
         const id = root.minimisedOrigin[root.normAddress(c.address)];
         return id !== undefined ? id : root.focusedId;
     }
+    // ── the animation ────────────────────────────────────────────────────
+    // A picture of the window shrinks into its dock tile, and grows back
+    // out of it (modules/minimize/MinimizeFx.qml): { kind: "min"|"restore",
+    // address, toplevel, cls, screen, x, y, w, h in that screen's
+    // coordinates }. The effect calls minimiseNow/restoreNow at the right
+    // moment, and clears this when it's done.
+    property var minAnim: null
+    function animFor(kind, address) {
+        if (!Config.Appearance.animated || root.minAnim) return null;
+        const c = root.clientFor(address);
+        const t = root.toplevelFor(address);
+        if (!c || !t || c.w <= 0 || c.h <= 0) return null;
+        const m = (root.monitors || []).find(o => o && o.lastIpcObject && o.lastIpcObject.id === c.monitor);
+        const ipc = m ? m.lastIpcObject : null;
+        if (!m || !ipc) return null;
+        return { kind: kind, address: address, toplevel: t, cls: c.cls, screen: m.name,
+                 x: c.x - ipc.x, y: c.y - ipc.y, w: c.w, h: c.h };
+    }
+
     function minimiseClient(address) {
         if (!address) return;
         const c = root.clientFor(address);
         if (c && c.minimised) return;
+        const a = root.animFor("min", address);
+        if (a) { root.minAnim = a; return; }
+        root.minimiseNow(address);
+    }
+    function minimiseNow(address) {
+        const c = root.clientFor(address);
         const key = root.normAddress(address);
         const o = Object.assign({}, root.minimisedOrigin);
         o[key] = c && c.workspace > 0 ? c.workspace : root.focusedId;
@@ -696,6 +721,12 @@ Singleton {
         if (!address) return;
         const c = root.clientFor(address);
         if (c && !c.minimised) return;
+        const a = root.animFor("restore", address);
+        if (a) { root.minAnim = a; return; }
+        root.restoreNow(address);
+    }
+    function restoreNow(address) {
+        const c = root.clientFor(address);
         const key = root.normAddress(address);
         const back = root.minimisedOrigin[key];
         const ws = back !== undefined && back > 0 ? back : (root.focusedId > 0 ? root.focusedId : 1);
