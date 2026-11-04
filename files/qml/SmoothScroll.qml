@@ -136,6 +136,18 @@ MouseArea {
         // flick() takes the content's velocity as a drag gives it: positive
         // moves it down, which is scrolling up.
         ss.target.flick(0, -v);
+        console.debug(log, "coast from", Math.round(ss.target.contentY), "started:", ss.target.flicking,
+                      "range", Math.round(ss.minY), "to", Math.round(ss.maxY), "height", Math.round(ss.target.height));
+        coastCheck.from = ss.target.contentY;
+        coastCheck.restart();
+    }
+    // (For the log: where the coast got to.)
+    Timer {
+        id: coastCheck
+        property real from: 0
+        interval: 350
+        onTriggered: console.debug(log, "coast after 0.35 s:", Math.round(coastCheck.from), "->",
+                                   Math.round(ss.target.contentY), "still moving:", ss.target.flicking)
     }
     Component.onCompleted: {
         ss.target.flickDeceleration = 1800;
