@@ -99,6 +99,12 @@ Item {
     readonly property real stroke: Math.max(2, 2 * root.k)
     // The heavier weight a few glyphs use keeps its 3:2 relationship.
     readonly property real strokeW: root.stroke * 1.5
+    // The same widths for the image, rounded to whole screen pixels. A
+    // stroke 3.33 pixels wide (2 units at 5/3) can't be drawn with solid
+    // edges: both sides are a partly covered pixel and read as soft. 3
+    // whole pixels can.
+    readonly property real svgStroke: Math.max(1, Math.round(root.stroke * root.texPx / 24)) * 24 / root.texPx
+    readonly property real svgStrokeW: Math.max(1, Math.round(root.strokeW * root.texPx / 24)) * 24 / root.texPx
 
     implicitWidth: drawSize
     implicitHeight: drawSize
@@ -120,8 +126,8 @@ Item {
         const area = (d, c) => d ? '<path d="' + d + '" ' + paint(c, "fill") + ' fill-rule="evenodd"/>' : "";
         let out = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
             + area(sp.fillInk, ink) + area(sp.fill, acc)
-            + line(sp.ink, ink, root.stroke) + line(sp.acc, acc, root.stroke)
-            + line(sp.inkW, ink, root.strokeW) + line(sp.accW, acc, root.strokeW);
+            + line(sp.ink, ink, root.svgStroke) + line(sp.acc, acc, root.svgStroke)
+            + line(sp.inkW, ink, root.svgStrokeW) + line(sp.accW, acc, root.svgStrokeW);
         for (const d of (sp.dots || []))
             out += '<circle cx="' + d.cx + '" cy="' + d.cy + '" r="' + d.r + '" ' + paint(d.c === "acc" ? acc : ink, "fill") + '/>';
         return "data:image/svg+xml;utf8," + encodeURIComponent(out + "</svg>");
