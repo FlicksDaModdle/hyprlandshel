@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtQml
 import QtQuick.Shapes
 import Quickshell
 import "../../config" as Config
@@ -148,12 +149,63 @@ Item {
         return r > 0 ? r : 1;
     }
     readonly property int texPx: Math.max(1, Math.round(root.drawSize * root.dpr))
+
+    // On the screen's pixel grid. At a fractional scale (5/3 on a 2560×1600
+    // panel at 1.67) a position that's whole in the layout is usually a
+    // third or two-thirds of the way between real pixels, and an image
+    // drawn there is spread across two of them: soft, however sharp the
+    // image is. So the glyph is nudged by under a pixel to land on one.
+    //
+    // Worked out where the icon is placed, not every frame: when it's
+    // made, shown, moved or resized within its parent, when the scale
+    // changes, and once more a moment after it's shown, for a panel that
+    // slides in. Something still moving is soft only while it moves.
+    property real snapX: 0
+    property real snapY: 0
+    readonly property real imgBase: (root.drawSize - root.texPx / root.dpr) / 2
+    function resnap() {
+        if (!root.asImage || !root.visible || !(root.dpr > 0)) return;
+        const p = root.mapToItem(null, root.imgBase, root.imgBase);
+        if (!p) return;
+        const dx = Math.round(p.x * root.dpr) / root.dpr - p.x;
+        const dy = Math.round(p.y * root.dpr) / root.dpr - p.y;
+        if (Math.abs(dx - root.snapX) > 0.001) root.snapX = dx;
+        if (Math.abs(dy - root.snapY) > 0.001) root.snapY = dy;
+    }
+    function resnapSoon() { Qt.callLater(root.resnap); }
+    onXChanged: resnapSoon()
+    onYChanged: resnapSoon()
+    onDrawSizeChanged: resnapSoon()
+    onDprChanged: resnapSoon()
+    onVisibleChanged: if (visible) { resnapSoon(); settle.restart(); }
+    Component.onCompleted: { resnapSoon(); settle.restart(); }
+    Timer { id: settle; interval: 450; onTriggered: root.resnap() }
+    // Its parent and the one above that moving it along (the dock
+    // re-centring as apps open, a row re-flowing) without its own x
+    // changing.
+    Connections {
+        target: root.parent
+        ignoreUnknownSignals: true
+        function onXChanged() { root.resnapSoon(); }
+        function onYChanged() { root.resnapSoon(); }
+        function onWidthChanged() { root.resnapSoon(); }
+        function onHeightChanged() { root.resnapSoon(); }
+    }
+    Connections {
+        target: root.parent ? root.parent.parent : null
+        ignoreUnknownSignals: true
+        function onXChanged() { root.resnapSoon(); }
+        function onYChanged() { root.resnapSoon(); }
+        function onWidthChanged() { root.resnapSoon(); }
+        function onHeightChanged() { root.resnapSoon(); }
+    }
+
     Image {
         visible: root.asImage
         width: root.texPx / root.dpr
         height: root.texPx / root.dpr
-        x: (root.drawSize - width) / 2
-        y: (root.drawSize - height) / 2
+        x: root.imgBase + root.snapX
+        y: root.imgBase + root.snapY
         source: root.svgSource
         sourceSize: Qt.size(root.texPx, root.texPx)
         cache: true
