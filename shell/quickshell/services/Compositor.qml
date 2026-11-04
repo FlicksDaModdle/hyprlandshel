@@ -929,25 +929,10 @@ Singleton {
     // that is unplugged and comes back.
     function setDevice(spec) { evalLua("hl.device(" + luaTable(spec) + ")"); }
 
-    // hl.monitor({ output=, mode=, position=, scale= }). Fields left out keep
-    // whatever the monitor already has.
+    // hl.monitor({ output=, mode=, position=, scale=, ... }): the whole rule.
+    // Fields left out go to Hyprland's defaults — 8-bit, sRGB — not to what
+    // the monitor has, so it's sent the whole entry (Devices.displaySpec).
     function setMonitor(spec) { evalLua("hl.monitor(" + luaTable(spec) + ")"); }
-
-    // Where an output sits on the desktop plane, in logical pixels. The
-    // mode and scale go with it because Hyprland's monitor keyword takes
-    // the whole line — sending only a position resets the rest to auto.
-    function setMonitorPosition(name, x, y) {
-        const m = monitors.find(o => o.name === name);
-        if (!m) return;
-        const ipc = m.lastIpcObject || ({});
-        const pxW = ipc.width || m.width, pxH = ipc.height || m.height;
-        const hz = ipc.refreshRate || 60;
-        setMonitor({ output: name,
-                     mode: pxW + "x" + pxH + "@" + (Math.round(hz * 1000) / 1000),
-                     position: Math.round(x) + "x" + Math.round(y),
-                     scale: m.scale || ipc.scale || 1 });
-        refreshMonitors();
-    }
 
     // ── monitor modes ─────────────────────────────────────────────────────
     // Hyprland refuses a scale that doesn't divide the mode into a whole

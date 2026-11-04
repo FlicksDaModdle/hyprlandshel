@@ -33,6 +33,7 @@ Item {
     readonly property bool isHeader: root.spec.type === "header"
     // The control goes under the labels, across the whole row.
     readonly property bool isWide: root.spec.type === "gallery" || root.spec.type === "panel"
+                                   || root.spec.type === "monitors"
                                    || root.spec.type === "preview" || root.spec.type === "themes"
 
     // In a pane drawn as cards (SettingsFrame sets this): where this row
@@ -954,8 +955,9 @@ Item {
     Component {
         id: monitorsComponent
         MonitorMap {
+            width: control.width
             implicitWidth: 360
-            implicitHeight: 190
+            implicitHeight: 240
             monitors: root.spec.monitors || []
             selected: root.spec.value || ""
             onPicked: name => { if (root.spec.pick) root.spec.pick(name); }

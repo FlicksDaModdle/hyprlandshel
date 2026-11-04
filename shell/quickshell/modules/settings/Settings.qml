@@ -920,6 +920,39 @@ Scope {
 
             const rows = [];
 
+            // A change on trial (Devices.tryDisplay): kept, or back by itself.
+            if (Services.Devices.trial) {
+                rows.push({ n: "Keep these display settings?",
+                    s: "Going back to how " + Services.Devices.trial.name + " was in "
+                       + Services.Devices.trialLeft + " s",
+                    type: "buttons",
+                    buttons: [{ label: "Keep", set: () => Services.Devices.keepTrial() },
+                              { label: "Revert", quiet: true, set: () => Services.Devices.revertTrial() }] });
+            }
+
+            // Where the screens are, first: it's also how one is picked.
+            if (mons.length > 1) {
+                rows.push({ n: "Arrangement",
+                    s: "Drag the screens to where they are on your desk; click one to set it up below",
+                    type: "monitors",
+                    monitors: mons.map(x => ({
+                        name: x.name, x: x.x, y: x.y,
+                        width: (x.lastIpcObject || {}).width || x.width,
+                        height: (x.lastIpcObject || {}).height || x.height,
+                        scale: x.scale || 1, focused: x.focused,
+                        main: Services.Devices.mainDisplay === x.name })),
+                    value: m.name,
+                    pick: n => root.displayPickRaw = n,
+                    // Saved, then applied from the entry, so the screen's
+                    // colour settings go with it: a monitor rule of just a
+                    // position turns HDR and 10-bit off.
+                    set: (n, px, py) => {
+                        Services.Devices.rememberDisplayPosition(n, px, py);
+                        Services.Devices.applyDisplay(n);
+                        Services.Compositor.refreshMonitors();
+                    } });
+            }
+
             if (mons.length > 1) {
                 rows.push({ n: "Display", s: "Which screen these settings apply to",
                     type: "seg",
@@ -958,11 +991,11 @@ Scope {
             const ext = Services.Monitors.display(m.name);
             if (ext) {
                 rows.push({ n: "Brightness",
-                    s: ext.method === "ddc" ? "The monitor's own backlight, over DDC/CI"
+                    s: ext.method === "ddc" ? "The monitor's own backlight, over DDC/CI. The bottom fifth goes darker than its 0%, dimming the picture on top"
                        : Services.Monitors.reason === "setup"
                          ? "Dimmed in software. For the monitor's own backlight, run ./install.sh --monitors once (it lets the shell talk to monitors over DDC/CI)"
                          : "Dimmed in software: this monitor (or the dock it is on) does not take brightness over DDC/CI",
-                    type: "slider", min: 5, max: 100, unit: "%",
+                    type: "slider", min: ext.method === "ddc" ? 0 : 5, max: 100, unit: "%",
                     value: Math.round(ext.value * 100),
                     set: v => Services.Monitors.set(m.name, v / 100) });
             }
@@ -1076,7 +1109,11 @@ Scope {
             // in use, and colorManagementPreset is the preset that
             // actually took — which is not always the one asked for, so
             // both are shown.
-            const hw = ipc.hardwareDetails || ({});
+            // What the panel says it can do, from its EDID: Hyprland's report
+            // has no field for it (scripts/edid-caps.py, Devices.edidCaps).
+            const caps = Services.Devices.edidCaps[m.name] || ({});
+            const hw = { bt2020: caps.bt2020 === true, hdr: caps.pq === true && caps.via !== "displayid",
+                         chroma: true };
             // `saved`, this output's entry, is read above with the refresh rate.
 
             // Hyprland's supportsWideColor() believes the EDID unless
@@ -1108,6 +1145,26 @@ Scope {
                      + "its EDID. The overrides at the bottom are for a "
                      + "panel that undersells itself." });
 
+            // HDR as Windows' switch does it: 10-bit and the HDR preset at
+            // once (Devices.setHdr), on trial like a resolution change.
+            const runningHdr = livePreset === "hdr" || livePreset === "hdredid";
+            const wantHdr = wantPreset === "hdr" || wantPreset === "hdredid";
+            const panelHdr = caps.pq === true || canHdr || forcedHdr;
+            rows.push({ n: panelHdr ? "Use HDR" : "Try HDR anyway",
+                s: wantHdr && !runningHdr
+                   ? "Asked for HDR, running " + (livePreset || "sRGB") + ": Hyprland wouldn't hold it on this output. "
+                     + (panelHdr ? "Turn it off and on again; if it stays like this, the driver refuses HDR here"
+                                 : "This display really can't, it seems")
+                   : runningHdr
+                   ? "On: HDR, " + (live10 ? "10-bit" : "8-bit")
+                     + (caps.maxLum > 0 ? ", up to " + Math.round(caps.maxLum) + " nits" : "")
+                     + ". Ordinary windows follow SDR brightness below"
+                   : panelHdr
+                   ? "Off. HDR games and video still switch the screen to HDR while fullscreen"
+                   : "This display doesn't say it can do HDR; some can anyway. It goes back by itself unless you keep it",
+                type: "toggle", value: wantHdr,
+                set: v => Services.Devices.setHdr(m.name, v, !panelHdr) });
+
             rows.push({ n: "Colour depth",
                 s: want10 && !live10
                    ? "Asked for 10-bit, running 8-bit — this output offers "
@@ -1127,7 +1184,7 @@ Scope {
                 // assigned to its string property comes back as "10" and
                 // would never match.
                 value: want10 ? "10" : "8",
-                set: v => Services.Devices.rememberColour(m.name,
+                set: v => Services.Devices.tryDisplay(m.name,
                               { bitdepth: v === "10" ? 10 : 8 }) });
 
             // Hyprland's own preset names. All nine are spelled out, not
@@ -1202,7 +1259,7 @@ Scope {
                 options: cmLabels,
                 value: cmLabelFor(wantPreset),
                 set: v => { const k = cmLabels.indexOf(v);
-                            if (k >= 0) Services.Devices.rememberColour(
+                            if (k >= 0) Services.Devices.tryDisplay(
                                 m.name, { cm: cmOptions[k].value }); } });
 
             // Only while an HDR preset is actually running. These do
@@ -1255,27 +1312,6 @@ Scope {
                 value: Math.round(A.screenScale(m.name) * 100),
                 set: v => root.setScreenScale(m.name, v) });
 
-            if (mons.length > 1) {
-                rows.push({ n: "Arrangement",
-                    s: "Drag each screen to where it really is. Edges snap together, so the pointer can cross",
-                    type: "monitors",
-                    monitors: mons.map(x => ({
-                        name: x.name, x: x.x, y: x.y,
-                        width: (x.lastIpcObject || {}).width || x.width,
-                        height: (x.lastIpcObject || {}).height || x.height,
-                        scale: x.scale || 1, focused: x.focused })),
-                    value: m.name,
-                    pick: n => root.displayPickRaw = n,
-                    set: (n, px, py) => {
-                        Services.Compositor.setMonitorPosition(n, px, py);
-                        // Remembered, like the mode and the scale beside
-                        // it: a runtime monitor line is gone at the next
-                        // login.
-                        Services.Devices.rememberDisplayPosition(n, px, py);
-                    } });
-                rows.push({ n: "Position", s: "Top-left corner in the layout, in logical pixels",
-                    type: "info", value: m.x + ", " + m.y });
-            }
 
             rows.push({ type: "header", n: "When you leave it alone",
                 s: Services.Idle.builtin
@@ -1981,7 +2017,6 @@ Scope {
         // whatever hyprland.lua says otherwise.
         Services.Devices.rememberDisplay(name, res + "@" + formatHzPlain(rate),
                                          m.scale || 1);
-        Services.Devices.applyDisplay(name);
         // And re-read, or the dropdown keeps showing the mode you just
         // changed away from: these controls are drawn from the compositor's
         // own report of the monitor, and nothing else asks it to refresh.
@@ -2000,7 +2035,6 @@ Scope {
         const saved = (Services.Devices.displayMap()[name] || {}).mode;
         Services.Devices.rememberDisplay(
             name, saved || (pxW + "x" + pxH + "@" + formatHzPlain(ipc.refreshRate || 60)), scale);
-        Services.Devices.applyDisplay(name);
         Services.Compositor.refreshMonitors();
     }
 

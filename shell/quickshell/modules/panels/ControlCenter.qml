@@ -923,7 +923,12 @@ PanelSurface {
         if (k === "brightness") return Services.Brightness.percent + "%";
         if (k.startsWith("mon:")) {
             const d = root.monitorOf(k);
-            return d ? Math.round(d.value * 100) + "%" : "";
+            if (!d) return "";
+            // A DDC monitor's slider: its backlight, and extra dim below it.
+            const sp = Services.Monitors.split;
+            if (d.method === "ddc")
+                return d.value < sp ? "extra dim" : Math.round((d.value - sp) / (1 - sp) * 100) + "%";
+            return Math.round(d.value * 100) + "%";
         }
         return Services.Audio.inputMuted ? "muted" : Services.Audio.inputPercent + "%";
     }

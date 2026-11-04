@@ -335,11 +335,12 @@ Singleton {
         prefs.displays = JSON.stringify(map);
     }
 
+    // Saved and applied as a trial (tryDisplay): kept only if you say so.
     function rememberDisplay(name, mode, scale) {
-        saveDisplay(name, { mode: mode, scale: scale });
         // A rate chosen by hand is a fresh start for keeping it (see enforce).
         root.fixes = Object.assign({}, root.fixes, { [name]: [] });
         root.contested = Object.assign({}, root.contested, { [name]: undefined });
+        tryDisplay(name, { mode: mode, scale: scale });
     }
 
     // Where the output sits on the desktop plane, kept beside its mode and
@@ -383,8 +384,117 @@ Singleton {
     // out — see displaySpec.
     readonly property var monitorFields: [
         "position", "bitdepth", "cm", "sdrbrightness", "sdrsaturation",
-        "supports_wide_color", "supports_hdr"
+        "supports_wide_color", "supports_hdr",
+        "max_luminance", "max_avg_luminance", "min_luminance"
     ]
+
+    // ── what each panel says it can do ────────────────────────────────────
+    // From its own EDID (scripts/edid-caps.py): Hyprland's report of an
+    // output has no field for it. { output: { bt2020, pq, hlg, maxLum,
+    // maxAvgLum, minLum, bits, via } } — `via` "displayid" for a panel
+    // that says it in the DisplayID extension, which Hyprland doesn't
+    // read, so it has to be told.
+    property var edidCaps: ({})
+    function readCaps() { capsProc.running = true; }
+    Process {
+        id: capsProc
+        running: true
+        command: ["python3", (Quickshell.shellDir || "") + "/scripts/edid-caps.py"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try { root.edidCaps = JSON.parse(text) || ({}); } catch (e) { }
+            }
+        }
+    }
+    Connections {
+        target: Services.Compositor
+        function onOutputsChanged() { capsSoon.restart(); }
+    }
+    Timer { id: capsSoon; interval: 1500; onTriggered: root.readCaps() }
+
+    // HDR the way Windows' switch does it: 10-bit and the HDR preset
+    // together. For a panel that says it can only where Hyprland doesn't
+    // look (DisplayID), or doesn't say at all (`anyway`), Hyprland is told
+    // it can, with the panel's brightness from its EDID for tone mapping.
+    function setHdr(name, on, anyway) {
+        const c = root.edidCaps[name] || ({});
+        if (!on) {
+            root.tryDisplay(name, { cm: "srgb" });
+            return;
+        }
+        const patch = { bitdepth: 10, cm: "hdr" };
+        if (anyway || c.via === "displayid" || (c.pq === true && c.bt2020 !== true)) {
+            patch.supports_wide_color = 1;
+            patch.supports_hdr = 1;
+            if (c.maxLum > 0) patch.max_luminance = Math.round(c.maxLum);
+            if (c.maxAvgLum > 0) patch.max_avg_luminance = Math.round(c.maxAvgLum);
+            if (c.minLum > 0) patch.min_luminance = c.minLum;
+        }
+        root.tryDisplay(name, patch);
+    }
+
+    // ── keep these settings? ──────────────────────────────────────────────
+    // A resolution, scale, rate or colour change is a trial, as on Windows:
+    // it goes back by itself unless kept within 15 seconds — so one that
+    // leaves the screen black, or the Settings window somewhere you can't
+    // see, undoes itself. { name, before, left } while one is running.
+    property var trial: null
+    property int trialLeft: 0
+    function tryDisplay(name, patch) {
+        if (!root.trial || root.trial.name !== name) {
+            if (root.trial) root.keepTrial();
+            // What to go back to: the entry, filled in from what the output
+            // is doing now for anything it doesn't say.
+            const live = (Services.Compositor.monitors || []).find(m => m && m.name === name);
+            const ipc = live ? (live.lastIpcObject || {}) : {};
+            const had = displayMap()[name] || ({});
+            const before = Object.assign({
+                mode: (ipc.width || (live && live.width)) + "x" + (ipc.height || (live && live.height))
+                      + "@" + (Math.round((ipc.refreshRate || 60) * 1000) / 1000),
+                scale: (live && live.scale) || ipc.scale || 1,
+                cm: String(ipc.colorManagementPreset || "srgb"),
+                bitdepth: String(ipc.currentFormat || "").indexOf("2101010") >= 0 ? 10 : 8
+            }, had);
+            root.trial = { name: name, before: JSON.stringify(before), had: JSON.stringify(had) };
+        }
+        root.trialLeft = 15;
+        trialTick.restart();
+        saveDisplay(name, patch);
+        applyDisplay(name);
+        Services.Compositor.refreshMonitors();
+        checkSoon();
+    }
+    function keepTrial() {
+        root.trial = null;
+        root.trialLeft = 0;
+        trialTick.stop();
+    }
+    function revertTrial() {
+        const t = root.trial;
+        if (!t) return;
+        root.keepTrial();
+        const map = displayMap();
+        const before = JSON.parse(t.before);
+        // Applied in full — mode, scale and colour as they were — and then
+        // the entry is put back to what it held, no more.
+        map[t.name] = before;
+        prefs.displays = JSON.stringify(map);
+        applyDisplay(t.name);
+        const had = JSON.parse(t.had);
+        const after = displayMap();
+        if (Object.keys(had).length === 0) delete after[t.name];
+        else after[t.name] = had;
+        prefs.displays = JSON.stringify(after);
+        Services.Compositor.refreshMonitors();
+    }
+    Timer {
+        id: trialTick
+        interval: 1000
+        repeat: true
+        onTriggered: {
+            if (--root.trialLeft <= 0) root.revertTrial();
+        }
+    }
 
     // ── on battery ────────────────────────────────────────────────────────
     //
