@@ -20,14 +20,19 @@ set -u
 #               wherever Mesa has a GPU — NVIDIA's switched off included,
 #               which glvnd would otherwise still load (not NVIDIA-only)
 export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+# Quickshell allocates with jemalloc, which by default keeps freed memory
+# for ten seconds in up to 4 arenas per CPU thread: a few arenas here, and
+# what's freed handed back after a second by a background thread.
+export MALLOC_CONF="${MALLOC_CONF:-background_thread:true,narenas:4,dirty_decay_ms:1000,muzzy_decay_ms:0}"
 _mesa=/usr/share/glvnd/egl_vendor.d/50_mesa.json
 if [ -f "$_mesa" ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]; then
-    _nv= _other=
+    _nv= _other= _amd=
     for _u in /sys/class/drm/renderD*/device/uevent; do
         [ -r "$_u" ] || continue
         case "$(sed -n 's/^DRIVER=//p' "$_u")" in
             nvidia) _nv=1 ;;
-            amdgpu|i915|xe|radeon) _other=1 ;;
+            amdgpu) _other=1 _amd=1 ;;
+            i915|xe|radeon) _other=1 ;;
         esac
     done
     if [ -n "$_other" ]; then
@@ -36,6 +41,9 @@ if [ -f "$_mesa" ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]; then
             [ -f "$_icd" ] && { export VK_DRIVER_FILES="$_icd" VK_ICD_FILENAMES="$_icd"; break; }
         done
         export QT_FFMPEG_DECODING_HW_DEVICE_TYPES=vaapi
+        # AMD: shaders compiled by Mesa's ACO rather than LLVM, the biggest
+        # library the shell would otherwise page in.
+        [ -n "$_amd" ] && export AMD_DEBUG="${AMD_DEBUG:-useaco}"
     fi
 fi
 export QT_QPA_PLATFORM=wayland

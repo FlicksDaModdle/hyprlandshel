@@ -15,7 +15,7 @@ echo "== size (kB)"
 grep -E "^(Rss|Pss_Anon|Pss_File|Pss_Shmem)" "/proc/$pid/smaps_rollup"
 echo
 echo "== its environment (what it was started with)"
-tr '\0' '\n' <"/proc/$pid/environ" | grep -E "^(__EGL|__GLX|VK_|GLIBC|MALLOC|QT_FFMPEG|QT_QPA)" || echo "(none of the shell's settings)"
+tr '\0' '\n' <"/proc/$pid/environ" | grep -E "^(__EGL|__GLX|VK_|GLIBC|MALLOC|AMD_DEBUG|QT_FFMPEG|QT_QPA)" || echo "(none of the shell's settings)"
 echo
 echo "== GPUs"
 for d in /sys/class/drm/renderD*; do
@@ -24,7 +24,7 @@ done
 echo "EGL vendors: $(ls /usr/share/glvnd/egl_vendor.d/ 2>/dev/null | tr '\n' ' ')"
 echo
 echo "== graphics libraries loaded in it"
-grep -E "libEGL|nvidia|gbm|dri|vulkan|libGL" "/proc/$pid/maps" | awk '{print $6}' | sort -u
+grep -E "libEGL|nvidia|gbm|dri|vulkan|libGL|LLVM|gallium|jemalloc" "/proc/$pid/maps" | awk '{print $6}' | sort -u
 echo
 echo "== the biggest mappings (kB)"
 awk '/^[0-9a-f]+-[0-9a-f]+ / { name = ($6 == "" ? "[anon]" : $6) } /^Rss:/ { rss[name] += $2 }

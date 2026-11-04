@@ -241,15 +241,19 @@ hl.env("TERMCMD", "hyprshell-term")
 --
 --   glibc's per-thread arenas, one per thread up to eight per core, each
 --   holding on to what it once used. Two are plenty for a shell.
+local JEMALLOC_CONF = "background_thread:true,narenas:4,dirty_decay_ms:1000,muzzy_decay_ms:0"
 local function shell_env()
     -- (glibc's trim and mmap thresholds were tried here, and made the shell
     -- grow, 445 MB to 575 MB in minutes, where it had been 285 without.)
-    local env = "MALLOC_ARENA_MAX=2"
+    -- Quickshell allocates with jemalloc, which by default keeps freed
+    -- memory for ten seconds in each of up to 4 arenas per CPU thread:
+    -- here a few arenas, handed back after a second by a background thread.
+    local env = "MALLOC_ARENA_MAX=2 MALLOC_CONF=" .. JEMALLOC_CONF
     local mesa = "/usr/share/glvnd/egl_vendor.d/50_mesa.json"
     local f = io.open(mesa, "r")
     if not f then return env end
     f:close()
-    local has_nvidia, has_mesa_gpu = false, false
+    local has_nvidia, has_mesa_gpu, has_amd = false, false, false
     for n = 128, 135 do
         local u = io.open("/sys/class/drm/renderD" .. n .. "/device/uevent", "r")
         if u then
@@ -257,7 +261,8 @@ local function shell_env()
             u:close()
             local driver = text:match("DRIVER=([%w_]+)")
             if driver == "nvidia" then has_nvidia = true
-            elseif driver == "amdgpu" or driver == "i915" or driver == "xe" or driver == "radeon" then has_mesa_gpu = true end
+            elseif driver == "amdgpu" then has_mesa_gpu, has_amd = true, true
+            elseif driver == "i915" or driver == "xe" or driver == "radeon" then has_mesa_gpu = true end
         end
     end
     -- Wherever Mesa has a GPU to drive — whether or not NVIDIA's is there
@@ -279,6 +284,9 @@ local function shell_env()
             end
         end
         env = env .. " QT_FFMPEG_DECODING_HW_DEVICE_TYPES=vaapi"
+        -- AMD: shaders compiled by Mesa's own compiler (ACO), not LLVM, the
+        -- biggest library the shell would otherwise page in.
+        if has_amd then env = env .. " AMD_DEBUG=useaco" end
     end
     return env
 end
