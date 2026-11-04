@@ -395,7 +395,7 @@ PanelSurface {
                                 width: parent.width
                                 elide: Text.ElideRight
                                 text: hit.modelData.e.isPane ? "Page"
-                                      : hit.modelData.e.pane + (hit.modelData.e.section ? " › " + hit.modelData.e.section : "")
+                                      : frame.app.paneTitle(hit.modelData.e.pane) + (hit.modelData.e.section ? " › " + hit.modelData.e.section : "")
                                 font.pixelSize: Config.Appearance.fs(11)
                                 color: Config.Appearance.ink3
                             }
@@ -483,82 +483,58 @@ PanelSurface {
                 width: sidebarFlick.width - 16
                 spacing: 0
 
+                // The categories. One is lit while you're on its page or on
+                // any of its panes.
                 Repeater {
-                    model: frame.app.paneGroups
+                    model: frame.app.categories
 
-                    Column {
-                        id: group
+                    Item {
+                        id: entry
                         required property var modelData
-                        width: parent.width
-                        spacing: 1
-                        bottomPadding: 6
+                        readonly property var current: frame.app.categoryOf(frame.app.pane)
+                        readonly property bool active: !!current && current.id === modelData.id
 
-                        StyledText {
-                            text: group.modelData.label
-                            font.pixelSize: Config.Appearance.fs(11)
-                            font.weight: Font.DemiBold
-                            font.capitalization: Font.AllUppercase
-                            font.letterSpacing: 1.2
-                            color: Config.Appearance.ink3
-                            leftPadding: 10
-                            topPadding: 8
-                            bottomPadding: 8
+                        width: sidebarColumn.width
+                        height: 38
+
+                        onActiveChanged: if (active) sidebarFlick.placeSel(entry)
+                        onYChanged: if (active) sidebarFlick.placeSel(entry)
+                        Component.onCompleted: if (active) Qt.callLater(() => sidebarFlick.placeSel(entry))
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: Config.Appearance.rSm
+                            color: !entry.active && entryArea.containsMouse ? Config.Appearance.hover : "transparent"
                         }
 
-                        Repeater {
-                            model: group.modelData.items
+                        Row {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.verticalCenterOffset: -1
+                            spacing: 10
 
-                            Item {
-                                id: entry
-                                required property var modelData
-                                readonly property bool active: frame.app.pane === modelData
-
-                                width: group.width
-                                height: 36
-
-                                onActiveChanged: if (active) sidebarFlick.placeSel(entry)
-                                onYChanged: if (active) sidebarFlick.placeSel(entry)
-                                Component.onCompleted: if (active) Qt.callLater(() => sidebarFlick.placeSel(entry))
-                                Connections {
-                                    target: group
-                                    function onYChanged() { if (entry.active) sidebarFlick.placeSel(entry); }
-                                }
-
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: Config.Appearance.rSm
-                                    color: !entry.active && entryArea.containsMouse ? Config.Appearance.hover : "transparent"
-                                }
-
-                                Row {
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: 10
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.verticalCenterOffset: -1
-                                    spacing: 10
-
-                                    MonoIcon {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        name: frame.app.paneMeta[entry.modelData].icon
-                                        size: 20
-                                        inkColor: entry.active ? Config.Appearance.accent : Config.Appearance.ink2
-                                        monochrome: true
-                                    }
-                                    StyledText {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: entry.modelData
-                                        font.pixelSize: Config.Appearance.fs(13)
-                                    }
-                                }
-
-                                MouseArea {
-                                    id: entryArea
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: Config.UiState.settingsPane = entry.modelData
-                                }
+                            MonoIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: entry.modelData.icon
+                                size: 20
+                                inkColor: entry.active ? Config.Appearance.accent : Config.Appearance.ink2
+                                monochrome: true
                             }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: entry.modelData.id
+                                font.pixelSize: Config.Appearance.fs(13)
+                                font.weight: entry.active ? Font.DemiBold : Font.Normal
+                            }
+                        }
+
+                        MouseArea {
+                            id: entryArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: frame.app.openCategory(entry.modelData)
                         }
                     }
                 }
@@ -638,8 +614,39 @@ PanelSurface {
                 }
             }
 
+            // Back to the category's page, from one of its panes.
+            Item {
+                id: crumb
+                readonly property var cat: frame.app.categoryOf(frame.app.pane)
+                readonly property bool shown: !!cat && cat.items.length > 1 && !frame.app.pane.startsWith("cat:")
+                visible: shown
+                width: crumbRow.implicitWidth
+                height: shown ? 24 : 0
+                Row {
+                    id: crumbRow
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 4
+                    MonoIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "chevronLeft"
+                        size: 14
+                        inkColor: crumbHover.hovered ? Config.Appearance.accent : Config.Appearance.ink3
+                        monochrome: true
+                    }
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: crumb.cat ? crumb.cat.id : ""
+                        font.pixelSize: Config.Appearance.fs(12)
+                        font.weight: Font.DemiBold
+                        color: crumbHover.hovered ? Config.Appearance.accent : Config.Appearance.ink3
+                    }
+                }
+                HoverHandler { id: crumbHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: Config.UiState.settingsPane = "cat:" + crumb.cat.id }
+            }
+
             StyledText {
-                text: frame.app.pane
+                text: frame.app.paneTitle(frame.app.pane)
                 font.pixelSize: Config.Appearance.fs(17)
                 font.weight: Font.Bold
             }
@@ -647,7 +654,7 @@ PanelSurface {
             StyledText {
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: (frame.app.paneMeta[frame.app.pane] || ({})).note || ""
+                text: frame.app.paneNote(frame.app.pane)
                 font.pixelSize: Config.Appearance.fs(13)
                 font.weight: Font.Normal
                 color: Config.Appearance.ink3

@@ -340,7 +340,7 @@ Variants {
             return app.rankSettings(q, settingsIdx, 6).map(h => ({
                 kind: "setting", pane: h.e.pane, row: h.e.isPane ? "" : h.e.n,
                 label: h.e.n, icon: (meta[h.e.pane] || {}).icon || "settings", appIcon: "",
-                cat: "Settings · " + h.e.pane + (h.e.section ? " › " + h.e.section : "")
+                cat: "Settings · " + app.paneTitle(h.e.pane) + (h.e.section ? " › " + h.e.section : "")
             }));
         }
         readonly property bool showingList: searching || showAll

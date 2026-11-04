@@ -16,6 +16,8 @@ import "../icons"
 //   gallery pictures to pick from, full width under the labels
 //   color   a swatch that opens the colour picker
 //   buttons several accent buttons, from spec.buttons [{ label, set }]
+//   nav     a link to another pane, the whole row clickable: spec.icon,
+//           spec.set() (a category's page of its panes)
 //   panel   a whole pane of its own, full width: spec.panel is "wifi",
 //           "bluetooth", "sound" or "focus" (WifiPanel.qml,
 //           BluetoothPanel.qml, SoundPanel.qml, FocusPanel.qml)
@@ -48,6 +50,19 @@ Item {
     readonly property bool cardTop: cardPos === "only" || cardPos === "first"
     readonly property bool cardBottom: cardPos === "only" || cardPos === "last"
     readonly property bool hasLabels: !!(root.spec.n || root.spec.s)
+    readonly property bool isNav: root.spec.type === "nav"
+
+    // A long description shows its first sentence; "More" shows the rest.
+    // Nothing is left out, it's just not all read out at once.
+    property bool moreOpen: false
+    readonly property string fullS: typeof root.spec.s === "string" ? root.spec.s : ""
+    readonly property string shortS: {
+        const s = root.fullS;
+        if (root.isHeader || s.length <= 110) return s;
+        const m = /^(.{30,}?[.!?])\s+\S/.exec(s) || /^(.{30,}?)\s+—\s+/.exec(s);
+        return m && m[1].length < s.length - 12 ? m[1] : s;
+    }
+    readonly property bool trimmed: root.shortS !== root.fullS
 
     implicitWidth: parent ? parent.width : 560
     // Found by the launcher's settings search: a brief wash of the accent
@@ -83,6 +98,17 @@ Item {
         bottomLeftRadius: root.cardBottom ? Config.Appearance.r : 0
         bottomRightRadius: root.cardBottom ? Config.Appearance.r : 0
     }
+    // Under the labels: a link row lights up as the pointer is on it.
+    Rectangle {
+        visible: root.isNav && navArea.containsMouse
+        anchors.fill: parent
+        color: Config.Appearance.hover
+        opacity: 0.9
+        topLeftRadius: root.cardTop || !root.carded ? Config.Appearance.r : 0
+        topRightRadius: root.cardTop || !root.carded ? Config.Appearance.r : 0
+        bottomLeftRadius: root.cardBottom || !root.carded ? Config.Appearance.r : 0
+        bottomRightRadius: root.cardBottom || !root.carded ? Config.Appearance.r : 0
+    }
 
     Rectangle {
         // A header draws its own separator above itself and owns the space,
@@ -100,7 +126,7 @@ Item {
         id: labels
         visible: !root.isWide || root.hasLabels
         anchors.left: parent.left
-        anchors.leftMargin: root.inset + (root.isHeader && root.cardPos !== "" ? 4 : 0)
+        anchors.leftMargin: root.inset + (root.isHeader && root.cardPos !== "" ? 4 : 0) + (root.isNav && root.spec.icon ? 40 : 0)
         anchors.right: root.isHeader || root.isWide ? parent.right : control.left
         anchors.rightMargin: root.isHeader || root.isWide ? root.inset : 24
         anchors.top: root.isWide ? parent.top : undefined
@@ -128,11 +154,41 @@ Item {
             visible: text !== ""
             width: parent.width
             wrapMode: Text.WordWrap
-            text: root.spec.s || ""
+            text: root.moreOpen ? root.fullS : root.shortS
             font.pixelSize: Config.Appearance.fs(12)
             font.weight: Font.Normal
             color: Config.Appearance.ink3
         }
+        StyledText {
+            visible: root.trimmed
+            text: root.moreOpen ? "Less" : "More"
+            font.pixelSize: Config.Appearance.fs(11.5)
+            font.weight: Font.DemiBold
+            color: moreHover.hovered ? Config.Appearance.accent : Config.Appearance.ink2
+            HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.moreOpen = !root.moreOpen }
+        }
+    }
+
+    // A link to another pane: its icon, and the whole row to click.
+    MonoIcon {
+        visible: root.isNav && !!root.spec.icon
+        anchors.left: parent.left
+        anchors.leftMargin: root.inset + 4
+        anchors.verticalCenter: parent.verticalCenter
+        name: root.spec.icon || "settings"
+        size: 22
+        inkColor: Config.Appearance.ink2
+        accentColor: Config.Appearance.accent
+        monochrome: true
+    }
+    MouseArea {
+        id: navArea
+        visible: root.isNav
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: if (root.spec.set) root.spec.set()
     }
 
     Item {
@@ -175,6 +231,7 @@ Item {
                                    : root.spec.panel === "animated" ? animatedComponent : wifiComponent;
                 case "color":  return colorComponent;
                 case "buttons": return buttonsComponent;
+                case "nav":    return navComponent;
                 default:       return infoComponent;
                 }
             }
@@ -922,6 +979,27 @@ Item {
 
                 HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.spec.set(field.text) }
+            }
+        }
+    }
+
+    Component {
+        id: navComponent
+        Row {
+            spacing: 6
+            StyledText {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: !!root.spec.value
+                text: root.spec.value || ""
+                font.pixelSize: Config.Appearance.fs(12)
+                color: Config.Appearance.ink3
+            }
+            MonoIcon {
+                anchors.verticalCenter: parent.verticalCenter
+                name: "chevronRight"
+                size: 16
+                inkColor: Config.Appearance.ink3
+                monochrome: true
             }
         }
     }

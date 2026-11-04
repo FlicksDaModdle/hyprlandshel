@@ -165,12 +165,12 @@ Scope {
         "Keyboard":      { icon: "keyboard",  group: "System", note: "Layout, key repeat and the modifier behaviour libinput exposes." },
         "Mouse":         { icon: "mouse",     group: "System", note: "Pointer speed, acceleration profile, buttons and wheel." },
         "Touchpad":      { icon: "touchpad",  group: "System", note: "Tapping, scrolling, palm rejection and click behaviour." },
-        "Network":       { icon: "wifi",      group: "System", note: "Wi-Fi networks — joining, university sign-in, saved networks and connection details." },
+        "Network":       { icon: "wifi",      group: "System", title: "Wi-Fi & network", note: "Wi-Fi networks — joining, university sign-in, saved networks and connection details." },
         "Bluetooth":     { icon: "bluetooth", group: "System", note: "Your devices, and adding new ones." },
         "Sound":         { icon: "volume",    group: "System", note: "Devices, levels, balance, connectors and modes, each app\u2019s volume and output." },
-        "Power":         { icon: "battery",   group: "System", note: "Power profile, idle timing and battery care." },
+        "Power":         { icon: "battery",   group: "System", title: "Power & battery", note: "Power profile, idle timing and battery care." },
         "Laptop":        { icon: "zap",       group: "System", note: "This ASUS laptop's own controls, through asusd: performance, charge limit, keyboard light, graphics and panel." },
-        "Hyprland":      { icon: "grid",      group: "System", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
+        "Hyprland":      { icon: "grid",      group: "System", title: "Windows & workspaces", note: "The compositor itself — gaps, borders, blur, animations and layout, applied live." },
         "Login screen":  { icon: "lock",      group: "System", note: "Unlocking with your face, at the lock screen and when you log in." },
         "Updates":       { icon: "download",  group: "System", note: "New versions of the shell, its login screen and its apps, from GitHub — installed when you say." },
         "About":         { icon: "cpu",       group: "System", note: "This machine and the shell running on it." },
@@ -184,23 +184,126 @@ Scope {
         "Notifications": { icon: "bell",      group: "Shell",  note: "Banner behaviour, badge counts and how the center stacks items." },
         "Launcher":      { icon: "search",    group: "Shell",  note: "Size of the start menu, its grid, and its text." },
         "Fonts":         { icon: "font",      group: "Shell",  note: "Every typeface the shell uses, and one scale over all of them." },
-        "Keybinds":      { icon: "keyboard",  group: "Shell",  note: "Hyprland bindings this shell listens for." },
+        "Keybinds":      { icon: "keyboard",  group: "Shell",  title: "Keyboard shortcuts", note: "Hyprland bindings this shell listens for." },
         "Clipboard":     { icon: "clipboard", group: "Shell",  note: "What you copied, kept to paste again — Super+Shift+V." },
         "Screenshots":   { icon: "camera",    group: "Shell",  note: "Print and Super+Shift+S: the pointer, freezing the screen, the timer and the editor." }
     })
 
-    // System first, then Shell. The device panes are the ones people open
-    // Settings *for*; the shell's own appearance is the thing you set once.
+    // ── the sidebar: categories, each a page of its panes ────────────────
+    // As Windows 11's Settings: a handful of categories down the side, and
+    // a category's page lists its panes. A category of one pane opens it.
+    // Every pane is still its own, under its own name — Settings.pane and
+    // everything that opens a pane by name are as they were.
     // Laptop only where asusd answers: an ASUS ROG / TUF machine.
-    readonly property var paneGroups: [
-        { label: "System", items: ["Display", "Keyboard", "Mouse", "Touchpad",
-                                   "Network", "Bluetooth", "Sound", "Power"]
-                                  .concat(Services.Rog.available ? ["Laptop"] : [])
-                                  .concat(["Hyprland", "Login screen", "Updates", "About"]) },
-        { label: "Shell",  items: ["Appearance", "Wallpaper", "Icons", "Fonts",
-                                   "App theming", "Bar", "Dock", "Alt+Tab", "Launcher",
-                                   "Notifications", "Clipboard", "Screenshots", "Keybinds"] }
+    readonly property var categories: [
+        { id: "System", icon: "monitor", note: "Displays, sound, notifications and power.",
+          items: ["Display", "Sound", "Notifications", "Power"].concat(Services.Rog.available ? ["Laptop"] : []) },
+        { id: "Connections", icon: "wifi", note: "Wi-Fi and Bluetooth.", items: ["Network", "Bluetooth"] },
+        { id: "Input", icon: "keyboard", note: "Keyboard, shortcuts, mouse and touchpad.",
+          items: ["Keyboard", "Keybinds", "Mouse", "Touchpad"] },
+        { id: "Personalization", icon: "palette", note: "How the shell looks: colours, wallpaper, fonts and icons, and theming other apps.",
+          items: ["Appearance", "Wallpaper", "Fonts", "Icons", "App theming"] },
+        { id: "Taskbar & menus", icon: "dock", note: "The bar, the dock, the launcher and Alt+Tab.",
+          items: ["Bar", "Dock", "Launcher", "Alt+Tab"] },
+        { id: "Windows", icon: "grid", note: "", items: ["Hyprland"] },
+        { id: "Apps & tools", icon: "package", note: "The clipboard history and screenshots.",
+          items: ["Clipboard", "Screenshots"] },
+        { id: "Privacy & security", icon: "lock", note: "", items: ["Login screen"] },
+        { id: "About", icon: "cpu", note: "This machine, the shell, and updates to it.", items: ["About", "Updates"] }
     ]
+    // The same, as the flat groups the search reads.
+    readonly property var paneGroups: categories.map(c => ({ label: c.id, items: c.items }))
+
+    function categoryOf(p) {
+        if (p.startsWith("cat:")) return root.categories.find(c => c.id === p.slice(4)) || null;
+        return root.categories.find(c => c.items.indexOf(p) >= 0) || null;
+    }
+    // Clicking a category: its page, or its one pane.
+    function openCategory(c) {
+        Config.UiState.settingsPane = c.items.length === 1 ? c.items[0] : "cat:" + c.id;
+    }
+    function paneTitle(p) {
+        if (p.startsWith("cat:")) return p.slice(4);
+        return (root.paneMeta[p] || {}).title || p;
+    }
+    function paneNote(p) {
+        if (p.startsWith("cat:")) { const c = root.categoryOf(p); return c ? c.note : ""; }
+        return (root.paneMeta[p] || {}).note || "";
+    }
+
+    // ── advanced ──────────────────────────────────────────────────────────
+    // What most people never need goes to the end of its pane, behind
+    // "Show advanced settings": rows marked `adv`, and whole sections by
+    // their header here. Nothing is left out — the search finds these as
+    // it always did, and opens the section when it takes you to one.
+    readonly property var advSections: ({
+        "Appearance": ["Scrolling"],
+        "Launcher": ["Stretch", "Text"],
+        "Keybinds": ["The generated file"],
+        "Fonts": ["Text rendering", "Sizes in use"],
+        "Hyprland": ["The config file"],
+        "Laptop": ["Panel and firmware"],
+        "Login screen": ["Faster face unlock", "Face service", "Howdy (the fallback)", "Howdy",
+                         "Howdy's camera and messages"]
+    })
+    property var advOpen: ({})
+    function markAdvanced(p, rows) {
+        const secs = root.advSections[p] || [];
+        let inAdv = false;
+        return rows.map(r => {
+            if (!r) return r;
+            if (r.type === "header") inAdv = secs.indexOf(String(r.n)) >= 0;
+            return inAdv && !r.adv ? Object.assign({}, r, { adv: true }) : r;
+        });
+    }
+    function shownRows(p, rows) {
+        const marked = root.markAdvanced(p, rows);
+        if (!marked.some(r => r && r.adv)) return marked;
+        // The basic rows as they were, minus any section left with only a
+        // header; the advanced ones after, each under its own section.
+        const basic = [], adv = [];
+        let section = null, advSection = null;
+        for (const r of marked) {
+            if (!r) continue;
+            if (r.type === "header") {
+                section = r;
+                if (r.adv) { adv.push(r); advSection = r; }
+                else basic.push(r);
+                continue;
+            }
+            if (r.adv) {
+                if (section && !section.adv && advSection !== section) {
+                    adv.push(section); advSection = section;
+                }
+                adv.push(r);
+            } else basic.push(r);
+        }
+        const tidy = basic.filter((r, i) => r.type !== "header"
+            || (i + 1 < basic.length && basic[i + 1].type !== "header"));
+        const count = adv.filter(r => r.type !== "header").length;
+        const open = !!root.advOpen[p];
+        const out = tidy.concat([{ type: "header", n: "Advanced", s: "" },
+            { n: "Show advanced settings",
+              s: count === 1 ? "One more setting, for experts and unusual hardware"
+                             : count + " more settings, for experts and unusual hardware",
+              type: "toggle", value: open,
+              set: v => { const o = Object.assign({}, root.advOpen); o[p] = v; root.advOpen = o; } }]);
+        return open ? out.concat(adv) : out;
+    }
+    // Taken to an advanced setting by a search: its section opened first.
+    Connections {
+        target: Config.UiState
+        function onSettingsFocusSeqChanged() {
+            const want = Config.UiState.settingsFocus;
+            const p = root.pane;
+            if (!want || want === p) return;
+            let rows = [];
+            try { rows = root.markAdvanced(p, root.rowsFor(p) || []); } catch (e) { return; }
+            if (rows.some(r => r && r.adv && String(r.n) === want) && !root.advOpen[p]) {
+                const o = Object.assign({}, root.advOpen); o[p] = true; root.advOpen = o;
+            }
+        }
+    }
 
 
     // ══ the window ═══════════════════════════════════════════════════════
@@ -301,7 +404,7 @@ Scope {
     // battery, every network in range, the volume — and rebuilt themselves
     // in every Settings window on each change of it whether or not anyone
     // could see them.
-    readonly property var rows: Config.UiState.settingsOpen ? rowsFor(pane) : []
+    readonly property var rows: Config.UiState.settingsOpen ? shownRows(pane, rowsFor(pane) || []) : []
 
     // Any pane's rows, open or not — the launcher's settings search reads
     // every pane through this (searchIndex below).
@@ -333,6 +436,14 @@ Scope {
 
     function rowsFor(pane) {
         const A = Config.Appearance;
+        // A category's page: its panes, each a link.
+        if (pane.startsWith("cat:")) {
+            const c = root.categoryOf(pane);
+            return c ? c.items.map(p => ({ type: "nav", n: root.paneTitle(p),
+                                           s: (root.paneMeta[p] || {}).note || "",
+                                           icon: (root.paneMeta[p] || {}).icon || "settings",
+                                           set: () => Config.UiState.settingsPane = p })) : [];
+        }
         switch (pane) {
 
         // The shell's own look: colour, surfaces, shape and motion.
@@ -1241,7 +1352,7 @@ Scope {
             // reports the answer, so reading the difference as a fallback
             // would accuse it of failing every time it worked.
             const cmResolves = wantPreset === "auto";
-            rows.push({ n: "Colour range",
+            rows.push({ adv: true, n: "Colour range",
                 s: !cmResolves && wantPreset !== livePreset
                    ? "Asked for " + cmLabelFor(wantPreset) + ", running "
                      + cmLabelFor(livePreset) + " — this output can't hold "
@@ -1272,7 +1383,7 @@ Scope {
                     value: Math.round((ipc.sdrBrightness || 1) * 100),
                     set: v => Services.Devices.rememberColour(m.name,
                                   { sdrbrightness: Math.round(v) / 100 }) });
-                rows.push({ n: "SDR saturation",
+                rows.push({ adv: true, n: "SDR saturation",
                     s: "Turn down if sRGB reds and greens look oversaturated",
                     type: "slider", min: 50, max: 150, unit: "%",
                     value: Math.round((ipc.sdrSaturation || 1) * 100),
@@ -1285,14 +1396,14 @@ Scope {
             // nothing about it in their EDID, which is the one case where
             // overriding the hardware's own answer is the right call.
             if (hw.bt2020 !== true) {
-                rows.push({ n: "Force wide gamut",
+                rows.push({ adv: true, n: "Force wide gamut",
                     s: "For panels whose EDID undersells them. If colours look wrong, turn it back off",
                     type: "toggle", value: forcedWide,
                     set: v => Services.Devices.rememberColour(m.name,
                                   { supports_wide_color: v ? 1 : 0 }) });
             }
             if (hw.hdr !== true && canWide) {
-                rows.push({ n: "Force HDR",
+                rows.push({ adv: true, n: "Force HDR",
                     s: "Same, for HDR. Needs wide gamut on or advertised",
                     type: "toggle", value: forcedHdr,
                     set: v => Services.Devices.rememberColour(m.name,
@@ -1303,7 +1414,7 @@ Scope {
             // compositor's scale enlarges everything on the screen, the
             // shell included; this is the only way to say that the bar on
             // a 150% laptop should not be 150% of a bar.
-            rows.push({ n: "Shell size on this display",
+            rows.push({ adv: true, n: "Shell size on this display",
                 s: "The bar, dock and menus on " + m.name + ", independently "
                    + "of the display scale above. A laptop panel scaled up "
                    + "so applications are legible makes the shell large to "
@@ -1376,7 +1487,7 @@ Scope {
                 value: Services.Brightness.percent,
                 set: v => Services.Brightness.set(v / 100) });
             for (const r of root.nightRows()) rows.push(r);
-            rows.push({ n: "Forget saved layouts",
+            rows.push({ adv: true, n: "Forget saved layouts",
                 s: "Every output goes back to what hyprland.lua says at the next reload",
                 type: "action", label: "Forget",
                 set: () => Services.Devices.forgetDisplays() });
@@ -1912,7 +2023,9 @@ Scope {
         const out = [];
         for (const g of root.paneGroups) {
             for (const p of g.items) {
-                out.push({ pane: p, n: p, s: (root.paneMeta[p] || {}).note || "", section: "", isPane: true });
+                out.push({ pane: p, n: root.paneTitle(p),
+                           s: ((root.paneMeta[p] || {}).note || "") + (root.paneTitle(p) !== p ? " " + p : ""),
+                           section: "", isPane: true });
                 for (const e of (root.panelIndex[p] || []))
                     out.push({ pane: p, n: e[0], s: e[1], section: "" });
                 let section = "";
