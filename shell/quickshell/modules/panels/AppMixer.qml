@@ -107,7 +107,7 @@ Column {
             Column {
                 anchors.left: badge.right
                 anchors.leftMargin: 10
-                anchors.right: eqPill.visible ? eqPill.left : pct.left
+                anchors.right: outPill.visible ? outPill.left : eqPill.visible ? eqPill.left : pct.left
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
@@ -125,6 +125,55 @@ Column {
                     text: lv.sub
                     font.pixelSize: root.ap.fs(10.5)
                     color: root.ap.ink3
+                }
+            }
+            // Where this app plays, with more than one output to choose
+            // from: a tap sends it to the next.
+            Rectangle {
+                id: outPill
+                readonly property var outs: root.au.sinks
+                readonly property string here: lv.device ? "" : root.au.streamSinkName(lv.node)
+                readonly property var hereNode: outs.find(o => o.name === here) || null
+                visible: !lv.device && outs.length > 1
+                anchors.right: eqPill.visible ? eqPill.left : pct.left
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(110, outText.implicitWidth + 30)
+                height: 22
+                radius: 11
+                color: outHover.hovered ? root.ap.sel : "transparent"
+                border.width: 1
+                border.color: root.ap.rule
+                MonoIcon {
+                    id: outIcon
+                    anchors.left: parent.left
+                    anchors.leftMargin: 7
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: outPill.hereNode ? root.au.deviceGlyph(outPill.hereNode) : "speaker"
+                    size: 12
+                    inkColor: root.ap.ink2
+                    monochrome: true
+                }
+                StyledText {
+                    id: outText
+                    anchors.left: outIcon.right
+                    anchors.leftMargin: 4
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    elide: Text.ElideRight
+                    text: outPill.hereNode ? root.au.displayName(outPill.hereNode) : "Output"
+                    font.pixelSize: root.ap.fs(10.5)
+                    font.weight: Font.DemiBold
+                    color: root.ap.ink2
+                }
+                HoverHandler { id: outHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    onTapped: {
+                        const outs = outPill.outs;
+                        const i = outs.findIndex(o => o.name === outPill.here);
+                        root.au.moveStream(lv.node, outs[(i + 1) % outs.length]);
+                    }
                 }
             }
             Rectangle {
