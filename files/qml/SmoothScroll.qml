@@ -29,6 +29,14 @@ MouseArea {
 
     acceptedButtons: Qt.NoButton
 
+    // What each scroll was, for when it doesn't feel right:
+    // QT_LOGGING_RULES="hyprshell.scroll.debug=true" hyprshell-tasks
+    LoggingCategory {
+        id: log
+        name: "hyprshell.scroll"
+        defaultLogLevel: LoggingCategory.Warning
+    }
+
     property real pos: 0            // where the content is, unrounded
     property real lastSet: 0        // what was last given to the target
     property real pending: 0        // wheel: distance still to travel
@@ -60,6 +68,8 @@ MouseArea {
     }
 
     onWheel: wheel => {
+        console.debug(log, "wheel phase", wheel.phase, "angle", wheel.angleDelta.y, "pixel", wheel.pixelDelta.y,
+                      "inverted", wheel.inverted, "contentY", Math.round(ss.target.contentY), "max", Math.round(ss.maxY));
         wheel.accepted = true;
         ss.target.cancelFlick();
         ss.sync();
@@ -116,6 +126,7 @@ MouseArea {
         const win = s.filter(e => last.t - e.t <= 90);
         const dt = (last.t - win[0].t) / 1000;
         const v = win.length >= 2 && dt > 0 ? win.slice(1).reduce((a, e) => a + e.dy, 0) / dt : last.dy * 60;
+        console.debug(log, "lifted:", s.length, "samples, speed", Math.round(v), "px/s");
         if (Math.abs(v) < 120) return;
         // flick() takes the content's velocity as a drag gives it: positive
         // moves it down, which is scrolling up.
