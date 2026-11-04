@@ -48,6 +48,13 @@ Singleton {
             if (prefs.iconSmoothing === "layer") prefs.iconSmoothing = "image";
             prefs.iconImageMigrated = true;
         }
+        // Then to vectors: each glyph's outline drawn on the GPU at the
+        // screen's own resolution, which a fractional scale (5/3) can't
+        // soften the way it does a pre-drawn image.
+        if (!prefs.iconVectorMigrated) {
+            if (prefs.iconSmoothing === "image") prefs.iconSmoothing = "curve";
+            prefs.iconVectorMigrated = true;
+        }
     }
 
     // Another theme file to show, read only — the greeter's: the person
@@ -479,11 +486,13 @@ Singleton {
             property int dockLabelSize: 12            // dock tooltips and the active label
             property int barIcon: 100                 // 60-180 % of the bar's glyphs
             property int dockGap: 16                  // 0-40 px around the dock
-            // "off" | "layer" | "curve" — see MonoIcon.
-            property string iconSmoothing: "image"
+            // "curve" | "image" | "layer" | "off" — see MonoIcon.
+            property string iconSmoothing: "curve"
             // Set once the move to "image" has been made, so a later
             // choice of "layer" by hand is kept.
             property bool iconImageMigrated: false
+            // And the move from "image" to vectors ("curve").
+            property bool iconVectorMigrated: false
             // The launcher grows out of the dock's pill rather than
             // appearing above it.
             property bool launcherMorph: true

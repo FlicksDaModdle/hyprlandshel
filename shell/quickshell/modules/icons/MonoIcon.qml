@@ -53,9 +53,11 @@ Item {
     //             does not change how the path is rasterised, only how the
     //             result is resolved. The default.
     //   "curve"   Shape.CurveRenderer, which antialiases analytically in
-    //             the shader. The best edges, and the one that dropped the
-    //             dock's grid and panelsTopLeft glyphs entirely on real
-    //             hardware while looking perfect in every check here.
+    //             the shader: true vectors at the screen's resolution,
+    //             sharp at fractional scales where an image can't be. The
+    //             default. On an older Qt it dropped the dock's grid and
+    //             panelsTopLeft glyphs on real hardware; "image" is the
+    //             fallback if a glyph goes missing.
     //
     // Neither smoothing path can be verified in this repository: every
     // render used to check these glyphs runs on Qt's software backend,

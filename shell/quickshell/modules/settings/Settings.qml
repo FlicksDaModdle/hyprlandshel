@@ -557,14 +557,14 @@ Scope {
               type: "slider", min: 60, max: 180, unit: "%",
               value: A.barIconPct, set: v => A.barIconPct = v },
             { n: "Icon rendering",
-              s: A.iconSmoothing === "image" ? "Each icon drawn once and shared — light on memory, smooth edges. The default"
-                 : A.iconSmoothing === "layer" ? "An offscreen layer per icon: smooth, but costly in memory"
-                 : A.iconSmoothing === "curve" ? "Analytic curves on the GPU: crisp, but drops glyphs on some drivers"
+              s: A.iconSmoothing === "curve" ? "Vectors, drawn by the GPU at the screen's own resolution: sharp at any scale. The default. If an icon goes missing, try Image"
+                 : A.iconSmoothing === "image" ? "Each icon drawn once as an image and shared: light on memory, can look soft at fractional scales"
+                 : A.iconSmoothing === "layer" ? "Vectors in an offscreen layer per icon: smooth, but costly in memory"
                  : "Raw vector edges, no smoothing",
               type: "seg",
-              options: [{ label: "Shared",       value: "image" },
+              options: [{ label: "Vector",       value: "curve" },
+                        { label: "Image",        value: "image" },
                         { label: "Multisampled", value: "layer" },
-                        { label: "Analytic",     value: "curve" },
                         { label: "Off",          value: "off" }],
               value: A.iconSmoothing, set: v => A.iconSmoothing = v },
             { n: "File manager icons",
