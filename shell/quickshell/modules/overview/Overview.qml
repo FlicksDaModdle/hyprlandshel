@@ -96,6 +96,8 @@ Variants {
             if (visible) focusScope.forceActiveFocus();
             else cancelDrag();
         }
+        // Built already open (shell.qml loads it when it's first wanted).
+        Component.onCompleted: if (visible) focusScope.forceActiveFocus()
 
         // ── dragging a window to another workspace ───────────────────────
         // A window picked up in one card is carried as a copy under the

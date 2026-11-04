@@ -121,5 +121,6 @@ Variants {
         }
 
         onHereChanged: if (here) keys.forceActiveFocus()
+        Component.onCompleted: if (here) keys.forceActiveFocus()
     }
 }

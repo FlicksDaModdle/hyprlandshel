@@ -26,6 +26,7 @@ import "modules/capture"
 // ~/.config/quickshell/hyprshell/). hyprland.lua's autostart hook and
 // keybinds assume that name.
 ShellRoot {
+    id: shell
 
     // Theming has no surface of its own, so no surface below would reference
     // it — and Quickshell builds a singleton on first reference, so without
@@ -160,8 +161,38 @@ ShellRoot {
     Launcher {}
     // Above the panels, since it is there to type into whatever is on
     // top of them.
-    Osk {}
-    Overview {}
+    // The keyboard, the overview and Alt+Tab are each a window on every
+    // screen. They're built when first wanted and let go three minutes
+    // after they were last used: memory for surfaces that are mostly shut.
+    property bool oskWarm: false
+    property bool overviewWarm: false
+    property bool altTabWarm: false
+    Timer { id: oskCool; interval: 180000; onTriggered: shell.oskWarm = false }
+    Timer { id: overviewCool; interval: 180000; onTriggered: shell.overviewWarm = false }
+    Timer { id: altTabCool; interval: 180000; onTriggered: shell.altTabWarm = false }
+    Connections {
+        target: Config.UiState
+        function onOskOpenChanged() {
+            if (Config.UiState.oskOpen) { oskCool.stop(); shell.oskWarm = true; } else oskCool.restart();
+        }
+        function onOverviewOpenChanged() {
+            if (Config.UiState.overviewOpen) { overviewCool.stop(); shell.overviewWarm = true; } else overviewCool.restart();
+        }
+    }
+    Connections {
+        target: Services.Switcher
+        function onShownChanged() {
+            if (Services.Switcher.shown) { altTabCool.stop(); shell.altTabWarm = true; } else altTabCool.restart();
+        }
+    }
+    LazyLoader {
+        active: Config.UiState.oskOpen || shell.oskWarm
+        Osk {}
+    }
+    LazyLoader {
+        active: Config.UiState.overviewOpen || shell.overviewWarm
+        Overview {}
+    }
     Osd {}
     Settings {}
     // Built when opened and let go when closed — it is a whole editor,
@@ -181,7 +212,10 @@ ShellRoot {
     }
     Lock {}
     Arrival {}
-    AltTab {}
+    LazyLoader {
+        active: Services.Switcher.shown || shell.altTabWarm
+        AltTab {}
+    }
     // Last: over everything, the screen's own corners rounded off.
     ScreenCorners {}
 
