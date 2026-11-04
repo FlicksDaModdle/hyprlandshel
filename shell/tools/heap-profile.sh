@@ -29,7 +29,7 @@ rm -f -- "$dir"/heaptrack.qs.*
 echo "Recording for $mins minutes. Use the laptop as usual (open the launcher,"
 echo "control centre, settings, overview, notifications...). Keep this terminal open."
 # No crash handler: its own process and signal handlers get in heaptrack's way.
-( cd "$dir" && QS_DISABLE_CRASH_HANDLER=1 heaptrack qs -c hyprshell >"$dir/run.log" 2>&1 ) &
+( cd "$dir" && QS_DISABLE_CRASH_HANDLER=1 heaptrack --record-only qs -c hyprshell >"$dir/run.log" 2>&1 ) &
 hp=$!
 
 sleep "$((mins * 60))"
@@ -48,8 +48,8 @@ setsid -f "$HOME/.local/share/hyprshell/start-shell.sh" >/dev/null 2>&1
 
 file=$(find "$dir" -maxdepth 1 -name 'heaptrack.qs.*' | head -n 1)
 [ -n "$file" ] || { echo "No recording was written; see $dir/run.log"; exit 1; }
-if ! heaptrack_print -f "$file" -n 15 -s 3 >"$HOME/heap.txt" 2>&1 || [ "$(wc -l <"$HOME/heap.txt")" -lt 20 ]; then
-    { echo "== heaptrack_print couldn't read the recording"; cat "$HOME/heap.txt"
+if ! heaptrack_print -f "$file" -n 15 -s 3 >"$HOME/heap.txt" 2>"$dir/print.err" || [ "$(wc -l <"$HOME/heap.txt")" -lt 20 ]; then
+    { echo "== heaptrack_print couldn't read the recording"; cat "$dir/print.err" "$HOME/heap.txt"
       echo; echo "== run.log (end)"; tail -n 40 "$dir/run.log"
       echo; echo "== file"; ls -l "$file"; zstd -t "$file" 2>&1 | tail -n 2; } >"$HOME/heap-failed.txt"
     echo "The recording couldn't be read: send $HOME/heap-failed.txt instead."
