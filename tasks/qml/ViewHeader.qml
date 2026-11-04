@@ -10,6 +10,9 @@ Item {
     property string title: ""
     property string subtitle: ""
     default property alias tools: toolRow.data
+    // Narrower than this, a view's tool buttons drop their words.
+    property real narrowBelow: 0
+    readonly property bool narrow: width < narrowBelow
 
     // The title's own width, from the texts (the column's width is set
     // from this, so it cannot be asked).
@@ -43,7 +46,10 @@ Item {
     }
     Row {
         id: toolRow
-        anchors.right: parent.right
+        // Against the right edge, but never further left than the header's
+        // own: wider than that, it runs off the right and is cut there,
+        // rather than over the side rail.
+        x: Math.max(0, parent.width - width)
         y: head.stacked ? titleCol.y + titleCol.implicitHeight + 10 : Math.round((52 - height) / 2)
         spacing: 6
     }

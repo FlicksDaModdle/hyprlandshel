@@ -6,11 +6,14 @@ Rectangle {
     id: btn
     property string icon: ""
     property string text: ""
+    // Just the icon, where there isn't room for the words (the label is
+    // still its tooltip-less name for anyone reading the code).
+    property bool compact: false
     property bool active: true
     property bool checked: false
     property bool danger: false
     signal clicked()
-    implicitWidth: row.implicitWidth + (btn.text === "" ? 14 : 22)
+    implicitWidth: row.implicitWidth + (btn.text === "" || btn.compact ? 14 : 22)
     implicitHeight: 32
     radius: Appearance.rSm
     opacity: btn.active ? 1 : 0.4
@@ -30,7 +33,7 @@ Rectangle {
             accentColor: btn.lit ? Appearance.inkOnAccent : Appearance.accent
         }
         StyledText {
-            visible: btn.text !== ""
+            visible: btn.text !== "" && !btn.compact
             anchors.verticalCenter: parent.verticalCenter
             text: btn.text
             font.pixelSize: Appearance.fs(12)

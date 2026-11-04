@@ -152,6 +152,7 @@ Item {
         anchors.rightMargin: 16
         y: 6
         title: "Processes"
+        narrowBelow: 600
         subtitle: Tasks.count(Monitor.system.processes) + " processes · " + Tasks.count(Monitor.system.threads) + " threads"
                   + (Tasks.search !== "" ? " · matching “" + Tasks.search + "”" : "")
 
@@ -165,12 +166,14 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             icon: "plus"
             text: "Run new task"
+            compact: head.narrow
             onClicked: runDialog.open = true
         }
         ToolButton {
             anchors.verticalCenter: parent.verticalCenter
             icon: "x"
             text: "End task"
+            compact: head.narrow
             danger: true
             active: view.current() !== null && view.current().kind > 0 && !view.current().dead
             onClicked: view.endTask(view.current(), 15)

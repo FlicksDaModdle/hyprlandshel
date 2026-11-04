@@ -189,6 +189,9 @@ PanelSurface {
     }
 
     // ── side rail ─────────────────────────────────────────────────────────
+    // Folded to its glyphs when asked, or when the window is too narrow for
+    // the rail's words and a view beside them, as Windows' does.
+    readonly property bool railFolded: Tasks.settings.navCollapsed || frame.width < 760
     Item {
         id: rail
         anchors.left: parent.left
@@ -196,7 +199,7 @@ PanelSurface {
         anchors.bottom: parent.bottom
         width: widthSpring.value
         clip: true
-        Spring { id: widthSpring; to: Tasks.settings.navCollapsed ? 58 : 214; response: 220; bounce: 0 }
+        Spring { id: widthSpring; to: frame.railFolded ? 58 : 214; response: 220; bounce: 0 }
 
         SmoothScroll { target: railFlick; anchors.fill: railFlick; z: 5 }
         Flickable {
@@ -218,7 +221,7 @@ PanelSurface {
                         viewId: modelData.id
                         icon: modelData.icon
                         label: modelData.label
-                        collapsed: Tasks.settings.navCollapsed
+                        collapsed: frame.railFolded
                         badge: modelData.id === "summary" && summaryBadge.count > 0 ? String(summaryBadge.count) : ""
                         onPicked: Tasks.view = modelData.id
                     }
@@ -227,7 +230,7 @@ PanelSurface {
                     width: railCol.width
                     height: 30
                     StyledText {
-                        visible: !Tasks.settings.navCollapsed
+                        visible: !frame.railFolded
                         x: 22
                         anchors.bottom: parent.bottom
                         anchors.bottomMargin: 6
@@ -238,7 +241,7 @@ PanelSurface {
                         color: Appearance.ink3
                     }
                     Rectangle {
-                        visible: Tasks.settings.navCollapsed
+                        visible: frame.railFolded
                         anchors.centerIn: parent
                         width: 24; height: 1
                         color: Appearance.rule
@@ -252,7 +255,7 @@ PanelSurface {
                         viewId: modelData.id
                         icon: modelData.icon
                         label: modelData.label
-                        collapsed: Tasks.settings.navCollapsed
+                        collapsed: frame.railFolded
                         onPicked: Tasks.view = modelData.id
                     }
                 }
@@ -293,7 +296,7 @@ PanelSurface {
                 viewId: "settings"
                 icon: "settings"
                 label: "Settings"
-                collapsed: Tasks.settings.navCollapsed
+                collapsed: frame.railFolded
                 onPicked: Tasks.view = "settings"
             }
         }
@@ -324,6 +327,8 @@ PanelSurface {
         anchors.top: titleBar.bottom
         anchors.bottom: parent.bottom
         source: frame.viewFiles[Tasks.view] || ""
+        // A view never draws over the rail, however narrow it gets.
+        clip: true
         asynchronous: false
         onLoaded: if (item && item.frame !== undefined) item.frame = frame
     }
