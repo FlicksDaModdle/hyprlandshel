@@ -605,7 +605,26 @@ Variants {
         // so the collapse can be seen, and reopening inside that moment
         // never made it invisible — so a close and a quick reopen kept
         // the old search, which is the one case this is meant to catch.
+        // The pointer selects only once it has really moved. Rows slide
+        // under a pointer that's standing still — as the launcher opens
+        // beneath it, and as the results change with every letter typed —
+        // and each reports being hovered; that used to take the selection,
+        // so Enter opened whatever happened to be under the mouse rather
+        // than what was typed for. Typing and the arrow keys hand the
+        // selection back to the keyboard until the pointer moves again.
+        property point lastPointer: Qt.point(-1, -1)
+        property bool pointerLive: false
+        function pointerAt(p) {
+            const was = lastPointer;
+            lastPointer = Qt.point(p.x, p.y);
+            if (was.x >= 0 && Math.abs(p.x - was.x) + Math.abs(p.y - was.y) > 2) pointerLive = true;
+            return pointerLive;
+        }
+        function keyboardTakes() { pointerLive = false; }
+
         function resetInput() {
+            pointerLive = false;
+            lastPointer = Qt.point(-1, -1);
             menuOpen = false;
             searchInput.text = "";
             query = "";
@@ -617,7 +636,7 @@ Variants {
 
         onVisibleChanged: if (visible) { resetInput(); Services.FileSearch.warm(); }
 
-        onQueryChanged: { menuOpen = false; selectedIndex = 0; Services.FileSearch.search(query); Services.Calc.ask(query); }
+        onQueryChanged: { menuOpen = false; keyboardTakes(); selectedIndex = 0; Services.FileSearch.search(query); Services.Calc.ask(query); }
         onShowAllChanged: selectedIndex = 0;
 
         // Click-away catcher — no scrim, so the desktop behind stays sharp.
@@ -1058,7 +1077,8 @@ Variants {
                                 HoverHandler {
                                     id: gridHover
                                     cursorShape: Qt.PointingHandCursor
-                                    onHoveredChanged: if (hovered) launcher.selectedIndex = gridItem.index;
+                                    onHoveredChanged: if (hovered && launcher.pointerLive) launcher.selectedIndex = gridItem.index;
+                                    onPointChanged: if (hovered && launcher.pointerAt(point.scenePosition)) launcher.selectedIndex = gridItem.index;
                                 }
                                 TapHandler { onTapped: launcher.run(gridItem.modelData) }
                                 // Right-clicking a pinned tile here opens the same
@@ -1417,7 +1437,8 @@ Variants {
                             HoverHandler {
                                 id: resultHover
                                 cursorShape: Qt.PointingHandCursor
-                                onHoveredChanged: if (hovered) launcher.selectedIndex = resultRow.index;
+                                onHoveredChanged: if (hovered && launcher.pointerLive) launcher.selectedIndex = resultRow.index;
+                                onPointChanged: if (hovered && launcher.pointerAt(point.scenePosition)) launcher.selectedIndex = resultRow.index;
                             }
                             TapHandler { onTapped: launcher.run(resultRow.modelData) }
                             TapHandler {
@@ -1758,6 +1779,7 @@ Variants {
                     next = Math.min(pageItems.length - 1, next - count);
                 }
             }
+            keyboardTakes();
             selectedIndex = Math.max(0, Math.min(count - 1, next));
             if (showingList) results.positionViewAtIndex(selectedIndex, ListView.Contain);
         }
