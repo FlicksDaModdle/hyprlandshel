@@ -80,8 +80,20 @@ Variants {
                 if (all[i] && all[i].name === focusedName) return all[i];
             return all[0] || null;
         }
-        readonly property real monitorW: monitor ? Math.max(1, monitor.width) : 1920
-        readonly property real monitorH: monitor ? Math.max(1, monitor.height) : 1080
+        // In the same units as the windows' positions and sizes: Hyprland
+        // gives a monitor's width and height in physical pixels and windows
+        // in logical ones (pixels ÷ scale), and a rotated output has its
+        // sides swapped. Dividing logical windows by the physical size drew
+        // every workspace's windows into the top-left 1/scale of its card.
+        readonly property real monitorScale: monitor && monitor.scale > 0 ? monitor.scale : 1
+        readonly property bool monitorTurned: {
+            const t = monitor && monitor.lastIpcObject ? Number(monitor.lastIpcObject.transform || 0) : 0;
+            return t % 2 === 1;
+        }
+        readonly property real monitorW: monitor
+            ? Math.max(1, (monitorTurned ? monitor.height : monitor.width) / monitorScale) : 1920
+        readonly property real monitorH: monitor
+            ? Math.max(1, (monitorTurned ? monitor.width : monitor.height) / monitorScale) : 1080
         readonly property real monitorX: monitor ? monitor.x : 0
         readonly property real monitorY: monitor ? monitor.y : 0
 

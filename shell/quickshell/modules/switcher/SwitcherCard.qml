@@ -53,7 +53,7 @@ Rectangle {
     // ── geometry per style ────────────────────────────────────────────────
     readonly property real tileW: style === "list" ? u(460 * k)
                                 : style === "icons" ? u(88 * k)
-                                : u(224 * k)
+                                : u(320 * k)
     readonly property real titleH: u(28)
     readonly property real pictureH: Math.round(card.tileW * 0.6)
     readonly property real tileH: style === "list" ? u(42 * k)
