@@ -399,6 +399,20 @@ fi
 printf '  %sAnything already there is moved to <name>.bak.%s, not deleted.%s\n' \
     "$DIM" "$STAMP" "$RST"
 
+# ── checked first ────────────────────────────────────────────────────────────
+# A shell with an error in it doesn't load at all — no bar, no dock, no
+# lock screen — so this one is checked before anything is touched
+# (tools/check.sh), and not installed if it fails: yours stays as it was.
+head1 "Checking"
+if [ -f "$SRC/tools/check.sh" ]; then
+    if bash "$SRC/tools/check.sh"; then
+        ok "this version" "no errors found"
+    else
+        die "this version of the shell has the errors above, so it wasn't installed — your shell is as it was.
+        Pull again in a while (git pull), when it's been fixed."
+    fi
+fi
+
 if [ "$FORCE" -ne 1 ]; then
     printf '\nProceed? [y/N] '
     if ! read -r reply; then reply=""; fi
