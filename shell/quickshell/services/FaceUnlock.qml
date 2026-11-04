@@ -154,7 +154,11 @@ Singleton {
     // Pending changes are cleared once they're in (or kept, to try again).
     QtObject { id: applying; property var args: [] }
     // (Later: whether it failed is set after busy goes.)
-    onBusyChanged: if (!root.busy && applying.args.length > 0) Qt.callLater(root.afterApply)
+    onBusyChanged: {
+        if (root.busy) return;
+        if (applying.args.length > 0) Qt.callLater(root.afterApply);
+        howdyFlagSoon.restart();
+    }
     function afterApply() {
         if (!root.failed) {
             // Only what went in: anything changed meanwhile goes next.
@@ -319,8 +323,7 @@ Singleton {
     // --serve), started through pkexec the first time: the password is
     // asked for once, and the changes after it go straight through, until
     // five minutes pass without one or it's locked again (lock()).
-    // (setHowdy re-reads the flag once the change is made.)
-    onBusyChanged: if (!busy) howdyFlagSoon.restart()
+    // setHowdy re-reads the flag once the change is made (onBusyChanged).
     Timer { id: howdyFlagSoon; interval: 300; onTriggered: howdyFlag.reload() }
     function run(args, working, done) {
         if (root.busy) return;
