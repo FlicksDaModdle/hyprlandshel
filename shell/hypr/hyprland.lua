@@ -268,7 +268,10 @@ local launch = "pgrep -x qs >/dev/null 2>&1 || "
     -- QT_LOGGING_RULES: Hyprland hangs up after answering each request on
     -- its socket, and Quickshell logs every hang-up as a warning; the shell
     -- asks it something on every window event (services/HyprIpc.qml).
-    .. "exec env " .. shell_env() .. " QT_QPA_PLATFORM=wayland QT_LOGGING_RULES='quickshell.io.socket.warning=false' qs -c hyprshell"
+    .. "exec env " .. shell_env() .. " QT_QPA_PLATFORM=wayland QT_LOGGING_RULES='quickshell.io.socket.warning=false' "
+    -- Through start-shell.sh where it's installed: it falls back to the
+    -- last version that loaded if this one doesn't, and says why.
+    .. [[sh -c 'f="${XDG_DATA_HOME:-$HOME/.local/share}/hyprshell/start-shell.sh"; [ -f "$f" ] && exec sh "$f"; exec qs -c hyprshell']]
 
 -- Reload only: WAYLAND_DISPLAY is empty on the first parse, so this does
 -- nothing then and the hook below does the real work.

@@ -183,6 +183,15 @@ ShellRoot {
     // Last: over everything, the screen's own corners rounded off.
     ScreenCorners {}
 
+    // Loaded: start-shell.sh is told, and keeps this version as the one to
+    // fall back to if a later one doesn't load. Only reached when every
+    // file above loaded.
+    Timer {
+        running: true
+        interval: 2500
+        onTriggered: Quickshell.execDetached(["sh", "-c", 'touch "${XDG_RUNTIME_DIR:-/tmp}/hyprshell-ready"'])
+    }
+
     // No Component.onCompleted here: QML will not attach one to ShellRoot.
     //
     // It also isn't needed. Singletons build on first reference, and Bar.qml

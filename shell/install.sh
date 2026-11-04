@@ -440,6 +440,12 @@ if mkdir -p "$HS_STATE/installed" 2>/dev/null; then
     _head=$(git -C "$SRC" rev-parse HEAD 2>/dev/null) && printf '%s\n' "$_head" > "$HS_STATE/installed/shell"
 fi
 
+# The launcher with the fallback (start-shell.sh), outside the shell's own
+# folder so a broken shell can't take it with it.
+HS_DATA="${XDG_DATA_HOME:-$HOME/.local/share}/hyprshell"
+mkdir -p "$HS_DATA" 2>/dev/null && cp -- "$SRC/start-shell.sh" "$HS_DATA/start-shell.sh" 2>/dev/null \
+    && chmod +x "$HS_DATA/start-shell.sh" && printf '  installed %s/start-shell.sh\n' "$HS_DATA"
+
 cp -- "$SRC/run.sh" "$QS_DIR/run.sh" 2>/dev/null && chmod +x "$QS_DIR/run.sh" \
     && printf '  installed %s/run.sh\n' "$QS_DIR"
 cp -- "$SRC/hyprshellctl" "$QS_DIR/hyprshellctl" 2>/dev/null \
