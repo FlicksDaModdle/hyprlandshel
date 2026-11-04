@@ -12,6 +12,41 @@
 # exiting.
 set -u
 
+# The environment the shell needs, however this was started — from
+# hyprland.lua, which sets it too, or by hand, which didn't, and left a shell
+# with NVIDIA's EGL driver loaded and glibc keeping every freed page:
+#   memory      two glibc arenas, and freed memory handed back
+#   hybrid GPU  Mesa's EGL, Vulkan ICD and VA-API rather than NVIDIA's,
+#               where Mesa has a GPU to drive (not with the MUX on NVIDIA)
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.malloc.trim_threshold=131072:glibc.malloc.mmap_threshold=131072}"
+_mesa=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+if [ -f "$_mesa" ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]; then
+    _nv= _other=
+    for _u in /sys/class/drm/renderD*/device/uevent; do
+        [ -r "$_u" ] || continue
+        case "$(sed -n 's/^DRIVER=//p' "$_u")" in
+            nvidia) _nv=1 ;;
+            amdgpu|i915|xe|radeon) _other=1 ;;
+        esac
+    done
+    if [ -n "$_nv" ] && [ -n "$_other" ]; then
+        export __EGL_VENDOR_LIBRARY_FILENAMES="$_mesa" __GLX_VENDOR_LIBRARY_NAME=mesa
+        for _icd in /usr/share/vulkan/icd.d/radeon_icd.x86_64.json /usr/share/vulkan/icd.d/intel_icd.x86_64.json; do
+            [ -f "$_icd" ] && { export VK_DRIVER_FILES="$_icd" VK_ICD_FILENAMES="$_icd"; break; }
+        done
+        export QT_FFMPEG_DECODING_HW_DEVICE_TYPES=vaapi
+    fi
+fi
+export QT_QPA_PLATFORM=wayland
+case ";${QT_LOGGING_RULES:-};" in
+    *quickshell.io.socket.warning*) ;;
+    *) export QT_LOGGING_RULES="${QT_LOGGING_RULES:+$QT_LOGGING_RULES;}quickshell.io.socket.warning=false" ;;
+esac
+
+# --restart: the running shell goes first.
+if [ "${1:-}" = "--restart" ] && pkill -x qs 2>/dev/null; then sleep 0.4; fi
+
 RT=${XDG_RUNTIME_DIR:-/tmp}
 CFG=${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/hyprshell
 GOOD=${XDG_DATA_HOME:-$HOME/.local/share}/hyprshell/last-good

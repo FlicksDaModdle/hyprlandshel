@@ -726,10 +726,10 @@ head1 "Next"
 if [ "$RUNNING" = 1 ]; then
 cat <<EOF
   1. The running shell has reloaded itself with this version. If anything
-     looks stale, restart it with super + shift + R, or by hand to read
-     any errors:
+     looks stale, restart it with super + shift + R, or start it afresh
+     (with the environment it needs — plain qs -c hyprshell leaves it out):
 
-         pkill -x qs; qs -c hyprshell
+         setsid -f ~/.local/share/hyprshell/start-shell.sh --restart
 
   2. Changes to hyprland.lua take effect the next time Hyprland reloads
      its config, or at the next login.
@@ -738,7 +738,7 @@ else
 cat <<EOF
   1. Start the shell by hand first, so you can read any errors:
 
-         qs -c hyprshell
+         $QS_DIR/run.sh
 
      Leave it running in a terminal. The bar, dock and wallpaper should
      appear. Ctrl-C to stop it.
@@ -766,7 +766,7 @@ if [ "$MODE" = shell-only ]; then
   Your Hyprland config was left alone, so add these to it to reach the shell.
   The full set of bindings is in $SRC/hypr/hyprland.lua.
 
-      exec-once = qs -c hyprshell
+      exec-once = $QS_DIR/run.sh
 
       bind = SUPER, Tab,    exec, qs -c hyprshell ipc call shell toggleOverview
       bind = SUPER, C,      exec, qs -c hyprshell ipc call shell toggleControlCenter
