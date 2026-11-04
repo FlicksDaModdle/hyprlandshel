@@ -236,6 +236,8 @@ Scope {
     // "Show advanced settings": rows marked `adv`, and whole sections by
     // their header here. Nothing is left out — the search finds these as
     // it always did, and opens the section when it takes you to one.
+    readonly property var wifiPanelRow: ({ type: "panel", panel: "wifi" })
+
     readonly property var advSections: ({
         "Appearance": ["Scrolling"],
         "Launcher": ["Stretch", "Text"],
@@ -1498,8 +1500,32 @@ Scope {
         // Each a pane of its own (WifiPanel.qml, BluetoothPanel.qml), and
         // deliberately reading nothing live here: the spec stays the same
         // object, so the pane is never rebuilt under someone typing into it.
-        case "Network":
-            return [{ type: "panel", panel: "wifi" }];
+        case "Network": {
+            // The Wi-Fi panel's row is one object kept for good: a new one
+            // each time would rebuild the panel under someone typing a
+            // password whenever the rows below change.
+            const W = Services.WifiTune;
+            const rows = [root.wifiPanelRow];
+            if (!W.probed) return rows;
+            rows.push({ type: "header", n: "Wi-Fi performance", s: "" });
+            rows.push({ n: "Faster Wi-Fi (iwd)",
+                s: W.backend === "iwd"
+                   ? "On: NetworkManager uses iwd, which finds networks and joins them faster. Your saved networks are kept; a university (802.1X) one may ask for its sign-in again"
+                   : "NetworkManager uses wpa_supplicant now. iwd scans and joins faster; Wi-Fi reconnects by itself when it switches"
+                     + (W.iwdInstalled ? "" : ". It's installed first"),
+                type: "toggle", value: W.backend === "iwd",
+                set: v => W.setIwd(v) });
+            rows.push({ n: "Wi-Fi power saving",
+                s: W.powersave === "off"
+                   ? "Off: steadier, quicker to wake, at a little battery"
+                   : "Turning it off is the usual cure for dropouts and slow reconnects on this laptop's Wi-Fi",
+                type: "toggle", value: W.powersave !== "off",
+                set: v => W.setPowersave(v) });
+            if (W.status !== "")
+                rows.push({ n: W.busy ? "Working…" : (W.failed ? "That didn't work" : "Done"), s: W.status,
+                            type: "info", value: "" });
+            return rows;
+        }
         case "Bluetooth":
             return [{ type: "panel", panel: "bluetooth" }];
 
@@ -2040,7 +2066,13 @@ Scope {
         }
         return out;
     }
-    Component.onCompleted: { Config.UiState.settingsApp = root; root.sendWindowRule(); }
+    Component.onCompleted: {
+        Config.UiState.settingsApp = root;
+        root.sendWindowRule();
+        // Read now, not when the Wi-Fi pane first opens: its rows changing
+        // just after it opened would rebuild the Wi-Fi panel under you.
+        void Services.WifiTune.probed;
+    }
 
     // The device settings themselves live in theme.json via
     // Config.Appearance, and Services.Devices is what pushes them to
