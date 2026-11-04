@@ -425,29 +425,20 @@ PanelSurface {
             boundsBehavior: Flickable.StopAtBounds
             flickableDirection: Flickable.VerticalFlick
 
-            // The selection: one pill that slides — stretching on the way,
-            // then settling — from the pane you were on to the one you
-            // picked, rather than one fading out as another fades in.
+            // The selection: the pill on the pane you were on fades out and
+            // comes back on the one you picked — nothing travels between.
             Rectangle {
                 id: selPill
-                // Its two edges, each on a spring: the leading one quick, the
-                // trailing one slower, so it stretches as it goes and gathers
-                // itself up when it lands.
                 property real edgeTop: 0
                 property real edgeBottom: 36
-                property bool down: true
                 property bool placed: false
                 x: 8
                 width: sidebarFlick.width - 16
-                y: topSpring.value
-                height: Math.max(8, bottomSpring.value - topSpring.value)
+                y: edgeTop
+                height: Math.max(8, edgeBottom - edgeTop)
                 radius: Config.Appearance.rSm
                 color: Config.Appearance.sel
                 visible: placed
-                Spring { id: topSpring; to: selPill.edgeTop; enabled: selPill.placed
-                         response: selPill.down ? 420 : 300; bounce: 0 }
-                Spring { id: bottomSpring; to: selPill.edgeBottom; enabled: selPill.placed
-                         response: selPill.down ? 300 : 420; bounce: 0 }
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -459,13 +450,30 @@ PanelSurface {
                     radius: 1
                     color: Config.Appearance.accent
                 }
+                SequentialAnimation {
+                    id: selSwap
+                    property real top: 0
+                    property real bottom: 0
+                    NumberAnimation { target: selPill; property: "opacity"; to: 0; duration: 70; easing.type: Easing.OutQuad }
+                    ScriptAction { script: { selPill.edgeTop = selSwap.top; selPill.edgeBottom = selSwap.bottom; } }
+                    NumberAnimation { target: selPill; property: "opacity"; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                }
             }
             function placeSel(item) {
                 const p = item.mapToItem(sidebarColumn.parent, 0, 0);
-                selPill.down = p.y >= selPill.edgeTop;
-                selPill.edgeTop = p.y;
-                selPill.edgeBottom = p.y + item.height;
-                if (!selPill.placed) Qt.callLater(() => selPill.placed = true);
+                const top = p.y, bottom = p.y + item.height;
+                if (!selPill.placed || !Config.Appearance.animated) {
+                    selSwap.stop();
+                    selPill.opacity = 1;
+                    selPill.edgeTop = top;
+                    selPill.edgeBottom = bottom;
+                    if (!selPill.placed) Qt.callLater(() => selPill.placed = true);
+                    return;
+                }
+                if (top === selPill.edgeTop && bottom === selPill.edgeBottom && !selSwap.running) return;
+                selSwap.top = top;
+                selSwap.bottom = bottom;
+                selSwap.restart();
             }
 
             Column {
