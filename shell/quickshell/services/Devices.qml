@@ -408,6 +408,35 @@ Singleton {
         rememberColour(name, patch);
     }
 
+    // The calibration wizard (modules/settings/HdrCalibration.qml): each
+    // change saved and applied as it's made, and on Cancel everything put
+    // back as it was. Hyprland keeps a field it was once given until told
+    // otherwise, so going back means sending the old values — Hyprland's
+    // own defaults for the ones the entry never had — and only then
+    // dropping those keys from the entry again.
+    readonly property var colourDefaults: ({
+        sdr_eotf: "default", sdr_min_luminance: 0.2, sdr_max_luminance: 80,
+        sdrbrightness: 1, sdrsaturation: 1
+    })
+    function previewColour(name, values) {
+        saveDisplay(name, values);
+        applyDisplay(name);
+    }
+    function restoreColour(name, had, touched) {
+        const full = ({}), back = ({});
+        for (const k of touched) {
+            back[k] = had[k];                       // undefined: dropped
+            if (had[k] !== undefined) full[k] = had[k];
+            else if (root.colourDefaults[k] !== undefined) full[k] = root.colourDefaults[k];
+            else if (k === "max_luminance" && (root.edidCaps[name] || {}).maxLum > 0)
+                full[k] = Math.round(root.edidCaps[name].maxLum);
+        }
+        saveDisplay(name, full);
+        applyDisplay(name);
+        saveDisplay(name, back);
+        Services.Compositor.refreshMonitors();
+    }
+
     // ── what each panel says it can do ────────────────────────────────────
     // From its own EDID (scripts/edid-caps.py): Hyprland's report of an
     // output has no field for it. { output: { bt2020, pq, hlg, maxLum,

@@ -310,6 +310,14 @@ Scope {
 
     // ══ the window ═══════════════════════════════════════════════════════
     LazyLoader {
+        active: root.calibrateScreen !== ""
+        HdrCalibration {
+            target: Quickshell.screens.find(x => x.name === root.calibrateScreen) || null
+            output: root.calibrateScreen
+            onDone: root.calibrateScreen = ""
+        }
+    }
+    LazyLoader {
         active: root.patternScreen !== ""
         HdrPattern {
             target: Quickshell.screens.find(x => x.name === root.patternScreen) || null
@@ -1396,10 +1404,11 @@ Scope {
                 rows.push({ type: "header", n: "HDR calibration",
                     s: "How ordinary windows and the panel's range look with HDR on" });
                 rows.push({ n: "Set up for this display",
-                    s: "Deep blacks, natural shadows and SDR white at 203 nits, with "
+                    s: "Calibrate walks through each setting on the display itself. Quick set up: deep blacks, natural shadows and SDR white at 203 nits, with "
                        + (caps.maxLum > 0 ? "its " + Math.round(caps.maxLum) + "-nit peak" : "its peak") + " from its EDID",
                     type: "buttons",
-                    buttons: [{ label: "Set up", set: () => Services.Devices.calibrateHdr(m.name) },
+                    buttons: [{ label: "Calibrate", set: () => root.calibrateScreen = m.name },
+                              { label: "Quick set up", quiet: true, set: () => Services.Devices.calibrateHdr(m.name) },
                               { label: "Test pattern", quiet: true, set: () => root.patternScreen = m.name }] });
                 rows.push({ n: "Shadows",
                     s: eotf === "gamma22" ? "Gamma 2.2, as SDR displays show it: deep, natural shadows"
@@ -2178,6 +2187,8 @@ Scope {
     property string displayPickRaw: ""
     // HDR calibration's test pattern, on this display (by name), while up.
     property string patternScreen: ""
+    // The calibration wizard, on this display (by name), while it runs.
+    property string calibrateScreen: ""
     readonly property string displayPick: displayPickRaw !== ""
         ? displayPickRaw : Services.Compositor.focusedMonitorName
 
