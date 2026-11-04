@@ -1,5 +1,7 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Shapes
+import Quickshell
 import "../../config" as Config
 import "IconPaths.js" as IconData
 
@@ -123,16 +125,36 @@ Item {
             out += '<circle cx="' + d.cx + '" cy="' + d.cy + '" r="' + d.r + '" ' + paint(d.c === "acc" ? acc : ink, "fill") + '/>';
         return "data:image/svg+xml;utf8," + encodeURIComponent(out + "</svg>");
     }
+    // Drawn at exactly the window's own pixels, and shown one image pixel
+    // to one screen pixel.
+    //
+    // Qt renders an SVG at the screen's resolution only when its URL ends
+    // in "svg", which a data: URL never does (it ends in %3E). So with
+    // sourceSize at the logical size, every glyph was rasterised at 1x and
+    // then stretched by the display's scale (1.5, 2…) with linear
+    // filtering: soft edges on every icon in the shell. Now the image is
+    // made at size × the window's real scale (QsWindow: fractional scales
+    // included, which Screen's integer one is not), the item is sized so
+    // that's one-to-one, and it's sampled nearest so an icon that lands on
+    // half a pixel moves by half a pixel instead of being blurred across
+    // two.
+    readonly property real dpr: {
+        const w = QsWindow.window;
+        const r = w && w.devicePixelRatio > 0 ? w.devicePixelRatio : Screen.devicePixelRatio;
+        return r > 0 ? r : 1;
+    }
+    readonly property int texPx: Math.max(1, Math.round(root.drawSize * root.dpr))
     Image {
         visible: root.asImage
-        width: root.drawSize
-        height: root.drawSize
+        width: root.texPx / root.dpr
+        height: root.texPx / root.dpr
+        x: (root.drawSize - width) / 2
+        y: (root.drawSize - height) / 2
         source: root.svgSource
-        // The logical size: Qt renders a scalable image at this times the
-        // screen's pixel ratio, so it is sharp on a HiDPI display.
-        sourceSize: Qt.size(Math.ceil(root.drawSize), Math.ceil(root.drawSize))
+        sourceSize: Qt.size(root.texPx, root.texPx)
         cache: true
-        smooth: true
+        smooth: false
+        mipmap: false
         asynchronous: false
         onStatusChanged: if (status === Image.Error) root.imageFailed = true
     }
