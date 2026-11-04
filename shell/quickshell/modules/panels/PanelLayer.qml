@@ -274,7 +274,9 @@ Variants {
             screenWidth: layer.width
             screenHeight: layer.height
             x: Math.max(8, Math.min(Config.UiState.windowMenuX, layer.width - width - 8))
-            y: layer.panelTop
+            y: Config.UiState.windowMenuY >= 0
+               ? Math.max(layer.panelTop, Math.min(Config.UiState.windowMenuY, layer.height - height - 8))
+               : layer.panelTop
         }
 
         // The context menu opens at the pointer, nudged back on screen if

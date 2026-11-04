@@ -252,11 +252,15 @@ Singleton {
         trayMenuOpen = true;
     }
 
-    function toggleWindowMenu(x) {
+    // Under the bar's window button; or, given `y`, at a window's own
+    // top-right (Super+Z's snap layouts).
+    property real windowMenuY: -1
+    function toggleWindowMenu(x, y) {
         const was = windowMenuOpen;
         closeAll();
         if (!was) {
             windowMenuX = x;
+            windowMenuY = y === undefined ? -1 : y;
             windowMenuOpen = true;
         }
     }

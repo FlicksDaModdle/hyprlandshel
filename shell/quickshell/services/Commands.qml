@@ -125,6 +125,14 @@ Singleton {
         "toggleTheme":         () => Config.Appearance.toggleTheme(),
         // Windows 11 window behaviour: Super + arrows (hyprland.lua).
         "snapWindow":          arg => Services.Compositor.snapActive(arg || ""),
+        // Windows 11's Super+Z: the snap layouts, at the window's top-right.
+        "snapLayouts":         () => {
+            const c = Services.Compositor.activeClient;
+            if (!c) return;
+            const m = (Services.Compositor.monitors || []).find(o => o && o.lastIpcObject && o.lastIpcObject.id === c.monitor);
+            const ipc = m ? m.lastIpcObject : { x: 0, y: 0 };
+            Config.UiState.toggleWindowMenu(Math.round(c.x - ipc.x + c.w - 300), Math.round(c.y - ipc.y + 36));
+        },
         "cycleTheme":          () => Config.Appearance.cycleTheme(),
         "setTheme":            arg => Config.Appearance.setTheme(arg),
         "setWallpaper":        arg => Config.Appearance.wallpaper = arg,

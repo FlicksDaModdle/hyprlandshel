@@ -652,6 +652,8 @@ if window_mode == "windows" then
     hl.bind(mainMod .. " + right", hl.dsp.exec_cmd(shell("snapWindow", "right")))
     hl.bind(mainMod .. " + up",    hl.dsp.exec_cmd(shell("snapWindow", "up")))
     hl.bind(mainMod .. " + down",  hl.dsp.exec_cmd(shell("snapWindow", "down")))
+    -- Super+Z: the snap layouts, at the window's top-right, as on Windows.
+    hl.bind(mainMod .. " + Z",     hl.dsp.exec_cmd(shell("snapLayouts")))
 else
     -- Focus movement
     hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }))
