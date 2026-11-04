@@ -272,6 +272,10 @@ Item {
                 visible: !!root.spec.fillInk
                 anchors.fill: parent
                 preferredRendererType: root.renderer
+                // Per Shape: the curve renderer smooths its edges only
+                // when this is set on the Shape itself, and it isn't
+                // inherited from the item around it.
+                antialiasing: true
                 ShapePath {
                     fillColor: root.inkColor
                     fillRule: ShapePath.OddEvenFill
@@ -285,6 +289,7 @@ Item {
                 visible: !!root.spec.fill
                 anchors.fill: parent
                 preferredRendererType: root.renderer
+                antialiasing: true
                 ShapePath {
                     fillColor: root.accent
                     fillRule: ShapePath.OddEvenFill
@@ -298,6 +303,7 @@ Item {
                 visible: !!root.spec.ink
                 anchors.fill: parent
                 preferredRendererType: root.renderer
+                antialiasing: true
                 ShapePath {
                     strokeColor: root.inkColor
                     strokeWidth: root.stroke
@@ -312,6 +318,7 @@ Item {
                 visible: !!root.spec.acc
                 anchors.fill: parent
                 preferredRendererType: root.renderer
+                antialiasing: true
                 ShapePath {
                     strokeColor: root.accent
                     strokeWidth: root.stroke
@@ -326,6 +333,7 @@ Item {
                 visible: !!root.spec.inkW
                 anchors.fill: parent
                 preferredRendererType: root.renderer
+                antialiasing: true
                 ShapePath {
                     strokeColor: root.inkColor
                     strokeWidth: root.strokeW
@@ -340,6 +348,7 @@ Item {
                 visible: !!root.spec.accW
                 anchors.fill: parent
                 preferredRendererType: root.renderer
+                antialiasing: true
                 ShapePath {
                     strokeColor: root.accent
                     strokeWidth: root.strokeW
