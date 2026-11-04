@@ -1,5 +1,7 @@
 //@ pragma UseQApplication
 
+// QtQml for Timer (not QtQuick: see the LazyLoader note below).
+import QtQml
 import Quickshell
 import Quickshell.Io
 import "config" as Config

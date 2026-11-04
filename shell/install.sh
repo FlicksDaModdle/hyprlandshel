@@ -445,6 +445,12 @@ fi
 HS_DATA="${XDG_DATA_HOME:-$HOME/.local/share}/hyprshell"
 mkdir -p "$HS_DATA" 2>/dev/null && cp -- "$SRC/start-shell.sh" "$HS_DATA/start-shell.sh" 2>/dev/null \
     && chmod +x "$HS_DATA/start-shell.sh" && printf '  installed %s/start-shell.sh\n' "$HS_DATA"
+# Something to fall back to from the first start: the version running
+# before this install, until this one has loaded and takes its place.
+if [ ! -f "$HS_DATA/last-good/shell.qml" ] && [ -f "$QS_DIR.bak.$STAMP/shell.qml" ]; then
+    cp -a -- "$QS_DIR.bak.$STAMP" "$HS_DATA/last-good" 2>/dev/null \
+        && printf '  kept      the previous version, to fall back to if this one does not load\n'
+fi
 
 cp -- "$SRC/run.sh" "$QS_DIR/run.sh" 2>/dev/null && chmod +x "$QS_DIR/run.sh" \
     && printf '  installed %s/run.sh\n' "$QS_DIR"

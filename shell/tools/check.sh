@@ -45,6 +45,20 @@ if [ -n "$lint" ]; then
     fi
 fi
 
+# A standard Qt type used without its import ("Timer is not a type"):
+# the shell doesn't load. qmllint says "X was not found" about Quickshell's
+# types too, which it can't see, so only Qt's own are counted.
+if [ -n "$lint" ]; then
+    qt='Timer|QtObject|Connections|Binding|Component|Item|Rectangle|Text|Image|MouseArea|Loader|Repeater|Column|Row|Grid|ListView|GridView|Flickable|NumberAnimation|ColorAnimation|SequentialAnimation|ParallelAnimation|Behavior|Instantiator|FrameAnimation|TapHandler|HoverHandler|DragHandler|WheelHandler|TextInput|TextEdit|Canvas|ShaderEffect|FocusScope|Translate|Scale|Rotation|PropertyAnimation|ScriptAction|PauseAnimation|SpringAnimation|SmoothedAnimation|Shortcut|Window'
+    miss=$("$lint" "${qml[@]}" 2>&1 | grep -E "Warning: .*\.qml:[0-9]+:[0-9]+: ($qt) was not found" || true)
+    if [ -n "$miss" ]; then
+        fail "QML: a Qt type used without its import:"
+        printf '%s\n' "$miss" | sed "s|$shell/||; s|^Warning: |      |" | head -20 >&2
+    else
+        ok "qmllint: every Qt type is imported"
+    fi
+fi
+
 # Scripts.
 while IFS= read -r f; do
     bash -n "$f" 2>/dev/null || fail "bash syntax: ${f#"$shell"/}"
