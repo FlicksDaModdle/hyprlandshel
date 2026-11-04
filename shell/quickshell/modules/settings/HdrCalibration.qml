@@ -166,8 +166,15 @@ PanelWindow {
         else if (cal.step === 4) cal.sat = Math.max(0.5, Math.min(1.5, Math.round((cal.sat + dir * 0.01) * 100) / 100));
     }
 
-    // The pattern's grey: L nits with SDR white at W, through the 2.2 curve.
-    function level(l, w) { const v = Math.pow(Math.max(0, l) / w, 1 / 2.2); return Math.min(1, v); }
+    // The pattern's grey: L nits with SDR white at W, through the curve
+    // Hyprland decodes the shell's own window with — its global one
+    // (Devices.sdrCurve), not the monitor's sdr_eotf, which apps don't get.
+    readonly property bool srgbCurve: Services.Devices.sdrCurve === "srgb" || Services.Devices.sdrCurve === "default"
+    function level(l, w) {
+        const f = Math.min(1, Math.max(0, l) / w);
+        if (!cal.srgbCurve) return Math.pow(f, 1 / 2.2);
+        return f <= 0.0031308 ? f * 12.92 : 1.055 * Math.pow(f, 1 / 2.4) - 0.055;
+    }
     readonly property real patternGrey: cal.step === 1 ? level(cal.lmin, cal.whiteLow)
                                       : cal.step === 2 ? level(cal.lmax, cal.whiteHigh)
                                       : cal.step === 3 ? level(cal.lfull, cal.whiteHigh) : 0

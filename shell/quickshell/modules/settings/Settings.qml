@@ -1400,7 +1400,6 @@ Scope {
                 // its shadow curve; dim and muddy, its white (80 nits).
                 const sdrMin = ipc.sdrMinLuminance !== undefined ? Number(ipc.sdrMinLuminance) : 0.2;
                 const sdrMax = ipc.sdrMaxLuminance !== undefined ? Number(ipc.sdrMaxLuminance) : 80;
-                const eotf = saved.sdr_eotf || "default";
                 rows.push({ type: "header", n: "HDR calibration",
                     s: "How ordinary windows and the panel's range look with HDR on" });
                 rows.push({ n: "Set up for this display",
@@ -1410,14 +1409,19 @@ Scope {
                     buttons: [{ label: "Calibrate", set: () => root.calibrateScreen = m.name },
                               { label: "Quick set up", quiet: true, set: () => Services.Devices.calibrateHdr(m.name) },
                               { label: "Test pattern", quiet: true, set: () => root.patternScreen = m.name }] });
+                const curve = Services.Devices.sdrCurve;
                 rows.push({ n: "Shadows",
-                    s: eotf === "gamma22" ? "Gamma 2.2, as SDR displays show it: deep, natural shadows"
-                       : "Gamma 2.2 is usually right; the sRGB curve lifts dark tones, which reads as washed out",
+                    s: curve === "gamma22force" || curve === "gamma22"
+                       ? "Gamma 2.2, as SDR displays show it: deep shadows and full contrast. For every display in HDR"
+                       : "The sRGB curve lifts dark tones, which reads as washed out and low in contrast; Gamma 2.2 is usually right",
                     type: "seg",
-                    options: [{ label: "Gamma 2.2", value: "gamma22" }, { label: "sRGB", value: "srgb" },
+                    options: [{ label: "Gamma 2.2", value: "gamma22force" }, { label: "sRGB", value: "srgb" },
                               { label: "Default", value: "default" }],
-                    value: eotf,
-                    set: v => Services.Devices.rememberColour(m.name, { sdr_eotf: v }) });
+                    value: curve === "gamma22" ? "gamma22force" : curve,
+                    set: v => {
+                        Services.Devices.rememberColour(m.name, { sdr_eotf: v === "gamma22force" ? "gamma22" : v });
+                        Services.Devices.setSdrCurve(v);
+                    } });
                 const blacks = [{ label: "Deepest", value: "0.005" }, { label: "Deep", value: "0.05" },
                                 { label: "Default", value: "0.2" }];
                 rows.push({ n: "Black level",

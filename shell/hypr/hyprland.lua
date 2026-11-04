@@ -148,6 +148,28 @@ do
     end
 end
 
+-- How ordinary (SDR) apps' colours are decoded when a display is in HDR:
+-- Settings → Display → HDR calibration → Shadows (the shell writes it to
+-- sdr-curve). Hyprland's default is the piecewise sRGB curve, which lifts
+-- every dark tone: blacks go grey and contrast goes flat, the usual
+-- "HDR looks washed out". Gamma 2.2 is what SDR content is made on and
+-- what SDR mode shows, and "force" applies it to apps that tag their
+-- colours as sRGB too (Firefox, Chromium, mpv). This is Hyprland's global
+-- setting, read when the config loads; a monitor's own sdr_eotf doesn't
+-- reach apps.
+do
+    local curve = "gamma22force"
+    local state = os.getenv("XDG_STATE_HOME")
+    if not state or state == "" then state = (os.getenv("HOME") or "") .. "/.local/state" end
+    local f = io.open(state .. "/hyprshell/sdr-curve", "r")
+    if f then
+        local c = (f:read("*l") or ""):gsub("%s", "")
+        f:close()
+        if c == "gamma22force" or c == "gamma22" or c == "srgb" or c == "default" then curve = c end
+    end
+    pcall(hl.config, { render = { cm_sdr_eotf = curve } })
+end
+
 -- The main display, as Settings → Display last chose it (the shell writes
 -- it to main-display): workspace 1 lives there, so the desktop you log in
 -- to is on it. Nothing chosen leaves Hyprland's own order.

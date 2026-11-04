@@ -12,10 +12,22 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/event/EventBus.hpp>
+
+// Hyprland 0.57 gave each window a "backend" (Wayland or X11) that passes on
+// what the app asks for, minimising included (which Hyprland still drops),
+// and moved the event socket to IPC::Socket2. Before it, the request was on
+// the app's own XDG or XWayland surface.
+#if __has_include(<hyprland/src/desktop/view/window/Window.hpp>)
+#define HYPRSHELL_BACKENDS 1
+#include <hyprland/src/desktop/view/window/Window.hpp>
+#include <hyprland/src/desktop/view/window/WindowBackend.hpp>
+#include <hyprland/src/ipc/s2/S2.hpp>
+#else
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
 #include <hyprland/src/xwayland/XSurface.hpp>
 #include <hyprland/src/managers/EventManager.hpp>
+#endif
 
 #include <format>
 #include <unordered_map>
@@ -29,18 +41,28 @@ namespace {
     std::unordered_map<const void*, CHyprSignalListener>       g_watch;
 
     void announce(const PHLWINDOW& w, bool minimised) {
-        if (!w || !g_pEventManager)
+        if (!w)
             return;
-        g_pEventManager->postEvent(SHyprIPCEvent{
-            .event = "minimized",
-            .data  = std::format("{:x},{}", reinterpret_cast<uintptr_t>(w.get()), minimised ? 1 : 0),
-        });
+        const auto data = std::format("{:x},{}", reinterpret_cast<uintptr_t>(w.get()), minimised ? 1 : 0);
+#ifdef HYPRSHELL_BACKENDS
+        if (const auto& sock = IPC::Socket2::sock())
+            sock->postEvent({.event = "minimized", .data = data});
+#else
+        if (g_pEventManager)
+            g_pEventManager->postEvent(SHyprIPCEvent{.event = "minimized", .data = data});
+#endif
     }
 
     void watch(PHLWINDOW w) {
         if (!w || g_watch.contains(w.get()))
             return;
         const PHLWINDOWREF ref = w;
+#ifdef HYPRSHELL_BACKENDS
+        g_watch[w.get()] = w->backend().m_events.stateRequest.listen([ref](const Desktop::View::SBackendStateRequest& r) {
+            if (r.minimized.value_or(false))
+                announce(ref.lock(), true);
+        });
+#else
         if (const auto xdg = w->m_xdgSurface.lock(); xdg && xdg->m_toplevel) {
             const WP<CXDGToplevelResource> top = xdg->m_toplevel;
             g_watch[w.get()] = top->m_events.stateChanged.listen([ref, top] {
@@ -56,6 +78,7 @@ namespace {
                     announce(ref.lock(), *X->m_state.requestsMinimize);
             });
         }
+#endif
     }
 }
 

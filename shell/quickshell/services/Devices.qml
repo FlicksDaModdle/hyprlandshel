@@ -428,6 +428,38 @@ Singleton {
         Services.Compositor.refreshMonitors();
     }
 
+    // ── SDR apps' curve in HDR ───────────────────────────────────────────
+    // Hyprland decodes ordinary apps' colours in HDR with its global
+    // render:cm_sdr_eotf, read only when its config loads; hyprland.lua sets
+    // it from $XDG_STATE_HOME/hyprshell/sdr-curve, so a change is written
+    // there and Hyprland reloaded (the shell puts back everything of its own
+    // after a reload). "gamma22force" when nothing was chosen.
+    property string sdrCurve: "gamma22force"
+    Process {
+        id: curveRead
+        running: true
+        command: ["sh", "-c", 'cat "${XDG_STATE_HOME:-$HOME/.local/state}/hyprshell/sdr-curve" 2>/dev/null']
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const c = String(text || "").trim();
+                if (["gamma22force", "gamma22", "srgb", "default"].indexOf(c) >= 0) root.sdrCurve = c;
+            }
+        }
+    }
+    Process {
+        id: curveWrite
+        onExited: Services.Compositor.reloadConfig()
+    }
+    function setSdrCurve(c) {
+        if (["gamma22force", "gamma22", "srgb", "default"].indexOf(c) < 0 || c === root.sdrCurve) return;
+        root.sdrCurve = c;
+        curveWrite.running = false;
+        curveWrite.command = ["sh", "-c",
+            'd="${XDG_STATE_HOME:-$HOME/.local/state}/hyprshell"; mkdir -p "$d" && printf "%s\\n" "$1" > "$d/sdr-curve"',
+            "sh", c];
+        curveWrite.running = true;
+    }
+
     // ── what each panel says it can do ────────────────────────────────────
     // From its own EDID (scripts/edid-caps.py): Hyprland's report of an
     // output has no field for it. { output: { bt2020, pq, hlg, maxLum,
