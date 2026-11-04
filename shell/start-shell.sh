@@ -15,11 +15,11 @@ set -u
 # The environment the shell needs, however this was started — from
 # hyprland.lua, which sets it too, or by hand, which didn't, and left a shell
 # with NVIDIA's EGL driver loaded and glibc keeping every freed page:
-#   memory      two glibc arenas, and freed memory handed back
-#   hybrid GPU  Mesa's EGL, Vulkan ICD and VA-API rather than NVIDIA's,
-#               where Mesa has a GPU to drive (not with the MUX on NVIDIA)
+#   memory      two glibc arenas
+#   GPU         Mesa's EGL, Vulkan ICD and VA-API rather than NVIDIA's,
+#               wherever Mesa has a GPU — NVIDIA's switched off included,
+#               which glvnd would otherwise still load (not NVIDIA-only)
 export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
-export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.malloc.trim_threshold=131072:glibc.malloc.mmap_threshold=131072}"
 _mesa=/usr/share/glvnd/egl_vendor.d/50_mesa.json
 if [ -f "$_mesa" ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]; then
     _nv= _other=
@@ -30,7 +30,7 @@ if [ -f "$_mesa" ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]; then
             amdgpu|i915|xe|radeon) _other=1 ;;
         esac
     done
-    if [ -n "$_nv" ] && [ -n "$_other" ]; then
+    if [ -n "$_other" ]; then
         export __EGL_VENDOR_LIBRARY_FILENAMES="$_mesa" __GLX_VENDOR_LIBRARY_NAME=mesa
         for _icd in /usr/share/vulkan/icd.d/radeon_icd.x86_64.json /usr/share/vulkan/icd.d/intel_icd.x86_64.json; do
             [ -f "$_icd" ] && { export VK_DRIVER_FILES="$_icd" VK_ICD_FILENAMES="$_icd"; break; }

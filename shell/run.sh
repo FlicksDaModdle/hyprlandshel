@@ -90,8 +90,6 @@ fi
 # thread, and on a hybrid laptop Mesa's EGL driver rather than NVIDIA's —
 # only where Mesa has a GPU to drive (not with the MUX on NVIDIA alone).
 export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
-# Freed memory handed back rather than kept (hyprland.lua's shell_env says why).
-export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.malloc.trim_threshold=131072:glibc.malloc.mmap_threshold=131072}"
 _mesa=/usr/share/glvnd/egl_vendor.d/50_mesa.json
 if [ -f "$_mesa" ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]; then
     _nv= _other=
@@ -102,7 +100,7 @@ if [ -f "$_mesa" ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]; then
             amdgpu|i915|xe|radeon) _other=1 ;;
         esac
     done
-    if [ -n "$_nv" ] && [ -n "$_other" ]; then
+    if [ -n "$_other" ]; then
         export __EGL_VENDOR_LIBRARY_FILENAMES="$_mesa" __GLX_VENDOR_LIBRARY_NAME=mesa
         # Vulkan and video decoding too: Mesa's ICD and VA-API, not NVIDIA's.
         for _icd in /usr/share/vulkan/icd.d/radeon_icd.x86_64.json /usr/share/vulkan/icd.d/intel_icd.x86_64.json; do

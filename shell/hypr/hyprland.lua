@@ -242,11 +242,9 @@ hl.env("TERMCMD", "hyprshell-term")
 --   glibc's per-thread arenas, one per thread up to eight per core, each
 --   holding on to what it once used. Two are plenty for a shell.
 local function shell_env()
-    -- glibc keeps what's freed for reuse and gives little back, so a shell
-    -- that once opened Settings stays at that size: memory past 128 KB at
-    -- the top of the heap is handed back, and allocations that big (images,
-    -- buffers) get pages of their own, returned the moment they're freed.
-    local env = "MALLOC_ARENA_MAX=2 GLIBC_TUNABLES=glibc.malloc.trim_threshold=131072:glibc.malloc.mmap_threshold=131072"
+    -- (glibc's trim and mmap thresholds were tried here, and made the shell
+    -- grow, 445 MB to 575 MB in minutes, where it had been 285 without.)
+    local env = "MALLOC_ARENA_MAX=2"
     local mesa = "/usr/share/glvnd/egl_vendor.d/50_mesa.json"
     local f = io.open(mesa, "r")
     if not f then return env end
@@ -262,7 +260,11 @@ local function shell_env()
             elseif driver == "amdgpu" or driver == "i915" or driver == "xe" or driver == "radeon" then has_mesa_gpu = true end
         end
     end
-    if has_nvidia and has_mesa_gpu then
+    -- Wherever Mesa has a GPU to drive — whether or not NVIDIA's is there
+    -- too: with it switched off (no render node), glvnd still tries NVIDIA's
+    -- vendor first (10_ before 50_), loading some 40 MB of its libraries to
+    -- find no GPU. Only an NVIDIA-only machine is left to its driver.
+    if has_mesa_gpu then
         env = env .. " __EGL_VENDOR_LIBRARY_FILENAMES=" .. mesa .. " __GLX_VENDOR_LIBRARY_NAME=mesa"
         -- Vulkan and video decoding too (the lock screen's live wallpaper):
         -- Mesa's driver for the integrated GPU and VA-API, not NVIDIA's ICD
