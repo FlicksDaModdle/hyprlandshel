@@ -432,6 +432,12 @@ pub struct App {
     update_helper: String,
     mail: Option<i64>,
     month_offset: i32,
+    /// The monitor in use when last asked (for sizes that follow its scale).
+    focused_bar_cached: usize,
+    launcher: crate::launch_ui::Host,
+    launch_acts: Rc<RefCell<Vec<crate::launch_ui::Act>>>,
+    icon_tx: Sender<Vec<(String, Pixels)>>,
+    icon_rx: Receiver<Vec<(String, Pixels)>>,
     last_tick: Instant,
     last_frame: Instant,
     /// Panel surfaces to stop taking the pointer, at the next step.
@@ -514,7 +520,17 @@ impl App {
             toasts.on_hovered(move |h| q.borrow_mut().push(Action::ToastHover(h)));
         }
 
+        let launch_acts = Rc::new(RefCell::new(Vec::new()));
+        let launcher = crate::launch_ui::Host::new(launch_acts.clone());
+        theme_into!(launcher.ui, &look, 1.0);
+        let (icon_tx, icon_rx) = channel();
+
         let mut app = App {
+            focused_bar_cached: 0,
+            launcher,
+            launch_acts,
+            icon_tx,
+            icon_rx,
             actions,
             bars,
             open: None,
@@ -576,7 +592,7 @@ impl App {
             }
         }
         // A frame's time while a panel moves.
-        if self.bars.iter().any(|b| b.anim.moving()) {
+        if self.bars.iter().any(|b| b.anim.moving()) || self.launcher.moving() {
             d = d.min(Duration::from_millis(7));
         }
         d.max(Duration::from_millis(1))
@@ -605,6 +621,25 @@ impl App {
                 if let Some(line) = ev["line"].as_str() {
                     self.command(shell, qh, line);
                 }
+                continue;
+            }
+            if ev["ev"] == "calc" {
+                let q = ev["query"].as_str().unwrap_or("").to_string();
+                self.launcher.calc_result(&q, ev["result"].as_str().map(str::to_string));
+                continue;
+            }
+            if ev["ev"] == "fs-results" {
+                let q = ev["query"].as_str().unwrap_or("").to_string();
+                let list = ev["results"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|r| {
+                        let s = |k: &str| r[k].as_str().unwrap_or("").to_string();
+                        (s("path"), s("name"), s("dir"), r["isDir"] == true)
+                    })
+                    .collect();
+                self.launcher.file_results(&q, list);
                 continue;
             }
             if ev["ev"] == "usb-open" {
@@ -754,12 +789,28 @@ impl App {
                 b.anim.apply(&b.panels);
             }
             if b.closing && !b.anim.moving() {
+                // (panels)
                 b.closing = false;
                 b.panels.set_which("".into());
                 if let Some(id) = b.panel_surface.take() {
                     shell.remove(id);
                 }
             }
+        }
+
+        // The launcher: its springs, its icons, and its surface once it has
+        // gone.
+        if self.launcher.moving() {
+            self.launcher.step(dt, &m);
+        }
+        if self.launcher.closing && !self.launcher.moving() {
+            self.launcher.closing = false;
+            if let Some(id) = self.launcher.surface.take() {
+                shell.remove(id);
+            }
+        }
+        while let Ok(icons) = self.icon_rx.try_recv() {
+            self.launcher.add_icons(icons);
         }
 
         if self.last_tick.elapsed() >= Duration::from_secs(1) {
@@ -799,6 +850,9 @@ impl App {
             b.panels.set_theme_mode(self.look.mode.clone().into());
         }
         theme_into!(self.toasts, &self.look, 1.0);
+        let us = self.bars.get(self.focused_bar_cached).map(|b| self.look.screen_scale(&b.monitor)).unwrap_or(1.0);
+        theme_into!(self.launcher.ui, &self.look, us);
+        self.launcher.configure(&theme::raw(), us, &user_name());
     }
 
     fn refresh_second(&mut self) {
@@ -1249,6 +1303,11 @@ impl App {
     // ── doing ────────────────────────────────────────────────────────────
 
     pub fn run_actions(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        let acts: Vec<crate::launch_ui::Act> = std::mem::take(&mut *self.launch_acts.borrow_mut());
+        for a in acts {
+            let wants = self.launcher.act(a, &mut self.daemon);
+            self.launcher_wants(shell, qh, wants);
+        }
         loop {
             let batch: Vec<Action> = std::mem::take(&mut *self.actions.borrow_mut());
             if batch.is_empty() {
@@ -1547,11 +1606,99 @@ impl App {
         }
     }
 
+    fn toggle_launcher(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        let m = self.look.motion;
+        if self.launcher.is_open() {
+            self.launcher.close(&m);
+            if let Some(id) = self.launcher.surface {
+                shell.set_input(id, false);
+                shell.set_keyboard(id, KeyboardInteractivity::None);
+            }
+            return;
+        }
+        self.close_panel();
+        let bar = self.focused_bar();
+        self.focused_bar_cached = bar;
+        let us = self.bars.get(bar).map(|b| self.look.screen_scale(&b.monitor)).unwrap_or(1.0);
+        theme_into!(self.launcher.ui, &self.look, us);
+        let raw = theme::raw();
+        self.launcher.configure(&raw, us, &user_name());
+        self.last_frame = Instant::now();
+        self.launcher.open(&raw, &m, self.look.panels_grow);
+        self.launcher.ui.invoke_focus_field();
+        self.daemon.send(json!({ "cmd": "fs-warm" }));
+        if self.launcher.wants_icons {
+            self.launcher.wants_icons = false;
+            let list = self.launcher.entries_for_icons();
+            let tx = self.icon_tx.clone();
+            let mut wake = self.wake.try_clone().expect("wake");
+            std::thread::spawn(move || {
+                let icons = crate::launcher::entry_icons(&list, 48);
+                let _ = tx.send(icons);
+                let _ = std::io::Write::write_all(&mut wake, b"!");
+            });
+        }
+        match self.launcher.surface {
+            Some(id) => {
+                shell.set_input(id, true);
+                shell.set_keyboard(id, KeyboardInteractivity::Exclusive);
+            }
+            None => {
+                let output = self.bars.get(bar).map(|b| b.output.clone());
+                self.launcher.surface = Some(shell.add_window(qh, self.launcher.window.clone(), output.as_ref(), &wl::Placement {
+                    namespace: "quickshell:launcher",
+                    layer: Layer::Overlay,
+                    anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+                    width: 0,
+                    height: 0,
+                    exclusive: -1,
+                    // All typing comes here while it's open.
+                    keyboard: KeyboardInteractivity::Exclusive,
+                }));
+            }
+        }
+    }
+
+    fn launcher_wants(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, w: crate::launch_ui::Wants) {
+        use crate::launch_ui::Wants;
+        let close = |app: &mut App, shell: &mut wl::Shell| {
+            let m = app.look.motion;
+            app.launcher.close(&m);
+            if let Some(id) = app.launcher.surface {
+                shell.set_input(id, false);
+                // The keyboard back to the windows.
+                shell.set_keyboard(id, KeyboardInteractivity::None);
+            }
+        };
+        match w {
+            Wants::Nothing => {}
+            Wants::Close => close(self, shell),
+            Wants::Power(k) => {
+                close(self, shell);
+                self.power(&k);
+            }
+            Wants::Command(k) => {
+                close(self, shell);
+                match k {
+                    "theme" => self.command(shell, qh, "toggleTheme"),
+                    "updates" => self.toggle_from_key(shell, qh, "updates"),
+                    "timers" => self.toggle_from_key(shell, qh, "timers"),
+                    "tasks" => extras::sh(
+                        "command -v hyprshell-tasks >/dev/null 2>&1 && exec hyprshell-tasks; \
+                         for d in \"$HOME/.local/bin\" /usr/local/bin /usr/bin; do [ -x \"$d/hyprshell-tasks\" ] && exec \"$d/hyprshell-tasks\"; done",
+                    ),
+                    other => self.power(other),
+                }
+            }
+        }
+    }
+
     /// A line from hyprshell.cmd: what the keybinds send the shell.
     fn command(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, line: &str) {
         let line = line.trim();
         let (name, arg) = line.split_once(' ').map(|(a, b)| (a, b.trim())).unwrap_or((line, ""));
         match name {
+            "toggleLauncher" => self.toggle_launcher(shell, qh),
             "toggleControlCenter" => self.toggle_from_key(shell, qh, "control"),
             "toggleNotifications" => self.toggle_from_key(shell, qh, "notifications"),
             "toggleCalendar" => self.toggle_from_key(shell, qh, "calendar"),

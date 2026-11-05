@@ -1,0 +1,631 @@
+// The launcher (modules/launcher/Launcher.qml): a search field over the
+// pinned apps and recent files, or the list of every app and what a search
+// finds; the user and power at the foot. On a full-screen surface that
+// takes the keyboard while it is open, and closes on a click off it.
+import { Icons, GlyphData } from "icons.slint";
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+
+export struct LaunchItem { label: string, about: string, glyph: GlyphData, icon: image, has-icon: bool }
+export struct RecentFile { name: string, when: string, glyph: GlyphData }
+
+component Heading inherits HorizontalLayout {
+    in property <string> text;
+    in property <float> zoom;
+    spacing: 8px * zoom;
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: round(14 * root.zoom) * 1px;
+        height: max(1, round(2 * root.zoom)) * 1px;
+        background: Theme.accent;
+    }
+    Text {
+        vertical-alignment: center;
+        text: root.text;
+        font-size: Theme.fs(round(11 * root.zoom));
+        font-weight: 600;
+        letter-spacing: 0.85px;
+        color: Theme.ink2;
+    }
+}
+
+export component Launcher inherits Window {
+    // Placement and the springs (app.rs): the panel's width and greatest
+    // height, its gap above the screen's bottom edge, the text zoom, and
+    // the grow (width, height) and fade.
+    in property <length> panel-width: 609px;
+    in property <length> panel-max: 1000px;
+    in property <length> near-edge: 80px;
+    in property <float> zoom: 1.45;
+    in property <bool> grows: true;
+    in property <float> morph: 1;
+    in property <float> morph-y: 1;
+    in property <float> fade: 1;
+
+    // What it shows.
+    in-out property <string> query;
+    in property <bool> show-all;
+    in property <int> selected;
+    in property <int> columns: 3;
+    in property <length> tile: 87px;
+    in property <length> icon-size: 32px;
+    in property <[LaunchItem]> pinned;
+    in property <int> page;
+    in property <int> page-count: 1;
+    in property <[RecentFile]> recent;
+    in property <[LaunchItem]> results;
+    in property <string> list-title;
+    in property <string> user;
+    in property <bool> power-open;
+
+    callback edited(string);
+    // A key the field doesn't keep: arrows, Return, Esc, Tab. True if used.
+    callback nav(string) -> bool;
+    callback run-pinned(int);
+    callback run-result(int);
+    callback open-recent(int);
+    callback hover(int);
+    callback set-show-all(bool);
+    callback set-page(int);
+    callback dismiss();
+    callback toggle-power();
+    callback power(string);
+
+    property <bool> listing: root.query != "" || root.show-all;
+    // Typing goes to the search field from the moment it opens.
+    public function focus-field() { field.focus(); }
+    function sz(px: float) -> length { return round(px * root.zoom) * 1px; }
+
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-weight: 500;
+    default-font-size: Theme.fs(12);
+    forward-focus: field;
+
+    // The height the pinned view wants: kept while the list shows, so the
+    // panel doesn't jump as results come and go.
+    property <int> rows: max(1, ceil(root.pinned.length / root.columns));
+    property <length> natural: sz(50) + sz(32) + root.rows * root.tile + (root.rows - 1) * sz(2)
+        + (root.page-count > 1 ? 20px : 8px) + 1px
+        + (root.recent.length > 0 ? sz(32) + ceil(root.recent.length / 2) * (sz(36) + sz(1)) + sz(6) : 0px)
+        + sz(40);
+    property <length> h: min(root.natural, root.panel-max, root.height - root.near-edge - 24px);
+    property <length> w: root.panel-width;
+
+    // Click-away.
+    TouchArea { clicked => { root.dismiss(); } }
+
+    panel := Rectangle {
+        // Grows out of the bottom middle: 92 % → 100 % across, 60 % → 100 %
+        // up, as Launcher.qml's "grow" (the morph out of the dock comes
+        // with the dock).
+        property <float> sx: root.grows ? 0.92 + 0.08 * root.morph : 1;
+        property <float> sy: root.grows ? 0.6 + 0.4 * root.morph-y : 1;
+        width: root.w * self.sx;
+        height: root.h * self.sy;
+        x: max(12px, min(root.width - root.w - 12px, round((root.width - root.w) / 2 / 1px) * 1px)) + root.w * (1 - self.sx) / 2;
+        y: root.height - root.near-edge - self.height + (root.grows ? 0px : (1 - root.morph-y) * sz(24));
+        opacity: clamp(root.morph-y * 3, 0, 1);
+        border-radius: Theme.r-cap;
+        background: Theme.panel;
+        clip: true;
+        TouchArea {}
+
+        inner := Rectangle {
+            x: (parent.width - root.w) / 2;
+            y: parent.height - root.h;
+            width: root.w;
+            height: root.h;
+
+            body := Rectangle {
+                y: (1 - root.fade) * sz(14);
+                height: parent.height - footer.height;
+                opacity: clamp(root.fade, 0, 1);
+                clip: true;
+
+                // ── the search field and ESC ──
+                Rectangle {
+                    y: 0;
+                    height: sz(50);
+                    search := Rectangle {
+                        x: sz(10);
+                        width: parent.width - sz(10) - esc.width - sz(18);
+                        y: (parent.height - self.height) / 2;
+                        height: sz(32);
+                        border-radius: Theme.r-sm;
+                        background: Theme.hover;
+                        border-width: field.has-focus ? 2px : 1px;
+                        border-color: field.has-focus ? Theme.accent : Theme.edge;
+                        Glyph {
+                            x: sz(11);
+                            y: (parent.height - self.height) / 2;
+                            data: Icons.search;
+                            size: sz(15);
+                            monochrome: true;
+                            ink: field.has-focus ? Theme.accent : Theme.ink3;
+                        }
+                        keys := FocusScope {
+                            x: sz(11) + sz(15) + sz(8);
+                            y: 0;
+                            height: parent.height;
+                            width: parent.width - self.x - sz(10);
+                            capture-key-pressed(e) => {
+                                if (root.nav(e.text)) { return accept; }
+                                reject
+                            }
+                            field := TextInput {
+                                y: (parent.height - self.height) / 2;
+                                width: parent.width;
+                                text <=> root.query;
+                                font-size: Theme.fs(round(13 * root.zoom));
+                                color: Theme.ink;
+                                selection-background-color: Theme.accent;
+                                selection-foreground-color: Theme.ink-on-accent;
+                                single-line: true;
+                                edited => { root.edited(self.text); }
+                            }
+                            if root.query == "": Text {
+                                x: 0;
+                                y: (parent.height - self.height) / 2;
+                                text: "Search apps and commands";
+                                font-size: Theme.fs(round(13 * root.zoom));
+                                font-weight: 400;
+                                color: Theme.ink3;
+                            }
+                        }
+                    }
+                    esc := Rectangle {
+                        x: parent.width - self.width - sz(10);
+                        y: (parent.height - self.height) / 2;
+                        width: esc-label.preferred-width + 16px;
+                        height: sz(26);
+                        border-radius: Theme.r-sm;
+                        background: esc-touch.has-hover ? Theme.sel : Theme.hover;
+                        esc-label := Text {
+                            x: 8px;
+                            y: (parent.height - self.height) / 2;
+                            text: "ESC";
+                            font-size: Theme.fs(round(10 * root.zoom));
+                            font-weight: 600;
+                            color: Theme.ink3;
+                        }
+                        esc-touch := TouchArea { mouse-cursor: pointer; clicked => { root.dismiss(); } }
+                    }
+                }
+
+                // ── pinned and recent ──
+                if !root.listing: VerticalLayout {
+                    y: sz(50);
+                    height: self.preferred-height;
+                    Rectangle {
+                        height: sz(32);
+                        Heading { x: sz(10); text: "PINNED"; zoom: root.zoom; }
+                        Rectangle {
+                            x: parent.width - self.width - sz(10);
+                            y: (parent.height - self.height) / 2;
+                            height: sz(25);
+                            width: all.preferred-width + 20px;
+                            border-radius: Theme.r-sm;
+                            background: all-touch.has-hover ? Theme.accent : Theme.hover;
+                            all := HorizontalLayout {
+                                x: 10px;
+                                width: self.preferred-width;
+                                spacing: sz(6);
+                                Text {
+                                    vertical-alignment: center;
+                                    text: "All apps";
+                                    font-size: Theme.fs(round(11 * root.zoom));
+                                    font-weight: 600;
+                                    color: all-touch.has-hover ? Theme.ink-on-accent : Theme.ink2;
+                                }
+                                Glyph {
+                                    y: (sz(25) - self.height) / 2;
+                                    data: Icons.chevron-right;
+                                    size: sz(12);
+                                    monochrome: true;
+                                    ink: all-touch.has-hover ? Theme.ink-on-accent : Theme.ink2;
+                                }
+                            }
+                            all-touch := TouchArea { mouse-cursor: pointer; clicked => { root.set-show-all(true); } }
+                        }
+                    }
+                    Rectangle {
+                        property <length> cell-w: (root.w - 20px - sz(2) * (root.columns - 1)) / root.columns;
+                        height: root.rows * root.tile + (root.rows - 1) * sz(2);
+                        for item[i] in root.pinned: Rectangle {
+                            x: 10px + mod(i, root.columns) * (parent.cell-w + sz(2));
+                            y: floor(i / root.columns) * (root.tile + sz(2));
+                            width: parent.cell-w;
+                            height: root.tile;
+                            border-radius: Theme.r-sm;
+                            background: root.selected == i || pt.has-hover ? Theme.sel : transparent;
+                            border-width: root.selected == i ? 1px : 0px;
+                            border-color: Theme.seam;
+                            animate background { duration: 120ms; }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: sz(6);
+                                Rectangle {
+                                    x: (parent.width - self.width) / 2;
+                                    width: round(root.icon-size * 1.15 / 1px) * 1px;
+                                    height: self.width;
+                                    border-radius: Theme.r-sm;
+                                    background: Theme.hover;
+                                    Glyph {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        data: item.glyph;
+                                        size: round(root.icon-size * 0.62 / 1px) * 1px;
+                                    }
+                                }
+                                Text {
+                                    horizontal-alignment: center;
+                                    text: item.label;
+                                    overflow: elide;
+                                    font-size: Theme.fs(round(11 * root.zoom));
+                                    color: Theme.ink;
+                                }
+                            }
+                            pt := TouchArea {
+                                mouse-cursor: pointer;
+                                moved => { root.hover(i); }
+                                clicked => { root.run-pinned(i); }
+                            }
+                        }
+                    }
+                    // Page dots, when there's more than a page.
+                    Rectangle {
+                        height: root.page-count > 1 ? 20px : 8px;
+                        if root.page-count > 1: HorizontalLayout {
+                            alignment: center;
+                            spacing: sz(6);
+                            for p in root.page-count: Rectangle {
+                                y: (20px - self.height) / 2;
+                                width: root.page == p ? 16px : 5px;
+                                animate width { duration: 220ms; }
+                                height: sz(5);
+                                border-radius: sz(3);
+                                background: root.page == p ? Theme.accent : Theme.div;
+                                TouchArea { mouse-cursor: pointer; clicked => { root.set-page(p); } }
+                            }
+                        }
+                    }
+                    Rectangle { height: 1px; background: Theme.rule; }
+                    if root.recent.length > 0: Rectangle {
+                        height: sz(32);
+                        Heading { x: sz(10); text: "RECOMMENDED"; zoom: root.zoom; }
+                        Text {
+                            x: parent.width - self.width - sz(10);
+                            y: (parent.height - self.height) / 2;
+                            text: "recent";
+                            font-size: Theme.fs(round(11 * root.zoom));
+                            color: Theme.ink3;
+                        }
+                    }
+                    if root.recent.length > 0: Rectangle {
+                        property <length> cell-w: (root.w - 20px - sz(1)) / 2;
+                        height: ceil(root.recent.length / 2) * (sz(36) + sz(1)) + sz(6);
+                        for f[i] in root.recent: Rectangle {
+                            x: 10px + mod(i, 2) * (parent.cell-w + sz(1));
+                            y: floor(i / 2) * (sz(36) + sz(1));
+                            width: parent.cell-w;
+                            height: sz(36);
+                            border-radius: Theme.r-sm;
+                            background: rt.has-hover ? Theme.sel : transparent;
+                            HorizontalLayout {
+                                padding-left: sz(7);
+                                padding-right: sz(7);
+                                spacing: sz(8);
+                                Rectangle {
+                                    y: (sz(36) - self.height) / 2;
+                                    width: sz(22);
+                                    height: sz(22);
+                                    border-radius: Theme.r-sm;
+                                    background: Theme.hover;
+                                    border-width: 1px;
+                                    border-color: Theme.rule;
+                                    Glyph {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        data: f.glyph;
+                                        size: sz(12);
+                                        ink: Theme.ink2;
+                                    }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    spacing: sz(1);
+                                    Text { text: f.name; overflow: elide; font-size: Theme.fs(round(11 * root.zoom)); color: Theme.ink; }
+                                    Text { text: f.when; overflow: elide; font-size: Theme.fs(round(10 * root.zoom)); font-weight: 400; color: Theme.ink3; }
+                                }
+                            }
+                            rt := TouchArea { mouse-cursor: pointer; clicked => { root.open-recent(i); } }
+                        }
+                    }
+                }
+
+                // ── every app, or what a search found ──
+                if root.listing: Rectangle {
+                    y: sz(50);
+                    height: parent.height - sz(50);
+                    Rectangle {
+                        height: sz(40);
+                        y: 0;
+                        Text {
+                            x: sz(16);
+                            y: (parent.height - self.height) / 2;
+                            text: root.list-title;
+                            font-size: Theme.fs(round(13 * root.zoom));
+                            font-weight: 600;
+                            color: Theme.ink;
+                        }
+                        if root.show-all && root.query == "": Rectangle {
+                            x: parent.width - self.width - sz(10);
+                            y: (parent.height - self.height) / 2;
+                            height: sz(28);
+                            width: back.preferred-width + 22px;
+                            border-radius: Theme.r-sm;
+                            background: bt.has-hover ? Theme.sel : Theme.hover;
+                            back := HorizontalLayout {
+                                x: 11px;
+                                width: self.preferred-width;
+                                spacing: sz(7);
+                                Glyph { y: (sz(28) - self.height) / 2; data: Icons.chevron-left; size: sz(13); monochrome: true; ink: Theme.ink2; }
+                                Text {
+                                    vertical-alignment: center;
+                                    text: "Back to pinned";
+                                    font-size: Theme.fs(round(11 * root.zoom));
+                                    font-weight: 600;
+                                    color: Theme.ink2;
+                                }
+                            }
+                            bt := TouchArea { mouse-cursor: pointer; clicked => { root.set-show-all(false); } }
+                        }
+                    }
+                    // Keep the selected row in view as it moves.
+                    property <int> sel: root.selected;
+                    changed sel => {
+                        if (root.listing) {
+                            if (root.selected * list.row-h + list.content-y < 0) {
+                                list.content-y = -root.selected * list.row-h;
+                            }
+                            if ((root.selected + 1) * list.row-h + list.content-y > list.height) {
+                                list.content-y = list.height - (root.selected + 1) * list.row-h;
+                            }
+                        }
+                    }
+                    list := Flickable {
+                        x: 8px;
+                        y: sz(40);
+                        width: parent.width - 16px;
+                        height: parent.height - sz(40) - sz(8);
+                        property <length> row-h: sz(43) + sz(1);
+                        content-height: max(self.height, root.results.length * self.row-h);
+                        for r[i] in root.results: row := Rectangle {
+                            y: i * list.row-h;
+                            height: sz(43);
+                            property <bool> on: root.selected == i;
+                            border-radius: Theme.r-sm;
+                            background: self.on ? Theme.accent : (rh.has-hover ? Theme.hover : transparent);
+                            HorizontalLayout {
+                                padding-left: sz(10);
+                                padding-right: sz(12);
+                                spacing: sz(11);
+                                Rectangle {
+                                    y: (sz(43) - self.height) / 2;
+                                    width: sz(27);
+                                    height: sz(27);
+                                    border-radius: Theme.r-sm;
+                                    background: row.on ? #ffffff38 : Theme.hover;
+                                    if r.has-icon: Image {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        width: sz(15);
+                                        height: sz(15);
+                                        source: r.icon;
+                                        image-fit: contain;
+                                    }
+                                    if !r.has-icon: Glyph {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        data: r.glyph;
+                                        size: sz(14);
+                                        ink: row.on ? Theme.ink-on-accent : Theme.ink;
+                                        accent: row.on ? Theme.ink-on-accent : Theme.accent;
+                                    }
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    spacing: sz(2);
+                                    Text {
+                                        text: r.label;
+                                        overflow: elide;
+                                        font-size: Theme.fs(round(12 * root.zoom));
+                                        font-weight: 600;
+                                        color: row.on ? Theme.ink-on-accent : Theme.ink;
+                                    }
+                                    Text {
+                                        text: r.about;
+                                        overflow: elide;
+                                        font-size: Theme.fs(round(10 * root.zoom));
+                                        font-weight: 400;
+                                        opacity: row.on ? 0.8 : 1;
+                                        color: row.on ? Theme.ink-on-accent : Theme.ink3;
+                                    }
+                                }
+                                Text {
+                                    horizontal-stretch: 0;
+                                    vertical-alignment: center;
+                                    text: row.on ? "return" : "";
+                                    font-size: Theme.fs(round(11 * root.zoom));
+                                    font-weight: 600;
+                                    color: Theme.ink-on-accent;
+                                }
+                            }
+                            rh := TouchArea {
+                                mouse-cursor: pointer;
+                                moved => { root.hover(i); }
+                                clicked => { root.run-result(i); }
+                            }
+                        }
+                        if root.results.length == 0: Text {
+                            x: sz(8);
+                            y: sz(14);
+                            width: parent.width - sz(16);
+                            wrap: word-wrap;
+                            text: "No matches — press enter to run “" + root.query + "” as a command";
+                            font-size: Theme.fs(round(13 * root.zoom));
+                            color: Theme.ink3;
+                        }
+                    }
+                }
+            }
+
+            // ── the foot: start, the user, power ──
+            footer := Rectangle {
+                y: parent.height - self.height;
+                height: sz(40);
+                background: Theme.hover;
+                Rectangle { height: 1px; y: 0; background: Theme.rule; }
+                start := Rectangle {
+                    x: sz(7);
+                    y: (parent.height - self.height) / 2;
+                    width: sz(28);
+                    height: sz(28);
+                    border-radius: Theme.r-sm;
+                    background: st.has-hover ? Theme.accent : Theme.sel;
+                    Glyph {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        data: Icons.grid;
+                        size: sz(15);
+                        monochrome: true;
+                        ink: st.has-hover ? Theme.ink-on-accent : Theme.ink2;
+                    }
+                    st := TouchArea { mouse-cursor: pointer; clicked => { root.dismiss(); } }
+                }
+                Rectangle {
+                    x: start.x + start.width + sz(6);
+                    y: (parent.height - self.height) / 2;
+                    width: who.preferred-width + 14px;
+                    height: sz(30);
+                    border-radius: Theme.r-sm;
+                    background: ut.has-hover ? Theme.sel : transparent;
+                    opacity: clamp(root.fade, 0, 1);
+                    who := HorizontalLayout {
+                        x: sz(3);
+                        width: self.preferred-width;
+                        spacing: sz(9);
+                        Rectangle {
+                            y: (sz(30) - self.height) / 2;
+                            width: sz(21);
+                            height: sz(21);
+                            border-radius: sz(11);
+                            background: Theme.accent;
+                            Glyph {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                data: Icons.user;
+                                size: sz(11);
+                                monochrome: true;
+                                ink: Theme.ink-on-accent;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: sz(3);
+                            Text { text: root.user; font-size: Theme.fs(round(12 * root.zoom)); font-weight: 600; color: Theme.ink; }
+                            Rectangle { height: sz(2); background: Theme.accent; }
+                        }
+                    }
+                    ut := TouchArea { mouse-cursor: pointer; clicked => { root.toggle-power(); } }
+                }
+                Rectangle {
+                    x: parent.width - self.width - sz(10);
+                    y: (parent.height - self.height) / 2;
+                    width: sz(28);
+                    height: sz(28);
+                    border-radius: Theme.r-sm;
+                    background: pw.has-hover || root.power-open ? Theme.accent : transparent;
+                    opacity: clamp(root.fade, 0, 1);
+                    Glyph {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        data: Icons.power;
+                        size: sz(15);
+                        monochrome: true;
+                        ink: pw.has-hover || root.power-open ? Theme.ink-on-accent : Theme.ink2;
+                    }
+                    pw := TouchArea { mouse-cursor: pointer; clicked => { root.toggle-power(); } }
+                }
+            }
+
+            // The session menu, over the foot's right end.
+            if root.power-open: Rectangle {
+                width: sz(180);
+                height: pm.preferred-height;
+                x: parent.width - self.width - sz(10);
+                y: footer.y - self.height - sz(6);
+                border-radius: Theme.r-sm;
+                background: Theme.dark ? #1f1d1c : #fbfafa;
+                border-width: 1px;
+                border-color: Theme.edge;
+                TouchArea {}
+                pm := VerticalLayout {
+                    padding: sz(5);
+                    for e in [
+                        { k: "lock", n: "Lock", g: Icons.lock },
+                        { k: "suspend", n: "Suspend", g: Icons.moon },
+                        { k: "logout", n: "Log out", g: Icons.log-out },
+                        { k: "reboot", n: "Restart", g: Icons.reboot },
+                        { k: "poweroff", n: "Shut down", g: Icons.power },
+                    ]: Rectangle {
+                        height: sz(32);
+                        border-radius: Theme.r-sm;
+                        background: mt.has-hover ? Theme.accent : transparent;
+                        HorizontalLayout {
+                            padding-left: sz(10);
+                            spacing: sz(10);
+                            Glyph {
+                                y: (sz(32) - self.height) / 2;
+                                data: e.g;
+                                size: sz(14);
+                                monochrome: true;
+                                ink: mt.has-hover ? Theme.ink-on-accent : Theme.ink;
+                            }
+                            Text {
+                                vertical-alignment: center;
+                                text: e.n;
+                                font-size: Theme.fs(round(12 * root.zoom));
+                                color: mt.has-hover ? Theme.ink-on-accent : Theme.ink;
+                            }
+                        }
+                        mt := TouchArea { mouse-cursor: pointer; clicked => { root.power(e.k); } }
+                    }
+                }
+            }
+        }
+    }
+
+    // The seam across the top, between the corners.
+    HorizontalLayout {
+        x: panel.x + Theme.r-cap;
+        y: panel.y;
+        width: max(0px, panel.width - 2 * Theme.r-cap);
+        height: 2px;
+        opacity: panel.opacity * clamp(root.fade, 0, 1);
+        Rectangle { width: min(40px, parent.width); background: Theme.accent; }
+        Rectangle { background: Theme.seam; }
+    }
+    Rectangle {
+        x: panel.x;
+        y: panel.y;
+        width: panel.width;
+        height: panel.height;
+        opacity: panel.opacity;
+        border-radius: Theme.r-cap;
+        border-width: 1px;
+        border-color: Theme.edge;
+    }
+}

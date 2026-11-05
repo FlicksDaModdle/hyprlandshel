@@ -11,7 +11,9 @@ path = "src/main.rs"
 
 [dependencies]
 slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "renderer-software", "software-renderer-systemfonts"] }
-smithay-client-toolkit = { version = "0.19", default-features = false }
+# xkbcommon: the keymap, so what is typed into the launcher is what the
+# keyboard layout says.
+smithay-client-toolkit = { version = "0.19", default-features = false, features = ["xkbcommon"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 serde_json = "1"

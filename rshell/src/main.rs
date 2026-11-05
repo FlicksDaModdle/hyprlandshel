@@ -17,8 +17,11 @@ mod app;
 mod art;
 mod daemon;
 mod extras;
+mod glyphs;
 mod hypr;
 mod icons;
+mod launch_ui;
+mod launcher;
 mod mpris;
 mod notify;
 mod platform;
@@ -62,10 +65,12 @@ fn main() {
 
     loop {
         let _ = conn.flush();
+        let repeat = shell.repeat_keys();
         let timeout = if shell.animating() {
             Duration::from_millis(8)
         } else {
             slint::platform::duration_until_next_timer_update().unwrap_or(Duration::from_secs(1)).min(app.next_tick())
+                .min(repeat.unwrap_or(Duration::from_secs(1)))
         };
         if let Some(guard) = queue.prepare_read() {
             let mut fds = [

@@ -31,6 +31,11 @@ branch; the Quickshell shell stays the one in use until this has caught up.
 - `src/extras.rs` — updates (checkupdates, paru/yay), Mail's unread count,
   timers.
 - `src/sys.rs` — the battery, from /sys.
+- `src/launcher.rs`, `src/launch_ui.rs` — the launcher: desktop entries,
+  pinned apps (theme.json's dockPinned), ranking, launching; and driving
+  `ui/launcher.slint`. `src/glyphs.rs` (generated) names the glyphs.
+- `src/spring.rs` — common/Spring.qml's springs, for every animation that
+  bounces.
 - `src/app.rs` — the shell: bars, panels, banners, and what each click does.
 - `ui/` — the components: `bar.slint`, `panels.slint`, `toasts.slint`, and
   `widgets.slint` for what they share. `ui/icons.slint` is generated from
@@ -68,7 +73,14 @@ connection, the Hyprland event pipe and Slint's next timer.
 3. Notifications: the server, banners at the top right (held while the
    pointer is on them, urgent ones until dismissed), the count on the bell,
    and the daemon's history.
-4. The keybinds: hyprshell.cmd's panel toggles, volume, mute, microphone,
+4. The launcher (Super): pinned apps in pages, recent files, All apps, and
+   search over apps, the shell's commands, files (the daemon's index) and
+   the calculator; arrows, Tab, Return, Esc as in Launcher.qml; the user
+   and the session menu at the foot. Typing goes through the keymap
+   (xkbcommon), with key repeat. It grows out of the bottom of the screen
+   with Launcher.qml's springs; the morph out of the dock comes with the
+   dock.
+5. The keybinds: hyprshell.cmd's launcher and panel toggles, volume, mute, microphone,
    brightness, theme, Do not disturb, lock, Mail, updates.
 
 Not yet: the OSD for the volume and brightness keys, the Wi-Fi network and
@@ -76,7 +88,7 @@ Bluetooth device lists, the per-app mixer, night light, auto-hide.
 
 ## Next
 
-3. The dock / taskbar.
-4. Launcher, OSD, overview, Alt+Tab.
+3. The dock / taskbar (and the launcher's morph out of it).
+4. OSD, overview, Alt+Tab; the launcher's right-click menus (pin, unpin).
 5. Lock screen and face unlock.
 6. Settings.

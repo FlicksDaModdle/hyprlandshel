@@ -12,12 +12,13 @@ use slint::platform::{PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{LogicalPosition, PhysicalSize};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
+    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
     delegate_shm,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
+        keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RepeatInfo},
         pointer::{PointerEvent, PointerEventKind, PointerHandler},
         Capability, SeatHandler, SeatState,
     },
@@ -94,8 +95,12 @@ pub struct Shell {
     cursor: Option<wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
     /// The surface with the keyboard, when one has it.
     focus: Option<usize>,
-    /// Keys pressed on a surface that wants them (Esc, for now), by id.
+    /// Esc pressed on a surface, by id: what closes a panel.
     pub keys: Vec<(usize, Key)>,
+    /// Key repeat, as the compositor says: (delay, interval).
+    repeat: Option<(std::time::Duration, std::time::Duration)>,
+    /// The key held down, what it types, and when it next repeats.
+    held: Option<(u32, slint::SharedString, std::time::Instant)>,
     pub closed: bool,
 }
 
@@ -124,6 +129,8 @@ impl Shell {
             cursor: None,
             focus: None,
             keys: Vec::new(),
+            repeat: Some((std::time::Duration::from_millis(600), std::time::Duration::from_millis(40))),
+            held: None,
             closed: false,
         })
     }
@@ -222,6 +229,14 @@ impl Shell {
             surface.set_input_region(Some(r.wl_region()));
         }
         s.layer.commit();
+    }
+
+    /// Whether a surface takes the keyboard.
+    pub fn set_keyboard(&mut self, id: usize, k: KeyboardInteractivity) {
+        if let Some(Some(s)) = self.surfaces.get(id) {
+            s.layer.set_keyboard_interactivity(k);
+            s.layer.commit();
+        }
     }
 
     /// A new logical size for a surface sized to its content (the toasts).
@@ -456,10 +471,10 @@ impl SeatHandler for Shell {
                 self.cursor = Some(m.get_pointer(p, qh, ()));
             }
         }
-        // Raw keys, no keymap: all a panel needs is Esc, which is the same
+        // With the keymap (xkbcommon), so typing follows the layout.
         // key on every layout.
         if cap == Capability::Keyboard && self.keyboard.is_none() {
-            self.keyboard = Some(seat.get_keyboard(qh, ()));
+            self.keyboard = self.seats.get_keyboard(qh, &seat, None).ok();
         }
     }
     fn remove_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat, cap: Capability) {
@@ -480,19 +495,111 @@ impl SeatHandler for Shell {
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
 }
 
-impl Dispatch<wl_keyboard::WlKeyboard, ()> for Shell {
-    fn event(state: &mut Self, _: &wl_keyboard::WlKeyboard, event: wl_keyboard::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        match event {
-            wl_keyboard::Event::Enter { surface, .. } => state.focus = state.index_of(&surface),
-            wl_keyboard::Event::Leave { .. } => state.focus = None,
-            wl_keyboard::Event::Key { key, state: wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed), .. } => {
-                // evdev codes: 1 is Esc.
-                if let (Some(i), 1) = (state.focus, key) {
-                    state.keys.push((i, Key::Escape));
-                }
-            }
-            _ => {}
+/// What Slint calls a key: the special ones by their Key, the rest by the
+/// text they type.
+fn slint_key(sym: Keysym, utf8: Option<&str>) -> Option<slint::SharedString> {
+    let k = match sym {
+        Keysym::BackSpace => Key::Backspace,
+        Keysym::Tab | Keysym::ISO_Left_Tab => Key::Tab,
+        Keysym::Return | Keysym::KP_Enter => Key::Return,
+        Keysym::Escape => Key::Escape,
+        Keysym::Delete | Keysym::KP_Delete => Key::Delete,
+        Keysym::Left | Keysym::KP_Left => Key::LeftArrow,
+        Keysym::Right | Keysym::KP_Right => Key::RightArrow,
+        Keysym::Up | Keysym::KP_Up => Key::UpArrow,
+        Keysym::Down | Keysym::KP_Down => Key::DownArrow,
+        Keysym::Home | Keysym::KP_Home => Key::Home,
+        Keysym::End | Keysym::KP_End => Key::End,
+        Keysym::Page_Up | Keysym::KP_Page_Up => Key::PageUp,
+        Keysym::Page_Down | Keysym::KP_Page_Down => Key::PageDown,
+        Keysym::Shift_L | Keysym::Shift_R => Key::Shift,
+        Keysym::Control_L | Keysym::Control_R => Key::Control,
+        Keysym::Alt_L | Keysym::Alt_R => Key::Alt,
+        Keysym::Super_L | Keysym::Super_R => Key::Meta,
+        _ => {
+            let t = utf8.filter(|t| !t.is_empty() && !t.chars().any(|c| c.is_control()))?;
+            return Some(t.into());
         }
+    };
+    Some(k.into())
+}
+
+impl Shell {
+    /// Repeats the held key when it's time; when the next one is due.
+    pub fn repeat_keys(&mut self) -> Option<std::time::Duration> {
+        let (_, interval) = self.repeat?;
+        let (_, text, at) = self.held.as_mut()?;
+        let now = std::time::Instant::now();
+        if now >= *at {
+            *at = now + interval;
+            let text = text.clone();
+            if let Some(Some(s)) = self.focus.and_then(|i| self.surfaces.get(i)) {
+                s.adapter.window().dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+                s.adapter.window().dispatch_event(WindowEvent::KeyReleased { text });
+            }
+        }
+        self.held.as_ref().map(|(_, _, at)| at.saturating_duration_since(now))
+    }
+
+    fn key_window(&self) -> Option<&ShellSurface> {
+        self.focus.and_then(|i| self.surfaces.get(i)?.as_ref())
+    }
+}
+
+impl KeyboardHandler for Shell {
+    fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, surface: &wl_surface::WlSurface, _: u32, _: &[u32], _: &[Keysym]) {
+        self.focus = self.index_of(surface);
+        if let Some(s) = self.key_window() {
+            s.adapter.window().dispatch_event(WindowEvent::WindowActiveChanged(true));
+        }
+    }
+
+    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &wl_surface::WlSurface, _: u32) {
+        if let Some(s) = self.key_window() {
+            s.adapter.window().dispatch_event(WindowEvent::WindowActiveChanged(false));
+        }
+        self.focus = None;
+        self.held = None;
+    }
+
+    fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, e: KeyEvent) {
+        let Some(i) = self.focus else { return };
+        if e.keysym == Keysym::Escape {
+            self.keys.push((i, Key::Escape));
+        }
+        let Some(text) = slint_key(e.keysym, e.utf8.as_deref()) else { return };
+        if let Some(s) = self.key_window() {
+            s.adapter.window().dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+        }
+        // Modifiers don't repeat; everything else does, after the delay.
+        let modifier = matches!(e.keysym, Keysym::Shift_L | Keysym::Shift_R | Keysym::Control_L | Keysym::Control_R
+            | Keysym::Alt_L | Keysym::Alt_R | Keysym::Super_L | Keysym::Super_R);
+        self.held = match (modifier, self.repeat) {
+            (false, Some((delay, _))) => Some((e.raw_code, text, std::time::Instant::now() + delay)),
+            _ => self.held.take().filter(|_| modifier),
+        };
+    }
+
+    fn release_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, e: KeyEvent) {
+        if self.held.as_ref().is_some_and(|(code, _, _)| *code == e.raw_code) {
+            self.held = None;
+        }
+        let Some(text) = slint_key(e.keysym, e.utf8.as_deref().or(Some(""))) else { return };
+        if let Some(s) = self.key_window() {
+            s.adapter.window().dispatch_event(WindowEvent::KeyReleased { text });
+        }
+    }
+
+    fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: Modifiers, _: u32) {}
+
+    fn update_repeat_info(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, info: RepeatInfo) {
+        self.repeat = match info {
+            RepeatInfo::Repeat { rate, delay } => Some((
+                std::time::Duration::from_millis(delay as u64),
+                std::time::Duration::from_micros(1_000_000 / rate.get() as u64),
+            )),
+            RepeatInfo::Disable => None,
+        };
     }
 }
 
@@ -532,5 +639,6 @@ delegate_output!(Shell);
 delegate_shm!(Shell);
 delegate_seat!(Shell);
 delegate_pointer!(Shell);
+delegate_keyboard!(Shell);
 delegate_layer!(Shell);
 delegate_registry!(Shell);
