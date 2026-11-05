@@ -14,6 +14,7 @@ use slint::platform::software_renderer::MinimalSoftwareWindow;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::os::unix::net::UnixStream;
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -57,6 +58,11 @@ pub enum Action {
     MenuPick(i32, bool),
     MenuBack,
     ToastHover(bool),
+    DockActivate(usize, usize),
+    DockMenu(usize, usize, f32),
+    DockMiddle(usize, usize),
+    DockHover(usize, bool),
+    AppMenu(String),
 }
 
 type Queue = Rc<RefCell<Vec<Action>>>;
@@ -292,6 +298,46 @@ struct BarOn {
     anim: PanelAnim,
     /// Closed, and fading: the surface goes once it has.
     closing: bool,
+    dock: crate::Dock,
+    dock_surface: usize,
+    dock_geom: DockGeom,
+    /// The pill's place: shown, or tucked under the bottom edge.
+    reveal: Spring,
+    reveal_to: f64,
+    /// The pointer has been on it (and for a moment after it leaves).
+    latch: bool,
+    hide_at: Option<Instant>,
+    dock_tiles: Vec<crate::dock::Tile>,
+    dock_input: Option<(i32, i32, i32, i32)>,
+    /// Over a fullscreen window: on the overlay layer, keeping no room.
+    over: bool,
+    fullscreen: bool,
+    /// The height and room last given the dock's surface.
+    applied: (u32, i32),
+}
+
+/// The dock's measures on one monitor, logical px (Dock.qml's).
+#[derive(Clone, Copy, Default)]
+struct DockGeom {
+    head: f32,
+    breadth: f32,
+    edge: f32,
+    exclusive: i32,
+    hides: bool,
+}
+
+fn dock_geom(raw: &serde_json::Value, us: f32) -> (DockGeom, f32, f32, f32, f32, f32, f32) {
+    let num = |k: &str, d: f64| raw[k].as_f64().unwrap_or(d) as f32;
+    let u = |px: f32| (px * us).round().max(1.0);
+    let size = num("dockSize", 42.0);
+    let tile = u(size);
+    let icon = u((size * num("dockIcon", 50.0) / 100.0).round().max(8.0));
+    let breadth = u(size + 10.0);
+    let edge = u(num("dockGap", 16.0).clamp(0.0, 40.0));
+    let hides = raw["dockHide"].as_bool().unwrap_or(false);
+    let gaps_out = num("gapsOut", 8.0).max(0.0);
+    let exclusive = if hides { 0 } else { breadth.max(breadth + edge * 2.0 - gaps_out).round() as i32 };
+    (DockGeom { head: u(46.0), breadth, edge, exclusive, hides }, tile, icon, u(7.0), u(5.0), u(3.0), num("dockLabelSize", 12.0))
 }
 
 fn shell_input_off(id: usize, pending: &mut Vec<usize>) {
@@ -308,26 +354,30 @@ struct PanelAnim {
     lift: Spring,
     glass: Spring,
     inner: Spring,
+    /// Rising from the dock rather than dropping from the bar.
+    up: bool,
 }
 
 impl PanelAnim {
-    const FROM_Y: f64 = -10.0;
-
     fn new() -> PanelAnim {
-        PanelAnim { sx: Spring::new(1.0), sy: Spring::new(1.0), lift: Spring::new(0.0), glass: Spring::new(0.0), inner: Spring::new(0.0) }
+        PanelAnim { sx: Spring::new(1.0), sy: Spring::new(1.0), lift: Spring::new(0.0), glass: Spring::new(0.0), inner: Spring::new(0.0), up: false }
     }
 
-    fn start(grows: bool) -> (f64, f64, f64) {
+    fn from_y(&self) -> f64 {
+        if self.up { 10.0 } else { -10.0 }
+    }
+
+    fn start(&self, grows: bool) -> (f64, f64, f64) {
         if grows {
-            (0.74, 0.5, Self::FROM_Y * 0.4)
+            (0.74, 0.5, self.from_y() * 0.4)
         } else {
-            (0.97, 0.97, Self::FROM_Y * 1.2)
+            (0.97, 0.97, self.from_y() * 1.2)
         }
     }
 
     fn show(&mut self, fresh: bool, grows: bool, m: &Motion) {
         let grows = grows && m.springy && m.speed > 0.0;
-        let (x0, y0, l0) = Self::start(grows);
+        let (x0, y0, l0) = self.start(grows);
         // From the start unless it is still mostly there (reopened while
         // fading out), as Entrance does.
         if fresh || self.glass.value <= 0.05 {
@@ -348,7 +398,7 @@ impl PanelAnim {
 
     fn hide(&mut self, grows: bool, m: &Motion) {
         let grows = grows && m.springy && m.speed > 0.0;
-        let (x0, y0, l0) = Self::start(grows);
+        let (x0, y0, l0) = self.start(grows);
         self.sx.go(x0, 230.0, 0.0, m);
         self.sy.go(y0, 210.0, 0.0, m);
         self.lift.go(l0, 210.0, 0.0, m);
@@ -432,6 +482,14 @@ pub struct App {
     update_helper: String,
     mail: Option<i64>,
     month_offset: i32,
+    /// Hyprland's windows, the focused one, the pinned apps: the docks'.
+    clients: Vec<crate::dock::Client>,
+    active_addr: String,
+    active_class: String,
+    pinned: Vec<crate::launcher::Pinned>,
+    dock_labels: HashMap<String, String>,
+    /// The dock tile a menu is open for: (monitor, tile).
+    menu_for: Option<(usize, usize)>,
     /// The monitor in use when last asked (for sizes that follow its scale).
     focused_bar_cached: usize,
     launcher: crate::launch_ui::Host,
@@ -479,7 +537,7 @@ impl App {
 
         let actions: Queue = Rc::new(RefCell::new(Vec::new()));
 
-        // A bar, and a panel layer, on every monitor.
+        // A bar, a panel layer and a dock on every monitor.
         let mut bars = Vec::new();
         let outputs: Vec<_> = shell.outputs.outputs().collect();
         for (i, output) in outputs.iter().enumerate() {
@@ -505,7 +563,59 @@ impl App {
             theme_into!(panels, &look, us);
             wire_panels(&panels, &actions);
             panels.set_user(user_name().into());
-            bars.push(BarOn { bar, monitor, output: output.clone(), height, panels, panel_window, panel_surface: None, anim: PanelAnim::new(), closing: false });
+            // The dock, under everything on this monitor.
+            let dock = crate::Dock::new().expect("the dock");
+            theme_into!(dock, &look, us);
+            {
+                let q = actions.clone();
+                dock.on_activate(move |t, _| q.borrow_mut().push(Action::DockActivate(i, t as usize)));
+                let q = actions.clone();
+                dock.on_secondary(move |t, x| q.borrow_mut().push(Action::DockMenu(i, t as usize, x)));
+                let q = actions.clone();
+                dock.on_middle(move |t| q.borrow_mut().push(Action::DockMiddle(i, t as usize)));
+                let q = actions.clone();
+                dock.on_hovered(move |h| q.borrow_mut().push(Action::DockHover(i, h)));
+            }
+            let (geom, tile, icon, pad_h, pad_v, gap, label) = dock_geom(&raw, us);
+            dock.set_tile(tile);
+            dock.set_icon_size(icon);
+            dock.set_pad_h(pad_h);
+            dock.set_pad_v(pad_v);
+            dock.set_gap(gap);
+            dock.set_label_size(label);
+            dock.set_pill_y(geom.head);
+            let dock_surface = shell.add(qh, Some(output), &wl::Placement {
+                namespace: "quickshell:dock",
+                layer: Layer::Top,
+                anchor: Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+                width: 0,
+                height: (geom.head + geom.breadth + geom.edge) as u32,
+                exclusive: geom.exclusive,
+                keyboard: KeyboardInteractivity::None,
+            });
+            bars.push(BarOn {
+                bar,
+                monitor,
+                output: output.clone(),
+                height,
+                panels,
+                panel_window,
+                panel_surface: None,
+                anim: PanelAnim::new(),
+                closing: false,
+                dock,
+                dock_surface,
+                dock_geom: geom,
+                reveal: Spring::new(geom.head as f64),
+                reveal_to: geom.head as f64,
+                latch: false,
+                hide_at: None,
+                dock_tiles: Vec::new(),
+                dock_input: None,
+                over: false,
+                fullscreen: false,
+                applied: ((geom.head + geom.breadth + geom.edge) as u32, geom.exclusive),
+            });
         }
 
         let toasts = Toasts::new().expect("the banners");
@@ -527,6 +637,12 @@ impl App {
 
         let mut app = App {
             focused_bar_cached: 0,
+            clients: Vec::new(),
+            active_addr: String::new(),
+            active_class: String::new(),
+            pinned: Vec::new(),
+            dock_labels: HashMap::new(),
+            menu_for: None,
             launcher,
             launch_acts,
             icon_tx,
@@ -592,7 +708,7 @@ impl App {
             }
         }
         // A frame's time while a panel moves.
-        if self.bars.iter().any(|b| b.anim.moving()) || self.launcher.moving() {
+        if self.bars.iter().any(|b| b.anim.moving() || b.reveal.moving || b.hide_at.is_some()) || self.launcher.moving() {
             d = d.min(Duration::from_millis(7));
         }
         d.max(Duration::from_millis(1))
@@ -798,6 +914,8 @@ impl App {
             }
         }
 
+        self.step_docks(shell, dt);
+
         // The launcher: its springs, its icons, and its surface once it has
         // gone.
         if self.launcher.moving() {
@@ -836,13 +954,273 @@ impl App {
             b.bar.set_window_title(SharedString::from(title));
             b.bar.set_has_client(has);
         }
+        self.refresh_dock();
+    }
+
+    /// The docks' windows and tiles, from Hyprland now.
+    fn refresh_dock(&mut self) {
+        self.clients = crate::dock::clients();
+        let active = hypr::json("j/activewindow");
+        self.active_addr = active["address"].as_str().unwrap_or("").to_string();
+        self.active_class = active["class"].as_str().unwrap_or("").to_string();
+        self.dock_tiles();
+    }
+
+    /// The tiles as they stand (Start lit while the launcher is open).
+    fn dock_tiles(&mut self) {
+        use crate::dock::Tile;
+        let raw = theme::raw();
+        self.pinned = crate::launcher::pinned(&raw);
+        let scope_all = raw["dockScope"].as_str() == Some("all");
+        let desktop = raw["dockDesktopTile"].as_bool().unwrap_or(true);
+        let labels = raw["dockLabels"].as_bool().unwrap_or(true);
+        let launcher_open = self.launcher.is_open();
+        for b in &mut self.bars {
+            let shown = crate::dock::shown_on(&self.clients, &b.monitor, scope_all);
+            b.fullscreen = shown.iter().any(|c| c.fullscreen == 2 && !c.minimised);
+            let tiles = crate::dock::tiles(&self.pinned, &shown, desktop);
+            let count = |n: usize| match n {
+                0 => "not running".to_string(),
+                1 => "1 window".to_string(),
+                n => format!("{n} windows"),
+            };
+            let rows: Vec<crate::DockTileData> = tiles
+                .iter()
+                .map(|t| {
+                    let mut d = crate::DockTileData {
+                        kind: "app".into(),
+                        label: "".into(),
+                        sub: "".into(),
+                        glyph: crate::glyphs::glyph("square"),
+                        windows: 0,
+                        active: false,
+                        accent: false,
+                        named: false,
+                    };
+                    match t {
+                        Tile::Start => {
+                            d.kind = "start".into();
+                            d.label = "Start".into();
+                            d.sub = "super".into();
+                            d.glyph = crate::glyphs::glyph("grid");
+                            d.accent = launcher_open;
+                            d.active = launcher_open;
+                        }
+                        Tile::Divider => d.kind = "divider".into(),
+                        Tile::Pin { index, windows } => {
+                            let p = &self.pinned[*index];
+                            d.kind = "pin".into();
+                            d.label = p.label.clone().into();
+                            d.sub = count(windows.len()).into();
+                            d.glyph = crate::glyphs::glyph(&p.icon);
+                            d.windows = windows.len() as i32;
+                            d.active = !self.active_class.is_empty() && windows.contains(&self.active_addr);
+                            d.named = d.active && labels;
+                        }
+                        Tile::App { class, windows } => {
+                            let label = self
+                                .dock_labels
+                                .entry(class.clone())
+                                .or_insert_with(|| crate::dock::label_for(class))
+                                .clone();
+                            d.label = label.into();
+                            d.sub = "not pinned".into();
+                            d.glyph = crate::glyphs::glyph(crate::launcher::glyph_for_class(class));
+                            d.windows = windows.len() as i32;
+                            d.active = windows.contains(&self.active_addr);
+                            d.named = d.active && labels;
+                        }
+                        Tile::Desktop => {
+                            d.kind = "desktop".into();
+                            d.label = "Show desktop".into();
+                            d.sub = "toggle".into();
+                            d.glyph = crate::glyphs::glyph("minus");
+                        }
+                    }
+                    d
+                })
+                .collect();
+            b.dock.set_tiles(model(rows));
+            b.dock_tiles = tiles;
+        }
+    }
+
+    /// Each frame: where each dock's pill should be, the spring taking it
+    /// there, which layer it's on, and where it takes the pointer.
+    fn step_docks(&mut self, shell: &mut wl::Shell, dt: f64) {
+        let m = self.look.motion;
+        let launcher_here = if self.launcher.is_open() { Some(self.focused_bar_cached) } else { None };
+        let now = Instant::now();
+        for (i, b) in self.bars.iter_mut().enumerate() {
+            if b.hide_at.is_some_and(|t| now >= t) {
+                b.hide_at = None;
+                b.latch = false;
+            }
+            let g = b.dock_geom;
+            let hides = g.hides || b.fullscreen;
+            let revealed = !hides || b.latch || launcher_here == Some(i);
+            let to = if revealed { g.head as f64 } else { (g.head + g.breadth + 20.0) as f64 };
+            if to != b.reveal_to {
+                b.reveal_to = to;
+                if revealed {
+                    b.reveal.go(to, 380.0, 0.7, &m);
+                } else {
+                    b.reveal.go(to, 260.0, 0.0, &m);
+                }
+            }
+            if b.reveal.moving {
+                b.reveal.step(dt, &m);
+            }
+            b.dock.set_pill_y(b.reveal.value as f32);
+            // Over a fullscreen window it takes the overlay layer and keeps
+            // no room; otherwise the top layer and its strip.
+            let want = ((g.head + g.breadth + g.edge) as u32, g.exclusive);
+            if want != b.applied {
+                b.applied = want;
+                shell.resize(b.dock_surface, 0, want.0);
+                if !b.over {
+                    shell.set_layer(b.dock_surface, Layer::Top, want.1);
+                }
+            }
+            if b.fullscreen != b.over {
+                b.over = b.fullscreen;
+                let (layer, ex) = if b.over { (Layer::Overlay, 0) } else { (Layer::Top, g.exclusive) };
+                shell.set_layer(b.dock_surface, layer, ex);
+            }
+            let total = (g.head + g.breadth + g.edge) as i32;
+            let input = if revealed {
+                let (x, w) = (b.dock.get_pill_x() as i32, b.dock.get_pill_width() as i32);
+                let y = b.reveal.value as i32;
+                Some((x - 40, y, w + 80, total - y))
+            } else {
+                Some((0, total - 3, 100_000, 3))
+            };
+            if input != b.dock_input {
+                b.dock_input = input;
+                shell.set_input_rect(b.dock_surface, input);
+            }
+        }
+    }
+
+    fn dock_activate(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, bar: usize, t: usize) {
+        use crate::dock::Tile;
+        let Some(tile) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned() else { return };
+        let raw = theme::raw();
+        let windows_mode = raw["windowMode"].as_str() == Some("windows");
+        let ws = crate::dock::monitor(&self.bars[bar].monitor).1;
+        match tile {
+            Tile::Start => self.toggle_launcher(shell, qh),
+            Tile::Divider => {}
+            Tile::Pin { index, windows } => {
+                if windows.is_empty() {
+                    if let Some(argv) = self.pinned.get(index).and_then(crate::dock::command_for) {
+                        crate::launcher::launch(&argv, "");
+                    }
+                } else {
+                    crate::dock::activate(&windows, &self.clients, &self.active_addr, windows_mode, ws);
+                }
+            }
+            Tile::App { windows, .. } => crate::dock::activate(&windows, &self.clients, &self.active_addr, false, ws),
+            Tile::Desktop => crate::dock::toggle_desktop(),
+        }
+    }
+
+    fn dock_menu(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, bar: usize, t: usize, x: f32) {
+        use crate::dock::Tile;
+        let Some(tile) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned() else { return };
+        let row = |key: &str, label: &str, glyph: &str, rule: bool, danger: bool| crate::AppMenuRow {
+            key: key.into(),
+            label: label.into(),
+            glyph: crate::glyphs::glyph(glyph),
+            rule,
+            danger,
+        };
+        let (heading, rows) = match &tile {
+            Tile::Pin { index, windows } => {
+                let p = &self.pinned[*index];
+                let mut r = Vec::new();
+                if crate::dock::command_for(p).is_some() {
+                    r.push(row("open", if windows.is_empty() { "Open" } else { "Open new window" }, "plus", false, false));
+                }
+                if *index > 0 {
+                    r.push(row("left", "Move left", "chevronLeft", !r.is_empty(), false));
+                }
+                if *index + 1 < self.pinned.len() {
+                    r.push(row("right", "Move right", "chevronRight", !r.is_empty() && *index == 0, false));
+                }
+                r.push(row("unpin", "Unpin from dock", "minus", !r.is_empty(), false));
+                if !windows.is_empty() {
+                    let n = windows.len();
+                    r.push(row("close", if n == 1 { "Close window" } else { "Close all windows" }, "x", true, true));
+                }
+                (p.label.clone(), r)
+            }
+            Tile::App { class, windows } => {
+                let mut r = vec![row("open", "Open new window", "plus", false, false), row("pin", "Pin to dock", "plus", true, false)];
+                if !windows.is_empty() {
+                    let n = windows.len();
+                    r.push(row("close", if n == 1 { "Close window" } else { "Close all windows" }, "x", true, true));
+                }
+                (self.dock_labels.get(class).cloned().unwrap_or_else(|| class.clone()), r)
+            }
+            _ => return,
+        };
+        let Some(b) = self.bars.get(bar) else { return };
+        let g = b.dock_geom;
+        b.panels.set_app_menu_heading(heading.into());
+        b.panels.set_app_menu(model(rows));
+        b.panels.set_dock_gap(g.breadth + g.edge + 10.0);
+        self.menu_for = Some((bar, t));
+        self.toggle_panel(shell, qh, bar, "appmenu", x);
+    }
+
+    fn app_menu(&mut self, key: &str) {
+        use crate::dock::Tile;
+        self.close_panel();
+        let Some((bar, t)) = self.menu_for.take() else { return };
+        let Some(tile) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned() else { return };
+        let raw = theme::raw();
+        match (&tile, key) {
+            (Tile::Pin { index, .. }, "open") => {
+                if let Some(argv) = self.pinned.get(*index).and_then(crate::dock::command_for) {
+                    crate::launcher::launch(&argv, "");
+                }
+            }
+            (Tile::Pin { index, .. }, "left") => crate::dock::move_pin(&raw, &self.pinned[*index].key, -1),
+            (Tile::Pin { index, .. }, "right") => crate::dock::move_pin(&raw, &self.pinned[*index].key, 1),
+            (Tile::Pin { index, .. }, "unpin") => crate::dock::unpin(&raw, &self.pinned[*index].key),
+            (Tile::App { class, .. }, "open") => {
+                let argv = crate::launcher::entry_for_class(class).map(|e| e.exec).filter(|e| !e.is_empty()).unwrap_or_else(|| vec![class.clone()]);
+                crate::launcher::launch(&argv, "");
+            }
+            (Tile::App { class, .. }, "pin") => crate::dock::pin_class(&raw, class),
+            (Tile::Pin { windows, .. } | Tile::App { windows, .. }, "close") => {
+                for w in windows {
+                    crate::dock::close(w);
+                }
+            }
+            _ => {}
+        }
+        // A pin or an unpin changed theme.json: the tiles now.
+        self.dock_tiles();
     }
 
     fn refresh_look(&mut self) {
-        for b in &self.bars {
+        let raw = theme::raw();
+        for b in &mut self.bars {
             let us = self.look.screen_scale(&b.monitor);
             theme_into!(b.bar, &self.look, us);
             theme_into!(b.panels, &self.look, us);
+            theme_into!(b.dock, &self.look, us);
+            let (geom, tile, icon, pad_h, pad_v, gap, label) = dock_geom(&raw, us);
+            b.dock.set_tile(tile);
+            b.dock.set_icon_size(icon);
+            b.dock.set_pad_h(pad_h);
+            b.dock.set_pad_v(pad_v);
+            b.dock.set_gap(gap);
+            b.dock.set_label_size(label);
+            b.dock_geom = geom;
+            b.reveal_to = -1.0;
             b.bar.set_quiet(self.look.dnd);
             b.bar.set_show_tray(self.look.show_tray);
             b.bar.set_tray_open(self.look.tray_open);
@@ -853,6 +1231,8 @@ impl App {
         let us = self.bars.get(self.focused_bar_cached).map(|b| self.look.screen_scale(&b.monitor)).unwrap_or(1.0);
         theme_into!(self.launcher.ui, &self.look, us);
         self.launcher.configure(&theme::raw(), us, &user_name());
+        // Pins and the dock's tile settings may have changed with it.
+        self.dock_tiles();
     }
 
     fn refresh_second(&mut self) {
@@ -1233,6 +1613,7 @@ impl App {
         host.panels.set_which(which.into());
         host.bar.set_open_panel(which.into());
         host.closing = false;
+        host.anim.up = which == "appmenu";
         host.anim.show(fresh, grows, &m);
         host.anim.apply(&host.panels);
         if let Some(id) = host.panel_surface {
@@ -1535,6 +1916,28 @@ impl App {
                 let (id, label) = self.menu_stack.last().cloned().unwrap_or((0, String::new()));
                 let _ = self.tray_cmd.send(tray::Cmd::Menu(self.menu_key.clone(), id, label));
             }
+            Action::DockActivate(bar, t) => self.dock_activate(shell, qh, bar, t),
+            Action::DockMenu(bar, t, x) => self.dock_menu(shell, qh, bar, t, x),
+            Action::DockMiddle(bar, t) => {
+                if let Some(crate::dock::Tile::Pin { windows, .. } | crate::dock::Tile::App { windows, .. }) =
+                    self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned()
+                {
+                    if let Some(w) = windows.first() {
+                        crate::dock::close(w);
+                    }
+                }
+            }
+            Action::DockHover(bar, h) => {
+                if let Some(b) = self.bars.get_mut(bar) {
+                    if h {
+                        b.latch = true;
+                        b.hide_at = None;
+                    } else {
+                        b.hide_at = Some(Instant::now() + Duration::from_millis(420));
+                    }
+                }
+            }
+            Action::AppMenu(k) => self.app_menu(&k),
             Action::ToastHover(h) => {
                 self.toast_hover = h;
                 if !h {
@@ -1614,6 +2017,7 @@ impl App {
                 shell.set_input(id, false);
                 shell.set_keyboard(id, KeyboardInteractivity::None);
             }
+            self.dock_tiles();
             return;
         }
         self.close_panel();
@@ -1626,6 +2030,7 @@ impl App {
         self.last_frame = Instant::now();
         self.launcher.open(&raw, &m, self.look.panels_grow);
         self.launcher.ui.invoke_focus_field();
+        self.dock_tiles();
         self.daemon.send(json!({ "cmd": "fs-warm" }));
         if self.launcher.wants_icons {
             self.launcher.wants_icons = false;
@@ -1672,7 +2077,10 @@ impl App {
         };
         match w {
             Wants::Nothing => {}
-            Wants::Close => close(self, shell),
+            Wants::Close => {
+                close(self, shell);
+                self.dock_tiles();
+            }
             Wants::Power(k) => {
                 close(self, shell);
                 self.power(&k);
@@ -1817,4 +2225,5 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_run_updates, | | Action::RunUpdates);
     on!(on_menu_pick, |id, sub| Action::MenuPick(id, sub));
     on!(on_menu_back, | | Action::MenuBack);
+    on!(on_app_menu_pick, |k| Action::AppMenu(k.to_string()));
 }

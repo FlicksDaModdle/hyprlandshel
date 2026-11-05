@@ -231,6 +231,27 @@ impl Shell {
         s.layer.commit();
     }
 
+    /// Where a surface takes the pointer, logical; None for nowhere. The
+    /// dock takes it over its pill, or along the bottom edge while hidden.
+    pub fn set_input_rect(&mut self, id: usize, r: Option<(i32, i32, i32, i32)>) {
+        let Some(Some(s)) = self.surfaces.get(id) else { return };
+        let Ok(region) = smithay_client_toolkit::compositor::Region::new(&self.compositor) else { return };
+        if let Some((x, y, w, h)) = r {
+            region.add(x, y, w.max(0), h.max(0));
+        }
+        s.layer.wl_surface().set_input_region(Some(region.wl_region()));
+        s.layer.commit();
+    }
+
+    /// Over fullscreen windows (Overlay) or not (Top), and the room it keeps.
+    pub fn set_layer(&mut self, id: usize, layer: Layer, exclusive: i32) {
+        if let Some(Some(s)) = self.surfaces.get(id) {
+            s.layer.set_layer(layer);
+            s.layer.set_exclusive_zone(exclusive);
+            s.layer.commit();
+        }
+    }
+
     /// Whether a surface takes the keyboard.
     pub fn set_keyboard(&mut self, id: usize, k: KeyboardInteractivity) {
         if let Some(Some(s)) = self.surfaces.get(id) {

@@ -1,0 +1,204 @@
+// The dock (modules/dock/Dock.qml, DockTile.qml): a pill at the bottom
+// middle of each screen. Start, the pinned apps, the running ones not
+// pinned, show desktop; a pip under a tile for each window it has, the
+// focused app tinted and named. Hides into the bottom edge when set to,
+// or when a window is fullscreen, and comes back on the pointer.
+import { Icons, GlyphData } from "icons.slint";
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+
+export struct DockTileData {
+    // start, divider, pin, app, desktop
+    kind: string,
+    label: string,
+    sub: string,
+    glyph: GlyphData,
+    windows: int,
+    active: bool,
+    // The accent fill: Start while the launcher is open.
+    accent: bool,
+    // The focused app's name beside its glyph (dockLabels).
+    named: bool,
+}
+
+component DockTile inherits Rectangle {
+    in property <DockTileData> data;
+    in property <length> tile;
+    in property <length> icon;
+    in property <length> label-size;
+    callback activated(length);
+    callback secondary(length);
+    callback middle();
+    property <bool> hovered: t.has-hover;
+    // The name's width, measured where it isn't drawn.
+    measure := Text {
+        visible: false;
+        width: 0;
+        text: root.data.label;
+        font-size: Theme.fs(root.label-size / 1px);
+        font-weight: 600;
+    }
+    width: data.named ? round((tile + measure.preferred-width + 21px) / 1px) * 1px : tile;
+    animate width { duration: 330ms; easing: cubic-bezier(0.25, 1.3, 0.4, 1); }
+    height: tile;
+    border-radius: Theme.r-cap;
+    background: data.accent ? Theme.accent : data.active ? Theme.sel : t.has-hover ? Theme.hover : transparent;
+    animate background { duration: 160ms; }
+    border-width: data.active && !data.accent ? 1px : 0px;
+    border-color: Theme.seam;
+
+    HorizontalLayout {
+        x: (parent.width - self.preferred-width) / 2;
+        width: self.preferred-width;
+        spacing: 9px;
+        Glyph {
+            // A little bigger under the pointer, smaller while pressed.
+            property <length> s: t.pressed ? root.icon * 0.86 : (root.hovered && !root.data.named ? root.icon * 1.12 : root.icon);
+            y: (root.tile - self.height) / 2;
+            size: round(self.s / 1px) * 1px;
+            animate size { duration: 200ms; easing: cubic-bezier(0.3, 1.4, 0.5, 1); }
+            data: root.data.glyph;
+            ink: root.data.accent ? Theme.ink-on-accent : Theme.ink;
+            accent: root.data.accent ? Theme.ink-on-accent : Theme.accent;
+        }
+        // Only there while named: a hidden element still takes its room.
+        if root.data.named: Text {
+            vertical-alignment: center;
+            text: root.data.label;
+            font-size: Theme.fs(root.label-size / 1px);
+            font-weight: 600;
+            color: Theme.ink;
+        }
+    }
+
+    // A pip per window, three at most; the focused app's first is long.
+    if root.data.windows > 0: HorizontalLayout {
+        x: (parent.width - self.preferred-width) / 2;
+        width: self.preferred-width;
+        y: parent.height - 3px - 2.5px;
+        height: 2.5px;
+        spacing: 2px;
+        for i in min(root.data.windows, 3): Rectangle {
+            width: root.data.active && i == 0 ? 14px : 6px;
+            animate width { duration: 260ms; }
+            border-radius: 1.25px;
+            background: root.data.active ? Theme.accent : Theme.ink3;
+        }
+    }
+
+    // Its name and how many windows, above it (outside the tile, which
+    // doesn't clip), unless its name already shows.
+    in property <length> lift: 5px;
+    if t.has-hover && !root.data.named: Rectangle {
+        x: (root.width - self.width) / 2;
+        y: -self.height - 12px - root.lift;
+        height: 30px;
+        width: tip.preferred-width + 22px;
+        border-radius: Theme.r-sm;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.edge;
+        tip := HorizontalLayout {
+            x: 11px;
+            width: self.preferred-width;
+            spacing: 9px;
+            Text {
+                vertical-alignment: center;
+                text: root.data.label;
+                font-size: Theme.fs(root.label-size / 1px - 1);
+                font-weight: 600;
+                color: Theme.ink;
+            }
+            if root.data.sub != "": Text {
+                vertical-alignment: center;
+                text: root.data.sub;
+                font-size: Theme.fs(root.label-size / 1px - 2);
+                color: Theme.ink3;
+            }
+        }
+    }
+
+    t := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.activated(root.absolute-position.x + root.width / 2); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
+                root.secondary(root.absolute-position.x + root.width / 2);
+            }
+            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.middle) { root.middle(); }
+        }
+    }
+}
+
+export component Dock inherits Window {
+    in property <[DockTileData]> tiles;
+    in property <length> tile: 42px;
+    in property <length> icon-size: 21px;
+    in property <length> pad-h: 7px;
+    in property <length> pad-v: 5px;
+    in property <length> gap: 3px;
+    in property <length> label-size: 12px;
+    // Where the pill's top is (the reveal spring, from app.rs).
+    in property <length> pill-y;
+    out property <length> pill-width: pill.width;
+    out property <length> pill-x: pill.x;
+    callback activate(int, length);
+    callback secondary(int, length);
+    callback middle(int);
+    callback hovered(bool);
+
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-weight: 500;
+
+    // The strip along the bottom edge that brings a hidden dock back.
+    TouchArea {
+        y: root.height - 3px;
+        height: 3px;
+        changed has-hover => { root.hovered(self.has-hover); }
+    }
+
+    pill := Rectangle {
+        x: round((root.width - self.width) / 2 / 1px) * 1px;
+        y: root.pill-y;
+        width: row.preferred-width + root.pad-h * 2;
+        height: root.tile + root.pad-v * 2;
+        border-radius: Theme.r-cap;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.edge;
+
+        hover := TouchArea {
+            changed has-hover => { root.hovered(self.has-hover); }
+            row := HorizontalLayout {
+                x: root.pad-h;
+                y: root.pad-v;
+                width: self.preferred-width;
+                height: root.tile;
+                spacing: root.gap;
+                for d[i] in root.tiles: Rectangle {
+                    width: d.kind == "divider" ? 7px : tile.width;
+                    if d.kind == "divider": Rectangle {
+                        x: 3px;
+                        y: (root.tile - 26px) / 2;
+                        width: 1px;
+                        height: 26px;
+                        background: Theme.div;
+                    }
+                    tile := DockTile {
+                        visible: d.kind != "divider";
+                        data: d;
+                        tile: root.tile;
+                        icon: root.icon-size;
+                        label-size: root.label-size;
+                        activated(x) => { root.activate(i, x); }
+                        secondary(x) => { root.secondary(i, x); }
+                        middle => { root.middle(i); }
+                        lift: root.pad-v;
+                    }
+                }
+            }
+        }
+    }
+
+}

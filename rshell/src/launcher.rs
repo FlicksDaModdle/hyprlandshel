@@ -174,6 +174,14 @@ pub struct Pinned {
     pub label: String,
     pub icon: String,
     pub exec: Vec<String>,
+    /// Which windows are this app's: a pattern over their class.
+    pub matcher: String,
+}
+
+impl Pinned {
+    pub fn matches(&self, class: &str) -> bool {
+        regex::RegexBuilder::new(&self.matcher).case_insensitive(true).build().is_ok_and(|r| r.is_match(class))
+    }
 }
 
 const WEB_FINDER: &str = "command -v hyprshell-browser >/dev/null 2>&1 && exec hyprshell-browser \"$@\"; \
@@ -186,19 +194,20 @@ const FILES_FINDER: &str = "command -v hyprshell-files >/dev/null 2>&1 && exec h
     exec xdg-open \"${1:-$HOME}\"";
 
 fn defaults() -> Vec<Pinned> {
-    let p = |key: &str, label: &str, icon: &str, exec: &[&str]| Pinned {
+    let p = |key: &str, label: &str, icon: &str, exec: &[&str], m: &str| Pinned {
         key: key.into(),
         label: label.into(),
         icon: icon.into(),
         exec: exec.iter().map(|s| s.to_string()).collect(),
+        matcher: m.into(),
     };
     vec![
-        p("appTerm", "Terminal", "terminal", &[]),
-        p("appFiles", "Files", "folder", &[]),
-        p("appWeb", "Web", "globe", &["sh", "-c", WEB_FINDER, "open-web"]),
-        p("appCode", "Code", "code", &["neovide"]),
-        p("appNotes", "Notes", "stickyNote", &["obsidian"]),
-        p("appMusic", "Music", "music", &[]),
+        p("appTerm", "Terminal", "terminal", &[], r"^(hyprshell-term|kitty|foot|alacritty|wezterm|org\.wezfurlong\.wezterm)$"),
+        p("appFiles", "Files", "folder", &[], r"^(hyprshell-files|org\.gnome\.Nautilus|nautilus|thunar|dolphin|nemo|pcmanfm.*)$"),
+        p("appWeb", "Web", "globe", &["sh", "-c", WEB_FINDER, "open-web"], r"^(hyprshell-browser|firefox.*|chromium|google-chrome.*|brave-browser|zen.*)$"),
+        p("appCode", "Code", "code", &["neovide"], r"^(neovide|code|code-oss|codium|dev\.zed\.Zed|jetbrains-.*)$"),
+        p("appNotes", "Notes", "stickyNote", &["obsidian"], r"^(obsidian|org\.gnome\.TextEditor|logseq)$"),
+        p("appMusic", "Music", "music", &[], r"^(ncmpcpp|spotify|org\.gnome\.Rhythmbox3|io\.bassi\.Amberol)$"),
     ]
 }
 
@@ -221,7 +230,15 @@ pub fn pinned(theme: &Value) -> Vec<Pinned> {
             if key == "appWeb" && exec == ["firefox"] {
                 exec = def.map(|d| d.exec.clone()).unwrap_or(exec);
             }
+            // A stored pattern that has lost the default's names gets them
+            // back, as Apps.qml does.
+            let stored = e["match"].as_str().unwrap_or("^$").to_string();
+            let matcher = match def {
+                Some(d) if !stored.contains(&d.matcher) => format!("(?:{stored})|(?:{})", d.matcher),
+                _ => stored,
+            };
             Some(Pinned {
+                matcher,
                 label: e["label"].as_str().filter(|s| !s.is_empty()).map(str::to_string).or(def.map(|d| d.label.clone())).unwrap_or_default(),
                 icon: e["icon"].as_str().unwrap_or("square").to_string(),
                 exec,
@@ -424,4 +441,21 @@ pub fn glyph_for_class(cls: &str) -> &'static str {
     } else {
         "square"
     }
+}
+
+/// Writes the pinned apps back to theme.json's dockPinned, as Apps.save.
+pub fn save_pinned(list: &[Pinned]) {
+    let v: Vec<Value> = list
+        .iter()
+        .map(|p| serde_json::json!({ "key": p.key, "label": p.label, "icon": p.icon, "exec": p.exec, "match": p.matcher }))
+        .collect();
+    crate::theme::set("dockPinned", Value::String(serde_json::to_string(&v).unwrap_or_default()));
+}
+
+/// The desktop entry for a window class, by id or StartupWMClass.
+pub fn entry_for_class(cls: &str) -> Option<Entry> {
+    let c = cls.to_lowercase();
+    entries().into_iter().find(|e| {
+        e.class.to_lowercase() == c || e.id.to_lowercase() == c || e.id.to_lowercase().rsplit('.').next() == Some(&c)
+    })
 }

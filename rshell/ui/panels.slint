@@ -19,6 +19,11 @@ component Drop inherits Rectangle {
     in property <length> screen-width;
     in property <length> panel-width;
     in property <bool> seam: true;
+    // Rising from the dock rather than hanging from the bar: placed by its
+    // bottom edge, `bottom` above the screen's.
+    in property <bool> from-bottom;
+    in property <length> bottom;
+    in property <length> screen-height;
     // The springs: frame width and height as fractions, the lift, the
     // sheet's opacity and the content's.
     in property <float> sx: 1;
@@ -30,7 +35,7 @@ component Drop inherits Rectangle {
     // Grown from under the button.
     property <length> origin: clamp(anchor - self.x, 0px, panel-width);
     x: max(12px, min(anchor - panel-width / 2, screen-width - panel-width - 12px));
-    y: top + lift;
+    y: (from-bottom ? screen-height - bottom - h : top) + lift;
     width: panel-width;
     height: h;
     visible: shown && glass > 0.004;
@@ -38,14 +43,14 @@ component Drop inherits Rectangle {
     frame := Rectangle {
         x: root.origin * (1 - root.sx);
         width: root.panel-width * root.sx;
-        y: 0;
+        y: root.from-bottom ? root.h * (1 - root.sy) : 0;
         height: root.h * root.sy;
         border-radius: min(Theme.r-cap, self.height / 2, self.width / 2);
         background: Theme.panel;
         clip: true;
         Rectangle {
             x: -frame.x;
-            y: 0;
+            y: -frame.y;
             width: root.panel-width;
             height: root.h;
             opacity: clamp(root.inner, 0, 1);
@@ -54,6 +59,7 @@ component Drop inherits Rectangle {
     }
     Rectangle {
         x: frame.x;
+        y: frame.y;
         width: frame.width;
         height: frame.height;
         border-radius: frame.border-radius;
@@ -64,7 +70,7 @@ component Drop inherits Rectangle {
     if root.seam: HorizontalLayout {
         x: frame.x + frame.border-radius;
         width: max(0px, frame.width - 2 * frame.border-radius);
-        y: 0;
+        y: frame.y;
         height: 2px;
         Rectangle { width: min(40px, parent.width); background: Theme.accent; }
         Rectangle { background: Theme.seam; }
@@ -912,6 +918,39 @@ component TrayMenu inherits PanelSurface {
     }
 }
 
+export struct AppMenuRow { key: string, label: string, glyph: GlyphData, rule: bool, danger: bool }
+
+// The dock's menu for a tile (AppMenu.qml with Apps.menuFor's rows).
+component AppMenu inherits PanelSurface {
+    in property <string> heading;
+    in property <[AppMenuRow]> rows;
+    callback pick(string);
+    VerticalLayout {
+        padding: 6px;
+        Text {
+            x: 11px;
+            height: 28px;
+            vertical-alignment: center;
+            text: root.heading;
+            overflow: elide;
+            font-size: Theme.fs(12);
+            font-weight: 700;
+            color: Theme.ink;
+        }
+        for r in root.rows: VerticalLayout {
+            if r.rule: Rectangle { height: 5px; Rule { y: 2px; } }
+            MenuRow {
+                label: r.label;
+                icon: r.glyph;
+                has-icon: true;
+                danger: r.danger;
+                row-height: 32px;
+                activated => { root.pick(r.key); }
+            }
+        }
+    }
+}
+
 export component Panels inherits Window {
     // Which is open: power, window, calendar, control, notifications,
     // media, drives, timers, updates, privacy, tray; "" while closing.
@@ -987,6 +1026,11 @@ export component Panels inherits Window {
     in property <bool> menu-toggles;
     callback menu-pick(int, bool);
     callback menu-back();
+    // the dock's menu
+    in property <string> app-menu-heading;
+    in property <[AppMenuRow]> app-menu;
+    in property <length> dock-gap: 80px;
+    callback app-menu-pick(string);
 
     background: transparent;
     default-font-family: Theme.font;
@@ -1073,6 +1117,12 @@ export component Panels inherits Window {
     Drop {
         shown: root.which == "privacy"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 280px;
         PrivacyPanel { rows: root.privacy; }
+    }
+    Drop {
+        shown: root.which == "appmenu"; seam: false; from-bottom: true; bottom: root.dock-gap; screen-height: root.height;
+        anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner;
+        panel-width: 230px;
+        AppMenu { heading: root.app-menu-heading; rows: root.app-menu; pick(k) => { root.app-menu-pick(k); } }
     }
     Drop {
         shown: root.which == "tray"; seam: false; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 240px;

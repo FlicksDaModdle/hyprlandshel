@@ -16,6 +16,7 @@
 mod app;
 mod art;
 mod daemon;
+mod dock;
 mod extras;
 mod glyphs;
 mod hypr;

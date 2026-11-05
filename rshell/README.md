@@ -34,6 +34,8 @@ branch; the Quickshell shell stays the one in use until this has caught up.
 - `src/launcher.rs`, `src/launch_ui.rs` — the launcher: desktop entries,
   pinned apps (theme.json's dockPinned), ranking, launching; and driving
   `ui/launcher.slint`. `src/glyphs.rs` (generated) names the glyphs.
+- `src/dock.rs`, `ui/dock.slint` — the dock: Hyprland's windows, which
+  pinned app each is, the tiles, and what clicking one does.
 - `src/spring.rs` — common/Spring.qml's springs, for every animation that
   bounces.
 - `src/app.rs` — the shell: bars, panels, banners, and what each click does.
@@ -80,7 +82,15 @@ connection, the Hyprland event pipe and Slint's next timer.
    (xkbcommon), with key repeat. It grows out of the bottom of the screen
    with Launcher.qml's springs; the morph out of the dock comes with the
    dock.
-5. The keybinds: hyprshell.cmd's launcher and panel toggles, volume, mute, microphone,
+5. The dock: Start, the pinned apps (theme.json's dockPinned, matched to
+   windows by their patterns), the running apps not pinned, show desktop;
+   a pip per window, the focused app tinted and named, a tooltip on hover.
+   Click launches, focuses or cycles (minimises in the Windows window
+   mode); middle click closes; right click opens its menu (open, move
+   left / right, pin, unpin, close), rising from the dock. Hides when set
+   to or over a fullscreen window, back from the bottom edge, with the
+   QML dock's springs; it only takes the pointer over its pill.
+6. The keybinds: hyprshell.cmd's launcher and panel toggles, volume, mute, microphone,
    brightness, theme, Do not disturb, lock, Mail, updates.
 
 Not yet: the OSD for the volume and brightness keys, the Wi-Fi network and
@@ -88,7 +98,8 @@ Bluetooth device lists, the per-app mixer, night light, auto-hide.
 
 ## Next
 
-3. The dock / taskbar (and the launcher's morph out of it).
+3. The dock's window previews, drag to reorder, the left-side and
+   taskbar layouts, and the launcher's morph out of it.
 4. OSD, overview, Alt+Tab; the launcher's right-click menus (pin, unpin).
 5. Lock screen and face unlock.
 6. Settings.
