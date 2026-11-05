@@ -72,6 +72,10 @@ connection, the Hyprland event pipe and Slint's next timer.
    - Control center: theme (Light / Dark / Auto), Wi-Fi, Bluetooth,
      Airplane, Do not disturb, Performance and Keyboard light (ROG), and
      the volume, brightness and microphone sliders (click the icon to mute).
+     The Wi-Fi and Bluetooth tiles' arrows open their lists: join a
+     network (asking for its password under it), disconnect, forget (right
+     click); pair, connect and disconnect devices, with the pairing code to
+     confirm.
    - Calendar: the month, with previous / next.
    - Power: Lock (hyprlock), Suspend, Log out, Restart, Shut down; uptime.
    - Tray menus (submenus, checks, separators), drives (open, mount,
@@ -115,8 +119,7 @@ connection, the Hyprland event pipe and Slint's next timer.
 10. The keybinds: hyprshell.cmd's launcher and panel toggles, volume, mute, microphone,
    brightness, theme, Do not disturb, lock, Mail, updates.
 
-Not yet: the OSD for the volume and brightness keys, the Wi-Fi network and
-Bluetooth device lists, the per-app mixer, night light, auto-hide.
+Not yet: the per-app mixer, night light.
 
 ## Next
 

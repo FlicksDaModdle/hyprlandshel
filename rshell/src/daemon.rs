@@ -19,8 +19,32 @@ pub struct Drive {
     pub mount: String,
 }
 
+/// A Wi-Fi network in reach, with what's saved for it.
+#[derive(Clone, Default)]
+pub struct Ap {
+    pub ssid: String,
+    pub signal: i64,
+    pub secure: bool,
+    pub active: bool,
+    /// The saved profile's uuid, when there is one.
+    pub saved: Option<String>,
+}
+
+#[derive(Clone, Default)]
+pub struct BtDevice {
+    pub mac: String,
+    pub name: String,
+    pub icon: String,
+    pub paired: bool,
+    pub connected: bool,
+    pub battery: i64,
+}
+
 #[derive(Clone, Default)]
 pub struct State {
+    pub aps: Vec<Ap>,
+    pub bt_devices: Vec<BtDevice>,
+    pub bt_scanning: bool,
     pub wifi_on: bool,
     pub net_available: bool,
     pub wired: bool,
@@ -140,6 +164,37 @@ pub fn apply(s: &mut State, ev: &Value) -> bool {
             };
             s.net_icon = if !wifi_on && wired.is_none() || !connected { "wifi-off" } else { "wifi" };
             s.wired = wired.is_some_and(|a| a["state"] == "activated");
+            // The networks in reach (only while a list is on screen), each
+            // once, strongest first, the one in use at the top.
+            if let Some(aps) = ev["aps"].as_array() {
+                let saved: Vec<(String, String)> = ev["saved"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|p| (p["ssid"].as_str().unwrap_or("").to_string(), p["uuid"].as_str().unwrap_or("").to_string()))
+                    .collect();
+                let mut list: Vec<Ap> = Vec::new();
+                for a in aps {
+                    let ssid = a["ssid"].as_str().unwrap_or("").to_string();
+                    let signal = a["signal"].as_i64().unwrap_or(0);
+                    let active = a["inUse"] == true;
+                    match list.iter_mut().find(|x| x.ssid == ssid) {
+                        Some(x) => {
+                            x.signal = x.signal.max(signal);
+                            x.active |= active;
+                        }
+                        None => list.push(Ap {
+                            saved: saved.iter().find(|(n, _)| *n == ssid).map(|(_, u)| u.clone()),
+                            secure: a["security"].as_str().is_some_and(|x| !x.is_empty() && x != "none" && x != "--"),
+                            ssid,
+                            signal,
+                            active,
+                        }),
+                    }
+                }
+                list.sort_by(|a, b| b.active.cmp(&a.active).then(b.signal.cmp(&a.signal)));
+                s.aps = list;
+            }
             true
         }
         Some("pa") if ev["available"] == true => {
@@ -227,6 +282,23 @@ pub fn apply(s: &mut State, ev: &Value) -> bool {
                 .filter(|d| d["connected"] == true)
                 .filter_map(|d| d["name"].as_str())
                 .collect();
+            s.bt_scanning = ev["adapter"]["discovering"] == true;
+            let mut devs: Vec<BtDevice> = ev["devices"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|d| d["paired"] == true || d["named"] == true)
+                .map(|d| BtDevice {
+                    mac: d["mac"].as_str().unwrap_or("").to_string(),
+                    name: d["name"].as_str().unwrap_or("").to_string(),
+                    icon: d["icon"].as_str().unwrap_or("").to_string(),
+                    paired: d["paired"] == true,
+                    connected: d["connected"] == true,
+                    battery: d["battery"].as_i64().unwrap_or(-1),
+                })
+                .collect();
+            devs.sort_by(|a, b| b.connected.cmp(&a.connected).then(b.paired.cmp(&a.paired)).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+            s.bt_devices = devs;
             s.bt_label = if !s.bt_on {
                 "off".into()
             } else if connected.len() == 1 {

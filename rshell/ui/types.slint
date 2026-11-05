@@ -37,3 +37,9 @@ export struct Tile { kind: string, name: string, sub: string, on: bool }
 export struct PrivacyRow { kind: string, name: string }
 
 export struct DayCell { day: int, today: bool }
+
+// A Wi-Fi network in the control center's list.
+export struct WifiRow { ssid: string, bars: int, secure: bool, saved: bool, active: bool, busy: bool }
+
+// A Bluetooth device in the control center's list.
+export struct BtRow { mac: string, name: string, kind: string, paired: bool, connected: bool, battery: int, busy: bool }

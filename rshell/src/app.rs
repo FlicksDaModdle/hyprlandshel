@@ -63,6 +63,15 @@ pub enum Action {
     DockMiddle(usize, usize),
     DockHover(usize, bool),
     AppMenu(String),
+    CcPane(String),
+    Wifi(bool),
+    Bt(bool),
+    Join(String),
+    JoinSecret(String, String),
+    Disconnect,
+    Forget(String),
+    Device(String),
+    PairAnswer(bool),
 }
 
 type Queue = Rc<RefCell<Vec<Action>>>;
@@ -501,6 +510,16 @@ pub struct App {
     /// When the popup goes, and its springs: rise, fade, grow.
     osd_until: Option<Instant>,
     osd_springs: [Spring; 3],
+    /// The control center's list on screen ("", "wifi", "bluetooth"), the
+    /// network asking for its password, the one being joined, the device
+    /// being worked on, and a pairing question: (id, name, code).
+    cc_pane: String,
+    asking: String,
+    joining: String,
+    wifi_note: String,
+    bt_busy: String,
+    pairing: Option<(u64, String, String)>,
+    net_id: u64,
     /// The dock tile a menu is open for: (monitor, tile).
     menu_for: Option<(usize, usize)>,
     /// The polkit agent: its prompt, the request on it and those waiting,
@@ -734,6 +753,13 @@ impl App {
             pinned: Vec::new(),
             dock_labels: HashMap::new(),
             menu_for: None,
+            cc_pane: String::new(),
+            asking: String::new(),
+            joining: String::new(),
+            wifi_note: String::new(),
+            bt_busy: String::new(),
+            pairing: None,
+            net_id: 0,
             launch_acts,
             icon_tx,
             icon_rx,
@@ -835,6 +861,49 @@ impl App {
                 }
                 continue;
             }
+            match ev["ev"].as_str() {
+                Some("net-done") => {
+                    if ev["ok"] != true {
+                        let e = ev["error"].as_str().unwrap_or("");
+                        self.wifi_note = if self.joining.is_empty() { e.to_string() } else { format!("Couldn't join {}: {e}", self.joining) };
+                    } else {
+                        self.wifi_note.clear();
+                    }
+                    self.joining.clear();
+                    self.refresh_lists();
+                    continue;
+                }
+                Some("bt-done") | Some("bt-error") => {
+                    self.bt_busy.clear();
+                    self.refresh_lists();
+                    if ev["ev"] == "bt-done" {
+                        continue;
+                    }
+                }
+                Some("bt-request") => {
+                    let id = ev["id"].as_u64().unwrap_or(0);
+                    let name = ev["name"].as_str().unwrap_or("A device").to_string();
+                    match ev["kind"].as_str().unwrap_or("") {
+                        "confirm" | "authorize" | "service" => {
+                            self.pairing = Some((id, name, ev["passkey"].as_str().unwrap_or("").to_string()));
+                        }
+                        // Typing a PIN in isn't here yet: turned down, so
+                        // the device doesn't wait.
+                        _ => {
+                            self.daemon.send(json!({ "cmd": "bt-reply", "id": id, "accept": false }));
+                            self.wifi_note.clear();
+                        }
+                    }
+                    self.refresh_lists();
+                    continue;
+                }
+                Some("bt-cancel") => {
+                    self.pairing = None;
+                    self.refresh_lists();
+                    continue;
+                }
+                _ => {}
+            }
             if ev["ev"] == "calc" {
                 let q = ev["query"].as_str().unwrap_or("").to_string();
                 self.launcher.calc_result(&q, ev["result"].as_str().map(str::to_string));
@@ -863,6 +932,7 @@ impl App {
             changed |= daemon::apply(&mut self.sound, &ev);
         }
         if changed {
+            self.refresh_lists();
             self.refresh_sound();
             self.refresh_privacy();
             self.refresh_drives();
@@ -1437,6 +1507,99 @@ impl App {
         }
     }
 
+    /// The Wi-Fi and Bluetooth lists and the state around them.
+    fn refresh_lists(&mut self) {
+        let s = &self.sound;
+        let nets: Vec<crate::WifiRow> = s
+            .aps
+            .iter()
+            .map(|a| crate::WifiRow {
+                ssid: a.ssid.clone().into(),
+                bars: ((a.signal + 12) / 25).clamp(1, 4) as i32,
+                secure: a.secure,
+                saved: a.saved.is_some(),
+                active: a.active,
+                busy: self.joining == a.ssid,
+            })
+            .collect();
+        let devs: Vec<crate::BtRow> = s
+            .bt_devices
+            .iter()
+            .map(|d| crate::BtRow {
+                mac: d.mac.clone().into(),
+                name: d.name.clone().into(),
+                kind: if d.icon.starts_with("audio") { "audio".into() } else if d.icon.starts_with("input") { "input".into() } else if d.icon.contains("phone") { "phone".into() } else { "other".into() },
+                paired: d.paired,
+                connected: d.connected,
+                battery: d.battery as i32,
+                busy: self.bt_busy == d.mac,
+            })
+            .collect();
+        let wifi_sub = if !s.wifi_on {
+            "Wi-Fi is off".to_string()
+        } else if let Some(a) = s.aps.iter().find(|a| a.active) {
+            format!("Connected to {}", a.ssid)
+        } else {
+            "Not connected".to_string()
+        };
+        let paired = s.bt_devices.iter().filter(|d| d.paired).count();
+        let bt_sub = if !s.bt_on {
+            "Bluetooth is off".to_string()
+        } else if s.bt_scanning {
+            format!("{paired} paired · looking for others")
+        } else {
+            format!("{paired} paired")
+        };
+        for b in &self.bars {
+            let p = &b.panels;
+            p.set_cc_pane(self.cc_pane.clone().into());
+            p.set_wifi_on(s.wifi_on);
+            p.set_wifi_sub(wifi_sub.clone().into());
+            p.set_networks(model(nets.clone()));
+            p.set_asking(self.asking.clone().into());
+            p.set_wifi_note(self.wifi_note.clone().into());
+            p.set_bt_on(s.bt_on);
+            p.set_bt_sub(bt_sub.clone().into());
+            p.set_devices(model(devs.clone()));
+            p.set_pair_name(self.pairing.as_ref().map(|x| x.1.clone()).unwrap_or_default().into());
+            p.set_pair_code(self.pairing.as_ref().map(|x| x.2.clone()).unwrap_or_default().into());
+        }
+    }
+
+    /// Opens or leaves a list: the daemon reads every access point and
+    /// scans, or looks for Bluetooth devices, only while one is on screen.
+    fn set_cc_pane(&mut self, pane: &str) {
+        if self.cc_pane == pane {
+            return;
+        }
+        match self.cc_pane.as_str() {
+            "wifi" => self.daemon.send(json!({ "cmd": "net-watch", "on": false })),
+            "bluetooth" => self.daemon.send(json!({ "cmd": "bt-scan", "on": false })),
+            _ => {}
+        }
+        self.cc_pane = pane.to_string();
+        self.asking.clear();
+        self.wifi_note.clear();
+        match pane {
+            "wifi" => {
+                self.daemon.send(json!({ "cmd": "net-watch", "on": true }));
+                self.daemon.send(json!({ "cmd": "net-scan" }));
+            }
+            "bluetooth" => {
+                self.daemon.send(json!({ "cmd": "bt-hello" }));
+                self.daemon.send(json!({ "cmd": "bt-scan", "on": true }));
+            }
+            _ => {}
+        }
+        self.refresh_lists();
+    }
+
+    fn net(&mut self, mut cmd: serde_json::Value) {
+        self.net_id += 1;
+        cmd["id"] = json!(self.net_id);
+        self.daemon.send(cmd);
+    }
+
     fn refresh_privacy(&mut self) {
         let s = &self.sound;
         let mut rows: Vec<PrivacyRow> = Vec::new();
@@ -1746,6 +1909,7 @@ impl App {
         let Some((bar, which)) = self.open.take() else { return };
         if which == "control" {
             self.daemon.send(json!({ "cmd": "bl-watch", "on": false }));
+            self.set_cc_pane("");
         }
         if which == "tray" {
             self.menu_at = None;
@@ -2059,6 +2223,57 @@ impl App {
                 }
             }
             Action::AppMenu(k) => self.app_menu(&k),
+            Action::CcPane(p) => self.set_cc_pane(&p),
+            Action::Wifi(on) => self.daemon.send(json!({ "cmd": "net-wifi", "on": on })),
+            Action::Bt(on) => self.daemon.send(json!({ "cmd": "bt-power", "on": on })),
+            Action::Join(ssid) => {
+                let Some(a) = self.sound.aps.iter().find(|a| a.ssid == ssid).cloned() else { return };
+                self.wifi_note.clear();
+                if let Some(uuid) = a.saved {
+                    self.joining = ssid;
+                    self.net(json!({ "cmd": "net-up", "uuid": uuid }));
+                } else if !a.secure {
+                    self.joining = ssid.clone();
+                    self.net(json!({ "cmd": "net-join", "ssid": ssid }));
+                } else {
+                    // Its password, in a field under it.
+                    self.asking = if self.asking == ssid { String::new() } else { ssid };
+                }
+                self.refresh_lists();
+            }
+            Action::JoinSecret(ssid, secret) => {
+                if secret.is_empty() {
+                    return;
+                }
+                self.asking.clear();
+                self.joining = ssid.clone();
+                // The password goes to the daemon's input, and from there
+                // straight to NetworkManager: never on a command line.
+                self.net(json!({ "cmd": "net-join", "ssid": ssid, "secret": secret }));
+                for b in &self.bars {
+                    b.panels.set_secret("".into());
+                }
+                self.refresh_lists();
+            }
+            Action::Disconnect => self.net(json!({ "cmd": "net-disconnect" })),
+            Action::Forget(ssid) => {
+                if let Some(uuid) = self.sound.aps.iter().find(|a| a.ssid == ssid).and_then(|a| a.saved.clone()) {
+                    self.net(json!({ "cmd": "net-forget", "uuid": uuid }));
+                }
+            }
+            Action::Device(mac) => {
+                let Some(d) = self.sound.bt_devices.iter().find(|d| d.mac == mac).cloned() else { return };
+                let op = if d.connected { "bt-disconnect" } else if d.paired { "bt-connect" } else { "bt-pair" };
+                self.bt_busy = mac.clone();
+                self.daemon.send(json!({ "cmd": op, "mac": mac }));
+                self.refresh_lists();
+            }
+            Action::PairAnswer(yes) => {
+                if let Some((id, _, _)) = self.pairing.take() {
+                    self.daemon.send(json!({ "cmd": "bt-reply", "id": id, "accept": yes }));
+                }
+                self.refresh_lists();
+            }
             Action::ToastHover(h) => {
                 self.toast_hover = h;
                 if !h {
@@ -2616,4 +2831,13 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_menu_pick, |id, sub| Action::MenuPick(id, sub));
     on!(on_menu_back, | | Action::MenuBack);
     on!(on_app_menu_pick, |k| Action::AppMenu(k.to_string()));
+    on!(on_show_pane, |k| Action::CcPane(k.to_string()));
+    on!(on_wifi, |v| Action::Wifi(v));
+    on!(on_bt, |v| Action::Bt(v));
+    on!(on_join, |n| Action::Join(n.to_string()));
+    on!(on_join_secret, |n, s| Action::JoinSecret(n.to_string(), s.to_string()));
+    on!(on_disconnect, | | Action::Disconnect);
+    on!(on_forget, |n| Action::Forget(n.to_string()));
+    on!(on_device, |m| Action::Device(m.to_string()));
+    on!(on_pair_answer, |a| Action::PairAnswer(a));
 }
