@@ -130,6 +130,7 @@ Rectangle {
                         id: titleRow
                         x: card.u(8)
                         width: parent.width - card.u(16) - (tag.visible ? tag.width + card.u(6) : 0)
+                               - (closeBtn.visible ? closeBtn.width + card.u(4) : 0)
                         height: card.titleH
                         spacing: card.u(7)
                         MonoIcon {
@@ -202,6 +203,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - card.u(24) - (tag.visible ? tag.width + card.u(8) : 0)
                            - (countBadge.visible ? countBadge.width + card.u(8) : 0)
+                           - (closeBtn.visible ? closeBtn.width + card.u(4) : 0)
                     spacing: card.u(10)
                     MonoIcon {
                         id: listIcon
@@ -236,7 +238,7 @@ Rectangle {
                     id: tag
                     visible: card.tagsWorth
                     anchors.right: parent.right
-                    anchors.rightMargin: card.u(6)
+                    anchors.rightMargin: card.u(6) + (closeBtn.visible ? closeBtn.width + card.u(4) : 0)
                     y: card.style === "thumbnails" ? Math.round((card.titleH - height) / 2)
                      : card.style === "list" ? Math.round((parent.height - height) / 2)
                      : card.u(5)
@@ -263,6 +265,7 @@ Rectangle {
                     x: card.style === "list"
                        ? parent.width - card.u(6) - width
                          - (tag.visible ? tag.width + card.u(6) : 0)
+                         - (closeBtn.visible ? closeBtn.width + card.u(4) : 0)
                        : card.u(6)
                     y: card.style === "list" ? Math.round((parent.height - height) / 2)
                                              : parent.height - height - card.u(6)
@@ -294,6 +297,40 @@ Rectangle {
                     onClicked: mouse => {
                         if (mouse.button === Qt.MiddleButton) card.closeRequested(tile.index);
                         else card.picked(tile.index);
+                    }
+                }
+
+                // Close, on the tile under the pointer and the selected one
+                // (Delete closes that one from the keyboard, middle click
+                // any). Top right, where the tag makes way for it; in a
+                // list row, at the right end.
+                Rectangle {
+                    id: closeBtn
+                    visible: tileMouse.containsMouse || closeArea.containsMouse || tile.selected
+                    width: card.u(20)
+                    height: width
+                    radius: width / 2
+                    anchors.right: parent.right
+                    anchors.rightMargin: card.u(6)
+                    y: card.style === "thumbnails" ? Math.round((card.titleH - height) / 2)
+                     : card.style === "list" ? Math.round((parent.height - height) / 2)
+                     : card.u(5)
+                    color: closeArea.containsMouse
+                           ? Qt.rgba(Config.Appearance.accent.r, Config.Appearance.accent.g, Config.Appearance.accent.b, 0.22)
+                           : Config.Appearance.hover
+                    MonoIcon {
+                        anchors.centerIn: parent
+                        name: "x"
+                        size: card.u(12)
+                        monochrome: true
+                        inkColor: closeArea.containsMouse ? Config.Appearance.accent : Config.Appearance.ink2
+                    }
+                    MouseArea {
+                        id: closeArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: card.closeRequested(tile.index)
                     }
                 }
             }
