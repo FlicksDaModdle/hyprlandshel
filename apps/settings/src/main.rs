@@ -11,6 +11,7 @@
 //!                               binds.lua) and exit; the shell runs this at
 //!                               login, as Quickshell's Devices.qml did
 
+mod bt;
 mod daemon;
 mod display;
 mod net;
@@ -42,6 +43,7 @@ struct State {
     /// Settings' own hyprshell-daemon, started when a panel first needs it.
     daemon: Option<daemon::Daemon>,
     net: net::Net,
+    bt: bt::Bt,
 }
 
 impl State {
@@ -110,14 +112,19 @@ fn show(ui: &AppWindow, st: &mut State) {
     g.set_rows(ModelRc::new(VecModel::from(specs.iter().map(|r| r.row.clone()).collect::<Vec<_>>())));
     st.specs = specs;
     // The live panels: what they show, kept up only while they're up.
-    let on_net = pane == "Network";
-    if on_net || st.daemon.is_some() {
-        let mut net = std::mem::take(&mut st.net);
+    let (on_net, on_bt) = (pane == "Network", pane == "Bluetooth");
+    if on_net || on_bt || st.daemon.is_some() {
+        let (mut net, mut bt) = (std::mem::take(&mut st.net), std::mem::take(&mut st.bt));
         net.watch(st.daemon(), on_net);
+        bt.watch(st.daemon(), on_bt);
         if on_net {
             net.publish(ui);
         }
+        if on_bt {
+            bt.publish(ui);
+        }
         st.net = net;
+        st.bt = bt;
     }
 }
 
@@ -269,6 +276,7 @@ fn main() {
         flash: None,
         daemon: None,
         net: net::Net::default(),
+        bt: bt::Bt::default(),
     }));
     show(&ui, &mut st.borrow_mut());
 
@@ -567,18 +575,24 @@ fn main() {
             if evs.is_empty() {
                 return;
             }
-            let mut net = std::mem::take(&mut s.net);
-            let mut changed = false;
+            let (mut net, mut bt) = (std::mem::take(&mut s.net), std::mem::take(&mut s.bt));
+            let (mut cn, mut cb) = (false, false);
             for ev in &evs {
-                changed |= net.event(s.daemon(), ev);
+                cn |= net.event(s.daemon(), ev);
+                cb |= bt.event(s.daemon(), ev);
             }
-            if changed && s.c.ui.pane == "Network" {
+            if cn && s.c.ui.pane == "Network" {
                 net.publish(&ui);
             }
+            if cb && s.c.ui.pane == "Bluetooth" {
+                bt.publish(&ui);
+            }
             s.net = net;
+            s.bt = bt;
         });
     }
     wire_wifi(&ui, &st);
+    wire_bt(&ui, &st);
 
     // Edits made elsewhere: shown within a second.
     let poll = slint::Timer::default();
@@ -737,4 +751,54 @@ fn wire_wifi(ui: &AppWindow, st: &Rc<RefCell<State>>) {
             );
         });
     }
+}
+
+/// Settings → Bluetooth's panel: BluetoothPanel.qml's handlers.
+fn wire_bt(ui: &AppWindow, st: &Rc<RefCell<State>>) {
+    let b = ui.global::<Blue>();
+    let with = {
+        let weak = ui.as_weak();
+        let st = st.clone();
+        Rc::new(move |f: &dyn Fn(&mut bt::Bt, &mut daemon::Daemon, &AppWindow)| {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut s = st.borrow_mut();
+            let mut m = std::mem::take(&mut s.bt);
+            f(&mut m, s.daemon(), &ui);
+            m.publish(&ui);
+            s.bt = m;
+        })
+    };
+    macro_rules! on {
+        ($name:ident, [$($a:ident : $t:ty),*], |$m:ident, $d:ident, $ui:ident| $body:expr) => {{
+            let with = with.clone();
+            b.$name(move |$($a: $t),*| {
+                with(&|$m: &mut bt::Bt, $d: &mut daemon::Daemon, $ui: &AppWindow| {
+                    let _ = (&$m, &$d, &$ui);
+                    $body;
+                })
+            });
+        }};
+    }
+    on!(on_set_powered, [v: bool], |m, d, _ui| m.set_powered(d, v));
+    on!(on_set_discoverable, [v: bool], |m, d, _ui| m.set_discoverable(d, v));
+    on!(on_answer, [yes: bool], |m, d, ui| {
+        let pin = ui.global::<Blue>().get_pin().to_string();
+        m.answer(d, yes, &pin);
+        ui.global::<Blue>().set_pin(SharedString::new());
+    });
+    on!(on_cancel_display, [], |m, d, _ui| {
+        if let Some(mac) = m.display.as_ref().and_then(|x| x["mac"].as_str()).map(str::to_string) {
+            m.cancel_pairing(d, &mac);
+        }
+        m.display = None;
+    });
+    on!(on_toggle, [mac: SharedString, connected: bool], |m, d, _ui| if connected { m.disconnect(d, &mac) } else { m.connect(d, &mac) });
+    on!(on_menu, [mac: SharedString], |m, _d, _ui| m.menu_mac = if m.menu_mac == mac.as_str() { String::new() } else { mac.to_string() });
+    on!(on_remove, [mac: SharedString], |m, d, _ui| {
+        m.remove(d, &mac);
+        m.menu_mac.clear();
+    });
+    on!(on_scan, [], |m, d, _ui| m.scan(d));
+    on!(on_pair, [mac: SharedString], |m, d, _ui| m.pair(d, &mac));
+    on!(on_cancel_pair, [mac: SharedString], |m, d, _ui| m.cancel_pairing(d, &mac));
 }

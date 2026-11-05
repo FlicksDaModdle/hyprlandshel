@@ -6,8 +6,9 @@
 import { Theme, Icons, Win, KitWindow, Icon, Switch, Slider, Scroll } from "@kit";
 import { Segmented } from "common.slint";
 import { WifiPanel, Wifi, WifiNet, KV, SavedNet } from "wifi.slint";
+import { BluetoothPanel, Blue, BtDev } from "bluetooth.slint";
 
-export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet }
+export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev }
 
 export struct Btn { label: string, quiet: bool, enabled: bool }
 
@@ -662,7 +663,8 @@ component SettingsRow inherits Rectangle {
             ThemeTile { label: "Auto"; mode: "auto"; chosen: item.value == "auto"; picked => { Prefs.set-text(root.index, "auto"); } }
         }
         if item.kind == "panel" && item.panel == "wifi": WifiPanel { horizontal-stretch: 1; }
-        if item.kind == "panel" && item.panel != "wifi": PanelCard {
+        if item.kind == "panel" && item.panel == "bluetooth": BluetoothPanel { horizontal-stretch: 1; }
+        if item.kind == "panel" && item.panel != "wifi" && item.panel != "bluetooth": PanelCard {
             horizontal-stretch: 1;
             panel: item.panel;
             press(i) => { Prefs.press(root.index, i); }

@@ -1,0 +1,311 @@
+// Settings → Bluetooth: BluetoothPanel.qml. The switch at the top, your
+// devices each with the one thing to do to it, then "Add a device", which
+// looks for devices while this pane is open. Pairing questions come up
+// above everything. What it shows comes from src/bt.rs.
+
+import { Theme, Icon, Switch } from "@kit";
+import { NetButton, NetField, Caption, Line, Card, Link } from "common.slint";
+
+export struct BtDev { mac: string, name: string, glyph: string, connected: bool, sub: string, busy: bool, err: string, menu: bool }
+
+export global Blue {
+    in property <bool> available;
+    in property <bool> live;
+    in property <bool> powered;
+    in property <bool> discoverable;
+    in property <bool> discovering;
+    in property <string> sub;
+    in property <[BtDev]> paired;
+    in property <[BtDev]> nearby;
+    in property <int> unnamed;
+    // The question: its words, the code, its kind ("confirm", "pin",
+    // "passkey", "authorize", "service", or "display" for a code to type
+    // on the device), whether it waits for an answer, keys typed so far.
+    in property <string> q-title;
+    in property <string> q-line;
+    in property <string> q-code;
+    in property <string> q-kind;
+    in property <bool> q-ask;
+    in property <int> q-entered: -1;
+    in property <int> q-len;
+    in-out property <string> pin;
+    callback set-powered(bool);
+    callback set-discoverable(bool);
+    callback answer(bool);
+    callback cancel-display();
+    callback toggle(string, bool);
+    callback menu(string);
+    callback remove(string);
+    callback scan();
+    callback pair(string);
+    callback cancel-pair(string);
+}
+
+// A round badge with the device's glyph.
+component Badge inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> lit;
+    width: 36px;
+    height: 36px;
+    border-radius: 18px;
+    background: root.lit ? Theme.accent : Theme.rule;
+    Icon { x: 9px; y: 9px; name: root.glyph; size: 18px; ink: root.lit ? Theme.ink-on-accent : Theme.ink2; }
+}
+
+component Paired inherits Rectangle {
+    in property <BtDev> d;
+    border-radius: Theme.r-sm;
+    background: ta.has-hover || root.d.menu ? Theme.hover : transparent;
+    height: col.preferred-height;
+    ta := TouchArea { }
+    col := VerticalLayout {
+        HorizontalLayout {
+            height: 58px;
+            padding-left: 12px;
+            padding-right: 10px;
+            spacing: 12px;
+            VerticalLayout { alignment: center; Badge { glyph: root.d.glyph; lit: root.d.connected; } }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 2px;
+                Text { text: root.d.name; overflow: elide; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+                Text { text: root.d.sub; overflow: elide; font-size: Theme.fs(12); color: root.d.err != "" ? #d93a2b : Theme.ink3; }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                VerticalLayout {
+                    alignment: center;
+                    NetButton {
+                        label: root.d.connected ? "Disconnect" : "Connect";
+                        primary: !root.d.connected;
+                        active: !root.d.busy && Blue.powered;
+                        clicked => { Blue.toggle(root.d.mac, root.d.connected); }
+                    }
+                }
+                VerticalLayout { alignment: center; NetButton { label: "•••"; clicked => { Blue.menu(root.d.mac); } } }
+            }
+        }
+        if root.d.err != "": VerticalLayout {
+            padding-left: 60px;
+            padding-right: 12px;
+            padding-bottom: 10px;
+            Line { text: root.d.err; color: #d93a2b; }
+        }
+        if root.d.menu: HorizontalLayout {
+            alignment: start;
+            padding-left: 60px;
+            padding-bottom: 12px;
+            spacing: 8px;
+            NetButton { label: "Remove device"; danger: true; clicked => { Blue.remove(root.d.mac); } }
+            Text { vertical-alignment: center; text: root.d.mac; font-family: "JetBrains Mono"; font-size: Theme.fs(11); color: Theme.ink3; }
+        }
+    }
+}
+
+component Nearby inherits Rectangle {
+    in property <BtDev> d;
+    border-radius: Theme.r-sm;
+    background: ta.has-hover ? Theme.hover : transparent;
+    height: col.preferred-height;
+    ta := TouchArea { }
+    col := VerticalLayout {
+        HorizontalLayout {
+            height: 54px;
+            padding-left: 12px;
+            padding-right: 10px;
+            spacing: 12px;
+            VerticalLayout { alignment: center; Badge { glyph: root.d.glyph; } }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 2px;
+                Text { text: root.d.name; overflow: elide; font-size: Theme.fs(13); font-weight: 500; color: Theme.ink; }
+                if root.d.sub != "": Text { text: root.d.sub; overflow: elide; font-size: Theme.fs(12); color: root.d.err != "" ? #d93a2b : Theme.ink3; }
+            }
+            VerticalLayout {
+                alignment: center;
+                NetButton {
+                    label: root.d.busy ? "Cancel" : root.d.err != "" ? "Try again" : "Pair";
+                    primary: !root.d.busy;
+                    clicked => {
+                        if (root.d.busy) { Blue.cancel-pair(root.d.mac); } else { Blue.pair(root.d.mac); }
+                    }
+                }
+            }
+        }
+        if root.d.err != "": VerticalLayout {
+            padding-left: 60px;
+            padding-right: 12px;
+            padding-bottom: 10px;
+            Line { text: root.d.err; color: #d93a2b; }
+        }
+    }
+}
+
+export component BluetoothPanel inherits VerticalLayout {
+    spacing: 16px;
+
+    // ══ no adapter ═══════════════════════════════════════════════════
+    if !Blue.available: Card {
+        height: none.preferred-height + 32px;
+        none := VerticalLayout {
+            x: 16px;
+            y: 16px;
+            width: parent.width - 32px;
+            height: self.preferred-height;
+            spacing: 4px;
+            Text { text: "No Bluetooth adapter"; font-size: Theme.fs(14); font-weight: 600; color: Theme.ink; }
+            Line { text: "Either there isn't one, or the Bluetooth service isn't running: sudo systemctl enable --now bluetooth"; }
+        }
+    }
+
+    // ══ a pairing question ═══════════════════════════════════════════
+    if Blue.q-title != "": Card {
+        border-width: 2px;
+        border-color: Theme.accent;
+        height: ask.preferred-height + 32px;
+        ask := VerticalLayout {
+            x: 16px;
+            y: 16px;
+            width: parent.width - 32px;
+            height: self.preferred-height;
+            spacing: 12px;
+            Text { text: Blue.q-title; wrap: word-wrap; font-size: Theme.fs(15); font-weight: 600; color: Theme.ink; }
+            Line { text: Blue.q-line; }
+            // The code, large: confirmed, or to be typed on the device.
+            if Blue.q-kind == "confirm" || Blue.q-kind == "display": Text {
+                text: Blue.q-code;
+                font-family: "JetBrains Mono";
+                font-size: Theme.fs(30);
+                font-weight: 700;
+                letter-spacing: 6px;
+                color: Theme.ink;
+            }
+            // Keys typed so far, when the keyboard reports them.
+            if Blue.q-kind == "display" && Blue.q-entered >= 0: HorizontalLayout {
+                alignment: start;
+                spacing: 6px;
+                for i in Blue.q-len: Rectangle {
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 5px;
+                    background: i < Blue.q-entered ? Theme.accent : Theme.rule;
+                }
+            }
+            if Blue.q-kind == "pin" || Blue.q-kind == "passkey": NetField {
+                cap: 240px;
+                placeholder: Blue.q-kind == "pin" ? "PIN" : "123456";
+                text <=> Blue.pin;
+                accepted => { if (Blue.pin != "") { Blue.answer(true); } }
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: 8px;
+                if Blue.q-ask: NetButton {
+                    primary: true;
+                    label: Blue.q-kind == "authorize" || Blue.q-kind == "service" ? "Allow" : "Pair";
+                    active: (Blue.q-kind != "pin" && Blue.q-kind != "passkey") || Blue.pin != "";
+                    clicked => { Blue.answer(true); }
+                }
+                NetButton {
+                    label: Blue.q-kind == "authorize" || Blue.q-kind == "service" ? "Deny" : "Cancel";
+                    clicked => {
+                        if (Blue.q-ask) { Blue.answer(false); } else { Blue.cancel-display(); }
+                    }
+                }
+            }
+        }
+    }
+
+    // ══ the switch ═══════════════════════════════════════════════════
+    if Blue.available: Card {
+        height: top.preferred-height + 32px;
+        top := VerticalLayout {
+            x: 16px;
+            y: 16px;
+            width: parent.width - 32px;
+            height: self.preferred-height;
+            spacing: 14px;
+            HorizontalLayout {
+                height: 40px;
+                spacing: 12px;
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: Blue.powered ? Theme.accent : Theme.rule;
+                    Icon { x: 10px; y: 10px; name: "bluetooth"; size: 20px; ink: Blue.powered ? Theme.ink-on-accent : Theme.ink2; }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: Blue.powered ? "Bluetooth is on" : "Bluetooth is off"; font-size: Theme.fs(15); font-weight: 600; color: Theme.ink; }
+                    if Blue.sub != "": Text { text: Blue.sub; overflow: elide; font-size: Theme.fs(12); color: Theme.ink3; }
+                }
+                VerticalLayout { alignment: center; Switch { on: Blue.powered; toggled(v) => { Blue.set-powered(v); } } }
+            }
+            if Blue.powered: HorizontalLayout {
+                alignment: start;
+                spacing: 10px;
+                VerticalLayout { alignment: center; Switch { on: Blue.discoverable; toggled(v) => { Blue.set-discoverable(v); } } }
+                Text { vertical-alignment: center; text: "Let other devices find this computer"; font-size: Theme.fs(12); color: Theme.ink; }
+            }
+            if !Blue.live: Line {
+                color: #d93a2b;
+                text: "The pairing helper isn't built, so devices that ask for a code — phones, most keyboards — can't pair. Run install.sh again; it needs Rust (cargo).";
+            }
+        }
+    }
+
+    // ══ your devices ═════════════════════════════════════════════════
+    if Blue.available && Blue.paired.length > 0: Caption { text: "YOUR DEVICES"; }
+    if Blue.available && Blue.paired.length > 0: VerticalLayout {
+        spacing: 2px;
+        for d in Blue.paired: Paired { d: d; }
+    }
+
+    // ══ add a device ═════════════════════════════════════════════════
+    if Blue.available && Blue.powered: HorizontalLayout {
+        height: 26px;
+        Caption { vertical-alignment: center; text: "ADD A DEVICE"; horizontal-stretch: 1; }
+        HorizontalLayout {
+            horizontal-stretch: 0;
+            spacing: 8px;
+            // A dot that breathes while it looks.
+            if Blue.discovering: VerticalLayout {
+                alignment: center;
+                dot := Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: Theme.accent;
+                    opacity: mod(animation-tick() / 1500ms, 1.0) < 0.5 ? 1 : 0.25;
+                    animate opacity { duration: 700ms; easing: ease-in-out; }
+                }
+            }
+            if Blue.discovering: Text { vertical-alignment: center; text: "Looking for devices…"; font-size: Theme.fs(12); font-weight: 600; color: Theme.ink3; }
+            if !Blue.discovering: Link { vertical-alignment: center; text: "Look again"; clicked => { Blue.scan(); } }
+        }
+    }
+    if Blue.available && Blue.powered: Line {
+        text: "Put the device in pairing mode — usually by holding its power or Bluetooth button until a light flashes. It shows up here when it's ready.";
+    }
+    if Blue.available && Blue.powered: VerticalLayout {
+        spacing: 2px;
+        for d in Blue.nearby: Nearby { d: d; }
+        if Blue.nearby.length == 0: VerticalLayout {
+            padding-top: 4px;
+            Line { text: Blue.discovering ? "Nothing ready to pair yet." : "Nothing found. Look again once the device is in pairing mode."; }
+        }
+        if Blue.unnamed > 0: VerticalLayout {
+            padding-top: 4px;
+            Line {
+                text: Blue.unnamed == 1
+                    ? "1 device nearby without a name isn't shown — usually someone else's, or not in pairing mode."
+                    : Blue.unnamed + " devices nearby without names aren't shown — usually other people's, or not in pairing mode.";
+            }
+        }
+    }
+}

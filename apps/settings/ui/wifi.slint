@@ -319,6 +319,7 @@ export component WifiPanel inherits VerticalLayout {
             x: 16px;
             y: 16px;
             width: parent.width - 32px;
+            height: self.preferred-height;
             spacing: 4px;
             Text {
                 text: Wifi.missing ? "hyprshell-daemon isn't installed" : "NetworkManager isn't running";
@@ -341,6 +342,7 @@ export component WifiPanel inherits VerticalLayout {
             x: 16px;
             y: 16px;
             width: parent.width - 32px;
+            height: self.preferred-height;
             spacing: 14px;
             HorizontalLayout {
                 height: 40px;
