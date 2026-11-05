@@ -36,6 +36,8 @@ branch; the Quickshell shell stays the one in use until this has caught up.
   `ui/launcher.slint`. `src/glyphs.rs` (generated) names the glyphs.
 - `src/dock.rs`, `ui/dock.slint` — the dock: Hyprland's windows, which
   pinned app each is, the tiles, and what clicking one does.
+- `src/switch_ui.rs`, `ui/switcher.slint` — Alt+Tab; `ui/osd.slint` — the
+  volume / brightness popup.
 - `src/spring.rs` — common/Spring.qml's springs, for every animation that
   bounces.
 - `src/app.rs` — the shell: bars, panels, banners, and what each click does.
@@ -90,7 +92,17 @@ connection, the Hyprland event pipe and Slint's next timer.
    left / right, pin, unpin, close), rising from the dock. Hides when set
    to or over a fullscreen window, back from the bottom edge, with the
    QML dock's springs; it only takes the pointer over its pill.
-6. The keybinds: hyprshell.cmd's launcher and panel toggles, volume, mute, microphone,
+6. The volume / brightness popup (Osd.qml): above the dock for 1.6 s after
+   the keys or a scroll on the status capsule change the level, with its
+   springs; it never takes the pointer.
+7. Alt+Tab (AltTab.qml, SwitcherCard.qml): the windows most recently used
+   first, in the chosen scope, grouped if asked, workspace tags when they
+   differ; Alt+Tab / Shift+Tab, arrows, Home, End, Return, Esc, Delete or
+   the X to close one, click to pick. Letting go of Alt switches (asked of
+   Hyprland every 50 ms, as the QML one does); a quick Alt+Tab switches
+   without showing it. Live window pictures come later: each tile shows
+   the app's glyph for now.
+8. The keybinds: hyprshell.cmd's launcher and panel toggles, volume, mute, microphone,
    brightness, theme, Do not disturb, lock, Mail, updates.
 
 Not yet: the OSD for the volume and brightness keys, the Wi-Fi network and
@@ -100,6 +112,6 @@ Bluetooth device lists, the per-app mixer, night light, auto-hide.
 
 3. The dock's window previews, drag to reorder, the left-side and
    taskbar layouts, and the launcher's morph out of it.
-4. OSD, overview, Alt+Tab; the launcher's right-click menus (pin, unpin).
+4. The overview, Alt+Tab's live window pictures; the launcher's right-click menus (pin, unpin).
 5. Lock screen and face unlock.
 6. Settings.

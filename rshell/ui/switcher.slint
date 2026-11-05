@@ -1,0 +1,189 @@
+// Alt+Tab (modules/switcher/AltTab.qml, SwitcherCard.qml): a card in the
+// middle of a dimmed screen, a tile per window, most recently used first.
+// Hold Alt and press Tab to move along; let go to switch.
+import { Icons, GlyphData } from "icons.slint";
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+
+export struct SwitchEntry { title: string, label: string, glyph: GlyphData, tag: string, count: int }
+
+export component Switcher inherits Window {
+    in property <[SwitchEntry]> entries;
+    in property <int> index;
+    in property <float> us: 1;
+    in property <float> k: 1;
+    in property <bool> tags;
+    // A key the switcher acts on (Tab, arrows, Return, Esc, Delete); the
+    // modifier's release.
+    callback key(string, bool) -> bool;
+    callback released(string);
+    callback hover(int);
+    callback pick(int);
+    callback close-entry(int);
+    callback cancel();
+    public function take-keys() { keys.focus(); }
+
+    function u(px: float) -> length { return max(1, round(px * root.us)) * 1px; }
+    property <length> pad: u(14);
+    property <length> gap: u(8);
+    property <length> tile-w: u(320 * root.k);
+    property <length> title-h: u(28);
+    property <length> picture-h: round(root.tile-w * 0.6 / 1px) * 1px;
+    property <length> tile-h: root.title-h + root.picture-h + u(8);
+    property <length> max-w: max(320px, root.width * 0.86);
+    property <int> per-row: max(1, floor((root.max-w - root.pad * 2 + root.gap) / (root.tile-w + root.gap)));
+    property <int> cols: max(1, min(root.entries.length, root.per-row));
+    property <int> rows: max(1, ceil(root.entries.length / root.per-row));
+    property <length> grid-w: root.cols * root.tile-w + (root.cols - 1) * root.gap;
+    property <length> grid-h: root.rows * root.tile-h + (root.rows - 1) * root.gap;
+
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-weight: 500;
+    forward-focus: keys;
+
+    Rectangle {
+        background: #000000;
+        opacity: Theme.dark ? 0.28 : 0.16;
+    }
+    TouchArea { clicked => { root.cancel(); } }
+
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (root.key(e.text, e.modifiers.shift)) { return accept; }
+            reject
+        }
+        key-released(e) => {
+            root.released(e.text);
+            reject
+        }
+    }
+
+    card := Rectangle {
+        width: min(root.max-w, root.grid-w + root.pad * 2);
+        height: root.grid-h + root.pad * 2;
+        x: round((root.width - self.width) / 2 / 1px) * 1px;
+        y: round((root.height - self.height) / 2 / 1px) * 1px;
+        border-radius: Theme.r-cap;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.edge;
+        TouchArea {}
+
+        for e[i] in root.entries: tile := Rectangle {
+            property <bool> on: root.index == i;
+            x: round((card.width - root.grid-w) / 2 / 1px) * 1px + mod(i, root.cols) * (root.tile-w + root.gap);
+            y: root.pad + floor(i / root.cols) * (root.tile-h + root.gap);
+            width: root.tile-w;
+            height: root.tile-h;
+            border-radius: Theme.r-cap;
+            background: self.on ? Theme.sel : (t.has-hover ? Theme.hover : transparent);
+            animate background { duration: 140ms; }
+            border-width: self.on ? 2px : 0px;
+            border-color: Theme.accent;
+
+            t := TouchArea {
+                mouse-cursor: pointer;
+                moved => { root.hover(i); }
+                clicked => { root.pick(i); }
+                pointer-event(ev) => {
+                    if (ev.kind == PointerEventKind.up && ev.button == PointerEventButton.middle) { root.close-entry(i); }
+                }
+            }
+
+            // The title row: the app's glyph and the window's title.
+            HorizontalLayout {
+                x: u(8);
+                y: 0;
+                width: parent.width - u(16) - (tag.visible ? tag.width + u(6) : 0px) - (close.visible ? close.width + u(4) : 0px);
+                height: root.title-h;
+                spacing: u(7);
+                Glyph {
+                    y: (root.title-h - self.height) / 2;
+                    data: e.glyph;
+                    size: u(16);
+                    monochrome: true;
+                    ink: tile.on ? Theme.ink : Theme.ink2;
+                }
+                Text {
+                    vertical-alignment: center;
+                    text: e.title;
+                    overflow: elide;
+                    font-size: Theme.fs(max(10, u(12) / 1px));
+                    font-weight: tile.on ? 600 : 500;
+                    color: tile.on ? Theme.ink : Theme.ink2;
+                }
+            }
+            // The picture: the app's glyph on a plate (live window pictures
+            // come later).
+            Rectangle {
+                x: u(6);
+                y: root.title-h;
+                width: parent.width - u(12);
+                height: root.picture-h;
+                border-radius: Theme.r-sm;
+                background: Theme.hover;
+                Glyph {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    data: e.glyph;
+                    size: min(parent.height * 0.42, u(44));
+                    ink: Theme.ink3;
+                }
+            }
+            tag := Rectangle {
+                visible: root.tags && e.tag != "";
+                x: parent.width - self.width - u(6) - (close.visible ? close.width + u(4) : 0px);
+                y: round((root.title-h - self.height) / 2 / 1px) * 1px;
+                height: u(18);
+                width: max(self.height, tag-text.preferred-width + u(10));
+                border-radius: self.height / 2;
+                background: Theme.hover;
+                border-width: 1px;
+                border-color: Theme.edge;
+                tag-text := Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: e.tag;
+                    font-size: Theme.fs(max(9, u(10) / 1px));
+                    font-weight: 600;
+                    color: Theme.ink2;
+                }
+            }
+            if e.count > 1: Rectangle {
+                x: u(6);
+                y: parent.height - self.height - u(6);
+                height: u(18);
+                width: count-text.preferred-width + u(10);
+                border-radius: self.height / 2;
+                background: Theme.accent;
+                count-text := Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: e.count;
+                    font-size: Theme.fs(max(9, u(10) / 1px));
+                    font-weight: 700;
+                    color: Theme.ink-on-accent;
+                }
+            }
+            close := Rectangle {
+                visible: t.has-hover || ct.has-hover || parent.on;
+                width: u(20);
+                height: self.width;
+                border-radius: self.width / 2;
+                x: parent.width - self.width - u(6);
+                y: round((root.title-h - self.height) / 2 / 1px) * 1px;
+                background: ct.has-hover ? Theme.seam : Theme.hover;
+                Glyph {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    data: Icons.x;
+                    size: u(12);
+                    monochrome: true;
+                    ink: ct.has-hover ? Theme.accent : Theme.ink2;
+                }
+                ct := TouchArea { mouse-cursor: pointer; clicked => { root.close-entry(i); } }
+            }
+        }
+    }
+}

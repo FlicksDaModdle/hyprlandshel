@@ -488,6 +488,14 @@ pub struct App {
     active_class: String,
     pinned: Vec<crate::launcher::Pinned>,
     dock_labels: HashMap<String, String>,
+    switcher: crate::switch_ui::Host,
+    switch_acts: Rc<RefCell<Vec<crate::switch_ui::Act>>>,
+    osd: crate::Osd,
+    osd_window: Rc<MinimalSoftwareWindow>,
+    osd_surface: Option<usize>,
+    /// When the popup goes, and its springs: rise, fade, grow.
+    osd_until: Option<Instant>,
+    osd_springs: [Spring; 3],
     /// The dock tile a menu is open for: (monitor, tile).
     menu_for: Option<(usize, usize)>,
     /// The monitor in use when last asked (for sizes that follow its scale).
@@ -635,7 +643,22 @@ impl App {
         theme_into!(launcher.ui, &look, 1.0);
         let (icon_tx, icon_rx) = channel();
 
+        let switch_acts = Rc::new(RefCell::new(Vec::new()));
+        let switcher = crate::switch_ui::Host::new(switch_acts.clone());
+        theme_into!(switcher.ui, &look, 1.0);
+        let osd = crate::Osd::new().expect("the popup");
+        let osd_window = crate::platform::take_adapter().expect("the popup's window");
+        theme_into!(osd, &look, 1.0);
+
         let mut app = App {
+            switcher,
+            switch_acts,
+            osd,
+            osd_window,
+            osd_surface: None,
+            osd_until: None,
+            osd_springs: [Spring::new(24.0), Spring::new(0.0), Spring::new(0.86)],
+            launcher,
             focused_bar_cached: 0,
             clients: Vec::new(),
             active_addr: String::new(),
@@ -643,7 +666,6 @@ impl App {
             pinned: Vec::new(),
             dock_labels: HashMap::new(),
             menu_for: None,
-            launcher,
             launch_acts,
             icon_tx,
             icon_rx,
@@ -709,6 +731,12 @@ impl App {
         }
         // A frame's time while a panel moves.
         if self.bars.iter().any(|b| b.anim.moving() || b.reveal.moving || b.hide_at.is_some()) || self.launcher.moving() {
+            d = d.min(Duration::from_millis(7));
+        }
+        if let Some(t) = self.switcher.next_due() {
+            d = d.min(t);
+        }
+        if self.osd_until.is_some() || self.osd_springs.iter().any(|s| s.moving) {
             d = d.min(Duration::from_millis(7));
         }
         d.max(Duration::from_millis(1))
@@ -915,6 +943,8 @@ impl App {
         }
 
         self.step_docks(shell, dt);
+        self.step_switcher(shell, qh);
+        self.step_osd(shell, dt);
 
         // The launcher: its springs, its icons, and its surface once it has
         // gone.
@@ -1228,6 +1258,8 @@ impl App {
             b.panels.set_theme_mode(self.look.mode.clone().into());
         }
         theme_into!(self.toasts, &self.look, 1.0);
+        theme_into!(self.switcher.ui, &self.look, 1.0);
+        theme_into!(self.osd, &self.look, 1.0);
         let us = self.bars.get(self.focused_bar_cached).map(|b| self.look.screen_scale(&b.monitor)).unwrap_or(1.0);
         theme_into!(self.launcher.ui, &self.look, us);
         self.launcher.configure(&theme::raw(), us, &user_name());
@@ -1684,6 +1716,14 @@ impl App {
     // ── doing ────────────────────────────────────────────────────────────
 
     pub fn run_actions(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        let sw: Vec<crate::switch_ui::Act> = std::mem::take(&mut *self.switch_acts.borrow_mut());
+        let any = !sw.is_empty();
+        for a in sw {
+            self.switcher.act(a);
+        }
+        if any {
+            self.step_switcher(shell, qh);
+        }
         let acts: Vec<crate::launch_ui::Act> = std::mem::take(&mut *self.launch_acts.borrow_mut());
         for a in acts {
             let wants = self.launcher.act(a, &mut self.daemon);
@@ -1737,7 +1777,10 @@ impl App {
                 let w = if d < 0 { "m-1" } else { "m+1" };
                 hypr::dispatch(&format!("hl.dsp.focus({{ workspace = \"{w}\" }})"), &format!("workspace {w}"));
             }
-            Action::VolumeStep(d) => self.set_volume(self.sound.volume + 0.05 * d as f64),
+            Action::VolumeStep(d) => {
+                self.set_volume(self.sound.volume + 0.05 * d as f64);
+                self.show_osd(shell, qh, "volume");
+            }
             Action::SetVolume(v) => self.set_volume(v as f64),
             Action::ToggleMute => {
                 if self.sound.have_audio {
@@ -2101,12 +2144,129 @@ impl App {
         }
     }
 
+    /// Alt+Tab's surface: there while it is shown, holding the keyboard.
+    fn step_switcher(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        let (show, commit) = self.switcher.tick();
+        if commit {
+            self.switcher.commit();
+        }
+        let want = show && self.switcher.open;
+        match (want, self.switcher.surface) {
+            (true, None) => {
+                let output = self.bars.iter().find(|b| b.monitor == self.switcher.monitor).or(self.bars.first()).map(|b| b.output.clone());
+                self.switcher.surface = Some(shell.add_window(qh, self.switcher.window.clone(), output.as_ref(), &wl::Placement {
+                    namespace: "quickshell:switcher",
+                    layer: Layer::Overlay,
+                    anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+                    width: 0,
+                    height: 0,
+                    exclusive: -1,
+                    keyboard: KeyboardInteractivity::Exclusive,
+                }));
+                self.switcher.ui.invoke_take_keys();
+            }
+            (false, Some(id)) => {
+                shell.remove(id);
+                self.switcher.surface = None;
+            }
+            _ => {}
+        }
+    }
+
+    /// The volume / brightness popup, shown for 1.6 s after a change.
+    fn show_osd(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, kind: &str) {
+        let s = &self.sound;
+        let (value, muted, glyph) = match kind {
+            "brightness" => match s.brightness {
+                Some(b) => (b, false, "sun"),
+                None => return,
+            },
+            "mic" => match &s.mic {
+                Some((_, v, m)) => (*v, *m, if *m { "micOff" } else { "mic" }),
+                None => return,
+            },
+            _ => {
+                if !s.have_audio {
+                    return;
+                }
+                let g = if s.muted || s.volume <= 0.001 { "volumeX" } else if s.volume < 0.5 { "volumeLow" } else { "volume" };
+                (s.volume, s.muted, g)
+            }
+        };
+        self.osd.set_glyph(crate::glyphs::glyph(glyph));
+        self.osd.set_value(value as f32);
+        self.osd.set_muted(muted);
+        let bar = self.focused_bar();
+        let g = self.bars.get(bar).map(|b| b.dock_geom).unwrap_or_default();
+        let inset = g.breadth + g.edge + 40.0;
+        self.osd.set_inset(inset);
+        let m = self.look.motion;
+        if self.osd_surface.is_none() {
+            let output = self.bars.get(bar).map(|b| b.output.clone());
+            let id = shell.add_window(qh, self.osd_window.clone(), output.as_ref(), &wl::Placement {
+                namespace: "quickshell:panel",
+                layer: Layer::Overlay,
+                anchor: Anchor::BOTTOM,
+                width: 420,
+                height: (54.0 + inset) as u32,
+                exclusive: -1,
+                keyboard: KeyboardInteractivity::None,
+            });
+            shell.set_input_rect(id, None);
+            self.osd_surface = Some(id);
+            self.osd_springs[0].snap(24.0);
+            self.osd_springs[1].snap(0.0);
+            self.osd_springs[2].snap(0.86);
+        }
+        self.osd_springs[0].go(0.0, 340.0, 1.0, &m);
+        self.osd_springs[1].go(1.0, 160.0, 0.0, &m);
+        self.osd_springs[2].go(1.0, 340.0, 1.0, &m);
+        self.last_frame = Instant::now();
+        self.osd_until = Some(Instant::now() + Duration::from_millis(1600));
+    }
+
+    fn step_osd(&mut self, shell: &mut wl::Shell, dt: f64) {
+        let m = self.look.motion;
+        if self.osd_until.is_some_and(|t| Instant::now() >= t) {
+            self.osd_until = None;
+            self.osd_springs[0].go(24.0, 340.0, 1.0, &m);
+            self.osd_springs[1].go(0.0, 160.0, 0.0, &m);
+            self.osd_springs[2].go(0.86, 340.0, 1.0, &m);
+        }
+        for s in &mut self.osd_springs {
+            s.step(dt, &m);
+        }
+        self.osd.set_rise(self.osd_springs[0].value as f32);
+        self.osd.set_fade(self.osd_springs[1].value as f32);
+        self.osd.set_grow(self.osd_springs[2].value as f32);
+        if self.osd_until.is_none() && self.osd_springs[1].value <= 0.004 && !self.osd_springs[1].moving {
+            if let Some(id) = self.osd_surface.take() {
+                shell.remove(id);
+            }
+        }
+    }
+
     /// A line from hyprshell.cmd: what the keybinds send the shell.
     fn command(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, line: &str) {
         let line = line.trim();
         let (name, arg) = line.split_once(' ').map(|(a, b)| (a, b.trim())).unwrap_or((line, ""));
         match name {
             "toggleLauncher" => self.toggle_launcher(shell, qh),
+            "altTab" => {
+                match if arg.is_empty() { "next" } else { arg } {
+                    "next" | "prev" => {
+                        let bar = self.focused_bar();
+                        let monitor = self.bars.get(bar).map(|b| b.monitor.clone()).unwrap_or_default();
+                        let us = self.look.screen_scale(&monitor);
+                        self.switcher.step(if arg == "prev" { -1 } else { 1 }, &theme::raw(), &monitor, us);
+                    }
+                    "commit" => self.switcher.commit(),
+                    "cancel" => self.switcher.close(),
+                    "release" => self.switcher.act(crate::switch_ui::Act::Released(SharedString::from(slint::platform::Key::Alt).to_string())),
+                    _ => {}
+                }
+                self.step_switcher(shell, qh);
+            }
             "toggleControlCenter" => self.toggle_from_key(shell, qh, "control"),
             "toggleNotifications" => self.toggle_from_key(shell, qh, "notifications"),
             "toggleCalendar" => self.toggle_from_key(shell, qh, "calendar"),
@@ -2115,12 +2275,30 @@ impl App {
             "toggleUpdates" => self.toggle_from_key(shell, qh, "updates"),
             "closePanels" => self.close_panel(),
             "toggleDnd" => self.act(shell, qh, Action::ToggleDnd),
-            "volumeUp" => self.set_volume(self.sound.volume + 0.05),
-            "volumeDown" => self.set_volume(self.sound.volume - 0.05),
-            "volumeMute" => self.act(shell, qh, Action::ToggleMute),
-            "micMute" => self.act(shell, qh, Action::ToggleMic),
-            "brightnessUp" => self.set_brightness(self.sound.brightness.unwrap_or(0.5) + 0.05),
-            "brightnessDown" => self.set_brightness(self.sound.brightness.unwrap_or(0.5) - 0.05),
+            "volumeUp" => {
+                self.set_volume(self.sound.volume + 0.05);
+                self.show_osd(shell, qh, "volume");
+            }
+            "volumeDown" => {
+                self.set_volume(self.sound.volume - 0.05);
+                self.show_osd(shell, qh, "volume");
+            }
+            "volumeMute" => {
+                self.act(shell, qh, Action::ToggleMute);
+                self.show_osd(shell, qh, "volume");
+            }
+            "micMute" => {
+                self.act(shell, qh, Action::ToggleMic);
+                self.show_osd(shell, qh, "mic");
+            }
+            "brightnessUp" => {
+                self.set_brightness(self.sound.brightness.unwrap_or(0.5) + 0.05);
+                self.show_osd(shell, qh, "brightness");
+            }
+            "brightnessDown" => {
+                self.set_brightness(self.sound.brightness.unwrap_or(0.5) - 0.05);
+                self.show_osd(shell, qh, "brightness");
+            }
             "toggleTheme" => {
                 theme::set("theme", json!(if self.look.dark { "light" } else { "dark" }));
                 self.reload_look();

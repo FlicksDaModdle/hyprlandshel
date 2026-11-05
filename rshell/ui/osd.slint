@@ -1,0 +1,70 @@
+// The volume / brightness popup (modules/osd/Osd.qml): a pill above the
+// dock with the level, for a moment after a key changes it. It never
+// takes the pointer.
+import { Icons, GlyphData } from "icons.slint";
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+
+export component Osd inherits Window {
+    in property <GlyphData> glyph;
+    in property <float> value;
+    in property <bool> muted;
+    in property <length> inset: 110px;
+    // The springs (app.rs): rise, fade, grow.
+    in property <length> rise;
+    in property <float> fade: 1;
+    in property <float> grow: 1;
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-weight: 500;
+
+    pill := Rectangle {
+        width: 340px * root.grow;
+        height: 54px * root.grow;
+        x: (root.width - self.width) / 2;
+        y: root.height - root.inset - 54px + (54px - self.height) / 2 + root.rise;
+        opacity: clamp(root.fade, 0, 1);
+        border-radius: Theme.r-cap;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.edge;
+        clip: true;
+        HorizontalLayout {
+            x: (parent.width - 340px) / 2 + 20px;
+            width: 300px;
+            y: (parent.height - 54px) / 2;
+            height: 54px;
+            spacing: 16px;
+            Glyph {
+                y: (54px - self.height) / 2;
+                data: root.glyph;
+                size: 20px;
+                monochrome: true;
+            }
+            Rectangle {
+                y: (54px - self.height) / 2;
+                width: 200px;
+                height: 8px;
+                border-radius: 4px;
+                background: Theme.sel;
+                clip: true;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * clamp(root.muted ? 0 : root.value, 0, 1);
+                    animate width { duration: 180ms; easing: ease-out; }
+                    border-radius: 4px;
+                    background: Theme.accent;
+                }
+            }
+            Text {
+                width: 48px;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                text: root.muted ? "muted" : round(root.value * 100) + "%";
+                font-size: Theme.fs(13);
+                font-weight: 600;
+                color: Theme.ink;
+            }
+        }
+    }
+}

@@ -27,6 +27,7 @@ mod mpris;
 mod notify;
 mod platform;
 mod spring;
+mod switch_ui;
 mod sys;
 mod theme;
 mod tray;
