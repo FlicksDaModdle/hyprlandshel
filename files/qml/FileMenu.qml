@@ -203,6 +203,12 @@ PanelSurface {
                               ? "Stop grouping by date" : "Group by date",
                            icon: "list", rule: true,
                            run: () => menu.svc.setGroup(menu.app.cwd, !menu.svc.groupFor(menu.app.cwd)) });
+            if (menu.app.grouping && menu.app.groups.length > 1) {
+                const anyOpen = menu.app.groups.some(g => !g.collapsed);
+                out.push({ n: anyOpen ? "Collapse all groups" : "Expand all groups",
+                           icon: anyOpen ? "chevronUp" : "chevronDown",
+                           run: () => menu.app.setAllCollapsed(anyOpen) });
+            }
 
             out.push({ n: "Select all", icon: "check", rule: true,
                        run: () => menu.app.selectAll() });

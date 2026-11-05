@@ -1149,7 +1149,9 @@ PanelSurface {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
 
-            Grid {
+            // Tiles, in their date groups when the listing is grouped: a
+            // heading over each, and a grid of its own under it.
+            Column {
                 id: grid
                 visible: frame.app.view === "grid"
                 width: parent.width
@@ -1157,9 +1159,8 @@ PanelSurface {
                 // about 168 wide. Fixing the cell rather than the column
                 // count keeps that airiness and still reflows: five at the
                 // concept's size, more on a wider window.
-                columns: Math.max(1, Math.floor(width / tileWidth))
+                readonly property int columns: Math.max(1, Math.floor(width / tileWidth))
                 readonly property real tileWidth: Math.round(168 * FilesService.iconSize / 100)
-                spacing: 4
 
                 // The waiting-to-be-named folder sits first, as a tile you
                 // type into, so a new folder never appears unnamed.
@@ -1171,18 +1172,47 @@ PanelSurface {
                 }
 
                 Repeater {
-                    model: frame.app.visibleEntries
+                    model: frame.app.groups
 
-                    FileTile {
-                        id: gridTile
+                    Column {
+                        id: gridGroup
                         required property var modelData
-                        width: grid.tileWidth
-                        entry: modelData
-                        app: frame.app
-                        // A row of slack either side, so scrolling does not
-                        // show a column of empty plates catching up.
-                        inView: (gridTile.y + gridTile.height) > flick.contentY - gridTile.height
-                                && gridTile.y < flick.contentY + flick.height + gridTile.height
+                        required property int index
+                        width: grid.width
+
+                        GroupHeading {
+                            width: gridGroup.width
+                            visible: gridGroup.modelData.name !== ""
+                            height: visible ? implicitHeight : 0
+                            text: gridGroup.modelData.name
+                            count: gridGroup.modelData.count
+                            collapsed: gridGroup.modelData.collapsed
+                            firstOne: gridGroup.index === 0
+                            onToggled: frame.app.toggleGroup(gridGroup.modelData.name)
+                        }
+
+                        Grid {
+                            id: tiles
+                            columns: grid.columns
+                            spacing: 4
+
+                            Repeater {
+                                model: gridGroup.modelData.entries
+
+                                FileTile {
+                                    id: gridTile
+                                    required property var modelData
+                                    width: grid.tileWidth
+                                    entry: modelData
+                                    app: frame.app
+                                    // A row of slack either side, so scrolling does
+                                    // not show a column of empty plates catching up.
+                                    readonly property real tileTop: gridGroup.y + tiles.y + gridTile.y
+                                    inView: (tileTop + gridTile.height) > flick.contentY - gridTile.height
+                                            && tileTop < flick.contentY + flick.height + gridTile.height
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1210,36 +1240,40 @@ PanelSurface {
                     gridView: false
                 }
 
+                // A heading per group, then its rows (none while it's
+                // folded). Ungrouped, one unnamed group with no heading.
                 Repeater {
-                    model: frame.app.visibleEntries
+                    model: frame.app.groups
 
-                    // A row, with the group heading that belongs above it
-                    // when it starts a new run. The heading lives in the
-                    // delegate rather than in the model so that the model
-                    // stays exactly the list everything else indexes into.
                     Column {
                         id: rowGroup
                         required property var modelData
                         required property int index
                         width: list.width
 
-                        readonly property string heading: frame.app.groupAt(rowGroup.index)
-
                         GroupHeading {
                             width: rowGroup.width
-                            visible: rowGroup.heading !== ""
+                            visible: rowGroup.modelData.name !== ""
                             height: visible ? implicitHeight : 0
-                            text: rowGroup.heading
+                            text: rowGroup.modelData.name
+                            count: rowGroup.modelData.count
+                            collapsed: rowGroup.modelData.collapsed
                             firstOne: rowGroup.index === 0
+                            onToggled: frame.app.toggleGroup(rowGroup.modelData.name)
                         }
 
-                        FileRow {
-                            width: rowGroup.width
-                            entry: rowGroup.modelData
-                            app: frame.app
-                            sizeWidth: listHeader.sizeWidth
-                            typeWidth: listHeader.typeWidth
-                            timeWidth: listHeader.timeWidth
+                        Repeater {
+                            model: rowGroup.modelData.entries
+
+                            FileRow {
+                                required property var modelData
+                                width: rowGroup.width
+                                entry: modelData
+                                app: frame.app
+                                sizeWidth: listHeader.sizeWidth
+                                typeWidth: listHeader.typeWidth
+                                timeWidth: listHeader.timeWidth
+                            }
                         }
                     }
                 }
@@ -1484,7 +1518,9 @@ PanelSurface {
             color: frame.svc.lastError ? Appearance.accent : Appearance.ink3
             text: {
                 if (frame.svc.lastError) return frame.svc.lastError;
-                const n = frame.app.visibleEntries.length;
+                // Everything in view, folded groups included, as Explorer
+                // counts it: folding a group hides it, it doesn't remove it.
+                const n = frame.app.sortedEntries.length;
                 const filtered = frame.app.filter.trim() !== "";
                 const items = n + (n === 1 ? " item" : " items")
                               + (filtered ? " matching “" + frame.app.filter.trim() + "”" : "");

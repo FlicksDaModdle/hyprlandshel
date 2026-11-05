@@ -68,7 +68,9 @@ QtObject {
     // everything, which is what an ordinary window always is.
     property var kindFilter: []
 
-    readonly property var visibleEntries: {
+    // Every entry that passes the filters, sorted, before any group is
+    // collapsed: what the groups count.
+    readonly property var sortedEntries: {
         let all = root.showHidden ? root.entries : root.entries.filter(e => !e.hidden);
         // Folders are never filtered out: the file someone is after is
         // usually in one of them, and a dialog that hides the way there
@@ -87,21 +89,58 @@ QtObject {
     readonly property bool grouping:
         root.svc.groupFor(root.cwd) && root.sortBy === "modified" && !root.inTrash
 
-    // The heading that belongs *above* entry `i`, or "" when it carries on
-    // from the one before it. Deliberately a lookup beside the list rather
-    // than headings spliced into it: selection, shift-ranges, type-ahead
-    // and the drag all index into visibleEntries, and every one of them
-    // would have to learn to skip a heading.
-    function groupAt(i) {
-        if (!root.grouping) return "";
-        const list = root.visibleEntries;
-        if (i < 0 || i >= list.length) return "";
-        // Folders are dated like everything else: each group lists its own
-        // folders first (sortEntries).
-        const here = root.svc.dateGroup(list[i].mtime);
-        if (i === 0) return here;
-        const prev = root.svc.dateGroup(list[i - 1].mtime);
-        return here === prev ? "" : here;
+    // ── groups, and collapsing them ───────────────────────────────────────
+    // As Explorer has it: a heading per group with how many it holds, and
+    // a click on it folds the group away. Collapsed groups are remembered
+    // per folder for as long as the window is open.
+    //
+    // What a collapsed group holds is left out of visibleEntries, the list
+    // that selection, shift-ranges, type-ahead, the arrow keys and Select
+    // all go by, so none of them reach what can't be seen.
+    property var collapsedGroups: ({})          // cwd + "\n" + group → true
+    function isCollapsed(g) { return !!root.collapsedGroups[root.cwd + "\n" + g]; }
+    function setCollapsed(g, on) {
+        const next = Object.assign({}, root.collapsedGroups);
+        const k = root.cwd + "\n" + g;
+        if (on) next[k] = true; else delete next[k];
+        root.collapsedGroups = next;
+        // What was picked in it goes with it.
+        if (on && root.selection && root.selection.length) {
+            const hidden = new Set(root.sortedEntries
+                .filter(e => root.svc.dateGroup(e.mtime) === g).map(e => e.name));
+            const keep = root.selection.filter(n => !hidden.has(n));
+            if (keep.length !== root.selection.length) root.selection = keep;
+        }
+    }
+    function toggleGroup(g) { root.setCollapsed(g, !root.isCollapsed(g)); }
+    function setAllCollapsed(on) {
+        for (const g of root.groups) if (g.name !== "") root.setCollapsed(g.name, on);
+    }
+
+    // [{ name, count, collapsed, entries }]: one unnamed group holding
+    // everything when the listing isn't grouped.
+    readonly property var groups: {
+        const all = root.sortedEntries;
+        if (!root.grouping) return [{ name: "", count: all.length, collapsed: false, entries: all }];
+        const out = [];
+        let cur = null;
+        for (const e of all) {
+            const g = root.svc.dateGroup(e.mtime);
+            if (!cur || cur.name !== g) {
+                cur = { name: g, count: 0, collapsed: root.isCollapsed(g), entries: [] };
+                out.push(cur);
+            }
+            cur.count++;
+            if (!cur.collapsed) cur.entries.push(e);
+        }
+        return out;
+    }
+
+    readonly property var visibleEntries: {
+        if (!root.grouping) return root.sortedEntries;
+        const out = [];
+        for (const g of root.groups) for (const e of g.entries) out.push(e);
+        return out;
     }
 
     // Go to where something lives and pick it out, which is what every
