@@ -154,7 +154,9 @@ export component Launcher inherits Window {
                                 reject
                             }
                             field := TextInput {
-                                y: (parent.height - self.height) / 2;
+                                y: 0;
+                                height: parent.height;
+                                vertical-alignment: center;
                                 width: parent.width;
                                 text <=> root.query;
                                 font-size: Theme.fs(round(13 * root.zoom));
