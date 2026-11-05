@@ -1,0 +1,453 @@
+//! Settings → Sound: services/Audio.qml's reading of PipeWire (here the
+//! daemon's PulseAudio snapshot, pa-watch) and SoundPanel.qml's own state.
+//! Changes go through pactl, as Audio.qml's details did.
+
+use crate::daemon::Daemon;
+use crate::prefs::Prefs;
+use crate::{AppWindow, Snd, SndApp, SndDev, SndOpt};
+use serde_json::{json, Value};
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+
+#[derive(Clone, Default)]
+pub struct Node {
+    pub index: i64,
+    pub name: String,
+    pub description: String,
+    pub volume: f64,
+    pub mute: bool,
+    pub card: i64,
+    pub ports: Vec<(String, String, bool)>,
+    pub active_port: String,
+    pub props: Value,
+    pub sink: bool,
+}
+
+#[derive(Clone, Default)]
+pub struct Stream {
+    pub index: i64,
+    pub target: i64,
+    pub volume: f64,
+    pub mute: bool,
+    pub props: Value,
+    pub playing: bool,
+}
+
+#[derive(Default)]
+pub struct Sound {
+    pub up: bool,
+    pub seen: bool,
+    pub sinks: Vec<Node>,
+    pub sources: Vec<Node>,
+    pub streams: Vec<Stream>,
+    pub cards: Vec<Value>,
+    pub default_sink: String,
+    pub default_source: String,
+    pub picked_out: String,
+    pub picked_in: String,
+    pub show_hidden: bool,
+    pub watching: bool,
+    pub restarting: bool,
+    pub last_error: String,
+}
+
+fn node(v: &Value, sink: bool) -> Node {
+    Node {
+        index: v["index"].as_i64().unwrap_or(-1),
+        name: v["name"].as_str().unwrap_or("").into(),
+        description: v["description"].as_str().unwrap_or("").into(),
+        volume: v["volume"].as_f64().unwrap_or(0.0),
+        mute: v["mute"] == true,
+        card: v["card"].as_i64().unwrap_or(-1),
+        ports: v["ports"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|p| (p["name"].as_str().unwrap_or("").into(), p["description"].as_str().unwrap_or("").into(), p["availability"] != "no"))
+            .collect(),
+        active_port: v["active_port"].as_str().unwrap_or("").into(),
+        props: v["properties"].clone(),
+        sink,
+    }
+}
+
+/// pactl, one call, in the background.
+pub fn pactl(args: &[String]) {
+    let a = args.to_vec();
+    std::thread::spawn(move || {
+        let _ = std::process::Command::new("pactl").args(&a).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+    });
+}
+fn pa(args: &[&str]) {
+    pactl(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+}
+
+fn json_list(p: &Prefs, k: &str) -> Vec<String> {
+    serde_json::from_str(&p.s(k)).unwrap_or_default()
+}
+fn nicknames(p: &Prefs) -> serde_json::Map<String, Value> {
+    serde_json::from_str::<Value>(&p.s("soundNames")).ok().and_then(|v| v.as_object().cloned()).unwrap_or_default()
+}
+
+impl Sound {
+    pub fn watch(&mut self, d: &mut Daemon, on: bool) {
+        if self.watching == on {
+            return;
+        }
+        self.watching = on;
+        d.send(json!({ "cmd": "pa-watch", "on": on }));
+        if on {
+            d.send(json!({ "cmd": "pa-snapshot" }));
+        }
+    }
+
+    pub fn event(&mut self, ev: &Value) -> bool {
+        if ev["ev"] != "pa" {
+            return false;
+        }
+        self.seen = true;
+        if ev["available"] != true {
+            self.up = false;
+            return true;
+        }
+        self.up = true;
+        let ours = |n: &Node| n.name.starts_with("hyprshell-") || n.props["node.name"].as_str().unwrap_or("").starts_with("hyprshell");
+        self.sinks = ev["sinks"].as_array().into_iter().flatten().map(|v| node(v, true)).filter(|n| !ours(n)).collect();
+        self.sources = ev["sources"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|v| v["monitor"] != true)
+            .map(|v| node(v, false))
+            .filter(|n| !ours(n))
+            .collect();
+        let monitor = |p: &Value| p["stream.monitor"] == "true" || p["media.category"] == "Monitor" || p["application.name"] == "Quickshell Peak Detect";
+        let mut streams: Vec<Stream> = ev["sinkInputs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|v| !monitor(&v["properties"]))
+            .map(|v| Stream {
+                index: v["index"].as_i64().unwrap_or(-1),
+                target: v["sink"].as_i64().unwrap_or(-1),
+                volume: v["volume"].as_f64().unwrap_or(1.0),
+                mute: v["mute"] == true,
+                props: v["properties"].clone(),
+                playing: true,
+            })
+            .collect();
+        streams.extend(ev["sourceOutputs"].as_array().into_iter().flatten().filter(|v| !monitor(&v["properties"])).map(|v| Stream {
+            index: v["index"].as_i64().unwrap_or(-1),
+            target: v["source"].as_i64().unwrap_or(-1),
+            volume: v["volume"].as_f64().unwrap_or(1.0),
+            mute: v["mute"] == true,
+            props: v["properties"].clone(),
+            playing: false,
+        }));
+        self.streams = streams;
+        self.cards = ev["cards"].as_array().cloned().unwrap_or_default();
+        self.default_sink = ev["defaultSink"].as_str().unwrap_or("").into();
+        self.default_source = ev["defaultSource"].as_str().unwrap_or("").into();
+        true
+    }
+
+    fn display_name(p: &Prefs, n: &Node) -> String {
+        nicknames(p).get(&n.name).and_then(|v| v.as_str()).map(str::to_string).unwrap_or_else(|| if n.description.is_empty() { n.name.clone() } else { n.description.clone() })
+    }
+
+    /// Audio.deviceGlyph.
+    fn glyph(n: &Node) -> &'static str {
+        let hint = format!(
+            "{} {} {}",
+            n.props["device.form_factor"].as_str().unwrap_or(""),
+            n.props["device.bus"].as_str().unwrap_or(""),
+            n.active_port
+        )
+        .to_lowercase();
+        if hint.contains("hdmi") || hint.contains("displayport") {
+            return if n.sink { "monitor" } else { "mic" };
+        }
+        if ["headphone", "headset", "hands-free", "handsfree", "bluez", "bluetooth"].iter().any(|k| hint.contains(k)) {
+            return if n.sink { "headphones" } else { "mic" };
+        }
+        if n.sink {
+            "speaker"
+        } else {
+            "mic"
+        }
+    }
+
+    pub fn max_volume(p: &Prefs) -> f64 {
+        p.f("volumeMax").max(if p.b("volumeBoost") { 150.0 } else { 0.0 }) / 100.0
+    }
+
+    fn inspected(&self, out: bool) -> Option<&Node> {
+        let (list, picked, def) = if out { (&self.sinks, &self.picked_out, &self.default_sink) } else { (&self.sources, &self.picked_in, &self.default_source) };
+        list.iter().find(|n| n.name == *picked).or_else(|| list.iter().find(|n| n.name == *def))
+    }
+
+    pub fn publish(&self, ui: &AppWindow, p: &Prefs) {
+        let s = ui.global::<Snd>();
+        s.set_up(self.up || !self.seen);
+        s.set_restarting(self.restarting);
+        let tab = p.s("soundTab");
+        s.set_tab(match tab.as_str() {
+            "input" => 1,
+            "apps" => 2,
+            "options" => 3,
+            _ => 0,
+        });
+        let hidden = json_list(p, "soundHidden");
+        let max = Self::max_volume(p);
+        let dev = |n: &Node, out: bool| {
+            let in_use = if out { n.name == self.default_sink } else { n.name == self.default_source };
+            let port = n.ports.iter().find(|x| x.0 == n.active_port);
+            let name = Self::display_name(p, n);
+            let unplugged = port.is_some_and(|x| !x.2);
+            let sub: Vec<String> = [
+                if in_use { "In use".to_string() } else { String::new() },
+                port.filter(|x| x.1 != name).map(|x| x.1.clone()).unwrap_or_default(),
+                if unplugged { "unplugged".into() } else { String::new() },
+                if hidden.contains(&n.name) { "hidden".into() } else { String::new() },
+            ]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect();
+            let picked = self.inspected(out).is_some_and(|x| x.name == n.name);
+            SndDev {
+                name: n.name.clone().into(),
+                label: name.into(),
+                sub: sub.join(" · ").into(),
+                glyph: Self::glyph(n).into(),
+                in_use,
+                picked,
+                muted: n.mute,
+                level: (n.volume / if out { max } else { 1.5 }) as f32,
+                pct: (n.volume * 100.0).round() as i32,
+                loud: n.volume > 1.001,
+                dim: unplugged && !in_use,
+            }
+        };
+        let list = |nodes: &Vec<Node>, out: bool, cur: &str| -> Vec<SndDev> {
+            nodes.iter().filter(|n| self.show_hidden || !hidden.contains(&n.name) || n.name == cur).map(|n| dev(n, out)).collect()
+        };
+        s.set_outputs(ModelRc::new(VecModel::from(list(&self.sinks, true, &self.default_sink))));
+        s.set_inputs(ModelRc::new(VecModel::from(list(&self.sources, false, &self.default_source))));
+        s.set_hidden_out(self.sinks.iter().filter(|n| hidden.contains(&n.name)).count() as i32);
+        s.set_hidden_in(self.sources.iter().filter(|n| hidden.contains(&n.name)).count() as i32);
+        s.set_show_hidden(self.show_hidden);
+        // At a glance.
+        let sink = self.sinks.iter().find(|n| n.name == self.default_sink);
+        let source = self.sources.iter().find(|n| n.name == self.default_source);
+        s.set_out_name(sink.map(|n| Self::display_name(p, n)).unwrap_or("No output".into()).into());
+        s.set_in_name(source.map(|n| Self::display_name(p, n)).unwrap_or("No microphone".into()).into());
+        s.set_out_glyph(sink.map(Self::glyph).unwrap_or("speaker").into());
+        s.set_out_muted(sink.is_some_and(|n| n.mute));
+        s.set_in_muted(source.is_some_and(|n| n.mute));
+        s.set_has_out(sink.is_some());
+        s.set_has_in(source.is_some());
+        s.set_out_level(sink.map(|n| n.volume / max).unwrap_or(0.0) as f32);
+        s.set_in_level(source.map(|n| n.volume / 1.5).unwrap_or(0.0) as f32);
+        s.set_out_pct(sink.map(|n| (n.volume * 100.0).round() as i32).unwrap_or(0));
+        s.set_in_pct(source.map(|n| (n.volume * 100.0).round() as i32).unwrap_or(0));
+        // The inspector: the picked device, else the one in use.
+        for out in [true, false] {
+            let Some(n) = self.inspected(out) else {
+                if out {
+                    s.set_io_name(SharedString::new());
+                } else {
+                    s.set_ii_name(SharedString::new());
+                }
+                continue;
+            };
+            let card = self.cards.iter().find(|c| c["index"].as_i64() == Some(n.card));
+            let ports: Vec<SndOpt> = n.ports.iter().map(|x| SndOpt { value: x.0.clone().into(), label: format!("{}{}", x.1, if x.2 { "" } else { " (unplugged)" }).into() }).collect();
+            let profiles: Vec<SndOpt> = card
+                .and_then(|c| c["profiles"].as_array())
+                .into_iter()
+                .flatten()
+                .filter(|pr| pr["available"] != false)
+                .map(|pr| SndOpt { value: pr["name"].as_str().unwrap_or("").into(), label: pr["description"].as_str().unwrap_or("").into() })
+                .collect();
+            let active_profile = card.and_then(|c| c["active_profile"].as_str()).unwrap_or("").to_string();
+            let latency = card
+                .and_then(|c| c["ports"].as_array())
+                .and_then(|ps| ps.iter().find(|x| x["name"] == n.active_port.as_str()))
+                .and_then(|x| x["latency_offset"].as_i64())
+                .unwrap_or(0) as f64
+                / 1000.0;
+            let in_use = if out { n.name == self.default_sink } else { n.name == self.default_source };
+            let nick = nicknames(p).get(&n.name).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let pi = ports.iter().position(|x| x.value == n.active_port.as_str()).map(|i| i as i32).unwrap_or(-1);
+            let fi = profiles.iter().position(|x| x.value == active_profile.as_str()).map(|i| i as i32).unwrap_or(-1);
+            let details: String = [
+                ("Driver name", if n.description.is_empty() { n.name.clone() } else { n.description.clone() }),
+                ("Node", n.name.clone()),
+                ("Card", card.and_then(|c| c["name"].as_str()).unwrap_or("").to_string()),
+            ]
+            .iter()
+            .filter(|x| !x.1.is_empty())
+            .map(|x| format!("{}: {}", x.0, x.1))
+            .collect::<Vec<_>>()
+            .join("\n");
+            if out {
+                s.set_io_name(n.name.clone().into());
+                s.set_io_label(Self::display_name(p, n).into());
+                s.set_io_nick(nick.into());
+                s.set_io_in_use(in_use);
+                s.set_io_hidden(hidden.contains(&n.name));
+                s.set_io_ports(ModelRc::new(VecModel::from(ports)));
+                s.set_io_port(pi);
+                s.set_io_profiles(ModelRc::new(VecModel::from(profiles)));
+                s.set_io_profile(fi);
+                s.set_io_delay(latency as f32);
+                s.set_io_details(details.into());
+            } else {
+                s.set_ii_name(n.name.clone().into());
+                s.set_ii_label(Self::display_name(p, n).into());
+                s.set_ii_nick(nick.into());
+                s.set_ii_in_use(in_use);
+                s.set_ii_hidden(hidden.contains(&n.name));
+                s.set_ii_ports(ModelRc::new(VecModel::from(ports)));
+                s.set_ii_port(pi);
+                s.set_ii_profiles(ModelRc::new(VecModel::from(profiles)));
+                s.set_ii_profile(fi);
+                s.set_ii_delay(latency as f32);
+                s.set_ii_details(details.into());
+            }
+        }
+        // Apps, playing and recording.
+        let app = |st: &Stream| {
+            let pr = &st.props;
+            let name = pr["application.name"].as_str().or(pr["application.process.binary"].as_str()).unwrap_or("Unknown").to_string();
+            let media = pr["media.name"].as_str().unwrap_or("").to_string();
+            let low = media.to_lowercase();
+            let media = if media.is_empty()
+                || media == name
+                || ["playback", "audio stream", "audiostream", "output", "record", "capture", "recstream", "playstream"].contains(&low.as_str())
+            {
+                String::new()
+            } else {
+                media
+            };
+            let devs = if st.playing { &self.sinks } else { &self.sources };
+            let target = devs.iter().position(|n| n.index == st.target).map(|i| i as i32).unwrap_or(-1);
+            SndApp {
+                index: st.index as i32,
+                playing: st.playing,
+                name: name.into(),
+                media: media.into(),
+                muted: st.mute,
+                level: (st.volume / if st.playing { max } else { 1.5 }) as f32,
+                pct: (st.volume * 100.0).round() as i32,
+                target,
+            }
+        };
+        let playing: Vec<SndApp> = self.streams.iter().filter(|s| s.playing).map(app).collect();
+        let recording: Vec<SndApp> = self.streams.iter().filter(|s| !s.playing).map(app).collect();
+        s.set_app_count((playing.len() + recording.len()) as i32);
+        s.set_playing(ModelRc::new(VecModel::from(playing)));
+        s.set_recording(ModelRc::new(VecModel::from(recording)));
+        s.set_sink_names(ModelRc::new(VecModel::from(self.sinks.iter().map(|n| SharedString::from(Self::display_name(p, n))).collect::<Vec<_>>())));
+        s.set_source_names(ModelRc::new(VecModel::from(self.sources.iter().map(|n| SharedString::from(Self::display_name(p, n))).collect::<Vec<_>>())));
+        // Options.
+        s.set_step(p.i("volumeStep") as i32);
+        s.set_limit(p.f("volumeMax").max(if p.b("volumeBoost") { 150.0 } else { 0.0 }) as i32);
+        s.set_feedback(p.b("volumeFeedback"));
+        s.set_auto_switch(p.b("soundAutoSwitch"));
+        s.set_meters(p.b("soundMeters"));
+        s.set_names_line(format!("{} renamed, {} hidden — set in each device's details", nicknames(p).len(), hidden.len()).into());
+        s.set_names_any(nicknames(p).len() + hidden.len() > 0);
+        s.set_last_error(self.last_error.clone().into());
+        s.set_pactl(crate::system::have("pactl"));
+    }
+
+    // ── actions (Audio.qml) ─────────────────────────────────────────────
+    fn find(&self, name: &str) -> Option<&Node> {
+        self.sinks.iter().chain(self.sources.iter()).find(|n| n.name == name)
+    }
+    pub fn set_volume(&mut self, p: &Prefs, name: &str, v: f64) {
+        let Some(n) = self.find(name).cloned() else { return };
+        let v = v.clamp(0.0, if n.sink { Self::max_volume(p) } else { 1.5 });
+        pa(&[if n.sink { "set-sink-volume" } else { "set-source-volume" }, &n.name, &format!("{}%", (v * 100.0).round())]);
+        for l in [&mut self.sinks, &mut self.sources] {
+            if let Some(x) = l.iter_mut().find(|x| x.name == name) {
+                x.volume = v;
+            }
+        }
+    }
+    pub fn set_mute(&mut self, name: &str, on: bool) {
+        let Some(n) = self.find(name).cloned() else { return };
+        pa(&[if n.sink { "set-sink-mute" } else { "set-source-mute" }, &n.name, if on { "1" } else { "0" }]);
+        for l in [&mut self.sinks, &mut self.sources] {
+            if let Some(x) = l.iter_mut().find(|x| x.name == name) {
+                x.mute = on;
+            }
+        }
+    }
+    pub fn set_default(&mut self, name: &str) {
+        let Some(n) = self.find(name).cloned() else { return };
+        pa(&[if n.sink { "set-default-sink" } else { "set-default-source" }, &n.name]);
+        if n.sink {
+            self.default_sink = n.name;
+        } else {
+            self.default_source = n.name;
+        }
+    }
+    pub fn set_port(&mut self, name: &str, port: &str) {
+        let Some(n) = self.find(name).cloned() else { return };
+        pa(&[if n.sink { "set-sink-port" } else { "set-source-port" }, &n.name, port]);
+    }
+    pub fn set_profile(&mut self, name: &str, profile: &str) {
+        let Some(n) = self.find(name).cloned() else { return };
+        if let Some(c) = self.cards.iter().find(|c| c["index"].as_i64() == Some(n.card)) {
+            pa(&["set-card-profile", c["name"].as_str().unwrap_or(""), profile]);
+        }
+    }
+    pub fn set_delay(&mut self, name: &str, ms: f64) {
+        let Some(n) = self.find(name).cloned() else { return };
+        match self.cards.iter().find(|c| c["index"].as_i64() == Some(n.card)) {
+            Some(c) if !n.active_port.is_empty() => {
+                pa(&["set-port-latency-offset", c["name"].as_str().unwrap_or(""), &n.active_port, &((ms * 1000.0).round() as i64).to_string()])
+            }
+            _ => self.last_error = "This device has no connector to set a delay on.".into(),
+        }
+    }
+    pub fn test(&self, name: &str) {
+        let n = name.to_string();
+        std::thread::spawn(move || {
+            for f in ["/usr/share/sounds/freedesktop/stereo/front-center.wav", "/usr/share/sounds/freedesktop/stereo/bell.oga", "/usr/share/sounds/freedesktop/stereo/complete.oga"] {
+                if std::path::Path::new(f).exists() {
+                    let _ = std::process::Command::new("paplay").args(["-d", &n, f]).status();
+                    return;
+                }
+            }
+        });
+    }
+    pub fn stream_volume(&mut self, p: &Prefs, index: i32, playing: bool, v: f64) {
+        let v = v.clamp(0.0, if playing { Self::max_volume(p) } else { 1.5 });
+        pa(&[if playing { "set-sink-input-volume" } else { "set-source-output-volume" }, &index.to_string(), &format!("{}%", (v * 100.0).round())]);
+    }
+    pub fn stream_mute(&mut self, index: i32, playing: bool, on: bool) {
+        pa(&[if playing { "set-sink-input-mute" } else { "set-source-output-mute" }, &index.to_string(), if on { "1" } else { "0" }]);
+    }
+    pub fn stream_move(&mut self, index: i32, playing: bool, to: i32) {
+        let devs = if playing { &self.sinks } else { &self.sources };
+        if let Some(n) = devs.get(to as usize) {
+            pa(&[if playing { "move-sink-input" } else { "move-source-output" }, &index.to_string(), &n.name]);
+        }
+    }
+    pub fn restart(&mut self) {
+        self.restarting = true;
+        self.last_error.clear();
+        let ok = std::process::Command::new("systemctl")
+            .args(["--user", "restart", "wireplumber", "pipewire", "pipewire-pulse"])
+            .stderr(std::process::Stdio::piped())
+            .output();
+        self.restarting = false;
+        if let Ok(o) = ok {
+            if !o.status.success() {
+                self.last_error = String::from_utf8_lossy(&o.stderr).trim().lines().last().unwrap_or("").to_string();
+            }
+        }
+    }
+}

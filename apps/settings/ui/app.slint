@@ -7,8 +7,9 @@ import { Theme, Icons, Win, KitWindow, Icon, Switch, Slider, Scroll } from "@kit
 import { Segmented } from "common.slint";
 import { WifiPanel, Wifi, WifiNet, KV, SavedNet } from "wifi.slint";
 import { BluetoothPanel, Blue, BtDev } from "bluetooth.slint";
+import { SoundPanel, Snd, SndDev, SndOpt, SndApp } from "sound.slint";
 
-export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev }
+export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev, Snd, SndDev, SndOpt, SndApp }
 
 export struct Btn { label: string, quiet: bool, enabled: bool }
 
@@ -664,7 +665,8 @@ component SettingsRow inherits Rectangle {
         }
         if item.kind == "panel" && item.panel == "wifi": WifiPanel { horizontal-stretch: 1; }
         if item.kind == "panel" && item.panel == "bluetooth": BluetoothPanel { horizontal-stretch: 1; }
-        if item.kind == "panel" && item.panel != "wifi" && item.panel != "bluetooth": PanelCard {
+        if item.kind == "panel" && item.panel == "sound": SoundPanel { horizontal-stretch: 1; }
+        if item.kind == "panel" && item.panel != "wifi" && item.panel != "bluetooth" && item.panel != "sound": PanelCard {
             horizontal-stretch: 1;
             panel: item.panel;
             press(i) => { Prefs.press(root.index, i); }

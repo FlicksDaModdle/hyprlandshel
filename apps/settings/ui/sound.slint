@@ -1,0 +1,613 @@
+// Settings → Sound: SoundPanel.qml, with SoundDeviceList.qml,
+// SoundInspector.qml and SoundApps.qml. The output and microphone in use
+// at the top, then Output, Input, Apps and Options. What it shows comes
+// from src/sound.rs.
+
+import { Theme, Icon, Switch, Slider } from "@kit";
+import { Segmented, NetButton, NetField, Caption, Line, Card, Link } from "common.slint";
+
+export struct SndDev { name: string, label: string, sub: string, glyph: string, in-use: bool, picked: bool, muted: bool, level: float, pct: int, loud: bool, dim: bool }
+export struct SndOpt { value: string, label: string }
+export struct SndApp { index: int, playing: bool, name: string, media: string, muted: bool, level: float, pct: int, target: int }
+
+export global Snd {
+    in property <bool> up: true;
+    in property <bool> restarting;
+    in property <int> tab;
+    in property <string> out-name;
+    in property <string> in-name;
+    in property <string> out-glyph;
+    in property <bool> out-muted;
+    in property <bool> in-muted;
+    in property <bool> has-out;
+    in property <bool> has-in;
+    in property <float> out-level;
+    in property <float> in-level;
+    in property <int> out-pct;
+    in property <int> in-pct;
+    in property <[SndDev]> outputs;
+    in property <[SndDev]> inputs;
+    in property <int> hidden-out;
+    in property <int> hidden-in;
+    in property <bool> show-hidden;
+    // The inspectors: output (io-) and input (ii-).
+    in property <string> io-name;
+    in property <string> io-label;
+    in property <string> io-nick;
+    in property <bool> io-in-use;
+    in property <bool> io-hidden;
+    in property <[SndOpt]> io-ports;
+    in property <int> io-port;
+    in property <[SndOpt]> io-profiles;
+    in property <int> io-profile;
+    in property <float> io-delay;
+    in property <string> io-details;
+    in property <string> ii-name;
+    in property <string> ii-label;
+    in property <string> ii-nick;
+    in property <bool> ii-in-use;
+    in property <bool> ii-hidden;
+    in property <[SndOpt]> ii-ports;
+    in property <int> ii-port;
+    in property <[SndOpt]> ii-profiles;
+    in property <int> ii-profile;
+    in property <float> ii-delay;
+    in property <string> ii-details;
+    in property <int> app-count;
+    in property <[SndApp]> playing;
+    in property <[SndApp]> recording;
+    in property <[string]> sink-names;
+    in property <[string]> source-names;
+    in property <int> step;
+    in property <int> limit;
+    in property <bool> feedback;
+    in property <bool> auto-switch;
+    in property <bool> meters;
+    in property <string> names-line;
+    in property <bool> names-any;
+    in property <string> last-error;
+    in property <bool> pactl: true;
+    callback set-tab(int);
+    callback default-volume(bool, float);
+    callback default-mute(bool);
+    callback volume(string, float);
+    callback mute(string, bool);
+    callback use(string);
+    callback pick(bool, string);
+    callback toggle-hidden-list();
+    callback set-port(string, string);
+    callback set-profile(string, string);
+    callback set-delay(string, float);
+    callback test(string);
+    callback rename(string, string);
+    callback hide(string, bool);
+    callback app-volume(int, bool, float);
+    callback app-mute(int, bool, bool);
+    callback app-move(int, bool, int);
+    callback set-step(int);
+    callback set-limit(int);
+    callback set-feedback(bool);
+    callback set-auto-switch(bool);
+    callback set-meters(bool);
+    callback reset-names();
+    callback restart();
+    callback mixer();
+}
+
+component Round inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> lit;
+    in property <length> size: 34px;
+    callback clicked();
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.lit ? Theme.accent : Theme.rule;
+    Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; name: root.glyph; size: root.size / 2; ink: root.lit ? Theme.ink-on-accent : Theme.ink2; }
+    TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// One side of "at a glance".
+component Glance inherits VerticalLayout {
+    in property <bool> out;
+    property <bool> muted: root.out ? Snd.out-muted : Snd.in-muted;
+    property <bool> has: root.out ? Snd.has-out : Snd.has-in;
+    spacing: 8px;
+    HorizontalLayout {
+        spacing: 10px;
+        Round {
+            size: 38px;
+            glyph: root.muted ? (root.out ? "volumeX" : "micOff") : root.out ? Snd.out-glyph : "mic";
+            lit: !root.muted && root.has;
+            clicked => { Snd.default-mute(root.out); }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            Text { text: root.out ? "OUTPUT" : "MICROPHONE"; font-size: Theme.fs(11); letter-spacing: 0.5px; color: Theme.ink3; }
+            Text {
+                text: root.out ? Snd.out-name : Snd.in-name;
+                overflow: elide;
+                font-size: Theme.fs(13);
+                font-weight: 600;
+                color: Theme.ink;
+                TouchArea { mouse-cursor: pointer; clicked => { Snd.set-tab(root.out ? 0 : 1); } }
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        Slider {
+            horizontal-stretch: 1;
+            minimum: 0;
+            maximum: 1;
+            step: 0.01;
+            value: root.out ? Snd.out-level : Snd.in-level;
+            fill: root.muted ? Theme.ink3 : Theme.accent;
+            released(v) => { Snd.default-volume(root.out, v); }
+        }
+        Text {
+            width: 42px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            text: root.muted ? "Muted" : (root.out ? Snd.out-pct : Snd.in-pct) + "%";
+            font-size: Theme.fs(12);
+            font-weight: 600;
+            color: Theme.ink;
+        }
+    }
+}
+
+// SoundDeviceList.qml: every output (or input), its level in the row.
+component DeviceList inherits VerticalLayout {
+    in property <bool> out;
+    in property <[SndDev]> list;
+    spacing: 2px;
+    if root.list.length == 0: Line {
+        text: root.out
+            ? "No outputs. If something is plugged in, its card may be switched off — try “Restart sound” under Options."
+            : "No inputs. A Bluetooth headset's microphone only appears in its headset mode.";
+    }
+    for n in root.list: Rectangle {
+        height: 56px;
+        border-radius: Theme.r-sm;
+        background: n.picked ? Theme.sel : rh.has-hover ? Theme.hover : transparent;
+        border-width: n.in-use ? 1px : 0px;
+        border-color: Theme.accent;
+        opacity: n.dim ? 0.6 : 1;
+        rh := TouchArea { clicked => { Snd.pick(root.out, n.name); } }
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                Round { glyph: n.muted ? (root.out ? "volumeX" : "micOff") : n.glyph; lit: n.in-use && !n.muted; clicked => { Snd.pick(root.out, n.name); } }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 1px;
+                Text { text: n.label; overflow: elide; font-size: Theme.fs(13); font-weight: n.in-use ? 600 : 500; color: Theme.ink; }
+                if n.sub != "": Text { text: n.sub; overflow: elide; font-size: Theme.fs(11.5); color: n.in-use ? Theme.accent : Theme.ink3; }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: mh.has-hover ? Theme.rule : transparent;
+                        Icon {
+                            x: 6px;
+                            y: 6px;
+                            name: n.muted ? (root.out ? "volumeX" : "micOff") : (root.out ? "volume" : "mic");
+                            size: 15px;
+                            ink: n.muted ? Theme.accent : Theme.ink2;
+                        }
+                        mh := TouchArea { mouse-cursor: pointer; clicked => { Snd.mute(n.name, !n.muted); } }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Slider {
+                        width: 170px;
+                        minimum: 0;
+                        maximum: 1;
+                        step: 0.01;
+                        value: n.level;
+                        fill: n.muted ? Theme.ink3 : Theme.accent;
+                        released(v) => { Snd.volume(n.name, v); }
+                    }
+                }
+                Text { width: 38px; horizontal-alignment: right; vertical-alignment: center; text: n.pct + "%"; font-size: Theme.fs(12); color: n.loud ? #d93a2b : Theme.ink2; }
+                Rectangle {
+                    width: 62px;
+                    if !n.in-use: HorizontalLayout { alignment: end; VerticalLayout { alignment: center; NetButton { label: "Use"; clicked => { Snd.use(n.name); } } } }
+                    if n.in-use: Icon { x: 23px; y: (parent.height - self.height) / 2; name: "check"; size: 16px; ink: Theme.accent; }
+                }
+            }
+        }
+    }
+    if (root.out ? Snd.hidden-out : Snd.hidden-in) > 0: HorizontalLayout {
+        alignment: start;
+        padding-left: 10px;
+        padding-top: 4px;
+        Link {
+            text: Snd.show-hidden ? "Hide the hidden devices again" : (root.out ? Snd.hidden-out : Snd.hidden-in) + " hidden — show them";
+            clicked => { Snd.toggle-hidden-list(); }
+        }
+    }
+}
+
+// SoundInspector.qml's settings for one device.
+component InspectRow inherits HorizontalLayout {
+    in property <string> label;
+    spacing: 12px;
+    Text { width: 96px; vertical-alignment: center; text: root.label; font-size: Theme.fs(12); color: Theme.ink2; }
+    @children
+}
+
+component Inspector inherits Card {
+    in property <bool> out;
+    property <string> name: root.out ? Snd.io-name : Snd.ii-name;
+    property <[SndOpt]> ports: root.out ? Snd.io-ports : Snd.ii-ports;
+    property <[SndOpt]> profiles: root.out ? Snd.io-profiles : Snd.ii-profiles;
+    property <int> port: root.out ? Snd.io-port : Snd.ii-port;
+    property <int> profile: root.out ? Snd.io-profile : Snd.ii-profile;
+    property <float> delay: root.out ? Snd.io-delay : Snd.ii-delay;
+    in-out property <string> nick;
+    height: col.preferred-height + 32px;
+    col := VerticalLayout {
+        x: 16px;
+        y: 16px;
+        width: parent.width - 32px;
+        height: self.preferred-height;
+        spacing: 14px;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Text { text: root.out ? Snd.io-label : Snd.ii-label; overflow: elide; font-size: Theme.fs(15); font-weight: 600; color: Theme.ink; }
+                Text { text: (root.out ? Snd.io-in-use : Snd.ii-in-use) ? "In use" : "Not in use"; font-size: Theme.fs(12); color: Theme.ink3; }
+            }
+            if !(root.out ? Snd.io-in-use : Snd.ii-in-use): VerticalLayout { alignment: center; NetButton { label: "Use this"; primary: true; clicked => { Snd.use(root.name); } } }
+        }
+        if root.out: InspectRow {
+            label: "Test";
+            HorizontalLayout { alignment: start; NetButton { label: "Play a sound"; clicked => { Snd.test(root.name); } } }
+        }
+        if root.ports.length > 1: InspectRow {
+            label: "Connector";
+            HorizontalLayout {
+                alignment: start;
+                for p[i] in root.ports: VerticalLayout {
+                    alignment: center;
+                    padding-right: 6px;
+                    NetButton { label: p.label; primary: i == root.port; clicked => { Snd.set-port(root.name, p.value); } }
+                }
+            }
+        }
+        if root.profiles.length > 1: InspectRow {
+            label: "Mode";
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 4px;
+                for p[i] in root.profiles: Rectangle {
+                    height: 30px;
+                    border-radius: Theme.r-sm;
+                    background: i == root.profile ? Theme.sel : ph.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        Text { horizontal-stretch: 1; vertical-alignment: center; text: p.label; overflow: elide; font-size: Theme.fs(12); color: Theme.ink; }
+                        if i == root.profile: VerticalLayout { alignment: center; Icon { name: "check"; size: 14px; ink: Theme.accent; } }
+                    }
+                    ph := TouchArea { mouse-cursor: pointer; clicked => { Snd.set-profile(root.name, p.value); } }
+                }
+            }
+        }
+        InspectRow {
+            label: "Delay";
+            Slider {
+                horizontal-stretch: 1;
+                minimum: -500;
+                maximum: 500;
+                step: 10;
+                value: root.delay;
+                released(v) => { Snd.set-delay(root.name, v); }
+            }
+            Text { width: 64px; horizontal-alignment: right; vertical-alignment: center; text: round(root.delay) + " ms"; font-size: Theme.fs(12); color: Theme.ink2; }
+        }
+        InspectRow {
+            label: "Name";
+            NetField {
+                horizontal-stretch: 1;
+                cap: 280px;
+                placeholder: root.out ? Snd.io-label : Snd.ii-label;
+                text <=> root.nick;
+                accepted => { Snd.rename(root.name, root.nick); }
+            }
+            VerticalLayout { alignment: center; NetButton { label: "Rename"; clicked => { Snd.rename(root.name, root.nick); } } }
+        }
+        InspectRow {
+            label: "In the lists";
+            HorizontalLayout {
+                alignment: start;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    Switch {
+                        on: !(root.out ? Snd.io-hidden : Snd.ii-hidden);
+                        toggled(v) => { Snd.hide(root.name, !v); }
+                    }
+                }
+                Text { vertical-alignment: center; text: "Show this device (it works either way)"; font-size: Theme.fs(12); color: Theme.ink; }
+            }
+        }
+        InspectRow {
+            label: "Details";
+            Text { horizontal-stretch: 1; text: root.out ? Snd.io-details : Snd.ii-details; wrap: word-wrap; font-size: Theme.fs(11); font-family: "JetBrains Mono"; color: Theme.ink3; }
+        }
+    }
+}
+
+// SoundApps.qml: an app with its own level and device.
+component AppRow inherits Rectangle {
+    in property <SndApp> a;
+    height: 56px;
+    border-radius: Theme.r-sm;
+    background: ah.has-hover ? Theme.hover : transparent;
+    ah := TouchArea { }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Round {
+                glyph: root.a.muted ? (root.a.playing ? "volumeX" : "micOff") : (root.a.playing ? "volume" : "mic");
+                lit: !root.a.muted;
+                clicked => { Snd.app-mute(root.a.index, root.a.playing, !root.a.muted); }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 1px;
+            Text { text: root.a.name; overflow: elide; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+            if root.a.media != "": Text { text: root.a.media; overflow: elide; font-size: Theme.fs(11.5); color: Theme.ink3; }
+        }
+        VerticalLayout {
+            alignment: center;
+            Slider {
+                width: 160px;
+                minimum: 0;
+                maximum: 1;
+                step: 0.01;
+                value: root.a.level;
+                fill: root.a.muted ? Theme.ink3 : Theme.accent;
+                released(v) => { Snd.app-volume(root.a.index, root.a.playing, v); }
+            }
+        }
+        Text { width: 38px; horizontal-alignment: right; vertical-alignment: center; text: root.a.pct + "%"; font-size: Theme.fs(12); color: Theme.ink2; }
+        VerticalLayout {
+            alignment: center;
+            NetButton {
+                label: "···";
+                clicked => { pop.show(); }
+            }
+        }
+    }
+    pop := PopupWindow {
+        x: root.width - 240px;
+        y: 50px;
+        width: 230px;
+        Rectangle {
+            height: opts.preferred-height;
+            border-radius: Theme.r-sm;
+            background: Theme.dialog;
+            border-width: 1px;
+            border-color: Theme.edge;
+            opts := VerticalLayout {
+                padding: 4px;
+                spacing: 1px;
+                Text { x: 9px; text: root.a.playing ? "Play through" : "Record from"; font-size: Theme.fs(11); color: Theme.ink3; }
+                for d[i] in root.a.playing ? Snd.sink-names : Snd.source-names: Rectangle {
+                    height: 29px;
+                    border-radius: Theme.r-sm;
+                    background: oh.has-hover ? Theme.hover : transparent;
+                    Text { x: 9px; width: parent.width - 36px; vertical-alignment: center; overflow: elide; text: d; font-size: Theme.fs(12); color: Theme.ink; }
+                    if i == root.a.target: Icon { x: parent.width - 25px; y: 6px; name: "check"; size: 16px; ink: Theme.accent; }
+                    oh := TouchArea { mouse-cursor: pointer; clicked => { Snd.app-move(root.a.index, root.a.playing, i); } }
+                }
+            }
+        }
+    }
+}
+
+// An option row: its words, and a control on the right.
+component OptRow inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> text;
+    spacing: 12px;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        Text { text: root.title; font-size: Theme.fs(13); color: Theme.ink; }
+        Text { text: root.text; overflow: elide; font-size: Theme.fs(11.5); color: Theme.ink3; }
+    }
+    @children
+}
+
+export component SoundPanel inherits VerticalLayout {
+    spacing: 16px;
+
+    // ══ no PipeWire ══════════════════════════════════════════════════
+    if !Snd.up: Card {
+        border-width: 2px;
+        border-color: Theme.accent;
+        height: down.preferred-height + 32px;
+        down := VerticalLayout {
+            x: 16px;
+            y: 16px;
+            width: parent.width - 32px;
+            height: self.preferred-height;
+            spacing: 10px;
+            Text { text: "PipeWire isn't running"; font-size: Theme.fs(15); font-weight: 600; color: Theme.ink; }
+            Line { text: "Nothing can play or record until it is. Starting it again usually does it; if it keeps stopping, journalctl --user -u pipewire -u wireplumber says why."; }
+            HorizontalLayout { alignment: start; NetButton { label: Snd.restarting ? "Starting…" : "Start sound again"; primary: true; active: !Snd.restarting; clicked => { Snd.restart(); } } }
+        }
+    }
+
+    // ══ at a glance ══════════════════════════════════════════════════
+    Card {
+        height: 118px;
+        HorizontalLayout {
+            x: 16px;
+            y: 14px;
+            width: parent.width - 32px;
+            height: parent.height - 28px;
+            spacing: 16px;
+            Glance { out: true; horizontal-stretch: 1; }
+            Glance { out: false; horizontal-stretch: 1; }
+        }
+    }
+
+    // ══ tabs ═════════════════════════════════════════════════════════
+    HorizontalLayout {
+        alignment: start;
+        Segmented {
+            options: ["Output", "Input", Snd.app-count > 0 ? "Apps  " + Snd.app-count : "Apps", "Options"];
+            current: Snd.tab;
+            picked(i) => { Snd.set-tab(i); }
+        }
+    }
+
+    // ── output ──
+    if Snd.tab == 0: VerticalLayout {
+        spacing: 14px;
+        Caption { text: "OUTPUTS"; }
+        DeviceList { out: true; list: Snd.outputs; }
+        if Snd.io-name != "": Inspector { out: true; nick: Snd.io-nick; }
+    }
+    // ── input ──
+    if Snd.tab == 1: VerticalLayout {
+        spacing: 14px;
+        Caption { text: "INPUTS"; }
+        DeviceList { out: false; list: Snd.inputs; }
+        if Snd.ii-name != "": Inspector { out: false; nick: Snd.ii-nick; }
+    }
+    // ── apps ──
+    if Snd.tab == 2: VerticalLayout {
+        spacing: 14px;
+        Caption { text: "PLAYING"; }
+        if Snd.playing.length == 0: Line { text: "Nothing is playing. Apps show up here while they make sound, each with its own level, and the device it plays through."; }
+        VerticalLayout { spacing: 2px; for a in Snd.playing: AppRow { a: a; } }
+        Caption { text: "USING A MICROPHONE"; }
+        if Snd.recording.length == 0: Line { text: "No app is listening to a microphone right now."; }
+        VerticalLayout { spacing: 2px; for a in Snd.recording: AppRow { a: a; } }
+    }
+    // ── options ──
+    if Snd.tab == 3: VerticalLayout {
+        spacing: 14px;
+        Caption { text: "VOLUME"; }
+        Card {
+            height: vol.preferred-height + 24px;
+            vol := VerticalLayout {
+                x: 16px;
+                y: 12px;
+                width: parent.width - 32px;
+                height: self.preferred-height;
+                spacing: 14px;
+                OptRow {
+                    title: "Volume key step";
+                    text: "How far one press of a volume key, or one notch on the bar, moves the level";
+                    VerticalLayout {
+                        alignment: center;
+                        Segmented {
+                            options: ["1%", "2%", "5%", "10%"];
+                            current: Snd.step == 1 ? 0 : Snd.step == 2 ? 1 : Snd.step == 5 ? 2 : Snd.step == 10 ? 3 : -1;
+                            picked(i) => { Snd.set-step(i == 0 ? 1 : i == 1 ? 2 : i == 2 ? 5 : 10); }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 8px;
+                    OptRow {
+                        title: "Maximum volume";
+                        text: Snd.limit < 100 ? "A limit, to protect your hearing — nothing goes louder than this"
+                            : Snd.limit > 100 ? "Past 100% is software boost: louder, and loud passages distort"
+                            : "100% — as loud as the device goes without distortion";
+                        Text { vertical-alignment: center; text: Snd.limit + "%"; font-size: Theme.fs(13); font-weight: 600; color: Snd.limit > 100 ? #d93a2b : Theme.ink; }
+                    }
+                    Slider {
+                        minimum: 30;
+                        maximum: 150;
+                        step: 5;
+                        value: Snd.limit;
+                        released(v) => { Snd.set-limit(round(v / 5) * 5); }
+                    }
+                }
+                OptRow {
+                    title: "Sound on volume change";
+                    text: "A short tick on each press of a volume key, to judge the level by ear";
+                    VerticalLayout { alignment: center; Switch { on: Snd.feedback; toggled(v) => { Snd.set-feedback(v); } } }
+                }
+            }
+        }
+        Caption { text: "DEVICES"; }
+        Card {
+            height: devs.preferred-height + 24px;
+            devs := VerticalLayout {
+                x: 16px;
+                y: 12px;
+                width: parent.width - 32px;
+                height: self.preferred-height;
+                spacing: 14px;
+                OptRow {
+                    title: "Switch to new devices";
+                    text: "Headphones that connect over Bluetooth or USB become the output (or input) in use";
+                    VerticalLayout { alignment: center; Switch { on: Snd.auto-switch; toggled(v) => { Snd.set-auto-switch(v); } } }
+                }
+                OptRow {
+                    title: "Live level meters";
+                    text: "What each device is playing or hearing, as it happens";
+                    VerticalLayout { alignment: center; Switch { on: Snd.meters; toggled(v) => { Snd.set-meters(v); } } }
+                }
+                OptRow {
+                    title: "Names and hidden devices";
+                    text: Snd.names-line;
+                    VerticalLayout { alignment: center; NetButton { label: "Reset all"; active: Snd.names-any; clicked => { Snd.reset-names(); } } }
+                }
+            }
+        }
+        Caption { text: "SOUND NOT WORKING?"; }
+        Card {
+            border-color: Snd.last-error != "" ? #d93a2b : Theme.rule;
+            height: fix.preferred-height + 24px;
+            fix := VerticalLayout {
+                x: 16px;
+                y: 12px;
+                width: parent.width - 32px;
+                height: self.preferred-height;
+                spacing: 10px;
+                Line {
+                    color: Theme.ink2;
+                    text: "A headset stuck in the wrong mode, a device that came back silent, crackling after sleep: restarting the sound services fixes most of it, at the cost of a second of silence.";
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 8px;
+                    NetButton { label: Snd.restarting ? "Restarting…" : "Restart sound"; active: !Snd.restarting; clicked => { Snd.restart(); } }
+                    NetButton { label: "Advanced mixer"; clicked => { Snd.mixer(); } }
+                }
+                if !Snd.pactl: Line { text: "pactl isn't installed, so connectors, card modes, delays and moving an app to another device aren't available. It comes with pipewire-pulse (or libpulse)."; }
+                if Snd.last-error != "": Line { text: Snd.last-error; color: #d93a2b; }
+            }
+        }
+    }
+}

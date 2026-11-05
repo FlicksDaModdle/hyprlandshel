@@ -18,6 +18,7 @@ mod net;
 mod hypr;
 mod prefs;
 mod rows;
+mod sound;
 mod system;
 
 use hyprshell_kit as kit;
@@ -44,6 +45,7 @@ struct State {
     daemon: Option<daemon::Daemon>,
     net: net::Net,
     bt: bt::Bt,
+    snd: sound::Sound,
 }
 
 impl State {
@@ -112,11 +114,16 @@ fn show(ui: &AppWindow, st: &mut State) {
     g.set_rows(ModelRc::new(VecModel::from(specs.iter().map(|r| r.row.clone()).collect::<Vec<_>>())));
     st.specs = specs;
     // The live panels: what they show, kept up only while they're up.
-    let (on_net, on_bt) = (pane == "Network", pane == "Bluetooth");
-    if on_net || on_bt || st.daemon.is_some() {
-        let (mut net, mut bt) = (std::mem::take(&mut st.net), std::mem::take(&mut st.bt));
+    let (on_net, on_bt, on_snd) = (pane == "Network", pane == "Bluetooth", pane == "Sound");
+    if on_net || on_bt || on_snd || st.daemon.is_some() {
+        let (mut net, mut bt, mut snd) = (std::mem::take(&mut st.net), std::mem::take(&mut st.bt), std::mem::take(&mut st.snd));
         net.watch(st.daemon(), on_net);
         bt.watch(st.daemon(), on_bt);
+        snd.watch(st.daemon(), on_snd);
+        if on_snd {
+            snd.publish(ui, &st.c.p);
+        }
+        st.snd = snd;
         if on_net {
             net.publish(ui);
         }
@@ -277,6 +284,7 @@ fn main() {
         daemon: None,
         net: net::Net::default(),
         bt: bt::Bt::default(),
+        snd: sound::Sound::default(),
     }));
     show(&ui, &mut st.borrow_mut());
 
@@ -587,12 +595,16 @@ fn main() {
             if cb && s.c.ui.pane == "Bluetooth" {
                 bt.publish(&ui);
             }
+            if evs.iter().fold(false, |a, ev| s.snd.event(ev) || a) && s.c.ui.pane == "Sound" {
+                s.snd.publish(&ui, &s.c.p);
+            }
             s.net = net;
             s.bt = bt;
         });
     }
     wire_wifi(&ui, &st);
     wire_bt(&ui, &st);
+    wire_sound(&ui, &st);
 
     // Edits made elsewhere: shown within a second.
     let poll = slint::Timer::default();
@@ -801,4 +813,99 @@ fn wire_bt(ui: &AppWindow, st: &Rc<RefCell<State>>) {
     on!(on_scan, [], |m, d, _ui| m.scan(d));
     on!(on_pair, [mac: SharedString], |m, d, _ui| m.pair(d, &mac));
     on!(on_cancel_pair, [mac: SharedString], |m, d, _ui| m.cancel_pairing(d, &mac));
+}
+
+/// Settings → Sound's panel: SoundPanel.qml's handlers.
+fn wire_sound(ui: &AppWindow, st: &Rc<RefCell<State>>) {
+    let g = ui.global::<Snd>();
+    let with = {
+        let weak = ui.as_weak();
+        let st = st.clone();
+        Rc::new(move |f: &dyn Fn(&mut sound::Sound, &mut prefs::Prefs)| {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut s = st.borrow_mut();
+            let mut m = std::mem::take(&mut s.snd);
+            f(&mut m, &mut s.c.p);
+            m.publish(&ui, &s.c.p);
+            s.snd = m;
+        })
+    };
+    macro_rules! on {
+        ($name:ident, [$($a:ident : $t:ty),*], |$m:ident, $p:ident| $body:expr) => {{
+            let with = with.clone();
+            g.$name(move |$($a: $t),*| {
+                with(&|$m: &mut sound::Sound, $p: &mut prefs::Prefs| {
+                    let _ = (&$m, &$p);
+                    $body;
+                })
+            });
+        }};
+    }
+    // A pref written; a failed write is shown where the panel shows errors.
+    fn put(m: &mut sound::Sound, p: &mut prefs::Prefs, k: &str, v: serde_json::Value) {
+        if let Err(e) = p.set(k, v) {
+            m.last_error = format!("Couldn't save the setting: {e}");
+        }
+    }
+    on!(on_set_tab, [i: i32], |m, p| put(m, p, "soundTab", ["output", "input", "apps", "options"].get(i as usize).copied().unwrap_or("output").into()));
+    on!(on_default_volume, [out: bool, v: f32], |m, p| {
+        let n = if out { m.default_sink.clone() } else { m.default_source.clone() };
+        m.set_volume(p, &n, v as f64)
+    });
+    on!(on_default_mute, [out: bool], |m, _p| {
+        let n = if out { m.default_sink.clone() } else { m.default_source.clone() };
+        let on = !m.sinks.iter().chain(m.sources.iter()).find(|x| x.name == n).is_some_and(|x| x.mute);
+        m.set_mute(&n, on)
+    });
+    on!(on_volume, [n: SharedString, v: f32], |m, p| m.set_volume(p, &n, v as f64));
+    on!(on_mute, [n: SharedString, v: bool], |m, _p| m.set_mute(&n, v));
+    on!(on_use, [n: SharedString], |m, _p| m.set_default(&n));
+    on!(on_pick, [out: bool, n: SharedString], |m, _p| if out { m.picked_out = n.to_string() } else { m.picked_in = n.to_string() });
+    on!(on_toggle_hidden_list, [], |m, _p| m.show_hidden = !m.show_hidden);
+    on!(on_set_port, [n: SharedString, port: SharedString], |m, _p| m.set_port(&n, &port));
+    on!(on_set_profile, [n: SharedString, prof: SharedString], |m, _p| m.set_profile(&n, &prof));
+    on!(on_set_delay, [n: SharedString, ms: f32], |m, _p| m.set_delay(&n, ms as f64));
+    on!(on_test, [n: SharedString], |m, _p| m.test(&n));
+    on!(on_rename, [n: SharedString, nick: SharedString], |m, p| {
+        let mut names: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&p.s("soundNames")).unwrap_or_default();
+        let nick = nick.trim();
+        if nick.is_empty() {
+            names.remove(n.as_str());
+        } else {
+            names.insert(n.to_string(), nick.into());
+        }
+        put(m, p, "soundNames", serde_json::Value::Object(names).to_string().into())
+    });
+    on!(on_hide, [n: SharedString, on: bool], |m, p| {
+        let mut list: Vec<String> = serde_json::from_str(&p.s("soundHidden")).unwrap_or_default();
+        list.retain(|x| x != n.as_str());
+        if on {
+            list.push(n.to_string());
+        }
+        put(m, p, "soundHidden", serde_json::json!(list).to_string().into())
+    });
+    on!(on_app_volume, [i: i32, playing: bool, v: f32], |m, p| m.stream_volume(p, i, playing, v as f64));
+    on!(on_app_mute, [i: i32, playing: bool, v: bool], |m, _p| m.stream_mute(i, playing, v));
+    on!(on_app_move, [i: i32, playing: bool, to: i32], |m, _p| m.stream_move(i, playing, to));
+    on!(on_set_step, [v: i32], |m, p| put(m, p, "volumeStep", v.into()));
+    on!(on_set_limit, [v: i32], |m, p| {
+        put(m, p, "volumeMax", v.into());
+        put(m, p, "volumeBoost", false.into())
+    });
+    on!(on_set_feedback, [v: bool], |m, p| put(m, p, "volumeFeedback", v.into()));
+    on!(on_set_auto_switch, [v: bool], |m, p| put(m, p, "soundAutoSwitch", v.into()));
+    on!(on_set_meters, [v: bool], |m, p| put(m, p, "soundMeters", v.into()));
+    on!(on_reset_names, [], |m, p| {
+        put(m, p, "soundNames", "{}".into());
+        put(m, p, "soundHidden", "[]".into())
+    });
+    on!(on_restart, [], |m, _p| m.restart());
+    on!(on_mixer, [], |m, _p| {
+        match ["pavucontrol", "pwvucontrol", "pavucontrol-qt"].into_iter().find(|b| system::have(b)) {
+            Some(b) => {
+                let _ = std::process::Command::new(b).spawn();
+            }
+            None => m.last_error = "No mixer app is installed (pavucontrol or pwvucontrol).".into(),
+        }
+    });
 }

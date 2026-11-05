@@ -121,11 +121,15 @@ fn source_json(s: &SourceInfo) -> Json {
     })
 }
 
+// Each app's own level and mute too, for Settings' Apps tab (the Rust one
+// has no PipeWire binding to read them from): 1.0 is 100 %.
 fn input_json(i: &SinkInputInfo) -> Json {
-    json!({ "index": i.index, "sink": i.sink, "properties": props(&i.proplist) })
+    json!({ "index": i.index, "sink": i.sink, "properties": props(&i.proplist),
+            "volume": i.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64, "mute": i.mute })
 }
 fn output_json(o: &SourceOutputInfo) -> Json {
-    json!({ "index": o.index, "source": o.source, "properties": props(&o.proplist) })
+    json!({ "index": o.index, "source": o.source, "properties": props(&o.proplist),
+            "volume": o.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64, "mute": o.mute })
 }
 
 /// The five lists, filled in by callbacks on PulseAudio's thread; the last
