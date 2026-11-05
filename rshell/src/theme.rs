@@ -40,6 +40,9 @@ pub struct Theme {
     pub updates_in_bar: bool,
     pub mail_in_bar: bool,
     pub seam: Rgba,
+    pub motion: crate::spring::Motion,
+    /// Panels grow out of their button (Settings → Motion).
+    pub panels_grow: bool,
     pub accent: Rgba,
     pub ink_on_accent: Rgba,
     pub ink: Rgba,
@@ -149,6 +152,12 @@ pub fn load() -> Theme {
         tray_open: flag("trayOpen", false),
         updates_in_bar: flag("updatesInBar", true),
         mail_in_bar: flag("mailInBar", true),
+        motion: crate::spring::Motion {
+            springy: v["motionStyle"].as_str().unwrap_or("springy") != "smooth",
+            bounce: num("motionBounce", 100.0).clamp(0.0, 200.0),
+            speed: num("animSpeed", 100.0).clamp(0.0, 250.0),
+        },
+        panels_grow: flag("panelsGrow", true),
         seam: Rgba(accent.0, accent.1, accent.2, if dark { 0.24 } else { 0.18 }),
         accent,
         ink_on_accent,

@@ -64,6 +64,10 @@ pub struct ShellSurface {
     viewport: Option<wp_viewport::WpViewport>,
     configured: bool,
     pool: Option<SlotPool>,
+    /// The buffers handed to the compositor, each with the part of it that
+    /// is out of date (x0, y0, x1, y1): a frame copies only that into
+    /// whichever one the compositor has given back.
+    bufs: Vec<(smithay_client_toolkit::shm::slot::Buffer, (i32, i32, i32, i32))>,
     /// The size last asked of the compositor.
     asked: (u32, u32),
     pixels: Vec<Bgra>,
@@ -79,6 +83,9 @@ pub struct Shell {
     shm: Shm,
     fractional: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
     viewporter: Option<wp_viewporter::WpViewporter>,
+    /// A removed surface's last frame, kept for its window: Slint redraws
+    /// only what changed, so the window's next surface starts from it.
+    kept: Vec<(Rc<MinimalSoftwareWindow>, Vec<Bgra>)>,
     /// By id: a removed surface leaves a hole, so the ids of the rest hold.
     pub surfaces: Vec<Option<ShellSurface>>,
     pointer: Option<wl_pointer::WlPointer>,
@@ -110,6 +117,7 @@ impl Shell {
             fractional,
             viewporter,
             surfaces: Vec::new(),
+            kept: Vec::new(),
             pointer: None,
             keyboard: None,
             cursor_shapes,
@@ -153,6 +161,10 @@ impl Shell {
             .and_then(|o| self.outputs.info(o))
             .map(|i| i.scale_factor as f64)
             .unwrap_or(1.0);
+        let pixels = match self.kept.iter().position(|(a, _)| Rc::ptr_eq(a, &adapter)) {
+            Some(i) => self.kept.remove(i).1,
+            None => Vec::new(),
+        };
         let s = ShellSurface {
             layer,
             adapter,
@@ -164,8 +176,9 @@ impl Shell {
             viewport,
             configured: false,
             pool: None,
+            bufs: Vec::new(),
             asked: (p.width, p.height),
-            pixels: Vec::new(),
+            pixels,
             sized: (0, 0, 0.0),
         };
         if let Some(free) = self.surfaces.iter().position(|s| s.is_none()) {
@@ -180,7 +193,7 @@ impl Shell {
     /// Takes a surface off the screen. Its Slint window is handed back, to
     /// be put on another later.
     pub fn remove(&mut self, id: usize) -> Option<Rc<MinimalSoftwareWindow>> {
-        let s = self.surfaces.get_mut(id)?.take()?;
+        let mut s = self.surfaces.get_mut(id)?.take()?;
         if self.focus == Some(id) {
             self.focus = None;
         }
@@ -192,8 +205,23 @@ impl Shell {
         }
         s.adapter.window().dispatch_event(WindowEvent::PointerExited);
         let adapter = s.adapter.clone();
+        self.kept.retain(|(a, _)| !Rc::ptr_eq(a, &adapter));
+        self.kept.push((adapter.clone(), std::mem::take(&mut s.pixels)));
         drop(s);
         Some(adapter)
+    }
+
+    /// Whether a surface takes the pointer: a panel layer fading out lets
+    /// clicks through to what is under it, as PanelLayer.qml's mask does.
+    pub fn set_input(&mut self, id: usize, on: bool) {
+        let Some(Some(s)) = self.surfaces.get(id) else { return };
+        let surface = s.layer.wl_surface();
+        if on {
+            surface.set_input_region(None);
+        } else if let Ok(r) = smithay_client_toolkit::compositor::Region::new(&self.compositor) {
+            surface.set_input_region(Some(r.wl_region()));
+        }
+        s.layer.commit();
     }
 
     /// A new logical size for a surface sized to its content (the toasts).
@@ -232,23 +260,52 @@ impl Shell {
             }
             let len = (pw * ph) as usize;
             if s.pixels.len() != len {
+                // A new size: Slint draws all of it into this.
                 s.pixels = vec![Bgra::default(); len];
+                s.bufs.clear();
             }
             let pixels = &mut s.pixels;
+            let mut damage = (0, 0, 0, 0);
             let drew = s.adapter.draw_if_needed(|r| {
-                r.render(pixels.as_mut_slice(), pw as usize);
+                let region = r.render(pixels.as_mut_slice(), pw as usize);
+                let (o, z) = (region.bounding_box_origin(), region.bounding_box_size());
+                damage = (o.x, o.y, z.width as i32, z.height as i32);
             });
-            if !drew {
+            if !drew || damage.2 <= 0 || damage.3 <= 0 {
                 continue;
             }
             let stride = pw as i32 * 4;
-            let pool = s.pool.get_or_insert_with(|| SlotPool::new((stride * ph as i32) as usize, shm).expect("shm pool"));
-            let Ok((buffer, canvas)) = pool.create_buffer(pw as i32, ph as i32, stride, wl_shm::Format::Argb8888) else {
-                continue;
+            let full = (0, 0, pw as i32, ph as i32);
+            let d = (damage.0, damage.1, damage.0 + damage.2, damage.1 + damage.3);
+            let union = |a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)| {
+                if a.2 <= a.0 { b } else { (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)) }
             };
+            for (_, stale) in &mut s.bufs {
+                *stale = union(*stale, d);
+            }
+            let pool = s.pool.get_or_insert_with(|| SlotPool::new((stride * ph as i32) as usize * 2, shm).expect("shm pool"));
+            // One the compositor has let go of, else a new one (three at most).
+            let free = s.bufs.iter().position(|(b, _)| b.canvas(pool).is_some());
+            let i = match free {
+                Some(i) => i,
+                None if s.bufs.len() < 3 => {
+                    let Ok((b, _)) = pool.create_buffer(pw as i32, ph as i32, stride, wl_shm::Format::Argb8888) else { continue };
+                    s.bufs.push((b, full));
+                    s.bufs.len() - 1
+                }
+                None => continue,
+            };
+            let (buffer, stale) = &mut s.bufs[i];
+            let Some(canvas) = buffer.canvas(pool) else { continue };
             // SAFETY: Bgra is four u8s, repr(C), so the slice is its bytes.
             let bytes = unsafe { std::slice::from_raw_parts(s.pixels.as_ptr() as *const u8, s.pixels.len() * 4) };
-            canvas[..bytes.len()].copy_from_slice(bytes);
+            let (x0, y0, x1, y1) = (stale.0.max(0) as usize * 4, stale.1.max(0) as usize, stale.2.min(pw as i32) as usize * 4, stale.3.min(ph as i32) as usize);
+            let row = stride as usize;
+            for y in y0..y1 {
+                let at = y * row;
+                canvas[at + x0..at + x1].copy_from_slice(&bytes[at + x0..at + x1]);
+            }
+            *stale = (0, 0, 0, 0);
             let surface = s.layer.wl_surface();
             if let Some(vp) = &s.viewport {
                 surface.set_buffer_scale(1);
@@ -256,8 +313,9 @@ impl Shell {
             } else {
                 surface.set_buffer_scale(s.scale.round().max(1.0) as i32);
             }
-            surface.damage_buffer(0, 0, pw as i32, ph as i32);
-            if buffer.attach_to(surface).is_ok() {
+            // Only what Slint redrew is new to the compositor.
+            surface.damage_buffer(damage.0, damage.1, damage.2, damage.3);
+            if s.bufs[i].0.attach_to(surface).is_ok() {
                 s.layer.commit();
             }
         }

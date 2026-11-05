@@ -204,27 +204,33 @@ component MediaPill inherits Rectangle {
         }
     }
 
-    // The seek line along the bottom edge.
+    // The seek line, under the pill along the bar's bottom edge; click or
+    // drag along it, and it seeks where it is let go.
+    property <float> drag-at;
     if root.media.has-length: Rectangle {
         x: Theme.u(4);
         width: root.width - Theme.u(8);
-        y: root.height - 2px;
+        y: root.height + Theme.u(5) - 2px;
         height: 2px;
         border-radius: 1px;
         background: Theme.div;
         Rectangle {
             x: 0;
-            width: round(parent.width * root.media.progress / 1px) * 1px;
+            width: round(parent.width * (seek.pressed ? root.drag-at : root.media.progress) / 1px) * 1px;
             height: parent.height;
             border-radius: 1px;
             background: Theme.accent;
         }
-        TouchArea {
+        seek := TouchArea {
             y: -Theme.u(5);
             height: parent.height + Theme.u(5);
             enabled: root.media.can-seek;
             mouse-cursor: pointer;
-            clicked => { root.seek(self.mouse-x / parent.width); }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) { root.drag-at = clamp(self.mouse-x / self.width, 0, 1); }
+                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.left) { root.seek(root.drag-at); }
+            }
+            moved => { if (self.pressed) { root.drag-at = clamp(self.mouse-x / self.width, 0, 1); } }
         }
     }
 }

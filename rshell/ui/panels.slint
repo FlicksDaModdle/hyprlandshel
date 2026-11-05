@@ -7,23 +7,68 @@ import { Glyph } from "glyph.slint";
 import { IconButton, PanelSurface, Caps, Toggle, FillSlider, MenuRow, Rule } from "widgets.slint";
 import { MediaInfo, MenuEntry, Note, NoteAction, DriveRow, TimerRow, Tile, PrivacyRow, DayCell } from "types.slint";
 
-// Where each panel sits: under the button it came from, kept a gutter in
-// from the screen's edges, sliding down a little as it fades in.
+// Where each panel sits, and how it arrives: Entrance.qml's springs, run
+// in Rust (app.rs) and handed in here. The software renderer can't scale,
+// so where Quickshell scales the panel out of its button this grows its
+// frame out of the button instead (overshoot included) and the content,
+// at its full size, is revealed inside it as it fades in.
 component Drop inherits Rectangle {
     in property <bool> shown;
     in property <length> anchor;
     in property <length> top;
     in property <length> screen-width;
     in property <length> panel-width;
+    in property <bool> seam: true;
+    // The springs: frame width and height as fractions, the lift, the
+    // sheet's opacity and the content's.
+    in property <float> sx: 1;
+    in property <float> sy: 1;
+    in property <length> lift;
+    in property <float> glass: 1;
+    in property <float> inner: 1;
+    property <length> h: l.preferred-height;
+    // Grown from under the button.
+    property <length> origin: clamp(anchor - self.x, 0px, panel-width);
     x: max(12px, min(anchor - panel-width / 2, screen-width - panel-width - 12px));
-    y: top + (shown ? 0px : -10px);
+    y: top + lift;
     width: panel-width;
-    height: l.preferred-height;
-    opacity: shown ? 1 : 0;
-    visible: self.opacity > 0.01;
-    animate y { duration: 280ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.0); }
-    animate opacity { duration: 160ms; }
-    l := VerticalLayout { @children }
+    height: h;
+    visible: shown && glass > 0.004;
+    opacity: clamp(glass, 0, 1);
+    frame := Rectangle {
+        x: root.origin * (1 - root.sx);
+        width: root.panel-width * root.sx;
+        y: 0;
+        height: root.h * root.sy;
+        border-radius: min(Theme.r-cap, self.height / 2, self.width / 2);
+        background: Theme.panel;
+        clip: true;
+        Rectangle {
+            x: -frame.x;
+            y: 0;
+            width: root.panel-width;
+            height: root.h;
+            opacity: clamp(root.inner, 0, 1);
+            l := VerticalLayout { @children }
+        }
+    }
+    Rectangle {
+        x: frame.x;
+        width: frame.width;
+        height: frame.height;
+        border-radius: frame.border-radius;
+        border-width: 1px;
+        border-color: Theme.edge;
+    }
+    // Between the corners: the software renderer doesn't clip to them.
+    if root.seam: HorizontalLayout {
+        x: frame.x + frame.border-radius;
+        width: max(0px, frame.width - 2 * frame.border-radius);
+        y: 0;
+        height: 2px;
+        Rectangle { width: min(40px, parent.width); background: Theme.accent; }
+        Rectangle { background: Theme.seam; }
+    }
 }
 
 // ── power (PowerMenu.qml) ────────────────────────────────────────────────
@@ -873,6 +918,11 @@ export component Panels inherits Window {
     in property <string> which;
     in property <length> anchor;
     in property <length> top: 50px;
+    in property <float> sx: 1;
+    in property <float> sy: 1;
+    in property <length> lift;
+    in property <float> glass: 1;
+    in property <float> inner: 1;
     callback dismiss();
 
     // power
@@ -952,15 +1002,15 @@ export component Panels inherits Window {
     }
 
     Drop {
-        shown: root.which == "power"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 248px;
+        shown: root.which == "power"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 248px;
         PowerMenu { user: root.user; uptime: root.uptime; hyprland: root.hyprland; act(a) => { root.power(a); } }
     }
     Drop {
-        shown: root.which == "window"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 262px;
+        shown: root.which == "window"; seam: false; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 262px;
         WindowMenu { act(a) => { root.window-act(a); } snap(i) => { root.window-snap(i); } }
     }
     Drop {
-        shown: root.which == "calendar"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 320px;
+        shown: root.which == "calendar"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 320px;
         CalendarPanel {
             month: root.month; cells: root.cells; away: root.month-away;
             step(d) => { root.month-step(d); }
@@ -968,7 +1018,7 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "control"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 384px;
+        shown: root.which == "control"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 384px;
         ControlCenter {
             user: root.user; session: root.session; theme-mode: root.theme-mode; tiles: root.tiles;
             volume: root.volume; muted: root.muted;
@@ -984,7 +1034,7 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "notifications"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 380px;
+        shown: root.which == "notifications"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 380px;
         NotificationCenter {
             notes: root.notes; quiet: root.quiet;
             dismiss(id) => { root.note-dismiss(id); }
@@ -994,7 +1044,7 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "media"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 340px;
+        shown: root.which == "media"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 340px;
         MediaPanel {
             media: root.media;
             prev => { root.media-prev(); }
@@ -1004,7 +1054,7 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "drives"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 300px;
+        shown: root.which == "drives"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 300px;
         DrivesPanel {
             drives: root.drives;
             open-mount(m) => { root.drive-open(m); }
@@ -1013,19 +1063,19 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "timers"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 280px;
+        shown: root.which == "timers"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 280px;
         TimersPanel { timers: root.timers; }
     }
     Drop {
-        shown: root.which == "updates"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 300px;
+        shown: root.which == "updates"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 300px;
         UpdatesPanel { count: root.update-count; packages: root.update-names; run => { root.run-updates(); } }
     }
     Drop {
-        shown: root.which == "privacy"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 280px;
+        shown: root.which == "privacy"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 280px;
         PrivacyPanel { rows: root.privacy; }
     }
     Drop {
-        shown: root.which == "tray"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 240px;
+        shown: root.which == "tray"; seam: false; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 240px;
         TrayMenu {
             heading: root.menu-heading; entries: root.menu; nested: root.menu-nested; toggles: root.menu-toggles;
             pick(id, sub) => { root.menu-pick(id, sub); }

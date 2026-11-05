@@ -6,6 +6,7 @@
 //! here with the whole shell in hand, so no callback has to borrow it.
 
 use crate::art::Pixels;
+use crate::spring::{Motion, Spring};
 use crate::{daemon, extras, hypr, mpris, notify, sys, theme, tray, wl};
 use crate::{Bar, DayCell, DriveRow, MediaInfo, MenuEntry, Note, NoteAction, Panels, PrivacyRow, Theme, Tile, TimerRow, Toasts, TrayItem, Workspace};
 use serde_json::json;
@@ -287,8 +288,91 @@ struct BarOn {
     panels: Panels,
     panel_window: Rc<MinimalSoftwareWindow>,
     panel_surface: Option<usize>,
-    /// When the open panel was closed: the surface goes once it has faded.
-    closing: Option<Instant>,
+    /// Entrance.qml's springs for the panel on this monitor.
+    anim: PanelAnim,
+    /// Closed, and fading: the surface goes once it has.
+    closing: bool,
+}
+
+fn shell_input_off(id: usize, pending: &mut Vec<usize>) {
+    pending.push(id);
+}
+
+/// Entrance.qml: the panel grows out of its button (width from 74 %,
+/// height from 50 %, a little lift) with some bounce, the sheet fades in
+/// quickly and the content after it; going, all of it quickly and without
+/// bounce. Without "panels grow", it only rises a little.
+struct PanelAnim {
+    sx: Spring,
+    sy: Spring,
+    lift: Spring,
+    glass: Spring,
+    inner: Spring,
+}
+
+impl PanelAnim {
+    const FROM_Y: f64 = -10.0;
+
+    fn new() -> PanelAnim {
+        PanelAnim { sx: Spring::new(1.0), sy: Spring::new(1.0), lift: Spring::new(0.0), glass: Spring::new(0.0), inner: Spring::new(0.0) }
+    }
+
+    fn start(grows: bool) -> (f64, f64, f64) {
+        if grows {
+            (0.74, 0.5, Self::FROM_Y * 0.4)
+        } else {
+            (0.97, 0.97, Self::FROM_Y * 1.2)
+        }
+    }
+
+    fn show(&mut self, fresh: bool, grows: bool, m: &Motion) {
+        let grows = grows && m.springy && m.speed > 0.0;
+        let (x0, y0, l0) = Self::start(grows);
+        // From the start unless it is still mostly there (reopened while
+        // fading out), as Entrance does.
+        if fresh || self.glass.value <= 0.05 {
+            self.sx.snap(x0);
+            self.sy.snap(y0);
+            self.lift.snap(l0);
+            self.inner.snap(-0.45);
+            if fresh {
+                self.glass.snap(0.0);
+            }
+        }
+        self.sx.go(1.0, 340.0, 0.9, m);
+        self.sy.go(1.0, 400.0, 0.8, m);
+        self.lift.go(0.0, 360.0, 0.8, m);
+        self.glass.go(1.0, 150.0, 0.0, m);
+        self.inner.go(1.0, 260.0, 0.0, m);
+    }
+
+    fn hide(&mut self, grows: bool, m: &Motion) {
+        let grows = grows && m.springy && m.speed > 0.0;
+        let (x0, y0, l0) = Self::start(grows);
+        self.sx.go(x0, 230.0, 0.0, m);
+        self.sy.go(y0, 210.0, 0.0, m);
+        self.lift.go(l0, 210.0, 0.0, m);
+        self.glass.go(0.0, 170.0, 0.0, m);
+        self.inner.go(0.0, 120.0, 0.0, m);
+    }
+
+    fn moving(&self) -> bool {
+        self.sx.moving || self.sy.moving || self.lift.moving || self.glass.moving || self.inner.moving
+    }
+
+    fn step(&mut self, dt: f64, m: &Motion) {
+        for s in [&mut self.sx, &mut self.sy, &mut self.lift, &mut self.glass, &mut self.inner] {
+            s.step(dt, m);
+        }
+    }
+
+    fn apply(&self, p: &Panels) {
+        p.set_sx(self.sx.value as f32);
+        p.set_sy(self.sy.value as f32);
+        p.set_lift(self.lift.value as f32);
+        p.set_glass(self.glass.value as f32);
+        p.set_inner(self.inner.value as f32);
+    }
 }
 
 struct Stored {
@@ -349,6 +433,9 @@ pub struct App {
     mail: Option<i64>,
     month_offset: i32,
     last_tick: Instant,
+    last_frame: Instant,
+    /// Panel surfaces to stop taking the pointer, at the next step.
+    pending_input: Vec<usize>,
     wake: UnixStream,
 }
 
@@ -412,7 +499,7 @@ impl App {
             theme_into!(panels, &look, us);
             wire_panels(&panels, &actions);
             panels.set_user(user_name().into());
-            bars.push(BarOn { bar, monitor, output: output.clone(), height, panels, panel_window, panel_surface: None, closing: None });
+            bars.push(BarOn { bar, monitor, output: output.clone(), height, panels, panel_window, panel_surface: None, anim: PanelAnim::new(), closing: false });
         }
 
         let toasts = Toasts::new().expect("the banners");
@@ -469,6 +556,8 @@ impl App {
             mail: None,
             month_offset: 0,
             last_tick: Instant::now() - Duration::from_secs(2),
+            last_frame: Instant::now(),
+            pending_input: Vec::new(),
             wake,
         };
         app.refresh_hypr();
@@ -486,10 +575,9 @@ impl App {
                 d = d.min(t.saturating_duration_since(Instant::now()));
             }
         }
-        for b in &self.bars {
-            if let Some(c) = b.closing {
-                d = d.min(Duration::from_millis(230).saturating_sub(c.elapsed()));
-            }
+        // A frame's time while a panel moves.
+        if self.bars.iter().any(|b| b.anim.moving()) {
+            d = d.min(Duration::from_millis(7));
         }
         d.max(Duration::from_millis(1))
     }
@@ -651,10 +739,23 @@ impl App {
             }
         }
 
-        // Panel surfaces that have finished fading.
+        for id in std::mem::take(&mut self.pending_input) {
+            shell.set_input(id, false);
+        }
+
+        // The panels' springs, a step each frame; a panel surface goes once
+        // its panel has faded out.
+        let dt = self.last_frame.elapsed().as_secs_f64();
+        self.last_frame = Instant::now();
+        let m = self.look.motion;
         for b in &mut self.bars {
-            if b.closing.is_some_and(|c| c.elapsed() >= Duration::from_millis(220)) {
-                b.closing = None;
+            if b.anim.moving() {
+                b.anim.step(dt, &m);
+                b.anim.apply(&b.panels);
+            }
+            if b.closing && !b.anim.moving() {
+                b.closing = false;
+                b.panels.set_which("".into());
                 if let Some(id) = b.panel_surface.take() {
                     shell.remove(id);
                 }
@@ -1068,12 +1169,21 @@ impl App {
             self.refresh_toasts(shell, qh);
             self.refresh_note_models();
         }
+        let (m, grows) = (self.look.motion, self.look.panels_grow);
+        self.last_frame = Instant::now();
         let Some(host) = self.bars.get_mut(bar) else { return };
         host.panels.set_anchor(x);
         host.panels.set_top(host.height + 10.0);
+        // Switching from one panel to another starts the new one afresh.
+        let fresh = host.panels.get_which().as_str() != which;
         host.panels.set_which(which.into());
         host.bar.set_open_panel(which.into());
-        host.closing = None;
+        host.closing = false;
+        host.anim.show(fresh, grows, &m);
+        host.anim.apply(&host.panels);
+        if let Some(id) = host.panel_surface {
+            shell.set_input(id, true);
+        }
         if host.panel_surface.is_none() {
             host.panel_surface = Some(shell.add_window(qh, host.panel_window.clone(), Some(&host.output), &wl::Placement {
                 namespace: "quickshell:panel",
@@ -1099,10 +1209,16 @@ impl App {
             self.menu_at = None;
             self.menu_stack.clear();
         }
+        let (m, grows) = (self.look.motion, self.look.panels_grow);
+        self.last_frame = Instant::now();
         if let Some(host) = self.bars.get_mut(bar) {
-            host.panels.set_which("".into());
             host.bar.set_open_panel("".into());
-            host.closing = Some(Instant::now());
+            host.closing = true;
+            host.anim.hide(grows, &m);
+            // Clicks go through to what's under it while it fades.
+            if let Some(id) = host.panel_surface {
+                shell_input_off(id, &mut self.pending_input);
+            }
         }
     }
 

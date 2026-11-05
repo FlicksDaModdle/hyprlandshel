@@ -22,7 +22,7 @@ pub struct ShellPlatform;
 
 impl Platform for ShellPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
-        let w = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+        let w = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
         MADE.with(|m| m.borrow_mut().push(w.clone()));
         Ok(w)
     }

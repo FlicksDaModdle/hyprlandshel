@@ -70,29 +70,16 @@ export component IconButton inherits Rectangle {
 
 // common/PanelSurface.qml: the translucent sheet every dropdown is, with
 // its hairline edge and the accent seam across the top.
+// What a panel's content sits in. The sheet itself (translucent fill,
+// hairline edge, accent seam) is drawn by the frame that grows it out of
+// its button (panels.slint's Drop), so it can grow without its content
+// being squashed.
 export component PanelSurface inherits Rectangle {
     in property <bool> seam: true;
-    border-radius: Theme.r-cap;
-    background: Theme.panel;
-    clip: true;
     // Clicks on the sheet stay on it rather than reaching the click-away
     // catcher behind.
     TouchArea {}
     @children
-    Rectangle {
-        border-radius: root.border-radius;
-        border-width: 1px;
-        border-color: Theme.edge;
-    }
-    // Between the corners: the software renderer doesn't clip to them.
-    if root.seam: HorizontalLayout {
-        x: root.border-radius;
-        width: root.width - 2 * root.border-radius;
-        y: 0;
-        height: 2px;
-        Rectangle { width: min(40px, root.width); background: Theme.accent; }
-        Rectangle { background: Theme.seam; }
-    }
 }
 
 // Section heading: "SESSION", "UPCOMING".

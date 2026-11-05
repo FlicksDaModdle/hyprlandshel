@@ -22,6 +22,7 @@ mod icons;
 mod mpris;
 mod notify;
 mod platform;
+mod spring;
 mod sys;
 mod theme;
 mod tray;
