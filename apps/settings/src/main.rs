@@ -1,21 +1,25 @@
-//! Settings for Hyprshell's Rust shell: the Quickshell Settings' pages that
-//! the Rust shell reads (appearance, motion, wallpaper, bar, dock, launcher,
-//! Alt+Tab, notifications, sound), plus the way to the control center's
-//! Wi-Fi and Bluetooth lists and what this computer is.
+//! Settings, for the Rust shell: the Quickshell Settings window
+//! (modules/settings/Settings.qml, SettingsFrame.qml, SettingsRow.qml)
+//! rewritten in Rust and Slint — the same categories, panes, rows and
+//! wording, writing the same theme.json and applying the same Hyprland
+//! settings live.
 //!
-//! Everything is a key in theme.json, the file both shells and every app
-//! follow: a change is written there (the rest of the file left as it is)
-//! and shows everywhere at once. Edits made elsewhere (the Quickshell
-//! Settings, the control center, by hand) show here within a second.
-//!
-//!   hyprshell-settings [page]     open on a page: appearance, motion,
-//!                                 wallpaper, bar, dock, launcher, alttab,
-//!                                 notifications, sound, network, bluetooth,
-//!                                 about
+//!   hyprshell-settings [pane]   open on a pane ("Dock", "Alt+Tab", …) or a
+//!                               category ("cat:Input")
+//!   hyprshell-settings --apply  put Settings' Hyprland settings back
+//!                               (input, borders, gaps, motion, displays,
+//!                               binds.lua) and exit; the shell runs this at
+//!                               login, as Quickshell's Devices.qml did
+
+mod hypr;
+mod prefs;
+mod rows;
+mod system;
 
 use hyprshell_kit as kit;
-use serde_json::{json, Value};
-use slint::{Color, ModelRc, SharedString, VecModel};
+use rows::{Ctx, Entry, Spec, Ui, Val};
+use slint::platform::Key;
+use slint::{ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -23,406 +27,85 @@ use std::time::{Duration, SystemTime};
 
 slint::include_modules!();
 
-/// How a row of the schema is shown and stored.
-enum Kind {
-    Section,
-    Switch(bool),
-    /// Default, minimum, maximum, step, unit.
-    Slider(f64, f64, f64, f64, &'static str),
-    /// Default, and (label, stored value) for each option.
-    Choice(&'static str, &'static [(&'static str, &'static str)]),
-    /// Drawn by `custom` below.
-    Custom,
-}
-
-struct Item {
-    key: &'static str,
-    label: &'static str,
-    help: &'static str,
-    kind: Kind,
-}
-
-const fn sec(label: &'static str, help: &'static str) -> Item {
-    Item { key: "", label, help, kind: Kind::Section }
-}
-const fn sw(key: &'static str, label: &'static str, help: &'static str, def: bool) -> Item {
-    Item { key, label, help, kind: Kind::Switch(def) }
-}
-#[allow(clippy::too_many_arguments)]
-const fn sl(key: &'static str, label: &'static str, help: &'static str, def: f64, min: f64, max: f64, step: f64, unit: &'static str) -> Item {
-    Item { key, label, help, kind: Kind::Slider(def, min, max, step, unit) }
-}
-const fn ch(key: &'static str, label: &'static str, help: &'static str, def: &'static str, opts: &'static [(&'static str, &'static str)]) -> Item {
-    Item { key, label, help, kind: Kind::Choice(def, opts) }
-}
-const fn custom(key: &'static str, label: &'static str, help: &'static str) -> Item {
-    Item { key, label, help, kind: Kind::Custom }
-}
-
-/// (id, label, icon, group heading on the first of a group, blurb)
-const PAGES: &[(&str, &str, &str, &str, &str)] = &[
-    ("appearance", "Appearance", "palette", "PERSONALIZATION", "The theme, the accent colour and how the shell's surfaces look."),
-    ("motion", "Motion", "sparkle", "", "How fast things move, and how much they bounce."),
-    ("wallpaper", "Wallpaper", "image", "", "A picture behind the desktop, a video, or the theme's tinted gradient."),
-    ("bar", "Bar", "panelsTopLeft", "TASKBAR & MENUS", "The bar along the top of each screen."),
-    ("dock", "Dock", "dock", "", "The dock along the bottom: its size, what it shows and when it hides."),
-    ("launcher", "Launcher", "grid", "", "The app launcher (Super)."),
-    ("alttab", "Alt+Tab", "layout", "", "Switching windows with the keyboard."),
-    ("notifications", "Notifications", "bell", "SYSTEM", "Banners, the list behind the bell, and Do not disturb."),
-    ("sound", "Sound", "volume", "", "The volume keys."),
-    ("network", "Network", "wifi", "CONNECTIONS", "Wi-Fi networks are joined from the control center's list."),
-    ("bluetooth", "Bluetooth", "bluetooth", "", "Devices are paired and connected from the control center's list."),
-    ("about", "About", "info", "ABOUT", "This computer and this shell."),
-];
-
-const THEME: &[(&str, &str)] = &[("Light", "light"), ("Dark", "dark"), ("Auto", "auto")];
-const TINT: &[(&str, &str)] = &[("Warm", "Warm"), ("Neutral", "Neutral"), ("Cool", "Cool")];
-const MOTION: &[(&str, &str)] = &[("Springy", "springy"), ("Smooth", "smooth")];
-const SCALING: &[(&str, &str)] = &[("Fill", "fill"), ("Fit", "fit"), ("Stretch", "stretch")];
-const DOCK_SCOPE: &[(&str, &str)] = &[("This workspace", "workspace"), ("Every window", "all")];
-const TAB_MOD: &[(&str, &str)] = &[("Alt", "ALT"), ("Super", "SUPER"), ("Ctrl", "CTRL")];
-const TAB_SCOPE: &[(&str, &str)] = &[("Workspace", "workspace"), ("Monitor", "monitor"), ("All", "all")];
-const TAB_STYLE: &[(&str, &str)] = &[("Pictures", "thumbnails"), ("Icons", "icons"), ("List", "list")];
-
-/// Appearance.qml's accentPresets: (light, dark).
-const ACCENTS: &[(&str, &str)] = &[("#ec3013", "#ff563c"), ("#ae1800", "#e8452b"), ("#2d2b2b", "#d7d3d3"), ("#7c1405", "#c94b39")];
-
-fn schema(page: &str) -> Vec<Item> {
-    match page {
-        "appearance" => vec![
-            sec("THEME", ""),
-            ch("theme", "Mode", "Auto follows the time of day", "light", THEME),
-            custom("accent", "Accent colour", "Buttons, selections and the bar's highlights"),
-            custom("customAccent", "Your own colour", "A colour such as #3b6ef5; press Enter to use it"),
-            sw("accentFromWallpaper", "Accent from the wallpaper", "Take the accent from the picture behind the desktop", false),
-            sec("SURFACES", ""),
-            ch("tint", "Tint", "The tone of the gradient ground and the panels", "Warm", TINT),
-            sl("translucency", "Translucency", "How much shows through panels", 50.0, 0.0, 100.0, 5.0, " %"),
-            sl("rounding", "Rounding", "How round corners are", 100.0, 0.0, 160.0, 5.0, " %"),
-            sl("fontScale", "Text size", "Everywhere in the shell and its apps", 100.0, 75.0, 150.0, 5.0, " %"),
-        ],
-        "motion" => vec![
-            sec("ANIMATION", ""),
-            ch("motionStyle", "Style", "Springy overshoots and settles; smooth eases in", "springy", MOTION),
-            sl("animSpeed", "Speed", "0 turns animation off", 100.0, 0.0, 250.0, 5.0, " %"),
-            sl("motionBounce", "Bounce", "How far springy motion overshoots", 100.0, 0.0, 200.0, 5.0, " %"),
-            sw("panelsGrow", "Panels grow from their button", "Rather than only fading in", true),
-        ],
-        "wallpaper" => vec![
-            sec("PICTURE", ""),
-            custom("wallpaper", "Picture", ""),
-            sec("LIVE WALLPAPER", "A video played behind the desktop with mpvpaper, over the picture."),
-            custom("liveWallpaper", "Video", ""),
-            ch("liveScaling", "Scaling", "Fill crops to the screen; fit shows it whole", "fill", SCALING),
-            sw("liveSound", "Sound", "Play the video's sound", false),
-            sl("liveVolume", "Volume", "With sound on", 50.0, 0.0, 100.0, 5.0, " %"),
-        ],
-        "bar" => vec![
-            sec("SIZE", ""),
-            sl("barHeight", "Height", "", 40.0, 32.0, 56.0, 1.0, " px"),
-            sl("barFontSize", "Text", "", 12.0, 10.0, 18.0, 1.0, " px"),
-            sl("barIcon", "Icons", "", 100.0, 60.0, 180.0, 5.0, " %"),
-            sl("workspaceScale", "Workspace switcher", "", 100.0, 60.0, 160.0, 5.0, " %"),
-            sec("WHAT IT SHOWS", ""),
-            sw("clock24", "24-hour clock", "", true),
-            sw("showTray", "Tray icons", "Apps running in the background", true),
-            sw("badges", "Counts", "Unread notifications on the bell", true),
-            sw("updatesInBar", "Updates", "When there are packages to update", true),
-            sw("mailInBar", "Mail", "Unread mail, while Mail runs", true),
-        ],
-        "dock" => vec![
-            sec("SIZE", ""),
-            sl("dockSize", "Size", "", 42.0, 34.0, 58.0, 1.0, " px"),
-            sl("dockIcon", "Icons", "Of the tile", 50.0, 30.0, 72.0, 1.0, " %"),
-            sl("dockGap", "Gap", "From the screen's edge", 16.0, 0.0, 40.0, 1.0, " px"),
-            sec("WHAT IT SHOWS", ""),
-            ch("dockScope", "Windows", "Which running apps get a tile", "workspace", DOCK_SCOPE),
-            sw("dockLabels", "Names", "The app's name over its tile", true),
-            sw("dockPreviews", "Window previews", "On hover", true),
-            sw("dockDesktopTile", "Show desktop", "A tile that hides every window", true),
-            sw("dockSettingsTile", "Settings", "A tile for this app", true),
-            sec("HIDING", ""),
-            sw("dockHide", "Hide the dock", "It comes back when the pointer reaches the bottom edge", false),
-            sw("dockOverFullscreen", "Over full-screen windows", "When the pointer reaches the edge", true),
-        ],
-        "launcher" => vec![
-            sec("SIZE", ""),
-            sl("launcherSize", "Size", "", 145.0, 70.0, 220.0, 5.0, " %"),
-            sl("launcherWide", "Width", "", 100.0, 50.0, 200.0, 5.0, " %"),
-            sl("launcherTall", "Height", "", 100.0, 50.0, 200.0, 5.0, " %"),
-            sl("launcherIconScale", "Icons", "", 100.0, 50.0, 200.0, 5.0, " %"),
-            sec("BEHAVIOUR", ""),
-            sw("launcherFiles", "Search files", "Files in your home folder too", true),
-            sw("launcherMorph", "Grow out of the dock", "", true),
-        ],
-        "alttab" => vec![
-            sec("SWITCHER", ""),
-            sw("altTabEnabled", "Alt+Tab", "The shell's window switcher", true),
-            ch("altTabMod", "Key", "Held with Tab", "ALT", TAB_MOD),
-            ch("altTabScope", "Windows", "Which windows it lists", "workspace", TAB_SCOPE),
-            ch("altTabStyle", "Look", "", "thumbnails", TAB_STYLE),
-            sl("altTabSize", "Size", "", 100.0, 50.0, 200.0, 5.0, " %"),
-            sl("altTabDelay", "Delay", "Before it appears, for a quick switch", 100.0, 0.0, 500.0, 10.0, " ms"),
-            sec("ENTRIES", ""),
-            sw("altTabGroup", "One per app", "Rather than one per window", false),
-            sw("altTabSpecial", "Scratchpad windows", "", true),
-            sw("altTabWorkspaceTags", "Workspace numbers", "On each entry", true),
-            sw("altTabHold", "Release to switch", "Off: it stays open until Enter", true),
-        ],
-        "notifications" => vec![
-            sec("NOTIFICATIONS", ""),
-            sw("dnd", "Do not disturb", "No banners; they still go to the list", false),
-            sw("notifHistory", "Keep a history", "", true),
-            sl("notifHistoryDays", "For", "", 7.0, 1.0, 30.0, 1.0, " days"),
-        ],
-        "sound" => vec![
-            sec("VOLUME KEYS", ""),
-            sl("volumeStep", "Step", "Per key press", 5.0, 1.0, 20.0, 1.0, " %"),
-            sw("volumeBoost", "Above 100 %", "Let the keys go up to 150 %", false),
-            sw("volumeFeedback", "Click", "A sound at each step", false),
-        ],
-        "network" => vec![sec("WI-FI", ""), custom("wifi", "Networks", "Join, disconnect and forget networks")],
-        "bluetooth" => vec![sec("BLUETOOTH", ""), custom("bt", "Devices", "Pair, connect and disconnect")],
-        "about" => vec![sec("THIS COMPUTER", ""), custom("about", "", "")],
-        _ => vec![],
-    }
-}
-
-fn theme_path() -> PathBuf {
-    kit::theme::theme_path()
-}
-
-fn read() -> Value {
-    let v = std::fs::read_to_string(theme_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null);
-    if v.is_object() {
-        v
-    } else {
-        json!({})
-    }
-}
-
-/// One key changed, the rest of the file as it was.
-fn set(key: &str, value: Value) -> std::io::Result<()> {
-    let p = theme_path();
-    let mut v = read();
-    v[key] = value;
-    if let Some(dir) = p.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    kit::write_atomic(&p, serde_json::to_string_pretty(&v).unwrap_or_default().as_bytes())
+struct State {
+    c: Ctx,
+    specs: Vec<Spec>,
+    index: Option<Vec<Entry>>,
+    hits: Vec<(String, String)>,
+    /// theme.json's time when last shown, to see edits made elsewhere.
+    seen: Option<SystemTime>,
+    /// A row to flash once the pane is up (the search's pick).
+    flash: Option<String>,
 }
 
 fn mtime() -> Option<SystemTime> {
-    std::fs::metadata(theme_path()).and_then(|m| m.modified()).ok()
+    std::fs::metadata(kit::theme::theme_path()).and_then(|m| m.modified()).ok()
 }
 
-fn hex(s: &str) -> Option<Color> {
-    let h = s.trim().strip_prefix('#')?;
-    if h.len() != 6 {
-        return None;
+/// SettingsRow.shortS: a long description's first sentence.
+fn short(s: &str) -> String {
+    if s.chars().count() <= 110 {
+        return s.to_string();
     }
-    let v = u32::from_str_radix(h, 16).ok()?;
-    Some(Color::from_rgb_u8((v >> 16) as u8, (v >> 8) as u8, v as u8))
-}
-
-fn row(kind: &str, key: &str, label: &str, help: &str) -> Row {
-    Row {
-        kind: kind.into(),
-        key: key.into(),
-        label: label.into(),
-        help: help.into(),
-        on: false,
-        value: 0.0,
-        min: 0.0,
-        max: 1.0,
-        step: 1.0,
-        unit: SharedString::new(),
-        options: ModelRc::default(),
-        pick: -1,
-        colours: ModelRc::default(),
-        text: SharedString::new(),
-        action: SharedString::new(),
-    }
-}
-
-fn strings(v: &[&str]) -> ModelRc<SharedString> {
-    ModelRc::new(VecModel::from(v.iter().map(|s| SharedString::from(*s)).collect::<Vec<_>>()))
-}
-
-fn file_name(p: &str) -> String {
-    std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.to_string())
-}
-
-fn have(cmd: &str) -> bool {
-    std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).any(|d| d.join(cmd).is_file()))
-        .unwrap_or(false)
-}
-
-fn first_line(path: &str) -> String {
-    std::fs::read_to_string(path).map(|s| s.trim().to_string()).unwrap_or_default()
-}
-
-/// What `about` shows: (label, value).
-fn about() -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let product = first_line("/sys/class/dmi/id/product_name");
-    if !product.is_empty() {
-        let vendor = first_line("/sys/class/dmi/id/sys_vendor");
-        out.push(("Computer".into(), if vendor.is_empty() { product } else { format!("{vendor} {product}") }));
-    }
-    let cpu = std::fs::read_to_string("/proc/cpuinfo")
-        .ok()
-        .and_then(|s| s.lines().find(|l| l.starts_with("model name")).and_then(|l| l.split_once(':')).map(|(_, v)| v.trim().to_string()));
-    if let Some(cpu) = cpu {
-        out.push(("Processor".into(), cpu));
-    }
-    let mem = std::fs::read_to_string("/proc/meminfo")
-        .ok()
-        .and_then(|s| s.lines().next().and_then(|l| l.split_whitespace().nth(1)).and_then(|kb| kb.parse::<u64>().ok()));
-    if let Some(kb) = mem {
-        out.push(("Memory".into(), kit::bytes(kb * 1024)));
-    }
-    let os = std::fs::read_to_string("/etc/os-release")
-        .ok()
-        .and_then(|s| s.lines().find_map(|l| l.strip_prefix("PRETTY_NAME=").map(|v| v.trim_matches('"').to_string())));
-    if let Some(os) = os {
-        out.push(("System".into(), os));
-    }
-    out.push(("Kernel".into(), first_line("/proc/sys/kernel/osrelease")));
-    let hypr = std::process::Command::new("hyprctl")
-        .args(["version", "-j"])
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()
-        .and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok())
-        .and_then(|v| v["tag"].as_str().map(str::to_string));
-    if let Some(h) = hypr {
-        out.push(("Hyprland".into(), h));
-    }
-    let rust = std::process::Command::new("pidof").arg("hyprshell-rs").output().map(|o| !o.stdout.is_empty()).unwrap_or(false);
-    out.push(("Shell".into(), if rust { "Hyprshell (Rust)".into() } else { "Hyprshell (Quickshell)".into() }));
-    out.push(("Settings file".into(), theme_path().display().to_string()));
-    out
-}
-
-/// The page's rows, with theme.json's values (or the defaults).
-fn rows(page: &str, v: &Value) -> Vec<Row> {
-    let dark = match v["theme"].as_str() {
-        Some("dark") => true,
-        Some("auto") => kit::theme::Palette::from_json(v).dark,
-        _ => false,
-    };
-    let mut out = Vec::new();
-    for it in schema(page) {
-        let val = &v[it.key];
-        match it.kind {
-            Kind::Section => out.push(row("section", "", it.label, it.help)),
-            Kind::Switch(def) => {
-                let mut r = row("switch", it.key, it.label, it.help);
-                r.on = val.as_bool().unwrap_or(def);
-                out.push(r);
+    let chars: Vec<char> = s.chars().collect();
+    for i in 30..chars.len().saturating_sub(2) {
+        if ".!?".contains(chars[i]) && chars[i + 1] == ' ' && !chars[i + 2].is_whitespace() {
+            let head: String = chars[..=i].iter().collect();
+            if head.chars().count() < chars.len() - 12 {
+                return head;
             }
-            Kind::Slider(def, min, max, step, unit) => {
-                let mut r = row("slider", it.key, it.label, it.help);
-                r.value = val.as_f64().unwrap_or(def).clamp(min, max) as f32;
-                r.min = min as f32;
-                r.max = max as f32;
-                r.step = step as f32;
-                r.unit = unit.into();
-                out.push(r);
-            }
-            Kind::Choice(def, opts) => {
-                let mut r = row("choice", it.key, it.label, it.help);
-                let now = val.as_str().unwrap_or(def);
-                r.options = strings(&opts.iter().map(|o| o.0).collect::<Vec<_>>());
-                r.pick = opts.iter().position(|o| o.1 == now).unwrap_or(0) as i32;
-                out.push(r);
-            }
-            Kind::Custom => match it.key {
-                "accent" => {
-                    let mut r = row("swatches", "accent", it.label, it.help);
-                    let mut colours: Vec<Color> = ACCENTS.iter().filter_map(|(l, d)| hex(if dark { d } else { l })).collect();
-                    colours.push(hex(v["customAccent"].as_str().unwrap_or("#3b6ef5")).unwrap_or(Color::from_rgb_u8(0x3b, 0x6e, 0xf5)));
-                    let i = v["accent"].as_i64().unwrap_or(0);
-                    r.pick = if i < 0 { ACCENTS.len() as i32 } else { i.min(ACCENTS.len() as i64 - 1) as i32 };
-                    r.colours = ModelRc::new(VecModel::from(colours));
-                    out.push(r);
-                }
-                "customAccent" => {
-                    let mut r = row("field", "customAccent", it.label, it.help);
-                    r.text = v["customAccent"].as_str().unwrap_or("#3b6ef5").into();
-                    out.push(r);
-                }
-                "wallpaper" | "liveWallpaper" => {
-                    let mut r = row("file", it.key, it.label, "");
-                    let now = val.as_str().unwrap_or("");
-                    let (none, off) = if it.key == "wallpaper" {
-                        ("None: the theme's tinted gradient", "Use the gradient")
-                    } else {
-                        ("None", "Turn off")
-                    };
-                    r.text = if now.is_empty() { none.into() } else { file_name(now).into() };
-                    r.options = if now.is_empty() { strings(&["Choose…"]) } else { strings(&["Choose…", off]) };
-                    r.action = it.key.into();
-                    out.push(r);
-                }
-                "wifi" | "bt" => {
-                    let mut r = row("buttons", "", it.label, it.help);
-                    r.options = strings(&["Open the list"]);
-                    r.action = it.key.into();
-                    out.push(r);
-                    let (tool, label, help) = if it.key == "wifi" {
-                        ("nm-connection-editor", "Connections", "VPNs, wired and hidden networks, addresses (NetworkManager)")
-                    } else {
-                        ("blueman-manager", "More", "Sending files and device settings (Blueman)")
-                    };
-                    if have(tool) {
-                        let mut r = row("buttons", "", label, help);
-                        r.options = strings(&["Open"]);
-                        r.action = tool.into();
-                        out.push(r);
-                    }
-                }
-                "about" => {
-                    for (k, val) in about() {
-                        let mut r = row("info", "", &k, "");
-                        r.text = val.into();
-                        out.push(r);
-                    }
-                }
-                _ => {}
-            },
+            break;
         }
     }
-    out
-}
-
-struct State {
-    page: String,
-    /// theme.json's time when last shown, to see edits made elsewhere.
-    seen: Option<SystemTime>,
+    if let Some(at) = s.find(" — ") {
+        if s[..at].chars().count() >= 30 && s[..at].chars().count() < chars.len() - 12 {
+            return s[..at].to_string();
+        }
+    }
+    s.to_string()
 }
 
 fn show(ui: &AppWindow, st: &mut State) {
-    let v = read();
+    st.c.p = prefs::Prefs::read();
     st.seen = mtime();
-    let p = ui.global::<Prefs>();
-    let info = PAGES.iter().find(|p| p.0 == st.page).unwrap_or(&PAGES[0]);
-    p.set_page(info.0.into());
-    p.set_heading(info.1.into());
-    p.set_blurb(info.4.into());
-    p.set_rows(ModelRc::new(VecModel::from(rows(info.0, &v))));
+    let pane = st.c.ui.pane.clone();
+    let open = st.c.ui.adv_open.contains(&pane);
+    let mut specs = rows::shown_rows(&pane, rows::rows_for(&pane, &st.c), open);
+    rows::card_positions(&mut specs);
+    if let Some(want) = st.flash.take() {
+        if let Some(r) = specs.iter_mut().find(|r| r.row.n == want.as_str()) {
+            r.row.flash = true;
+            if r.adv {
+                // Taken to an advanced setting: its section opened.
+            }
+        }
+    }
+    let g = ui.global::<Prefs>();
+    let cat = rows::category_of(&pane);
+    g.set_categories(ModelRc::new(VecModel::from(
+        rows::categories()
+            .iter()
+            .map(|c| Category { id: c.id.into(), icon: c.icon.into(), active: cat.as_ref().is_some_and(|k| k.id == c.id) })
+            .collect::<Vec<_>>(),
+    )));
+    g.set_crumb(match &cat {
+        Some(c) if c.items.len() > 1 && !pane.starts_with("cat:") => c.id.into(),
+        _ => SharedString::new(),
+    });
+    g.set_title(rows::pane_title(&pane).into());
+    g.set_note(rows::pane_note(&pane).into());
+    g.set_shorts(ModelRc::new(VecModel::from(specs.iter().map(|r| SharedString::from(short(&r.row.s))).collect::<Vec<_>>())));
+    g.set_rows(ModelRc::new(VecModel::from(specs.iter().map(|r| r.row.clone()).collect::<Vec<_>>())));
+    st.specs = specs;
 }
 
-fn toast(ui: &AppWindow, timer: &slint::Timer, text: &str) {
-    ui.global::<Prefs>().set_toast(text.into());
-    let weak = ui.as_weak();
-    timer.start(slint::TimerMode::SingleShot, Duration::from_millis(3000), move || {
-        if let Some(ui) = weak.upgrade() {
-            ui.global::<Prefs>().set_toast(SharedString::new());
-        }
-    });
+fn open_pane(ui: &AppWindow, st: &mut State, pane: &str) {
+    if st.c.ui.pane != pane {
+        st.c.ui.pane = pane.to_string();
+        st.c.ui.wallpaper_mode.clear();
+        ui.set_pane_y(0.0);
+    }
+    show(ui, st);
 }
 
 /// A line for the shell, as the keybinds send them.
@@ -433,128 +116,371 @@ fn tell_shell(line: &str) -> std::io::Result<()> {
     writeln!(f, "{line}")
 }
 
+/// Hyprland's spelling of the key in a Slint key event
+/// (SettingsRow.hyprKeyName); "" for one it has no name for.
+fn hypr_key(text: &str) -> String {
+    let k = |key: Key| SharedString::from(key);
+    let named: &[(Key, &str)] = &[
+        (Key::Return, "Return"),
+        (Key::Tab, "Tab"),
+        (Key::LeftArrow, "left"),
+        (Key::RightArrow, "right"),
+        (Key::UpArrow, "up"),
+        (Key::DownArrow, "down"),
+        (Key::Home, "Home"),
+        (Key::End, "End"),
+        (Key::PageUp, "Prior"),
+        (Key::PageDown, "Next"),
+        (Key::Delete, "Delete"),
+        (Key::Insert, "Insert"),
+        (Key::F1, "F1"),
+        (Key::F2, "F2"),
+        (Key::F3, "F3"),
+        (Key::F4, "F4"),
+        (Key::F5, "F5"),
+        (Key::F6, "F6"),
+        (Key::F7, "F7"),
+        (Key::F8, "F8"),
+        (Key::F9, "F9"),
+        (Key::F10, "F10"),
+        (Key::F11, "F11"),
+        (Key::F12, "F12"),
+    ];
+    for (key, name) in named {
+        if text == k(key.clone()).as_str() {
+            return name.to_string();
+        }
+    }
+    match text {
+        " " => "SPACE".into(),
+        "," => "comma".into(),
+        "." => "period".into(),
+        "/" => "slash".into(),
+        ";" => "semicolon".into(),
+        "'" => "apostrophe".into(),
+        "[" => "bracketleft".into(),
+        "]" => "bracketright".into(),
+        "-" => "minus".into(),
+        "=" => "equal".into(),
+        "\\" => "backslash".into(),
+        "`" => "grave".into(),
+        t => t.to_uppercase(),
+    }
+}
+
+fn mod_name(text: &str) -> Option<&'static str> {
+    let k = |key: Key| SharedString::from(key);
+    if text == k(Key::Meta).as_str() || text == k(Key::MetaR).as_str() {
+        Some("SUPER")
+    } else if text == k(Key::Control).as_str() || text == k(Key::ControlR).as_str() {
+        Some("CTRL")
+    } else if text == k(Key::Alt).as_str() || text == k(Key::AltGr).as_str() {
+        Some("ALT")
+    } else if text == k(Key::Shift).as_str() || text == k(Key::ShiftR).as_str() {
+        Some("SHIFT")
+    } else {
+        None
+    }
+}
+
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--apply") {
+        let p = prefs::Prefs::read();
+        hypr::apply_all(&p);
+        // binds.lua brought up to date once (Keybinds.qml's startup sync).
+        hypr::write_binds(&p);
+        return;
+    }
+
     kit::init("hyprshell-settings");
     let ui = AppWindow::new().expect("window");
     kit::setup!(ui, "hyprshell-settings");
 
-    let first = std::env::args().nth(1).filter(|a| PAGES.iter().any(|p| p.0 == a)).unwrap_or_else(|| "appearance".into());
-    let st = Rc::new(RefCell::new(State { page: first, seen: None }));
-    let toast_timer = Rc::new(slint::Timer::default());
-
-    let pages: Vec<Page> = PAGES
+    // The pane asked for: a pane's name, a category, or the old lower-case
+    // page names.
+    let first = args.first().cloned().unwrap_or_default();
+    let first = rows::PANES
         .iter()
-        .map(|p| Page { id: p.0.into(), label: p.1.into(), icon: p.2.into(), group: p.3.into() })
-        .collect();
-    ui.global::<Prefs>().set_pages(ModelRc::new(VecModel::from(pages)));
+        .find(|p| p.0.eq_ignore_ascii_case(&first) || p.0.replace('+', "").eq_ignore_ascii_case(&first))
+        .map(|p| p.0.to_string())
+        .or_else(|| first.starts_with("cat:").then(|| first.clone()))
+        .unwrap_or_else(|| "cat:Personalization".into());
+
+    let st = Rc::new(RefCell::new(State {
+        c: Ctx { p: prefs::Prefs::read(), ui: Ui { pane: first, ..Default::default() } },
+        specs: vec![],
+        index: None,
+        hits: vec![],
+        seen: None,
+        flash: None,
+    }));
     show(&ui, &mut st.borrow_mut());
 
-    // Writes a key, then shows the page again with it.
-    let write = {
+    let toast_timer = Rc::new(slint::Timer::default());
+    let flash_timer = Rc::new(slint::Timer::default());
+
+    // After a row is used: what it asked of the window, then the pane again.
+    let settle = {
         let weak = ui.as_weak();
         let st = st.clone();
         let tt = toast_timer.clone();
-        Rc::new(move |key: &str, value: Value| {
+        Rc::new(move || {
             let Some(ui) = weak.upgrade() else { return };
-            if let Err(e) = set(key, value) {
-                toast(&ui, &tt, &format!("Couldn't save: {e}"));
+            let (toast, tell, pick) = {
+                let mut s = st.borrow_mut();
+                (s.c.ui.toast.take(), std::mem::take(&mut s.c.ui.tell), s.c.ui.pick.take())
+            };
+            for line in tell {
+                if let Err(e) = tell_shell(&line) {
+                    st.borrow_mut().c.ui.toast = Some(format!("Couldn't reach the shell: {e}"));
+                }
             }
-            show(&ui, &mut st.borrow_mut());
+            if let Some((folder, title, key)) = pick {
+                let weak = ui.as_weak();
+                let st2 = st.clone();
+                kit::spawn(
+                    move || if folder { kit::portal::open_folder(&title) } else { kit::portal::open_file(&title, &[]) },
+                    move |picked| {
+                        let (Some(ui), Some(path)) = (weak.upgrade(), picked) else { return };
+                        let mut s = st2.borrow_mut();
+                        s.c.set(&key, serde_json::json!(path.display().to_string()));
+                        s.c.ui.wallpaper_mode.clear();
+                        show(&ui, &mut s);
+                    },
+                );
+            }
+            let toast = toast.or_else(|| st.borrow_mut().c.ui.toast.take());
+            if let Some(t) = toast {
+                ui.global::<Prefs>().set_toast(t.into());
+                let weak = ui.as_weak();
+                tt.start(slint::TimerMode::SingleShot, Duration::from_millis(3000), move || {
+                    if let Some(ui) = weak.upgrade() {
+                        ui.global::<Prefs>().set_toast(SharedString::new());
+                    }
+                });
+            }
+            let mut s = st.borrow_mut();
+            let pane = s.c.ui.pane.clone();
+            open_pane(&ui, &mut s, &pane);
         })
     };
 
-    let prefs = ui.global::<Prefs>();
-    {
-        let weak = ui.as_weak();
+    // A row's own closure, with what it was handed.
+    let run = {
         let st = st.clone();
-        prefs.on_open(move |id| {
-            let Some(ui) = weak.upgrade() else { return };
-            st.borrow_mut().page = id.to_string();
-            show(&ui, &mut st.borrow_mut());
-        });
+        let settle = settle.clone();
+        Rc::new(move |i: i32, v: Val| {
+            let f = st.borrow().specs.get(i as usize).and_then(|r| r.set.clone());
+            if let Some(f) = f {
+                let mut s = st.borrow_mut();
+                f(&mut s.c, v);
+            }
+            settle();
+        })
+    };
+
+    let g = ui.global::<Prefs>();
+    {
+        let run = run.clone();
+        g.on_set_bool(move |i, v| run(i, Val::B(v)));
     }
     {
-        let w = write.clone();
-        prefs.on_toggle(move |key, on| w(&key, json!(on)));
+        let run = run.clone();
+        g.on_set_num(move |i, v| run(i, Val::N(v as f64)));
     }
     {
-        let w = write.clone();
-        prefs.on_slide(move |key, v| w(&key, json!(v.round() as i64)));
+        let run = run.clone();
+        g.on_set_text(move |i, t| run(i, Val::S(t.to_string())));
     }
     {
-        let w = write.clone();
+        let run = run.clone();
         let st = st.clone();
-        prefs.on_choose(move |key, i| {
-            if key == "accent" {
-                let n = ACCENTS.len() as i32;
-                w("accent", json!(if i >= n { -1 } else { i }));
-                return;
-            }
-            let page = st.borrow().page.clone();
-            let found = schema(&page).into_iter().find_map(|it| match it.kind {
-                Kind::Choice(_, opts) if it.key == key.as_str() => opts.get(i as usize).map(|o| o.1),
-                _ => None,
-            });
-            if let Some(value) = found {
-                w(&key, json!(value));
+        g.on_set_index(move |i, k| {
+            let v = st.borrow().specs.get(i as usize).and_then(|r| r.values.get(k as usize).cloned());
+            if let Some(v) = v {
+                run(i, Val::S(v));
             }
         });
     }
     {
-        let w = write.clone();
-        let weak = ui.as_weak();
-        let tt = toast_timer.clone();
-        prefs.on_typed(move |key, text| {
-            if key != "customAccent" {
-                return;
-            }
-            let t = text.trim().to_lowercase();
-            let t = if t.starts_with('#') { t } else { format!("#{t}") };
-            if hex(&t).is_none() {
-                if let Some(ui) = weak.upgrade() {
-                    toast(&ui, &tt, "Not a colour: write it as #rrggbb");
-                }
-                return;
-            }
-            w("customAccent", json!(t));
-            w("accent", json!(-1));
-        });
-    }
-    {
-        let w = write.clone();
-        let weak = ui.as_weak();
-        let tt = toast_timer.clone();
-        prefs.on_act(move |action, i| {
-            let Some(ui) = weak.upgrade() else { return };
-            match (action.as_str(), i) {
-                ("wallpaper", 0) | ("liveWallpaper", 0) => {
-                    let key = action.to_string();
-                    let filters: &'static [kit::portal::Filter<'static>] = if key == "wallpaper" {
-                        &[("Pictures", &["*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp", "*.gif", "*.tif", "*.tiff"])]
-                    } else {
-                        &[("Videos", &["*.mp4", "*.mkv", "*.webm", "*.mov", "*.avi", "*.m4v", "*.gif"])]
-                    };
-                    let title = if key == "wallpaper" { "Choose a picture" } else { "Choose a video" };
-                    let w = w.clone();
-                    kit::spawn(move || kit::portal::open_file(title, filters), move |picked| {
-                        if let Some(p) = picked {
-                            w(&key, json!(p.display().to_string()));
+        let run = run.clone();
+        let st = st.clone();
+        let settle = settle.clone();
+        g.on_press(move |i, k| {
+            let (press, panel) = {
+                let s = st.borrow();
+                let Some(r) = s.specs.get(i as usize) else { return };
+                (r.presses.get(k as usize).cloned(), r.row.panel.to_string())
+            };
+            if let Some(f) = press {
+                f(&mut st.borrow_mut().c, Val::Unit);
+                settle();
+            } else if !panel.is_empty() {
+                // The way to what a panel that isn't drawn here holds.
+                match panel.as_str() {
+                    "wifi" => st.borrow_mut().c.ui.tell.push("showWifi".into()),
+                    "bluetooth" => st.borrow_mut().c.ui.tell.push("showBluetooth".into()),
+                    "laptop" => {
+                        if std::process::Command::new("hyprshell-rog").spawn().is_err() {
+                            st.borrow_mut().c.ui.toast = Some("ROG Control Center isn't installed (apps/install.sh)".into());
                         }
-                    });
-                }
-                ("wallpaper", 1) | ("liveWallpaper", 1) => w(&action, json!("")),
-                ("wifi", _) | ("bt", _) => {
-                    let line = if action == "wifi" { "showWifi" } else { "showBluetooth" };
-                    if let Err(e) = tell_shell(line) {
-                        toast(&ui, &tt, &format!("Couldn't reach the shell: {e}"));
                     }
+                    _ => {}
                 }
-                (tool, _) if tool == "nm-connection-editor" || tool == "blueman-manager" => {
-                    if let Err(e) = std::process::Command::new(tool).spawn() {
-                        toast(&ui, &tt, &format!("Couldn't start {tool}: {e}"));
+                settle();
+            } else {
+                run(i, Val::Unit);
+            }
+        });
+    }
+    {
+        let run = run.clone();
+        let st = st.clone();
+        g.on_accent(move |preset| {
+            let i = st.borrow().specs.iter().position(|r| r.row.kind == "swatch");
+            if let Some(i) = i {
+                run(i as i32, Val::N(preset as f64));
+            }
+        });
+    }
+    {
+        let run = run.clone();
+        let st = st.clone();
+        g.on_captured(move |i, text, ctrl, alt, shift, meta| {
+            let probe = st.borrow().specs.get(i as usize).is_some_and(|r| r.row.on);
+            if probe {
+                run(i, Val::S(mod_name(&text).unwrap_or("unknown").to_string()));
+                return;
+            }
+            // Backspace clears back to the default rather than binding it.
+            if text == SharedString::from(Key::Backspace) {
+                run(i, Val::S(String::new()));
+                return;
+            }
+            let mut parts = vec![];
+            if meta {
+                parts.push("SUPER".to_string());
+            }
+            if ctrl {
+                parts.push("CTRL".into());
+            }
+            if alt {
+                parts.push("ALT".into());
+            }
+            if shift {
+                parts.push("SHIFT".into());
+            }
+            let key = hypr_key(&text);
+            if key.is_empty() {
+                return;
+            }
+            parts.push(key);
+            run(i, Val::S(parts.join(" + ")));
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let st = st.clone();
+        g.on_open_category(move |id| {
+            let Some(ui) = weak.upgrade() else { return };
+            let cat = rows::categories().into_iter().find(|c| c.id == id.as_str());
+            let Some(cat) = cat else { return };
+            // A category of one pane opens it.
+            let pane = if cat.items.len() == 1 { cat.items[0].to_string() } else { format!("cat:{}", cat.id) };
+            open_pane(&ui, &mut st.borrow_mut(), &pane);
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let st = st.clone();
+        g.on_back(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let pane = st.borrow().c.ui.pane.clone();
+            if let Some(c) = rows::category_of(&pane) {
+                open_pane(&ui, &mut st.borrow_mut(), &format!("cat:{}", c.id));
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let st = st.clone();
+        g.on_search(move |q| {
+            let Some(ui) = weak.upgrade() else { return };
+            let q = q.trim().to_lowercase();
+            let g = ui.global::<Prefs>();
+            g.set_query(q.clone().into());
+            let mut s = st.borrow_mut();
+            if q.is_empty() {
+                s.hits.clear();
+                g.set_hits(ModelRc::default());
+                return;
+            }
+            if s.index.is_none() {
+                s.index = Some(rows::search_index(&s.c));
+            }
+            let idx = s.index.as_ref().unwrap();
+            let found: Vec<(String, String, Hit)> = rows::rank(&q, idx, 40)
+                .into_iter()
+                .map(|e| {
+                    let sub = if e.is_pane {
+                        "Page".to_string()
+                    } else {
+                        format!("{}{}", rows::pane_title(&e.pane), if e.section.is_empty() { String::new() } else { format!(" › {}", e.section) })
+                    };
+                    (
+                        e.pane.clone(),
+                        if e.is_pane { String::new() } else { e.n.clone() },
+                        Hit { n: e.n.clone().into(), sub: sub.into(), icon: rows::pane_icon(&e.pane).into() },
+                    )
+                })
+                .collect();
+            s.hits = found.iter().map(|f| (f.0.clone(), f.1.clone())).collect();
+            g.set_hits(ModelRc::new(VecModel::from(found.into_iter().map(|f| f.2).collect::<Vec<_>>())));
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let st = st.clone();
+        let ft = flash_timer.clone();
+        g.on_pick_hit(move |i| {
+            let Some(ui) = weak.upgrade() else { return };
+            let Some((pane, n)) = st.borrow().hits.get(i as usize).cloned() else { return };
+            {
+                let mut s = st.borrow_mut();
+                if !n.is_empty() {
+                    // An advanced setting: its section opened first.
+                    let open = s.c.ui.adv_open.contains(&pane);
+                    let marked = rows::shown_rows(&pane, rows::rows_for(&pane, &s.c), true);
+                    if !open && marked.iter().any(|r| r.adv && r.row.n == n.as_str()) {
+                        s.c.ui.adv_open.insert(pane.clone());
                     }
+                    s.flash = Some(n.clone());
                 }
-                _ => {}
+                s.c.ui.pane = String::new();
+                open_pane(&ui, &mut s, &pane);
+            }
+            ui.set_query_text(SharedString::new());
+            let g = ui.global::<Prefs>();
+            g.set_query(SharedString::new());
+            g.set_hits(ModelRc::default());
+            // The flash let go of after a moment.
+            let weak = ui.as_weak();
+            let st = st.clone();
+            ft.start(slint::TimerMode::SingleShot, Duration::from_millis(1100), move || {
+                if let Some(ui) = weak.upgrade() {
+                    let s = st.borrow();
+                    let rows: Vec<Row> = s.specs.iter().map(|r| Row { flash: false, ..r.row.clone() }).collect();
+                    ui.global::<Prefs>().set_rows(ModelRc::new(VecModel::from(rows)));
+                }
+            });
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        g.on_scroll_to(move |y| {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_pane_y((-(y - 80.0)).min(0.0));
             }
         });
     }
@@ -568,7 +494,9 @@ fn main() {
             let Some(ui) = weak.upgrade() else { return };
             let changed = mtime() != st.borrow().seen;
             if changed {
-                show(&ui, &mut st.borrow_mut());
+                let mut s = st.borrow_mut();
+                s.index = None;
+                show(&ui, &mut s);
             }
         });
     }

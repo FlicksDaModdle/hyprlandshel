@@ -559,6 +559,10 @@ impl App {
         hypr::listen(hypr_tx, w());
         let (daemon_tx, daemon_rx) = channel();
         let mut daemon = daemon::start(daemon_tx, w());
+        // Hyprland forgets what Settings set (input, borders, gaps, motion,
+        // displays, binds.lua) every time it starts: put it back, as
+        // Quickshell's Devices.qml did. Nothing happens without the app.
+        extras::spawn(&["hyprshell-settings", "--apply"]);
         let (media_tx, media_rx) = channel();
         let (media_cmd, media_cmd_rx) = channel();
         mpris::start(media_tx, media_cmd_rx, w());

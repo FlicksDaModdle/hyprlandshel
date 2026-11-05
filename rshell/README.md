@@ -120,14 +120,21 @@ connection, the Hyprland event pipe and Slint's next timer.
    brightness, theme, Do not disturb, lock, Mail, updates; `showWifi` and
    `showBluetooth` (the control center open on that list) and
    `openSettings [page]`.
-11. Settings: its own app, apps/settings (`hyprshell-settings [page]`,
-   installed by apps/install.sh). Appearance, Motion, Wallpaper (picture
-   and live video), Bar, Dock, Launcher, Alt+Tab, Notifications, Sound,
-   Network and Bluetooth (to the control center's lists), About. It writes
-   theme.json, keeping every other key, so both shells and the apps follow
-   it; changes made elsewhere show in it within a second. The Quickshell
-   Settings' other pages (displays, keyboard and mouse, keybinds, fonts,
-   Hyprland, login screen, updates) aren't in it yet.
+11. Settings: its own app, apps/settings (`hyprshell-settings [pane]`,
+   installed by apps/install.sh): the Quickshell Settings rewritten — the
+   same nine categories down the side, search over every row, category
+   pages, panes as cards with "Show advanced settings", and the same rows
+   and wording. Appearance, Wallpaper, Icons, App theming, Bar, Dock,
+   Launcher, Alt+Tab, Keybinds (binds.lua written as Keybinds.qml did),
+   Fonts, Clipboard, Screenshots, Notifications, Power, Display
+   (resolution, rate, scale, VRR), Hyprland, Keyboard, Mouse, Touchpad and
+   About. It writes theme.json (every other key kept) and applies the
+   Hyprland ones live; the shell runs `hyprshell-settings --apply` at login
+   to put them back, as Devices.qml did. Still to come: the full-width
+   panels — the Wi-Fi and Bluetooth lists (they open the control center's
+   for now), Sound, Focus, the apps that notify, shell updates, face
+   unlock, the appearance preview, the wallpaper galleries, the monitor
+   map and HDR — and the colour picker (a hex field for now).
 
 Not yet: the per-app mixer, night light.
 

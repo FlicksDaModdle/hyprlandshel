@@ -58,7 +58,7 @@ BIN="$PREFIX/bin"
 # ── the apps ───────────────────────────────────────────────────────────────
 # key | name | generic name | comment | icon | categories | Exec args | mime types | keywords
 LIST=(
-    "settings|Settings|Settings|Appearance, wallpaper, bar, dock, launcher and Alt+Tab for the shell|preferences-system|Settings;DesktopSettings;|||Preferences;Theme;Wallpaper;Dock;Bar;"
+    "settings|Settings|Settings|The shell's settings: appearance, displays, input, the bar, dock and launcher, Hyprland|preferences-system|Settings;DesktopSettings;|||Preferences;Theme;Wallpaper;Dock;Bar;"
     "rog|ROG Control Center|System Settings|Performance, fans, keyboard lighting, battery and graphics|computer-laptop|Settings;HardwareSettings;||"
     "notes|Notes|Notes|Notes in Markdown, kept as files in ~/Notes|accessories-text-editor|Utility;TextEditor;||"
     "snapshots|Snapshots|System Snapshots|Go back to an earlier state of the system (snapper, btrfs)|document-revert|System;||"
