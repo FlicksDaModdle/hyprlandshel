@@ -155,7 +155,12 @@ ShellRoot {
     // Ordered background to foreground, though each one sets its own
     // layer-shell layer and the compositor does the actual stacking.
     Wallpaper {}
-    Bar {}
+    // Not in taskbar mode: the taskbar (the dock, laid out as Windows 11's)
+    // carries the bar's status area at its right end.
+    LazyLoader {
+        active: !Config.Appearance.taskbar
+        Bar {}
+    }
     Dock {}
     PanelLayer {}
     NotificationToasts {}

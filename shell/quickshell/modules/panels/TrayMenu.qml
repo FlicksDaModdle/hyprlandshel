@@ -25,6 +25,9 @@ Item {
     // Where the first level hangs: under the icon, below the bar.
     required property real anchorX
     required property real topY
+    // How far down a menu may reach: the screen's bottom, or in taskbar
+    // mode the top of the taskbar, so a menu opened from it rises above it.
+    property real bottomY: screenHeight
 
     readonly property var item: Config.UiState.trayMenuItem
     readonly property bool open: Config.UiState.trayMenuOpen && !!item && !!item.menu
@@ -172,7 +175,7 @@ Item {
                 return root.screenWidth - right >= modelData.parentX
                     ? Math.max(8, root.screenWidth - width - 8) : 8;
             }
-            y: Math.max(8, Math.min(modelData.y, root.screenHeight - height - 8))
+            y: Math.max(8, Math.min(modelData.y, root.bottomY - height - 8))
 
             function selectable(i) {
                 const e = entries[i];

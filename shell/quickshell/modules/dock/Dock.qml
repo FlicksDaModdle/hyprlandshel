@@ -76,6 +76,9 @@ Variants {
                        // twice the dock's own spacing there is nothing left
                        // to give back, and a window is never allowed to
                        // reach the pill.
+                       // A taskbar reserves exactly itself: it sits on the
+                       // edge, with no gap of its own to balance.
+                       : taskbar ? panelBreadth
                        : Math.round(Math.max(panelBreadth,
                                     panelBreadth + edgeGap * 2 - gapsOut))
         visible: hasScreen && !Config.UiState.locked
@@ -93,12 +96,19 @@ Variants {
             Config.Appearance.screenScale(modelData ? modelData.name : "")
         function u(px) { return Math.max(1, Math.round(px * us)); }
 
-        readonly property real tileSize: u(Config.Appearance.dockTileSize)
-        readonly property real iconSize: u(Config.Appearance.dockIconSize)
-        readonly property real padH: u(Config.Appearance.dockPadH)
-        readonly property real padV: u(Config.Appearance.dockPadV)
-        readonly property real tileSpacing: u(Config.Appearance.dockTileSpacing)
-        readonly property real edgeGap: u(Config.Appearance.dockEdgeGap)
+        // Windows 11's taskbar (Settings → Dock → Style): a full-width strip
+        // along the bottom edge, 48 px, with 40 px buttons and 24 px icons,
+        // the apps centred or at the left, and the top bar's status area at
+        // its right end (TaskbarTray). The same tiles, previews, menus and
+        // drag-to-rearrange as the dock, laid out the other way.
+        readonly property bool taskbar: Config.Appearance.taskbar
+        readonly property bool tbLeft: taskbar && Config.Appearance.taskbarAlign === "left"
+        readonly property real tileSize: taskbar ? u(40) : u(Config.Appearance.dockTileSize)
+        readonly property real iconSize: taskbar ? u(24) : u(Config.Appearance.dockIconSize)
+        readonly property real padH: taskbar ? u(12) : u(Config.Appearance.dockPadH)
+        readonly property real padV: taskbar ? Math.round((panelBreadth - tileSize) / 2) : u(Config.Appearance.dockPadV)
+        readonly property real tileSpacing: taskbar ? u(4) : u(Config.Appearance.dockTileSpacing)
+        readonly property real edgeGap: taskbar ? 0 : u(Config.Appearance.dockEdgeGap)
         // The shell owns this and writes it to Hyprland (Settings → Shell →
         // Hyprland → Outer gaps), so reading the preference is reading what
         // the compositor is actually doing.
@@ -123,7 +133,8 @@ Variants {
         readonly property real headroom: previewsOn
             ? Math.max(tooltipRoom, Math.ceil(preview.fullHeight) + previewGap + u(4))
             : tooltipRoom
-        readonly property real panelBreadth: u(Config.Appearance.dockPanelBreadth)
+        readonly property real panelBreadth: taskbar ? u(Config.Appearance.taskbarHeight)
+                                                     : u(Config.Appearance.dockPanelBreadth)
 
         // Is this the screen the user is actually on? The launcher is global
         // state, so without this every dock on every monitor slid out when
@@ -194,7 +205,11 @@ Variants {
                                          && (!hidesAway
                                              || hoverLatch
                                              || launcherHere
-                                             || afterLauncher)
+                                             || afterLauncher
+                                             // A taskbar's panels rise from it:
+                                             // it stays while one is open.
+                                             || (taskbar && onFocusedScreen
+                                                 && Config.UiState.anyPanelOpen))
 
         onHoveredNowChanged: {
             if (hoveredNow) { hideDelay.stop(); hoverLatch = true; }
@@ -671,7 +686,7 @@ Variants {
         // ── pill ──────────────────────────────────────────────────────────
         Rectangle {
             id: pill
-            radius: Config.Appearance.rDock
+            radius: dock.taskbar ? 0 : Config.Appearance.rDock
             // While the launcher is out, it *is* this pill: it starts at
             // exactly this rectangle and grows, and lands back on it. The
             // launcher says when its own shape is on screen over this one
@@ -680,16 +695,40 @@ Variants {
             // the swap is invisible. Fading it instead left a moment with
             // two panes of glass stacked (darker) or none (a hole where the
             // dock was).
-            readonly property bool covered: Config.UiState.launcherCoversDock && dock.onFocusedScreen
+            readonly property bool covered: Config.UiState.launcherCoversDock && dock.onFocusedScreen && !dock.taskbar
             color: covered ? "transparent" : Config.Appearance.panel
-            border.width: covered ? 0 : 1
+            border.width: covered || dock.taskbar ? 0 : 1
             border.color: Config.Appearance.edge
 
-            x: dock.isLeft ? dock.pillPos : Math.round((dock.width - width) / 2)
+            x: dock.isLeft ? dock.pillPos : dock.taskbar ? 0 : Math.round((dock.width - width) / 2)
             y: dock.isLeft ? Math.round((dock.height - height) / 2) : dock.pillPos
 
             implicitWidth: (dock.isLeft ? tiles.implicitWidth : tiles.implicitWidth) + dock.padH * 2
-            implicitHeight: tiles.implicitHeight + dock.padV * 2
+            implicitHeight: dock.taskbar ? dock.panelBreadth : tiles.implicitHeight + dock.padV * 2
+            // The taskbar spans the screen; the dock is as wide as its tiles.
+            width: dock.taskbar ? dock.width : implicitWidth
+            height: implicitHeight
+
+            // The taskbar's top edge: one hairline, as Windows draws it.
+            Rectangle {
+                visible: dock.taskbar
+                width: parent.width
+                height: 1
+                color: Config.Appearance.edge
+            }
+
+            // The top bar's status area, at the taskbar's right end.
+            Loader {
+                active: dock.taskbar
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                sourceComponent: Component {
+                    TaskbarTray {
+                        window: dock
+                        us: dock.us
+                    }
+                }
+            }
 
             // The launcher grows out of this shape, so it has to know it.
             // Only the focused screen's dock reports, or two monitors would
@@ -720,7 +759,9 @@ Variants {
 
             Flow {
                 id: tiles
-                anchors.centerIn: parent
+                // Centred, or with a left-aligned taskbar at its left end.
+                x: dock.tbLeft ? dock.padH : Math.round((parent.width - width) / 2)
+                y: Math.round((parent.height - height) / 2)
                 // The icons, unlike the glass, are not the launcher's: they
                 // fade out as it grows over them and back in as it lands.
                 opacity: tilesFade.value
@@ -745,6 +786,21 @@ Variants {
                     // sized tight to its content, so a centered tooltip here
                     // would be clipped by the surface's own edge.
                     tooltipAlign: dock.isLeft ? Qt.AlignVCenter : Qt.AlignLeft
+                    onActivated: Config.UiState.toggleLauncherFromDock()
+                }
+
+                // ── Search (taskbar only) ────────────────────────────────
+                // Windows 11's: the Start menu with its search field, which
+                // the launcher is.
+                DockTile {
+                    visible: dock.taskbar
+                    width: dock.tileSize
+                    height: dock.tileSize
+                    tileSize: dock.tileSize
+                    iconSize: dock.iconSize
+                    iconName: "search"
+                    label: "Search"
+                    tooltipEdge: Qt.TopEdge
                     onActivated: Config.UiState.toggleLauncherFromDock()
                 }
 
@@ -794,7 +850,7 @@ Variants {
                         bounceOnLaunch: true
                         windowCount: wins.length
                         active: isActive
-                        showLabel: isActive && Config.Appearance.dockLabels && !dock.isLeft
+                        showLabel: isActive && Config.Appearance.dockLabels && !dock.isLeft && !dock.taskbar
                         // The card names every window, so a running app's
                         // tooltip would only say less, underneath it.
                         showTooltip: !(dock.previewsOn && wins.length > 0)
@@ -875,7 +931,7 @@ Variants {
                         // not pinned never showed its name — not even
                         // when it was the one you were looking at, which
                         // is the only time a dock says a name at all.
-                        showLabel: isActive && Config.Appearance.dockLabels && !dock.isLeft
+                        showLabel: isActive && Config.Appearance.dockLabels && !dock.isLeft && !dock.taskbar
                         tooltipEdge: dock.isLeft ? Qt.RightEdge : Qt.TopEdge
 
                         onHoveredChanged: dock.tileHover(
@@ -901,14 +957,14 @@ Variants {
                 }
 
                 DockDivider {
-                    visible: Config.Appearance.dockSettingsTile || Config.Appearance.dockDesktopTile
+                    visible: !dock.taskbar && (Config.Appearance.dockSettingsTile || Config.Appearance.dockDesktopTile)
                     isLeft: dock.isLeft; tileSize: dock.tileSize
                 }
 
                 // ── Settings + show desktop ───────────────────────────────
                 // Each can be switched off in Settings → Dock.
                 DockTile {
-                    visible: Config.Appearance.dockSettingsTile
+                    visible: Config.Appearance.dockSettingsTile && !dock.taskbar
                     width: dock.tileSize
                     height: dock.tileSize
                     tileSize: dock.tileSize
@@ -921,7 +977,7 @@ Variants {
                 }
 
                 DockTile {
-                    visible: Config.Appearance.dockDesktopTile
+                    visible: Config.Appearance.dockDesktopTile && !dock.taskbar
                     width: dock.tileSize
                     height: dock.tileSize
                     tileSize: dock.tileSize

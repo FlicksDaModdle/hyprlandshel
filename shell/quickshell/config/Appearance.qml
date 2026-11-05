@@ -381,6 +381,11 @@ Singleton {
 
             // Dock
             property string dockPosition: "Bottom"    // "Bottom" | "Left"
+            // "dock" | "taskbar": the floating pill, or Windows 11's taskbar —
+            // a full-width strip along the bottom with the top bar's status
+            // area folded into its right end and the top bar gone.
+            property string dockStyle: "dock"
+            property string taskbarAlign: "center"    // "center" | "left"
             property int dockSize: 42                 // 34-58 px
             property int dockIcon: 50                 // 30-72 %
             property bool dockLabels: true
@@ -1120,7 +1125,13 @@ Singleton {
     readonly property string monoFamily: "JetBrains Mono"
 
     // ── dock geometry ─────────────────────────────────────────────────────
-    readonly property bool dockLeft: dockPositionName === "Left"
+    readonly property bool taskbar: prefs.dockStyle === "taskbar"
+    property alias dockStyle: prefs.dockStyle
+    property alias taskbarAlign: prefs.taskbarAlign
+    // Windows 11's: 48 px tall, at the shell's own scale.
+    readonly property real taskbarHeight: 48
+    // A taskbar is always along the bottom.
+    readonly property bool dockLeft: dockPositionName === "Left" && !taskbar
     // Never zero, whatever the percentage says: a glyph asked to draw at no
     // size draws nothing at all, and a dock tile with a fill and no icon in
     // it reads as a missing icon rather than as a setting turned down.

@@ -21,7 +21,11 @@ PanelWindow {
     color: "transparent"
     exclusiveZone: 0
 
-    anchors.top: true
+    // Top right under the bar; bottom right above the taskbar in taskbar
+    // mode, as Windows 11 shows them (the taskbar reserves its strip, so
+    // anchored to the bottom this sits just above it).
+    anchors.top: !Config.Appearance.taskbar
+    anchors.bottom: Config.Appearance.taskbar
     anchors.right: true
 
     implicitWidth: 400
@@ -35,8 +39,8 @@ PanelWindow {
 
     Column {
         id: column
-        anchors.top: parent.top
-        anchors.topMargin: Config.Appearance.panelGap
+        y: Config.Appearance.taskbar ? parent.height - height - Config.Appearance.panelGap
+                                     : Config.Appearance.panelGap
         anchors.right: parent.right
         anchors.rightMargin: Config.Appearance.panelEdgeGap
         width: 376

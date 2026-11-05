@@ -204,9 +204,13 @@ Variants {
         // As long as the dock, whenever there is a dock along the bottom to
         // measure — morphing or not, auto-hidden or not — so the two read
         // as one object. Down the left there is no width to match.
+        // In taskbar mode it is Windows 11's Start menu: its own width,
+        // floating above the taskbar, centred (or at the left with a
+        // left-aligned taskbar) — not grown out of a dock pill.
+        readonly property bool asStart: Config.Appearance.taskbar
         readonly property real panelWidth: {
             const want = Config.Appearance.launcherWidth;
-            if (launcher.isLeft || Config.UiState.dockPillWidth <= 0) return want;
+            if (launcher.isLeft || launcher.asStart || Config.UiState.dockPillWidth <= 0) return want;
             return Math.max(260, Math.min(launcher.width - 24, Config.UiState.dockPillWidth));
         }
         readonly property real panelHeight: Config.Appearance.launcherHeight
@@ -239,22 +243,23 @@ Variants {
         function u(px) { return Math.max(1, Math.round(px * us)); }
         readonly property real dockGap: u(Config.Appearance.dockEdgeGap)
 
-        readonly property real dockOffset: dockGap
-                                           + u(Config.Appearance.dockPanelBreadth) + 12
+        readonly property real dockOffset: launcher.asStart
+                                           ? u(Config.Appearance.taskbarHeight) + 12
+                                           : dockGap + u(Config.Appearance.dockPanelBreadth) + 12
 
         // Where the panel's near edge sits. Growing out of the dock, it
         // takes the dock's room as well: the pill has faded out by then, so
         // stopping short of it would leave a band of empty desktop exactly
         // where the thing you clicked used to be. Without the morph the
         // dock is still there and the panel clears it, as before.
-        readonly property real nearEdge: Config.Appearance.launcherMorph
+        readonly property real nearEdge: Config.Appearance.launcherMorph && !launcher.asStart
                                          ? dockGap
                                          : dockOffset
 
         // ── the morph ─────────────────────────────────────────────────────
         // 0 is the dock's pill, 1 is the panel. Everything about the
         // panel's shape is this number, so one animation drives the lot.
-        readonly property bool morphing: Config.Appearance.launcherMorph
+        readonly property bool morphing: Config.Appearance.launcherMorph && !launcher.asStart
                                          && Config.UiState.dockPillWidth > 0
         // With no pill to grow out of — the morph off, the dock hidden, or
         // opened from the keyboard — it swells up out of the middle of the
@@ -740,6 +745,8 @@ Variants {
             // can't run off the screen on a narrow monitor.
             readonly property real targetX: launcher.isLeft
                ? launcher.nearEdge
+               : launcher.asStart && Config.Appearance.taskbarAlign === "left"
+               ? 12
                : Math.max(12, Math.min(launcher.width - targetWidth - 12,
                     Math.round(launcher.width / 2 - targetWidth / 2)))
             readonly property real targetY: launcher.isLeft

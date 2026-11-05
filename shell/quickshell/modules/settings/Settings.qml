@@ -741,8 +741,21 @@ Scope {
         }
 
         case "Dock": return [
-            { n: "Position", s: "Bottom slab or left column", type: "seg",
-              options: ["Bottom", "Left"], value: A.dockPositionName, set: v => A.dockPositionName = v },
+            { n: "Style",
+              s: A.taskbar
+                 ? "Windows 11's taskbar: along the bottom edge, with the top bar's status area at its right end and the top bar gone"
+                 : "A floating dock under the top bar, or Windows 11's taskbar in place of both",
+              type: "seg",
+              options: [{ label: "Dock", value: "dock" }, { label: "Windows 11 taskbar", value: "taskbar" }],
+              value: A.dockStyle, set: v => A.dockStyle = v },
+            ...(A.taskbar ? [
+                { n: "Taskbar alignment", s: "Where Start and the apps sit, as in Windows 11", type: "seg",
+                  options: [{ label: "Center", value: "center" }, { label: "Left", value: "left" }],
+                  value: A.taskbarAlign, set: v => A.taskbarAlign = v }
+            ] : [
+                { n: "Position", s: "Bottom slab or left column", type: "seg",
+                  options: ["Bottom", "Left"], value: A.dockPositionName, set: v => A.dockPositionName = v }
+            ]),
             { n: "Dock size", s: "Tile edge length — sets the dock's thickness", type: "slider",
               min: 34, max: 58, unit: "px", value: A.dockTileSize, set: v => A.dockTileSize = v },
             { n: "Icon size", s: "Glyph scale inside the tile — does not resize the dock", type: "slider",
@@ -1751,13 +1764,15 @@ Scope {
               s: "How new windows are placed. Applied immediately." },
             { n: "Window behaviour",
               s: A.windowMode === "windows"
-                 ? "Like Windows 11: windows float and open centred, snap to edges, and Super + arrows snap them to halves and quarters (Up maximises, Down restores)"
+                 ? "Like Windows 11: windows float and open centred, snap to edges, and Super + arrows snap them to halves and quarters (Up maximises, Down restores). The taskbar comes with it; Dock → Style changes that on its own"
                  : "Hyprland's tiling: windows share the screen, and Super + arrows move the focus",
               type: "seg",
               options: [{ label: "Tiling", value: "tiling" },
                         { label: "Windows 11", value: "windows" }],
               value: A.windowMode,
-              set: v => { A.windowMode = v; } },
+              // Windows 11 mode brings Windows 11's taskbar, and tiling the
+              // dock back; Dock → Style can still set either on its own.
+              set: v => { A.windowMode = v; A.dockStyle = v === "windows" ? "taskbar" : "dock"; } },
             { n: "Tiling layout", s: "Dwindle splits the focused window; "
                  + "master keeps one large window beside a stack",
               type: "seg",

@@ -109,6 +109,17 @@ Variants {
         // from the keyboard, with no button, it takes its usual place.
         readonly property real panelRight: layer.width - Config.Appearance.panelEdgeGap
         readonly property real panelTop: Config.Appearance.panelTop
+        // Where a dropdown sits. Under the top bar normally; in taskbar mode
+        // there is no top bar, and they rise from just above the taskbar at
+        // the bottom, as Windows 11's quick settings and calendar do.
+        readonly property bool fromBottom: Config.Appearance.taskbar
+        readonly property real taskbarTop: layer.height - Math.round(Config.Appearance.taskbarHeight
+                                           * Config.Appearance.screenScale(layer.modelData ? layer.modelData.name : ""))
+        function panelY(h) {
+            return layer.fromBottom ? Math.round(layer.taskbarTop - Config.Appearance.panelGap - h)
+                                    : layer.panelTop;
+        }
+        readonly property real riseFrom: layer.fromBottom ? 10 : -10
         function atButton(origin, w, otherwise) {
             if (origin < 0) return otherwise;
             const gap = Config.Appearance.panelEdgeGap;
@@ -118,7 +129,8 @@ Variants {
         Entrance {
             shown: Config.UiState.controlCenterOpen
             x: layer.atButton(originAbs, width, layer.panelRight - width)
-            y: layer.panelTop
+            y: layer.panelY(height)
+            fromY: layer.riseFrom
             LazyPanel {
                 wanted: Config.UiState.controlCenterOpen
                 sourceComponent: Component {
@@ -132,7 +144,8 @@ Variants {
         Entrance {
             shown: Config.UiState.notificationsOpen
             x: layer.atButton(originAbs, width, layer.panelRight - width)
-            y: layer.panelTop
+            y: layer.panelY(height)
+            fromY: layer.riseFrom
             LazyPanel {
                 wanted: Config.UiState.notificationsOpen
                 sourceComponent: Component {
@@ -144,7 +157,8 @@ Variants {
         Entrance {
             shown: Config.UiState.calendarOpen
             x: layer.atButton(originAbs, width, layer.panelRight - width)
-            y: layer.panelTop
+            y: layer.panelY(height)
+            fromY: layer.riseFrom
             LazyPanel {
                 wanted: Config.UiState.calendarOpen
                 sourceComponent: Component {
@@ -157,7 +171,8 @@ Variants {
         Entrance {
             shown: Config.UiState.mediaOpen
             x: layer.atButton(originAbs, width, Math.round((layer.width - width) / 2))
-            y: layer.panelTop
+            y: layer.panelY(height)
+            fromY: layer.riseFrom
             LazyPanel {
                 wanted: Config.UiState.mediaOpen
                 sourceComponent: Component {
@@ -185,7 +200,8 @@ Variants {
         Entrance {
             shown: Config.UiState.drivesOpen
             x: layer.atButton(originAbs, width, layer.panelRight - width)
-            y: layer.panelTop
+            y: layer.panelY(height)
+            fromY: layer.riseFrom
             LazyPanel {
                 wanted: Config.UiState.drivesOpen
                 sourceComponent: Component {
@@ -197,7 +213,8 @@ Variants {
         Entrance {
             shown: Config.UiState.timersOpen
             x: layer.atButton(originAbs, width, layer.panelRight - width)
-            y: layer.panelTop
+            y: layer.panelY(height)
+            fromY: layer.riseFrom
             LazyPanel {
                 wanted: Config.UiState.timersOpen
                 sourceComponent: Component {
@@ -209,7 +226,8 @@ Variants {
         Entrance {
             shown: Config.UiState.privacyOpen
             x: layer.atButton(originAbs, width, layer.panelRight - width)
-            y: layer.panelTop
+            y: layer.panelY(height)
+            fromY: layer.riseFrom
             LazyPanel {
                 wanted: Config.UiState.privacyOpen
                 sourceComponent: Component {
@@ -221,7 +239,8 @@ Variants {
         Entrance {
             shown: Config.UiState.updatesOpen
             x: layer.atButton(originAbs, width, layer.panelRight - width)
-            y: layer.panelTop
+            y: layer.panelY(height)
+            fromY: layer.riseFrom
             LazyPanel {
                 wanted: Config.UiState.updatesOpen
                 sourceComponent: Component {
@@ -248,7 +267,8 @@ Variants {
         Entrance {
             shown: Config.UiState.powerOpen
             x: layer.atButton(originAbs, width, layer.panelRight - width)
-            y: layer.panelTop
+            y: layer.panelY(height)
+            fromY: layer.riseFrom
             LazyPanel {
                 wanted: Config.UiState.powerOpen
                 sourceComponent: Component {
@@ -264,7 +284,8 @@ Variants {
             screenWidth: layer.width
             screenHeight: layer.height
             anchorX: Config.UiState.trayMenuX
-            topY: layer.panelTop
+            topY: layer.fromBottom ? layer.height : layer.panelTop
+            bottomY: layer.fromBottom ? layer.taskbarTop - Config.Appearance.panelGap : layer.height
         }
 
         // The bar's window menu hangs under its button rather than at the
