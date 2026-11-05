@@ -60,6 +60,14 @@ Item {
 
     opacity: Math.max(0, Math.min(1, glass.value))
     visible: shown || opacity > 0.004
+    // Seen while it fades out, but no longer there to be clicked. A panel
+    // closing because another opened in its place (the control center
+    // giving way to the power menu, both at the right) sat under the new
+    // one for the length of its fade, and a click on the new one went
+    // through to it too: Lock in the power menu also pressed the control
+    // center's theme button, which is in the same spot, and locking
+    // switched the theme.
+    enabled: shown
 
     Component.onCompleted: {
         const v = shown ? 1 : 0;

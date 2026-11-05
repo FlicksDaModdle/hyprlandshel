@@ -70,6 +70,9 @@ Column {
 
                 HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
+                    // Taken, not shared: the click is this row's alone, and nothing
+                    // under the menu gets it as well.
+                    gesturePolicy: TapHandler.ReleaseWithinBounds
                     onTapped: {
                         const run = item.modelData.run;
                         const keepOpen = item.modelData.keepOpen === true;

@@ -122,6 +122,9 @@ PanelSurface {
 
                 HoverHandler { id: entryHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
+                    // Taken, not shared: the click is this row's alone, and nothing
+                    // under the menu gets it as well.
+                    gesturePolicy: TapHandler.ReleaseWithinBounds
                     onTapped: {
                         Config.UiState.closeAll();
                         entry.modelData.run();
