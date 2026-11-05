@@ -1,0 +1,25 @@
+[package]
+name = "hyprshell-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Hyprshell's shell in Rust: bar, dock, panels and the rest, on Hyprland's layer-shell"
+license = "MIT"
+
+[[bin]]
+name = "hyprshell-rs"
+path = "src/main.rs"
+
+[dependencies]
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "renderer-software", "software-renderer-systemfonts"] }
+smithay-client-toolkit = { version = "0.19", default-features = false }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+serde_json = "1"
+libc = "0.2"
+
+[build-dependencies]
+slint-build = "1.18"
+
+[profile.release]
+opt-level = 3
+lto = "thin"

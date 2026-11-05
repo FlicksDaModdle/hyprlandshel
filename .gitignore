@@ -8,3 +8,4 @@
 build/
 CMakeFiles/
 term/build/
+rshell/target/

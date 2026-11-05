@@ -1,0 +1,124 @@
+import { Icons, GlyphData } from "icons.slint";
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+
+export struct Workspace { id: int, occupied: bool, active: bool }
+
+// A button of the bar: a capsule that lights under the pointer, as BarButton.
+component BarButton inherits Rectangle {
+    in property <bool> open;
+    callback clicked();
+    callback scrolled(float);
+    height: 26px;
+    border-radius: Theme.r-cap;
+    background: open ? Theme.sel : touch.has-hover ? Theme.hover : transparent;
+    animate background { duration: 120ms; }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        scroll-event(e) => { root.scrolled(e.delta-y / 1px); accept }
+    }
+}
+
+// The top bar, as modules/bar/Bar.qml lays it out: workspaces at the left,
+// the focused window's title in the middle, the status capsule and the
+// clock at the right.
+export component Bar inherits Window {
+    in property <[Workspace]> workspaces;
+    in property <string> focused-title;
+    in property <string> time;
+    in property <string> date;
+    in property <int> battery: -1;
+    in property <bool> charging;
+    in property <string> network: "wifi";
+    callback workspace-clicked(int);
+    callback workspace-scrolled(float);
+
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-size: 13px;
+
+    Rectangle {
+        background: Theme.panel;
+        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.edge; }
+
+        // ── left: workspaces ─────────────────────────────────────────
+        HorizontalLayout {
+            x: 12px;
+            width: self.preferred-width;
+            alignment: start;
+            spacing: 6px;
+            for ws in workspaces: Rectangle {
+                y: (root.height - 10px) / 2;
+                height: 10px;
+                width: ws.active ? 26px : 10px;
+                border-radius: 5px;
+                background: ws.active ? Theme.accent : ws.occupied ? Theme.ink2 : Theme.ink3.with-alpha(0.45);
+                animate width, background { duration: 220ms; easing: ease-out; }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.workspace-clicked(ws.id); }
+                    scroll-event(e) => { root.workspace-scrolled(e.delta-y / 1px); accept }
+                }
+            }
+        }
+
+        // ── middle: the focused window ───────────────────────────────
+        Text {
+            width: min(self.preferred-width, root.width * 0.4);
+            x: (root.width - self.width) / 2;
+            vertical-alignment: center;
+            text: root.focused-title;
+            color: Theme.ink2;
+            overflow: elide;
+        }
+
+        // ── right: status and clock ──────────────────────────────────
+        HorizontalLayout {
+            x: root.width - self.width - 10px;
+            width: self.preferred-width;
+            alignment: end;
+            spacing: 4px;
+            padding-top: (root.height - 26px) / 2;
+            padding-bottom: (root.height - 26px) / 2;
+
+            BarButton {
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 13px;
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Glyph { y: 5px; size: 16px; monochrome: true;
+                            data: root.network == "offline" ? Icons.wifi-off : root.network == "ethernet" ? Icons.monitor : Icons.wifi; }
+                    }
+                    if root.battery >= 0: HorizontalLayout {
+                        spacing: 6px;
+                        Rectangle {
+                            width: 16px; height: 16px; y: 5px;
+                            Glyph { size: 16px; data: root.charging ? Icons.battery-charging : Icons.battery; }
+                            if !root.charging: Rectangle {
+                                x: 16px / 24 * 4.2; y: 16px / 24 * 9.3;
+                                height: 16px / 24 * 5.4;
+                                width: max(1px, 16px / 24 * 13.5 * root.battery / 100);
+                                border-radius: 1px;
+                                background: root.battery <= 15 ? Theme.accent : Theme.ink;
+                            }
+                        }
+                        Text { vertical-alignment: center; text: root.battery + "%"; color: Theme.ink2; font-weight: 600; }
+                    }
+                }
+            }
+
+            BarButton {
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 10px;
+                    Text { vertical-alignment: center; text: root.time; color: Theme.ink; font-weight: 600; font-size: 14px; }
+                    Text { vertical-alignment: center; text: root.date; color: Theme.ink2; }
+                }
+            }
+        }
+    }
+}

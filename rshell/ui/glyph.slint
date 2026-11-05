@@ -1,0 +1,36 @@
+import { GlyphData } from "icons.slint";
+import { Theme } from "theme.slint";
+
+// One of the shell's glyphs (icons.slint): monoline strokes on a 24 grid
+// plus an accent part, drawn as vectors at the screen's own resolution.
+export component Glyph inherits Rectangle {
+    in property <GlyphData> data;
+    in property <length> size: 16px;
+    in property <color> ink: Theme.ink;
+    in property <color> accent: Theme.accent;
+    in property <bool> monochrome: false;
+    property <color> acc: monochrome ? ink : accent;
+    // Two pixels wide however small the glyph, as MonoIcon draws it.
+    property <float> line: max(2, 2 * 24px / size);
+    width: size;
+    height: size;
+
+    if data.fill-ink != "": Path { width: 100%; height: 100%; viewbox-width: 24; viewbox-height: 24; commands: data.fill-ink; fill: ink; }
+    if data.fill != "": Path { width: 100%; height: 100%; viewbox-width: 24; viewbox-height: 24; commands: data.fill; fill: acc; }
+    if data.ink != "": Path { width: 100%; height: 100%; viewbox-width: 24; viewbox-height: 24; commands: data.ink;
+        stroke: ink; stroke-width: line * size / 24; stroke-line-cap: round; stroke-line-join: round; fill: transparent; }
+    if data.acc != "": Path { width: 100%; height: 100%; viewbox-width: 24; viewbox-height: 24; commands: data.acc;
+        stroke: acc; stroke-width: line * size / 24; stroke-line-cap: round; stroke-line-join: round; fill: transparent; }
+    if data.ink-w != "": Path { width: 100%; height: 100%; viewbox-width: 24; viewbox-height: 24; commands: data.ink-w;
+        stroke: ink; stroke-width: line * 1.5 * size / 24; stroke-line-cap: round; stroke-line-join: round; fill: transparent; }
+    if data.acc-w != "": Path { width: 100%; height: 100%; viewbox-width: 24; viewbox-height: 24; commands: data.acc-w;
+        stroke: acc; stroke-width: line * 1.5 * size / 24; stroke-line-cap: round; stroke-line-join: round; fill: transparent; }
+    if data.dot-r > 0: Rectangle {
+        x: (data.dot-x - data.dot-r) / 24 * size;
+        y: (data.dot-y - data.dot-r) / 24 * size;
+        width: data.dot-r * 2 / 24 * size;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: data.dot-acc ? acc : ink;
+    }
+}
