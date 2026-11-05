@@ -1,0 +1,295 @@
+// Settings for the Rust shell: the pages of the Quickshell Settings that
+// this shell reads, writing the same theme.json, so either shell (and every
+// app) follows a change at once. What each page holds comes from main.rs as
+// rows; this file only draws them.
+
+import { Theme, Icons, Win, KitWindow, TitleBar, Sidebar, NavItem, Caption, Heading,
+         Button, Switch, Slider, Seg, Scroll, Rule, Field } from "@kit";
+
+export { Theme, Icons, Win }
+
+// A page in the sidebar; `group` heads the first page of each group.
+export struct Page { id: string, label: string, icon: string, group: string }
+
+// One row of a page. `kind` picks how it is drawn:
+//   "section"  a heading over the rows after it
+//   "switch"   on / off
+//   "slider"   value from min to max by step, shown with `unit`
+//   "choice"   one of `options`, `pick` the chosen one
+//   "swatches" one of `colours`, `pick` the chosen one (-1 none)
+//   "field"    text, sent when Enter is pressed
+//   "file"     `text` (a path, or what stands for none) with buttons
+//   "info"     `text` beside the label
+//   "note"     a paragraph
+//   "buttons"  `options` as buttons; `action` names them
+export struct Row {
+    kind: string,
+    key: string,
+    label: string,
+    help: string,
+    on: bool,
+    value: float,
+    min: float,
+    max: float,
+    step: float,
+    unit: string,
+    options: [string],
+    pick: int,
+    colours: [color],
+    text: string,
+    action: string,
+}
+
+export global Prefs {
+    in property <[Page]> pages;
+    in property <string> page;
+    in property <string> heading;
+    in property <string> blurb;
+    in property <[Row]> rows;
+    in property <string> toast;
+    callback open(string);
+    callback toggle(string, bool);
+    callback slide(string, float);
+    callback choose(string, int);
+    callback typed(string, string);
+    // A button: the row's action and which of its buttons.
+    callback act(string, int);
+}
+
+component RowText inherits VerticalLayout {
+    in property <string> title;
+    in property <string> text;
+    horizontal-stretch: 1;
+    alignment: center;
+    spacing: 3px;
+    Text { text: root.title; color: Theme.ink; font-size: Theme.fs(13); font-weight: 600; wrap: word-wrap; }
+    if root.text != "": Text { text: root.text; color: Theme.ink3; font-size: Theme.fs(12); wrap: word-wrap; }
+}
+
+component SettingRow inherits VerticalLayout {
+    in property <Row> item;
+    in property <bool> last;
+    // The slider's value while it is dragged, before it is written.
+    property <float> live: item.value;
+    property <string> shown: round(root.live / root.item.step) * root.item.step + root.item.unit;
+    padding-left: 18px;
+    padding-right: 18px;
+    if root.item.kind == "switch": HorizontalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 16px;
+        RowText { title: root.item.label; text: root.item.help; }
+        VerticalLayout {
+            alignment: center;
+            Switch { on: root.item.on; toggled(v) => { Prefs.toggle(root.item.key, v); } }
+        }
+    }
+    if root.item.kind == "slider": VerticalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 16px;
+            RowText { title: root.item.label; text: root.item.help; }
+            Text {
+                vertical-alignment: center;
+                horizontal-stretch: 0;
+                text: root.shown;
+                color: Theme.ink2;
+                font-size: Theme.fs(12.5);
+                font-weight: 600;
+            }
+        }
+        Slider {
+            minimum: root.item.min;
+            maximum: root.item.max;
+            step: root.item.step;
+            value: root.item.value;
+            moved(v) => { root.live = v; }
+            released(v) => { root.live = v; Prefs.slide(root.item.key, v); }
+        }
+    }
+    if root.item.kind == "choice": HorizontalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 16px;
+        RowText { title: root.item.label; text: root.item.help; }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Seg { options: root.item.options; current: root.item.pick; picked(i) => { Prefs.choose(root.item.key, i); } }
+        }
+    }
+    if root.item.kind == "swatches": HorizontalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 16px;
+        RowText { title: root.item.label; text: root.item.help; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 10px;
+            for c[i] in root.item.colours: Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: c;
+                border-width: i == root.item.pick ? 3px : 1px;
+                border-color: i == root.item.pick ? Theme.ink : Theme.edge;
+                TouchArea { mouse-cursor: pointer; clicked => { Prefs.choose(root.item.key, i); } }
+            }
+        }
+    }
+    if root.item.kind == "field": HorizontalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 16px;
+        RowText { title: root.item.label; text: root.item.help; }
+        VerticalLayout {
+            alignment: center;
+            Field {
+                width: 180px;
+                text: root.item.text;
+                mono: true;
+                accepted(t) => { Prefs.typed(root.item.key, t); }
+            }
+        }
+    }
+    if root.item.kind == "file" || root.item.kind == "buttons": HorizontalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 16px;
+        RowText {
+            title: root.item.label;
+            text: root.item.kind == "file" ? root.item.text : root.item.help;
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            for o[i] in root.item.options: VerticalLayout {
+                alignment: center;
+                Button {
+                    text: o;
+                    kind: i == 0 ? "primary" : "secondary";
+                    small: true;
+                    clicked => { Prefs.act(root.item.action, i); }
+                }
+            }
+        }
+    }
+    if root.item.kind == "info": HorizontalLayout {
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 16px;
+        Text { width: 150px; text: root.item.label; color: Theme.ink3; font-size: Theme.fs(12.5); vertical-alignment: center; }
+        Text { horizontal-stretch: 1; text: root.item.text; color: Theme.ink; font-size: Theme.fs(12.5); wrap: word-wrap; vertical-alignment: center; }
+    }
+    if root.item.kind == "note": Text {
+        horizontal-stretch: 1;
+        text: root.item.text;
+        color: Theme.ink2;
+        font-size: Theme.fs(12.5);
+        wrap: word-wrap;
+    }
+    if root.item.kind != "note" && !root.last: Rule {}
+}
+
+export component AppWindow inherits KitWindow {
+    title: "Settings";
+    preferred-width: 1000px;
+    preferred-height: 700px;
+    min-width: 720px;
+    min-height: 480px;
+
+    VerticalLayout {
+        TitleBar {
+            app-name: "Settings";
+            app-icon: "settings";
+            subtitle: Prefs.heading;
+        }
+        Rule {}
+        HorizontalLayout {
+            Sidebar {
+                Scroll {
+                    VerticalLayout {
+                        alignment: start;
+                        spacing: 2px;
+                        for p in Prefs.pages: VerticalLayout {
+                            spacing: 2px;
+                            if p.group != "": Caption { text: p.group; }
+                            NavItem {
+                                height: 34px;
+                                icon: p.icon;
+                                text: p.label;
+                                selected: Prefs.page == p.id;
+                                clicked => { Prefs.open(p.id); }
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                pane := Scroll {
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 28px;
+                        padding-top: 22px;
+                        spacing: 18px;
+                        VerticalLayout {
+                            spacing: 4px;
+                            Heading { text: Prefs.heading; }
+                            if Prefs.blurb != "": Text { text: Prefs.blurb; color: Theme.ink3; font-size: Theme.fs(12.5); wrap: word-wrap; }
+                        }
+                        // Each "section" row starts a card; the rows up to
+                        // the next one go in it.
+                        VerticalLayout {
+                        spacing: 0px;
+                        for r[i] in Prefs.rows: VerticalLayout {
+                            if r.kind == "section": VerticalLayout {
+                                padding-top: i == 0 ? 0px : 22px;
+                                padding-bottom: 8px;
+                                spacing: 4px;
+                                Caption { text: r.label; }
+                                if r.help != "": Text { text: r.help; color: Theme.ink3; font-size: Theme.fs(12); wrap: word-wrap; }
+                            }
+                            // The section's rows make one card: round at
+                            // its first and last.
+                            if r.kind != "section": Rectangle {
+                                property <bool> first: i == 0 || Prefs.rows[i - 1].kind == "section";
+                                property <bool> end: i + 1 >= Prefs.rows.length || Prefs.rows[i + 1].kind == "section";
+                                background: Theme.hover;
+                                border-top-left-radius: self.first ? Theme.r : 0px;
+                                border-top-right-radius: self.first ? Theme.r : 0px;
+                                border-bottom-left-radius: self.end ? Theme.r : 0px;
+                                border-bottom-right-radius: self.end ? Theme.r : 0px;
+                                SettingRow {
+                                    item: r;
+                                    last: i + 1 >= Prefs.rows.length || Prefs.rows[i + 1].kind == "section";
+                                }
+                            }
+                        }
+                        }
+                    }
+                }
+                if Prefs.toast != "": Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: parent.height - self.height - 18px;
+                    width: tl.preferred-width + 32px;
+                    height: 36px;
+                    border-radius: 18px;
+                    background: Theme.dialog;
+                    border-width: 1px;
+                    border-color: Theme.edge;
+                    tl := Text {
+                        x: 16px;
+                        y: (parent.height - self.height) / 2;
+                        text: Prefs.toast;
+                        color: Theme.ink;
+                        font-size: Theme.fs(12.5);
+                    }
+                }
+            }
+        }
+    }
+}

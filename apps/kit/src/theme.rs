@@ -58,7 +58,7 @@ fn rgba(r: f32, g: f32, b: f32, a: f32) -> Color {
 
 impl Palette {
     pub fn from_json(v: &serde_json::Value) -> Palette {
-        let mode = v.get("theme").and_then(|m| m.as_str()).unwrap_or("dark");
+        let mode = v.get("theme").and_then(|m| m.as_str()).unwrap_or("light");
         let dark = match mode {
             "light" => false,
             "dark" => true,

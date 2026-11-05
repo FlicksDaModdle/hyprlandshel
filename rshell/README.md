@@ -117,7 +117,17 @@ connection, the Hyprland event pipe and Slint's next timer.
    asks for admin rights. The password goes only to polkit's helper, over
    its socket (polkit 126 on) or to the setuid helper's input.
 10. The keybinds: hyprshell.cmd's launcher and panel toggles, volume, mute, microphone,
-   brightness, theme, Do not disturb, lock, Mail, updates.
+   brightness, theme, Do not disturb, lock, Mail, updates; `showWifi` and
+   `showBluetooth` (the control center open on that list) and
+   `openSettings [page]`.
+11. Settings: its own app, apps/settings (`hyprshell-settings [page]`,
+   installed by apps/install.sh). Appearance, Motion, Wallpaper (picture
+   and live video), Bar, Dock, Launcher, Alt+Tab, Notifications, Sound,
+   Network and Bluetooth (to the control center's lists), About. It writes
+   theme.json, keeping every other key, so both shells and the apps follow
+   it; changes made elsewhere show in it within a second. The Quickshell
+   Settings' other pages (displays, keyboard and mouse, keybinds, fonts,
+   Hyprland, login screen, updates) aren't in it yet.
 
 Not yet: the per-app mixer, night light.
 
@@ -127,4 +137,4 @@ Not yet: the per-app mixer, night light.
    taskbar layouts, and the launcher's morph out of it.
 4. The overview, Alt+Tab's live window pictures; the launcher's right-click menus (pin, unpin).
 5. Lock screen and face unlock.
-6. Settings.
+6. Settings' remaining pages: displays, input, keybinds, fonts, Hyprland.

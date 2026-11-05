@@ -14,6 +14,7 @@ OUT = KIT.parent / "icons"
 # app key → glyph; the same ones the shell's dock uses for their windows.
 APPS = {
     "rog": "zap",
+    "settings": "settings",
     "notes": "stickyNote",
     "snapshots": "rotateCw",
     "disks": "drive",

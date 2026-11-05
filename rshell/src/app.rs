@@ -2701,6 +2701,22 @@ impl App {
             "toggleTimers" => self.toggle_from_key(shell, qh, "timers"),
             "toggleUpdates" => self.toggle_from_key(shell, qh, "updates"),
             "closePanels" => self.close_panel(),
+            // The control center open on its Wi-Fi or Bluetooth list
+            // (Settings → Network / Bluetooth).
+            "showWifi" | "showBluetooth" => {
+                if self.open.as_ref().map(|o| o.1.as_str()) != Some("control") {
+                    self.toggle_from_key(shell, qh, "control");
+                }
+                self.set_cc_pane(if name == "showWifi" { "wifi" } else { "bluetooth" });
+            }
+            // The Settings app, on a page if one is named.
+            "openSettings" => {
+                let mut argv = vec!["hyprshell-settings"];
+                if !arg.is_empty() {
+                    argv.push(arg);
+                }
+                extras::spawn(&argv);
+            }
             "toggleDnd" => self.act(shell, qh, Action::ToggleDnd),
             "volumeUp" => {
                 self.set_volume(self.sound.volume + 0.05);

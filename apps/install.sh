@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Builds and installs Hyprshell's Rust apps: ROG Control Center, Notes,
+# Builds and installs Hyprshell's Rust apps: Settings, ROG Control Center, Notes,
 # Snapshots, Disks, Passwords and Keys, Documents, Music, Videos, Sound
 # Recorder, Chats and Weather — with their desktop entries, so the launcher and the
 # dock find them. (Chats' WhatsApp side is in Go, chats/daemon, and needs
@@ -14,7 +14,7 @@
 #   ./install.sh --prefix /usr/local
 #   ./install.sh --remove           take them out again
 #
-# Names: rog notes snapshots disks keys docs music video recorder chats weather calendar fonts text camera software
+# Names: settings rog notes snapshots disks keys docs music video recorder chats weather calendar fonts text camera software
 #
 # Not `set -e`: most of this probes for things that may be absent, and a
 # probe saying "no" must not end the run.
@@ -58,6 +58,7 @@ BIN="$PREFIX/bin"
 # ── the apps ───────────────────────────────────────────────────────────────
 # key | name | generic name | comment | icon | categories | Exec args | mime types | keywords
 LIST=(
+    "settings|Settings|Settings|Appearance, wallpaper, bar, dock, launcher and Alt+Tab for the shell|preferences-system|Settings;DesktopSettings;|||Preferences;Theme;Wallpaper;Dock;Bar;"
     "rog|ROG Control Center|System Settings|Performance, fans, keyboard lighting, battery and graphics|computer-laptop|Settings;HardwareSettings;||"
     "notes|Notes|Notes|Notes in Markdown, kept as files in ~/Notes|accessories-text-editor|Utility;TextEditor;||"
     "snapshots|Snapshots|System Snapshots|Go back to an earlier state of the system (snapper, btrfs)|document-revert|System;||"
@@ -87,7 +88,7 @@ if [ -n "$ONLY" ]; then
     for k in ${ONLY//,/ }; do
         known=0
         for a in "${LIST[@]}"; do [ "$(field "$a" 1)" = "$k" ] && known=1; done
-        [ "$known" = 1 ] || { echo "no app called '$k' (rog notes snapshots disks keys docs music video recorder chats weather calendar fonts text camera software)" >&2; exit 2; }
+        [ "$known" = 1 ] || { echo "no app called '$k' (settings rog notes snapshots disks keys docs music video recorder chats weather calendar fonts text camera software)" >&2; exit 2; }
     done
 fi
 
