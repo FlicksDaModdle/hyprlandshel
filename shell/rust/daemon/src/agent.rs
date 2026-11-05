@@ -536,11 +536,27 @@ fn register_bt_agent(conn: &Connection) {
         }
     }
     // The default agent is the one asked about pairings nobody here started.
+    // A second daemon (Settings' own, HYPRSHELL_AGENT=quiet) answers only
+    // for the pairings it starts, and leaves the default to the shell's.
+    if quiet() {
+        out::emit(json!({ "ev": "bt-agent", "ok": true, "default": false }));
+        return;
+    }
     let def = conn.call_method(Some(BLUEZ), "/org/bluez", Some("org.bluez.AgentManager1"), "RequestDefaultAgent", &(&me,));
     out::emit(json!({ "ev": "bt-agent", "ok": true, "default": def.is_ok() }));
 }
 
+/// HYPRSHELL_AGENT=quiet: a daemon beside the shell's (Settings'), which
+/// must not take the shell's place as the default Bluetooth agent or as
+/// NetworkManager's secret agent.
+fn quiet() -> bool {
+    std::env::var("HYPRSHELL_AGENT").is_ok_and(|v| v == "quiet")
+}
+
 fn register_nm_agent(conn: &Connection) {
+    if quiet() {
+        return;
+    }
     let r = conn.call_method(Some(NM), "/org/freedesktop/NetworkManager/AgentManager", Some("org.freedesktop.NetworkManager.AgentManager"), "RegisterWithCapabilities", &("org.hyprshell.agent", 0u32));
     let mut ev = json!({ "ev": "nm-agent", "ok": r.is_ok() });
     if let Err(e) = r {

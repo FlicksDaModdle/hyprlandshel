@@ -1,0 +1,178 @@
+// Pieces the panels share: Segmented.qml, NetButton.qml, NetField.qml,
+// SignalBars.qml, and the panels' captions, cards and lines.
+
+import { Theme, Icon } from "@kit";
+
+export component Segmented inherits Rectangle {
+    in property <[string]> options;
+    in property <int> current;
+    callback picked(int);
+    height: 30px;
+    min-width: lay.min-width;
+    border-radius: Theme.r-sm;
+    background: Theme.hover;
+    // Every cell as wide as the widest label, so the pill fits each.
+    sizer := VerticalLayout {
+        visible: false;
+        for o in root.options: Text { text: o; font-size: Theme.fs(12); font-weight: 600; }
+    }
+    if root.current >= 0 && root.options.length > 0: Rectangle {
+        y: 3px;
+        height: parent.height - 6px;
+        border-radius: Theme.r-sm - 3px;
+        background: Theme.accent;
+        width: (root.width - 6px) / root.options.length;
+        x: 3px + root.current * self.width;
+        animate x { duration: Theme.t(320); easing: spring(0.25); }
+    }
+    lay := HorizontalLayout {
+        padding: 3px;
+        for o[i] in root.options: Rectangle {
+            min-width: sizer.preferred-width + 24px;
+            horizontal-stretch: 1;
+            Text {
+                text: o;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: Theme.fs(12);
+                font-weight: 600;
+                color: i == root.current ? Theme.ink-on-accent : Theme.ink2;
+            }
+            TouchArea { mouse-cursor: pointer; clicked => { root.picked(i); } }
+        }
+    }
+}
+
+// NetButton.qml: quiet, primary (accent) or danger (accent text).
+export component NetButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary;
+    in property <bool> danger;
+    in property <bool> active: true;
+    callback clicked();
+    width: t.preferred-width + 26px;
+    height: 30px;
+    border-radius: Theme.r-sm;
+    opacity: root.active ? 1 : 0.45;
+    background: root.primary ? Theme.accent : (ta.has-hover && root.active ? Theme.sel : Theme.hover);
+    border-width: root.primary ? 0px : 1px;
+    border-color: Theme.rule;
+    t := Text {
+        text: root.label;
+        font-size: Theme.fs(12);
+        font-weight: 600;
+        color: root.primary ? Theme.ink-on-accent : root.danger ? Theme.accent : Theme.ink;
+    }
+    ta := TouchArea {
+        enabled: root.active;
+        mouse-cursor: root.active ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+// NetField.qml: a label, the field (a secret one with Show / Hide), a hint.
+// At most `cap` wide, at the start of the space it is given; the cap is
+// inside, so it doesn't narrow the layout around it.
+export component NetField inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> hint;
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> secret;
+    in property <length> cap: 360px;
+    property <bool> reveal;
+    callback edited(string);
+    callback accepted();
+    VerticalLayout {
+        max-width: root.cap;
+        horizontal-stretch: 1;
+        spacing: 5px;
+        if root.label != "": Text { text: root.label; font-size: Theme.fs(12); font-weight: 500; color: Theme.ink2; }
+        Rectangle {
+            height: 34px;
+            border-radius: Theme.r-sm;
+            background: Theme.ground;
+            border-width: f.has-focus ? 2px : 1px;
+            border-color: f.has-focus ? Theme.accent : Theme.rule;
+            f := TextInput {
+                x: 11px;
+                width: parent.width - 11px - (root.secret ? 40px : 11px);
+                vertical-alignment: center;
+                text <=> root.text;
+                font-size: Theme.fs(13);
+                color: Theme.ink;
+                single-line: true;
+                input-type: root.secret && !root.reveal ? InputType.password : InputType.text;
+                edited => { root.edited(self.text); }
+                accepted => { root.accepted(); }
+            }
+            if f.text == "": Text {
+                x: 11px;
+                vertical-alignment: center;
+                text: root.placeholder;
+                font-size: Theme.fs(13);
+                color: Theme.ink3;
+            }
+            if root.secret: Text {
+                x: parent.width - self.width - 10px;
+                vertical-alignment: center;
+                text: root.reveal ? "Hide" : "Show";
+                font-size: Theme.fs(11);
+                font-weight: 600;
+                color: eye.has-hover ? Theme.ink : Theme.ink3;
+                eye := TouchArea { mouse-cursor: pointer; clicked => { root.reveal = !root.reveal; } }
+            }
+        }
+        if root.hint != "": Text { text: root.hint; wrap: word-wrap; font-size: Theme.fs(11); color: Theme.ink3; }
+    }
+    Rectangle { horizontal-stretch: 0.001; }
+}
+
+// SignalBars.qml: four bars, `lit` of them lit.
+export component SignalBars inherits HorizontalLayout {
+    in property <int> lit;
+    in property <color> on: Theme.ink;
+    spacing: 2px;
+    height: 14px;
+    for i in 4: VerticalLayout {
+        alignment: end;
+        Rectangle {
+            width: 3px;
+            height: 4px + i * 3.3px;
+            border-radius: 1px;
+            background: i < root.lit ? root.on : Theme.rule.with-alpha(0.6);
+        }
+    }
+}
+
+// The panels' section title.
+export component Caption inherits Text {
+    font-size: Theme.fs(12);
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: Theme.ink3;
+}
+
+// A line of explanation.
+export component Line inherits Text {
+    wrap: word-wrap;
+    font-size: Theme.fs(12);
+    color: Theme.ink3;
+}
+
+// A panel's card.
+export component Card inherits Rectangle {
+    border-radius: Theme.r;
+    background: Theme.hover;
+    border-width: 1px;
+    border-color: Theme.rule;
+}
+
+// A link-like word (Look again, Show all, More options).
+export component Link inherits Text {
+    callback clicked();
+    font-size: Theme.fs(12);
+    font-weight: 600;
+    color: lta.has-hover ? Theme.ink : Theme.accent;
+    lta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}

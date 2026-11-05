@@ -4,8 +4,10 @@
 // comes from src/rows.rs, Settings.qml's rows ported row for row.
 
 import { Theme, Icons, Win, KitWindow, Icon, Switch, Slider, Scroll } from "@kit";
+import { Segmented } from "common.slint";
+import { WifiPanel, Wifi, WifiNet, KV, SavedNet } from "wifi.slint";
 
-export { Theme, Icons, Win }
+export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet }
 
 export struct Btn { label: string, quiet: bool, enabled: bool }
 
@@ -69,46 +71,6 @@ export global Prefs {
 }
 
 // ── controls ─────────────────────────────────────────────────────────────
-
-component Segmented inherits Rectangle {
-    in property <[string]> options;
-    in property <int> current;
-    callback picked(int);
-    height: 30px;
-    min-width: lay.min-width;
-    border-radius: Theme.r-sm;
-    background: Theme.hover;
-    if root.current >= 0 && root.options.length > 0: Rectangle {
-        y: 3px;
-        height: parent.height - 6px;
-        border-radius: Theme.r-sm - 3px;
-        background: Theme.accent;
-        width: (root.width - 6px) / root.options.length;
-        x: 3px + root.current * self.width;
-        animate x { duration: Theme.t(320); easing: spring(0.25); }
-    }
-    // Every cell as wide as the widest label, so the pill fits each.
-    sizer := VerticalLayout {
-        visible: false;
-        for o in root.options: Text { text: o; font-size: Theme.fs(12); font-weight: 600; }
-    }
-    lay := HorizontalLayout {
-        padding: 3px;
-        for o[i] in root.options: Rectangle {
-            min-width: sizer.preferred-width + 24px;
-            horizontal-stretch: 1;
-            t := Text {
-                text: o;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                font-size: Theme.fs(12);
-                font-weight: 600;
-                color: i == root.current ? Theme.ink-on-accent : Theme.ink2;
-            }
-            TouchArea { mouse-cursor: pointer; clicked => { root.picked(i); } }
-        }
-    }
-}
 
 component AccentButton inherits Rectangle {
     in property <string> text;
@@ -699,7 +661,8 @@ component SettingsRow inherits Rectangle {
             ThemeTile { label: "Dark"; mode: "dark"; chosen: item.value == "dark"; picked => { Prefs.set-text(root.index, "dark"); } }
             ThemeTile { label: "Auto"; mode: "auto"; chosen: item.value == "auto"; picked => { Prefs.set-text(root.index, "auto"); } }
         }
-        if item.kind == "panel": PanelCard {
+        if item.kind == "panel" && item.panel == "wifi": WifiPanel { horizontal-stretch: 1; }
+        if item.kind == "panel" && item.panel != "wifi": PanelCard {
             horizontal-stretch: 1;
             panel: item.panel;
             press(i) => { Prefs.press(root.index, i); }

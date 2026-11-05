@@ -1,0 +1,485 @@
+// Settings → Network: WifiPanel.qml. The switch and what is connected at
+// the top, the networks in range each opening in place to what it needs
+// (Connect, a password, or a university sign-in with its options), a
+// hidden network, saved networks out of range, and NetworkManager's
+// editor. What it shows comes from src/net.rs.
+
+import { Theme, Icon, Switch } from "@kit";
+import { Segmented, NetButton, NetField, SignalBars, Caption, Line, Card, Link } from "common.slint";
+
+export struct KV { k: string, v: string }
+export struct WifiNet {
+    ssid: string,
+    bars: int,
+    secured: bool,
+    enterprise: bool,
+    saved: bool,
+    saved-enterprise: bool,
+    autoconnect: bool,
+    sub: string,
+    bad: bool,
+    err: string,
+    busy: bool,
+    signin: string,
+}
+export struct SavedNet { ssid: string, uuid: string, sub: string }
+
+export global Wifi {
+    in property <bool> available;
+    in property <bool> missing;
+    in property <bool> wifi-on;
+    in property <bool> connected;
+    in property <string> title;
+    in property <string> sub;
+    in property <bool> show-details;
+    in property <[KV]> details;
+    in property <bool> has-profile;
+    in property <bool> autoconnect;
+    in property <bool> scanning;
+    in property <[WifiNet]> networks;
+    in property <int> more;
+    in property <bool> show-all;
+    in property <string> open-ssid;
+    in property <bool> edit-signin;
+    in property <bool> new-password;
+    in property <bool> hidden-open;
+    in property <string> hidden-err;
+    in property <bool> hidden-busy;
+    in property <[SavedNet]> away;
+    in property <bool> show-saved;
+    in property <string> vpn;
+    // The form (WifiPanel's f* properties), typed into here.
+    in-out property <string> f-password;
+    in-out property <string> f-identity;
+    in-out property <string> f-eap: "peap";
+    in-out property <string> f-phase2: "mschapv2";
+    in-out property <string> f-ca: "none";
+    in-out property <string> f-ca-file;
+    in-out property <string> f-domain;
+    in-out property <string> f-anon;
+    in-out property <bool> f-more;
+    in-out property <string> h-name;
+    in-out property <string> h-kind: "psk";
+    callback set-wifi(bool);
+    callback disconnect();
+    callback toggle-details();
+    callback current-autoconnect(bool);
+    callback forget-current();
+    callback scan();
+    callback open-row(string);
+    callback join(string, string);
+    callback new-password-mode();
+    callback change-signin(string);
+    callback cancel-edit();
+    callback forget(string);
+    callback row-autoconnect(string, bool);
+    callback close-row();
+    callback join-enterprise(string, bool);
+    callback toggle-all();
+    callback toggle-hidden();
+    callback join-hidden();
+    callback toggle-saved();
+    callback forget-uuid(string);
+    callback open-editor();
+    callback pick-ca();
+}
+
+// The university sign-in: KDE's options (WifiPanel's signInForm).
+component SignIn inherits VerticalLayout {
+    in property <string> target;
+    in property <bool> saved;
+    in property <bool> busy;
+    in property <bool> hidden;
+    spacing: 12px;
+    Line { text: "This network signs you in with your own account — usually your university or work email and password (eduroam: your full email address)."; }
+    NetField {
+                label: "Username";
+        placeholder: "name@university.edu";
+        text <=> Wifi.f-identity;
+    }
+    NetField {
+                label: "Password";
+        placeholder: root.saved ? "Unchanged" : "";
+        secret: true;
+        text <=> Wifi.f-password;
+    }
+    HorizontalLayout {
+        alignment: start;
+        Link { text: Wifi.f-more ? "Fewer options" : "More options"; clicked => { Wifi.f-more = !Wifi.f-more; } }
+    }
+    if Wifi.f-more: VerticalLayout {
+        spacing: 12px;
+        Line { text: "Your university's IT pages list these, often under \"eduroam\" or \"Wi-Fi on Linux\". PEAP with MSCHAPv2 is the most common; TTLS with PAP is next."; }
+        VerticalLayout {
+            spacing: 5px;
+            Text { text: "Sign-in method"; font-size: Theme.fs(12); font-weight: 500; color: Theme.ink2; }
+            HorizontalLayout {
+                alignment: start;
+                Segmented {
+                    options: ["PEAP", "TTLS", "PWD"];
+                    current: Wifi.f-eap == "peap" ? 0 : Wifi.f-eap == "ttls" ? 1 : Wifi.f-eap == "pwd" ? 2 : -1;
+                    picked(i) => {
+                        Wifi.f-eap = i == 0 ? "peap" : i == 1 ? "ttls" : "pwd";
+                        if (Wifi.f-eap == "ttls" && Wifi.f-phase2 == "mschapv2") { Wifi.f-phase2 = "pap"; }
+                        if (Wifi.f-eap == "peap" && Wifi.f-phase2 == "pap") { Wifi.f-phase2 = "mschapv2"; }
+                    }
+                }
+            }
+        }
+        if Wifi.f-eap != "pwd": VerticalLayout {
+            spacing: 5px;
+            Text { text: "Inner authentication"; font-size: Theme.fs(12); font-weight: 500; color: Theme.ink2; }
+            HorizontalLayout {
+                alignment: start;
+                if Wifi.f-eap == "ttls": Segmented {
+                    options: ["PAP", "MSCHAPv2", "MSCHAP", "CHAP"];
+                    current: Wifi.f-phase2 == "pap" ? 0 : Wifi.f-phase2 == "mschapv2" ? 1 : Wifi.f-phase2 == "mschap" ? 2 : Wifi.f-phase2 == "chap" ? 3 : -1;
+                    picked(i) => { Wifi.f-phase2 = i == 0 ? "pap" : i == 1 ? "mschapv2" : i == 2 ? "mschap" : "chap"; }
+                }
+                if Wifi.f-eap != "ttls": Segmented {
+                    options: ["MSCHAPv2", "GTC", "MD5"];
+                    current: Wifi.f-phase2 == "mschapv2" ? 0 : Wifi.f-phase2 == "gtc" ? 1 : Wifi.f-phase2 == "md5" ? 2 : -1;
+                    picked(i) => { Wifi.f-phase2 = i == 0 ? "mschapv2" : i == 1 ? "gtc" : "md5"; }
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: 5px;
+            Text { text: "Server certificate"; font-size: Theme.fs(12); font-weight: 500; color: Theme.ink2; }
+            HorizontalLayout {
+                alignment: start;
+                Segmented {
+                    options: ["Don't check", "System's", "File…"];
+                    current: Wifi.f-ca == "none" ? 0 : Wifi.f-ca == "system" ? 1 : 2;
+                    picked(i) => {
+                        Wifi.f-ca = i == 0 ? "none" : i == 1 ? "system" : "file";
+                        if (Wifi.f-ca == "file" && Wifi.f-ca-file == "") { Wifi.pick-ca(); }
+                    }
+                }
+            }
+            Line {
+                text: Wifi.f-ca == "none"
+                    ? "Joins without checking it's really your university's network. Works everywhere, but a fake network with the same name could collect your password."
+                    : Wifi.f-ca == "system"
+                    ? "Checks the server against the certificates this computer trusts. Add the domain below too."
+                    : (Wifi.f-ca-file != "" ? Wifi.f-ca-file : "No file chosen");
+            }
+            if Wifi.f-ca == "file": HorizontalLayout {
+                alignment: start;
+                NetButton { label: Wifi.f-ca-file == "" ? "Choose file…" : "Change file…"; clicked => { Wifi.pick-ca(); } }
+            }
+        }
+        NetField {
+                        label: "Domain";
+            placeholder: "radius.university.edu";
+            hint: "Optional. The server's name must end in this — what makes the certificate check mean something.";
+            text <=> Wifi.f-domain;
+        }
+        NetField {
+                        label: "Anonymous identity";
+            placeholder: "anonymous@university.edu";
+            hint: "Optional. What's sent before the encrypted part; some networks ask for one.";
+            text <=> Wifi.f-anon;
+        }
+    }
+    HorizontalLayout {
+        alignment: start;
+        spacing: 8px;
+        NetButton {
+            label: root.busy ? "Connecting…" : root.saved ? "Save and connect" : "Connect";
+            primary: true;
+            active: !root.busy && Wifi.f-identity != "" && (Wifi.f-password != "" || root.saved);
+            clicked => { Wifi.join-enterprise(root.target, root.hidden); }
+        }
+        NetButton { label: "Cancel"; clicked => { Wifi.cancel-edit(); } }
+    }
+}
+
+// One network in range, opening in place.
+component NetRow inherits Rectangle {
+    in property <WifiNet> net;
+    property <bool> open: Wifi.open-ssid == net.ssid;
+    border-radius: Theme.r-sm;
+    background: root.open || head.has-hover ? Theme.hover : transparent;
+    border-width: root.open ? 1px : 0px;
+    border-color: Theme.rule;
+    height: col.preferred-height;
+    col := VerticalLayout {
+        Rectangle {
+            height: 52px;
+            head := TouchArea { mouse-cursor: pointer; clicked => { Wifi.open-row(root.net.ssid); } }
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 14px;
+                VerticalLayout { alignment: center; SignalBars { lit: root.net.bars; } }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        alignment: start;
+                        spacing: 6px;
+                        Text { text: root.net.ssid; overflow: elide; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+                        if root.net.secured: VerticalLayout { alignment: center; Icon { name: "lock"; size: 12px; ink: Theme.ink3; } }
+                    }
+                    Text {
+                        text: root.net.sub;
+                        overflow: elide;
+                        font-size: Theme.fs(12);
+                        color: root.net.bad ? #d93a2b : Theme.ink3;
+                    }
+                }
+                VerticalLayout { alignment: center; Icon { name: root.open ? "chevronUp" : "chevronDown"; size: 14px; ink: Theme.ink3; } }
+            }
+        }
+        // What opening it offers.
+        if root.open: VerticalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            padding-bottom: 14px;
+            spacing: 12px;
+            if root.net.err != "": Line { text: root.net.err; color: #d93a2b; }
+            // ── saved ───────────────────────────────────────────────
+            if root.net.saved: VerticalLayout {
+                spacing: 12px;
+                if root.net.saved-enterprise: Line { text: root.net.signin; }
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 8px;
+                    if !Wifi.edit-signin && !Wifi.new-password: NetButton {
+                        label: root.net.busy ? "Connecting…" : "Connect";
+                        primary: true;
+                        active: !root.net.busy;
+                        clicked => { Wifi.join(root.net.ssid, ""); }
+                    }
+                    if !root.net.saved-enterprise && !Wifi.new-password: NetButton { label: "New password"; clicked => { Wifi.new-password-mode(); } }
+                    if root.net.saved-enterprise && !Wifi.edit-signin: NetButton { label: "Change sign-in"; clicked => { Wifi.change-signin(root.net.ssid); } }
+                    NetButton { label: "Forget"; danger: true; clicked => { Wifi.forget(root.net.ssid); } }
+                }
+                if !Wifi.edit-signin && !Wifi.new-password: HorizontalLayout {
+                    alignment: start;
+                    spacing: 10px;
+                    VerticalLayout { alignment: center; Switch { on: root.net.autoconnect; toggled(v) => { Wifi.row-autoconnect(root.net.ssid, v); } } }
+                    Text { vertical-alignment: center; text: "Connect automatically"; font-size: Theme.fs(12); color: Theme.ink; }
+                }
+            }
+            // ── a password (new home network, or a saved one's new one) ──
+            if (!root.net.saved && root.net.secured && !root.net.enterprise) || Wifi.new-password: VerticalLayout {
+                spacing: 12px;
+                NetField {
+                                        label: "Password";
+                    secret: true;
+                    text <=> Wifi.f-password;
+                    accepted => { if (Wifi.f-password != "") { Wifi.join(root.net.ssid, Wifi.f-password); } }
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 8px;
+                    NetButton {
+                        label: root.net.busy ? "Connecting…" : "Connect";
+                        primary: true;
+                        active: Wifi.f-password != "" && !root.net.busy;
+                        clicked => { Wifi.join(root.net.ssid, Wifi.f-password); }
+                    }
+                    NetButton { label: "Cancel"; clicked => { Wifi.close-row(); } }
+                }
+            }
+            // ── open, new ───────────────────────────────────────────
+            if !root.net.saved && !root.net.secured: VerticalLayout {
+                spacing: 10px;
+                Line { text: "An open network: anyone nearby can see what you send over it that isn't encrypted."; }
+                HorizontalLayout {
+                    alignment: start;
+                    NetButton {
+                        label: root.net.busy ? "Connecting…" : "Connect";
+                        primary: true;
+                        active: !root.net.busy;
+                        clicked => { Wifi.join(root.net.ssid, ""); }
+                    }
+                }
+            }
+            // ── sign-in: new university network, or a saved one's ───
+            if (!root.net.saved && root.net.enterprise) || Wifi.edit-signin: SignIn {
+                target: root.net.ssid;
+                saved: root.net.saved;
+                busy: root.net.busy;
+            }
+        }
+    }
+}
+
+export component WifiPanel inherits VerticalLayout {
+    spacing: 16px;
+
+    // ══ NetworkManager not running ═══════════════════════════════════
+    if !Wifi.available: Card {
+        height: nonm.preferred-height + 32px;
+        nonm := VerticalLayout {
+            x: 16px;
+            y: 16px;
+            width: parent.width - 32px;
+            spacing: 4px;
+            Text {
+                text: Wifi.missing ? "hyprshell-daemon isn't installed" : "NetworkManager isn't running";
+                font-size: Theme.fs(14);
+                font-weight: 600;
+                color: Theme.ink;
+            }
+            Line {
+                text: Wifi.missing
+                    ? "Settings reaches NetworkManager through it. shell/install.sh builds it when cargo is installed."
+                    : "The shell reads and drives the network through it. Start it with: sudo systemctl enable --now NetworkManager";
+            }
+        }
+    }
+
+    // ══ the switch, and what is connected ════════════════════════════
+    if Wifi.available: Card {
+        height: top.preferred-height + 32px;
+        top := VerticalLayout {
+            x: 16px;
+            y: 16px;
+            width: parent.width - 32px;
+            spacing: 14px;
+            HorizontalLayout {
+                height: 40px;
+                spacing: 12px;
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: Wifi.wifi-on ? Theme.accent : Theme.rule;
+                    Icon {
+                        x: 10px;
+                        y: 10px;
+                        name: Wifi.wifi-on ? "wifi" : "wifiOff";
+                        size: 20px;
+                        ink: Wifi.wifi-on ? Theme.ink-on-accent : Theme.ink2;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: Wifi.title; overflow: elide; font-size: Theme.fs(15); font-weight: 600; color: Theme.ink; }
+                    Text { text: Wifi.sub; overflow: elide; font-size: Theme.fs(12); color: Theme.ink3; }
+                }
+                VerticalLayout { alignment: center; Switch { on: Wifi.wifi-on; toggled(v) => { Wifi.set-wifi(v); } } }
+            }
+            // Connected: what about it, and what to do with it.
+            if Wifi.connected: HorizontalLayout {
+                alignment: start;
+                spacing: 8px;
+                NetButton { label: "Disconnect"; clicked => { Wifi.disconnect(); } }
+                NetButton { label: Wifi.show-details ? "Hide details" : "Details"; clicked => { Wifi.toggle-details(); } }
+            }
+            if Wifi.connected && Wifi.show-details: VerticalLayout {
+                spacing: 6px;
+                for d in Wifi.details: HorizontalLayout {
+                    spacing: 24px;
+                    Text { width: 130px; text: d.k; font-size: Theme.fs(12); color: Theme.ink3; }
+                    Text { text: d.v; font-size: Theme.fs(12); font-family: "JetBrains Mono"; color: Theme.ink; }
+                }
+            }
+            if Wifi.connected && Wifi.show-details && Wifi.has-profile: HorizontalLayout {
+                alignment: start;
+                spacing: 10px;
+                VerticalLayout { alignment: center; Switch { on: Wifi.autoconnect; toggled(v) => { Wifi.current-autoconnect(v); } } }
+                Text { vertical-alignment: center; text: "Connect automatically"; font-size: Theme.fs(12); color: Theme.ink; }
+                Rectangle { width: 12px; }
+                NetButton { label: "Forget"; danger: true; clicked => { Wifi.forget-current(); } }
+            }
+        }
+    }
+
+    // ══ networks in range ════════════════════════════════════════════
+    if Wifi.available && Wifi.wifi-on: HorizontalLayout {
+        height: 26px;
+        Caption { vertical-alignment: center; text: "NETWORKS"; horizontal-stretch: 1; }
+        Link { vertical-alignment: center; text: Wifi.scanning ? "Looking…" : "Look again"; clicked => { Wifi.scan(); } }
+    }
+    if Wifi.available && Wifi.wifi-on: VerticalLayout {
+        spacing: 2px;
+        for n in Wifi.networks: NetRow { net: n; }
+        if Wifi.more > 12: HorizontalLayout {
+            alignment: start;
+            padding-top: 6px;
+            Link { text: Wifi.show-all ? "Show fewer" : "Show all " + Wifi.more + " networks"; clicked => { Wifi.toggle-all(); } }
+        }
+        if Wifi.networks.length == 0: Line { text: Wifi.scanning ? "Looking for networks…" : "No other networks in range."; }
+    }
+
+    // ══ a hidden network ═════════════════════════════════════════════
+    if Wifi.available && Wifi.wifi-on: VerticalLayout {
+        spacing: 12px;
+        HorizontalLayout {
+            alignment: start;
+            Text {
+                text: Wifi.hidden-open ? "Hidden network" : "Join a hidden network…";
+                font-size: Theme.fs(12);
+                font-weight: 600;
+                color: Wifi.hidden-open ? Theme.ink : Theme.accent;
+                TouchArea { mouse-cursor: pointer; clicked => { Wifi.toggle-hidden(); } }
+            }
+        }
+        if Wifi.hidden-open: VerticalLayout {
+            spacing: 12px;
+            NetField { label: "Network name"; text <=> Wifi.h-name; }
+            HorizontalLayout {
+                alignment: start;
+                Segmented {
+                    options: ["Password", "Sign-in", "Open"];
+                    current: Wifi.h-kind == "psk" ? 0 : Wifi.h-kind == "enterprise" ? 1 : 2;
+                    picked(i) => { Wifi.h-kind = i == 0 ? "psk" : i == 1 ? "enterprise" : "open"; }
+                }
+            }
+            if Wifi.h-kind == "psk": NetField { label: "Password"; secret: true; text <=> Wifi.f-password; }
+            if Wifi.h-kind == "enterprise": SignIn { target: Wifi.h-name; saved: false; busy: Wifi.hidden-busy; hidden: true; }
+            if Wifi.h-kind != "enterprise": HorizontalLayout {
+                alignment: start;
+                spacing: 8px;
+                NetButton {
+                    label: Wifi.hidden-busy ? "Connecting…" : "Connect";
+                    primary: true;
+                    active: Wifi.h-name != "" && (Wifi.h-kind == "open" || Wifi.f-password != "");
+                    clicked => { Wifi.join-hidden(); }
+                }
+                NetButton { label: "Cancel"; clicked => { Wifi.toggle-hidden(); } }
+            }
+            if Wifi.hidden-err != "": Line { text: Wifi.hidden-err; color: #d93a2b; }
+        }
+    }
+
+    // ══ saved, not in range ══════════════════════════════════════════
+    if Wifi.available && Wifi.away.length > 0: VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            height: 26px;
+            Caption { vertical-alignment: center; text: "SAVED NETWORKS"; horizontal-stretch: 1; }
+            Link { vertical-alignment: center; text: Wifi.show-saved ? "Hide" : "Show " + Wifi.away.length; clicked => { Wifi.toggle-saved(); } }
+        }
+        if Wifi.show-saved: VerticalLayout {
+            for a in Wifi.away: HorizontalLayout {
+                height: 44px;
+                padding-left: 14px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: a.ssid; font-size: Theme.fs(13); font-weight: 500; color: Theme.ink; }
+                    Text { text: a.sub; font-size: Theme.fs(11); color: Theme.ink3; }
+                }
+                VerticalLayout { alignment: center; NetButton { label: "Forget"; danger: true; clicked => { Wifi.forget-uuid(a.uuid); } } }
+            }
+        }
+    }
+
+    // ══ the rest ═════════════════════════════════════════════════════
+    if Wifi.available: VerticalLayout {
+        spacing: 8px;
+        if Wifi.vpn != "": Line { text: Wifi.vpn; }
+        HorizontalLayout { alignment: start; NetButton { label: "All connections…"; clicked => { Wifi.open-editor(); } } }
+        Line { text: "Wired, VPN and anything not covered here are in NetworkManager's own editor (nm-connection-editor)."; }
+    }
+}

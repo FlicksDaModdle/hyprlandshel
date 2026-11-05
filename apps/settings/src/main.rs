@@ -11,7 +11,9 @@
 //!                               binds.lua) and exit; the shell runs this at
 //!                               login, as Quickshell's Devices.qml did
 
+mod daemon;
 mod display;
+mod net;
 mod hypr;
 mod prefs;
 mod rows;
@@ -37,6 +39,15 @@ struct State {
     seen: Option<SystemTime>,
     /// A row to flash once the pane is up (the search's pick).
     flash: Option<String>,
+    /// Settings' own hyprshell-daemon, started when a panel first needs it.
+    daemon: Option<daemon::Daemon>,
+    net: net::Net,
+}
+
+impl State {
+    fn daemon(&mut self) -> &mut daemon::Daemon {
+        self.daemon.get_or_insert_with(daemon::Daemon::start)
+    }
 }
 
 fn mtime() -> Option<SystemTime> {
@@ -98,6 +109,16 @@ fn show(ui: &AppWindow, st: &mut State) {
     g.set_shorts(ModelRc::new(VecModel::from(specs.iter().map(|r| SharedString::from(short(&r.row.s))).collect::<Vec<_>>())));
     g.set_rows(ModelRc::new(VecModel::from(specs.iter().map(|r| r.row.clone()).collect::<Vec<_>>())));
     st.specs = specs;
+    // The live panels: what they show, kept up only while they're up.
+    let on_net = pane == "Network";
+    if on_net || st.daemon.is_some() {
+        let mut net = std::mem::take(&mut st.net);
+        net.watch(st.daemon(), on_net);
+        if on_net {
+            net.publish(ui);
+        }
+        st.net = net;
+    }
 }
 
 fn open_pane(ui: &AppWindow, st: &mut State, pane: &str) {
@@ -246,6 +267,8 @@ fn main() {
         hits: vec![],
         seen: None,
         flash: None,
+        daemon: None,
+        net: net::Net::default(),
     }));
     show(&ui, &mut st.borrow_mut());
 
@@ -531,6 +554,32 @@ fn main() {
         });
     }
 
+    // The daemon's events, as they come.
+    let pump = slint::Timer::default();
+    {
+        let weak = ui.as_weak();
+        let st = st.clone();
+        pump.start(slint::TimerMode::Repeated, Duration::from_millis(80), move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut s = st.borrow_mut();
+            let Some(d) = s.daemon.as_mut() else { return };
+            let evs: Vec<serde_json::Value> = d.rx.try_iter().collect();
+            if evs.is_empty() {
+                return;
+            }
+            let mut net = std::mem::take(&mut s.net);
+            let mut changed = false;
+            for ev in &evs {
+                changed |= net.event(s.daemon(), ev);
+            }
+            if changed && s.c.ui.pane == "Network" {
+                net.publish(&ui);
+            }
+            s.net = net;
+        });
+    }
+    wire_wifi(&ui, &st);
+
     // Edits made elsewhere: shown within a second.
     let poll = slint::Timer::default();
     {
@@ -560,4 +609,132 @@ fn main() {
     }
 
     ui.run().expect("run");
+}
+
+/// Settings → Network's panel: WifiPanel.qml's handlers.
+fn wire_wifi(ui: &AppWindow, st: &Rc<RefCell<State>>) {
+    let w = ui.global::<Wifi>();
+    // Runs `f` on the network model and the daemon, then redraws the panel.
+    let with = {
+        let weak = ui.as_weak();
+        let st = st.clone();
+        Rc::new(move |f: &dyn Fn(&mut net::Net, &mut daemon::Daemon, &AppWindow)| {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut s = st.borrow_mut();
+            let mut n = std::mem::take(&mut s.net);
+            f(&mut n, s.daemon(), &ui);
+            n.publish(&ui);
+            s.net = n;
+        })
+    };
+    // on!(callback, [args], |n, d, ui| body): the panel's handler.
+    macro_rules! on {
+        ($name:ident, [$($a:ident : $t:ty),*], |$n:ident, $d:ident, $ui:ident| $body:expr) => {{
+            let with = with.clone();
+            w.$name(move |$($a: $t),*| {
+                with(&|$n: &mut net::Net, $d: &mut daemon::Daemon, $ui: &AppWindow| {
+                    let _ = (&$n, &$d, &$ui);
+                    $body;
+                })
+            });
+        }};
+    }
+    on!(on_set_wifi, [v: bool], |n, d, _ui| n.set_wifi(d, v));
+    on!(on_disconnect, [], |n, d, _ui| n.disconnect(d));
+    on!(on_toggle_details, [], |n, _d, _ui| n.show_details = !n.show_details);
+    on!(on_current_autoconnect, [v: bool], |n, d, _ui| {
+        if let Some(u) = n.profile_for(&n.ssid.clone()).map(|p| p.uuid.clone()) {
+            n.set_autoconnect(d, &u, v);
+        }
+    });
+    on!(on_forget_current, [], |n, d, _ui| {
+        let ssid = n.ssid.clone();
+        n.forget(d, &ssid);
+        n.show_details = false;
+    });
+    on!(on_scan, [], |n, d, _ui| n.scan(d));
+    on!(on_open_row, [ssid: SharedString], |n, d, ui| {
+        net::reset_form(ui);
+        n.open_row(d, &ssid);
+    });
+    on!(on_join, [ssid: SharedString, pw: SharedString], |n, d, _ui| n.join(d, &ssid, &pw));
+    on!(on_new_password_mode, [], |n, _d, _ui| n.new_password = true);
+    on!(on_change_signin, [ssid: SharedString], |n, _d, ui| {
+        n.prefill(ui, &ssid);
+        n.edit_signin = true;
+    });
+    on!(on_cancel_edit, [], |n, _d, _ui| {
+        if n.edit_signin {
+            n.edit_signin = false;
+        } else {
+            n.open_ssid.clear();
+            n.hidden_open = false;
+            n.list = n.networks.iter().filter(|x| !x.in_use).cloned().collect();
+        }
+    });
+    on!(on_forget, [ssid: SharedString], |n, d, _ui| {
+        n.forget(d, &ssid);
+        n.open_ssid.clear();
+    });
+    on!(on_row_autoconnect, [ssid: SharedString, v: bool], |n, d, _ui| {
+        if let Some(u) = n.profile_for(&ssid).map(|p| p.uuid.clone()) {
+            n.set_autoconnect(d, &u, v);
+        }
+    });
+    on!(on_close_row, [], |n, _d, _ui| {
+        n.open_ssid.clear();
+        n.list = n.networks.iter().filter(|x| !x.in_use).cloned().collect();
+    });
+    on!(on_join_enterprise, [target: SharedString, hidden: bool], |n, d, ui| {
+        let w = ui.global::<Wifi>();
+        let ca = if w.get_f_ca() == "file" {
+            let f = w.get_f_ca_file();
+            if f.is_empty() { "none".to_string() } else { f.to_string() }
+        } else {
+            w.get_f_ca().to_string()
+        };
+        n.join_enterprise(
+            d,
+            target.trim(),
+            w.get_f_identity().trim(),
+            &w.get_f_password(),
+            &w.get_f_eap(),
+            &w.get_f_phase2(),
+            &ca,
+            w.get_f_domain().trim(),
+            w.get_f_anon().trim(),
+            hidden,
+        );
+    });
+    on!(on_toggle_all, [], |n, _d, _ui| n.show_all = !n.show_all);
+    on!(on_toggle_hidden, [], |n, _d, ui| {
+        n.open_ssid.clear();
+        net::reset_form(ui);
+        n.hidden_open = !n.hidden_open;
+    });
+    on!(on_join_hidden, [], |n, d, ui| {
+        let w = ui.global::<Wifi>();
+        n.join_hidden(d, w.get_h_name().trim(), &w.get_h_kind(), &w.get_f_password());
+    });
+    on!(on_toggle_saved, [], |n, _d, _ui| n.show_saved = !n.show_saved);
+    on!(on_forget_uuid, [uuid: SharedString], |n, d, _ui| n.forget(d, &uuid));
+    w.on_open_editor(|| {
+        let _ = std::process::Command::new("nm-connection-editor").spawn();
+    });
+    {
+        let weak = ui.as_weak();
+        w.on_pick_ca(move || {
+            let weak = weak.clone();
+            kit::spawn(
+                || kit::portal::open_file("CA certificate", &[("Certificates", &["*.pem", "*.crt", "*.cer", "*.der"]), ("All files", &["*"])]),
+                move |f| {
+                    if let (Some(ui), Some(f)) = (weak.upgrade(), f) {
+                        let w = ui.global::<Wifi>();
+                        w.set_f_ca_file(f.display().to_string().into());
+                        w.set_f_ca("file".into());
+                    }
+                },
+            );
+        });
+    }
 }
