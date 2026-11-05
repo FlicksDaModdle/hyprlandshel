@@ -17,7 +17,11 @@ branch; the Quickshell shell stays the one in use until this has caught up.
   pointer events go back to Slint.
 - `src/hypr.rs` — Hyprland straight from its sockets: requests on
   `.socket.sock`, events from `.socket2.sock`. No `hyprctl` per question.
-- `src/sys.rs` — the battery and network from /sys.
+- `src/theme.rs` — theme.json, worked out as config/Appearance.qml does.
+- `src/daemon.rs` — hyprshell-daemon (the same one the Quickshell shell
+  runs) for the network and the sound.
+- `src/mpris.rs` — what's playing, over D-Bus.
+- `src/sys.rs` — the battery, from /sys.
 - `ui/` — the components. `ui/icons.slint` is generated from the shell's own
   glyphs by `node tools/gen-icons.js`, so both shells draw the same icons.
 
@@ -26,8 +30,20 @@ connection, the Hyprland event pipe and Slint's next timer.
 
 ## Done
 
-1. The layer-shell platform, and the top bar: workspaces (click, scroll),
-   the focused window's title, network, battery, clock.
+1. The layer-shell platform, and the top bar as modules/bar/Bar.qml lays
+   it out: the workspace capsule (focused and hovered pills open to their
+   number, dots and rings, urgent; click, scroll), the focused app with
+   its underline, Window, the title, the media pill (MPRIS: title, artist,
+   equaliser, previous / play-pause / next, seek line), notifications, the
+   status capsule (Wi-Fi name, volume — scroll to change — and battery),
+   the clock and power. Colours, accent, translucency, rounding, text size,
+   the bar's sizes, the 24-hour clock and the per-monitor shell scale come
+   from theme.json, read again when it changes.
+
+   Still to come for the bar: the tray, the indicators (recording,
+   privacy, timers, updates, mail, drives), the notification count (when
+   notifications are ported), album art, auto-hide, and the panels its
+   buttons open.
 
 ## Next
 

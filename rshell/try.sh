@@ -14,6 +14,13 @@ cd "$(dirname "$0")" || exit 1
 command -v cargo >/dev/null || { echo "cargo isn't installed: sudo pacman -S --needed rust"; exit 1; }
 echo "Building…"
 cargo build --release -q || exit 1
+# This branch's hyprshell-daemon too: the network and sound come from it,
+# and the volume it reports is new here. Without PulseAudio's headers it
+# builds without its sound part (then there's no volume in the bar).
+if cargo build --release -q --manifest-path ../shell/rust/Cargo.toml -p hyprshell-daemon 2>/dev/null \
+   || cargo build --release -q --manifest-path ../shell/rust/Cargo.toml -p hyprshell-daemon --no-default-features; then
+    export HYPRSHELL_DAEMON="$PWD/../shell/rust/target/release/hyprshell-daemon"
+fi
 
 restore() {
     pkill -x hyprshell-rs 2>/dev/null

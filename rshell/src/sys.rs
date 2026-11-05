@@ -1,5 +1,5 @@
-//! What the bar reads from the system directly: the battery and the
-//! network, from /sys, without a process or a D-Bus round trip.
+//! What the bar reads from the system directly: the battery, from /sys,
+//! without a process or a D-Bus round trip.
 
 use std::fs;
 
@@ -20,21 +20,4 @@ pub fn battery() -> Option<Battery> {
         return Some(Battery { percent, charging });
     }
     None
-}
-
-/// "wifi", "ethernet" or "offline": the first interface that is up.
-pub fn network() -> &'static str {
-    let Ok(dir) = fs::read_dir("/sys/class/net") else { return "offline" };
-    let mut wired = false;
-    for e in dir.flatten() {
-        let p = e.path();
-        if e.file_name() == "lo" || fs::read_to_string(p.join("operstate")).unwrap_or_default().trim() != "up" {
-            continue;
-        }
-        if p.join("wireless").exists() {
-            return "wifi";
-        }
-        wired = true;
-    }
-    if wired { "ethernet" } else { "offline" }
 }

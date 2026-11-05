@@ -2,122 +2,565 @@ import { Icons, GlyphData } from "icons.slint";
 import { Theme } from "theme.slint";
 import { Glyph } from "glyph.slint";
 
-export struct Workspace { id: int, occupied: bool, active: bool }
+export { Theme }
 
-// A button of the bar: a capsule that lights under the pointer, as BarButton.
+export struct Workspace { id: int, focused: bool, occupied: bool, urgent: bool }
+
+export struct MediaInfo {
+    available: bool, playing: bool, title: string, artist: string,
+    art: image, has-art: bool, progress: float, has-length: bool,
+    can-prev: bool, can-next: bool, can-toggle: bool, can-seek: bool,
+}
+
+// common/BarButton.qml: a capsule that tints under the pointer and while
+// its panel is open; 26 high, at least 26 wide, padding either side.
 component BarButton inherits Rectangle {
     in property <bool> open;
-    callback clicked();
-    callback scrolled(float);
+    in property <length> pad: 10px;
+    in property <length> gap: 8px;
+    in property <bool> interactive: true;
+    callback activated();
+    callback secondary();
+    callback scrolled(int);
     height: 26px;
+    width: max(26px, row.preferred-width + root.pad * 2);
     border-radius: Theme.r-cap;
-    background: open ? Theme.sel : touch.has-hover ? Theme.hover : transparent;
-    animate background { duration: 120ms; }
+    background: open ? Theme.sel : (touch.has-hover && interactive ? Theme.hover : transparent);
+    animate background { duration: 140ms; }
+    row := HorizontalLayout {
+        x: (parent.width - self.preferred-width) / 2;
+        width: self.preferred-width;
+        spacing: root.gap;
+        alignment: center;
+        @children
+    }
     touch := TouchArea {
+        enabled: root.interactive;
         mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-        scroll-event(e) => { root.scrolled(e.delta-y / 1px); accept }
+        clicked => { root.activated(); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) { root.secondary(); }
+        }
+        scroll-event(e) => { root.scrolled(e.delta-y > 0 ? 1 : -1); accept }
     }
 }
 
-// The top bar, as modules/bar/Bar.qml lays it out: workspaces at the left,
-// the focused window's title in the middle, the status capsule and the
-// clock at the right.
+// common/IconButton.qml, as the media controls use it.
+component IconButton inherits Rectangle {
+    in property <GlyphData> icon;
+    in property <length> size: 22px;
+    in property <length> icon-size: 13px;
+    in property <bool> accent;
+    in property <bool> enabled: true;
+    callback activated();
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    opacity: enabled ? 1 : 0.4;
+    background: accent ? Theme.accent : (t.has-hover && enabled ? Theme.hover : transparent);
+    Glyph {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        data: root.icon;
+        size: root.icon-size;
+        monochrome: true;
+        ink: root.accent ? Theme.ink-on-accent : Theme.ink;
+    }
+    t := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.activated(); }
+    }
+}
+
+// modules/bar/Workspaces.qml: a recessed capsule of pills. The focused one
+// (or the one under the pointer, or an urgent one) opens out to show its
+// number; the rest are a dot when they hold windows, a ring when empty.
+component Workspaces inherits Rectangle {
+    in property <[Workspace]> slots;
+    callback go(int);
+    callback step(int);
+    property <int> hovered-id: -1;
+    height: Theme.w(22) + Theme.w(1) * 2;
+    width: group.preferred-width + Theme.w(3) * 2;
+    border-radius: Theme.r-cap;
+    background: Theme.hover;
+    border-width: 1px;
+    border-color: Theme.rule;
+
+    TouchArea {
+        scroll-event(e) => { root.step(e.delta-y > 0 ? -1 : 1); accept }
+    }
+
+    group := HorizontalLayout {
+        x: (parent.width - self.preferred-width) / 2;
+        y: (parent.height - Theme.w(22)) / 2;
+        width: self.preferred-width;
+        height: Theme.w(22);
+        spacing: 3px;
+        for s in root.slots: Rectangle {
+            property <bool> hovered: root.hovered-id == s.id;
+            property <bool> expanded: s.focused || self.hovered || s.urgent;
+            width: Theme.w(self.expanded ? 26 : 16);
+            height: Theme.w(22);
+            animate width { duration: 310ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.15); }
+            border-radius: min(Theme.r-cap, self.height / 2);
+            background: s.focused ? Theme.accent : (self.hovered ? Theme.sel : transparent);
+            animate background { duration: 200ms; }
+
+            Text {
+                visible: parent.expanded;
+                opacity: parent.expanded ? 1 : 0;
+                animate opacity { duration: 140ms; }
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                text: s.id;
+                font-size: Theme.fs(Theme.w(11) / 1px);
+                font-weight: 700;
+                letter-spacing: 0.2px;
+                color: s.focused ? Theme.ink-on-accent : (s.urgent ? Theme.accent : Theme.ink2);
+            }
+            Rectangle {
+                visible: !parent.expanded;
+                width: Theme.w(s.occupied ? 7 : 5);
+                animate width { duration: 220ms; }
+                height: self.width;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: 2.5px;
+                background: s.occupied ? Theme.ink2 : transparent;
+                border-width: s.occupied ? 0 : 1.5px;
+                border-color: Theme.div;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                changed has-hover => {
+                    if (self.has-hover) { root.hovered-id = s.id; }
+                    else if (root.hovered-id == s.id) { root.hovered-id = -1; }
+                }
+                clicked => { root.go(s.id); }
+            }
+        }
+    }
+}
+
+// modules/bar/MediaPill.qml: what's playing, centred on the bar. Gives up
+// its text, then itself, rather than run under either side.
+component MediaPill inherits Rectangle {
+    in property <MediaInfo> media;
+    in property <length> room: 400px;
+    in property <int> eq-tick;
+    callback prev();
+    callback toggle();
+    callback next();
+    callback seek(float);
+    property <length> text-room: max(0px, min(Theme.u(168), root.room - Theme.u(151)));
+    property <bool> show-text: self.text-room >= Theme.u(70);
+    property <length> min-pill: Theme.u(148);
+    visible: media.available && root.room >= self.min-pill;
+    height: Theme.u(30);
+    width: content.preferred-width + Theme.u(8);
+    border-radius: Theme.r-cap;
+    background: hover.has-hover ? Theme.hover : transparent;
+
+    hover := TouchArea {}
+
+    content := HorizontalLayout {
+        x: Theme.u(4);
+        width: self.preferred-width;
+        spacing: Theme.u(9);
+        alignment: start;
+
+        // Album art, or the music glyph on a tile when there's none.
+        Rectangle {
+            y: (root.height - self.height) / 2;
+            width: Theme.u(22);
+            height: Theme.u(22);
+            border-radius: Theme.r-sm;
+            clip: true;
+            background: Theme.hover;
+            if root.media.has-art: Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.media.art;
+                image-fit: cover;
+            }
+            if !root.media.has-art: Glyph {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                data: Icons.music;
+                size: Theme.u(13);
+            }
+        }
+
+        if root.show-text: VerticalLayout {
+            width: root.text-room;
+            alignment: center;
+            spacing: Theme.u(3);
+            Text {
+                text: root.media.title;
+                overflow: elide;
+                font-size: Theme.fs(Theme.u(11.5) / 1px);
+                font-weight: 600;
+                color: Theme.ink;
+            }
+            if root.media.artist != "": Text {
+                text: root.media.artist;
+                overflow: elide;
+                font-size: Theme.fs(Theme.u(10) / 1px);
+                font-weight: 500;
+                color: Theme.ink3;
+            }
+        }
+
+        // The little equaliser: four bars rising and falling while it plays.
+        HorizontalLayout {
+            y: (root.height - Theme.u(12)) / 2;
+            height: Theme.u(12);
+            spacing: Theme.u(2);
+            alignment: center;
+            for i in 4: Rectangle {
+                property <float> period: 2 * (380 + i * 65);
+                property <float> t: root.eq-tick * 83 - i * 90;
+                property <float> phase: (mod(mod(self.t, self.period) + self.period, self.period)) / self.period;
+                property <float> level: root.media.playing ? 0.28 + 0.72 * (0.5 - 0.5 * cos(self.phase * 360deg)) : 0.28;
+                width: Theme.u(2);
+                Rectangle {
+                    y: parent.height - self.height;
+                    width: parent.width;
+                    height: max(1px, round(Theme.u(12) * parent.level / 1px) * 1px);
+                    border-radius: self.width / 2;
+                    background: i == 1 ? Theme.accent : Theme.ink3;
+                }
+            }
+        }
+
+        Rectangle {
+            y: (root.height - self.height) / 2;
+            width: 1px;
+            height: Theme.u(16);
+            background: Theme.div;
+        }
+
+        HorizontalLayout {
+            spacing: Theme.u(1);
+            alignment: center;
+            IconButton {
+                y: (root.height - self.height) / 2;
+                size: Theme.u(22); icon-size: Theme.u(13);
+                icon: Icons.skip-back; enabled: root.media.can-prev;
+                activated => { root.prev(); }
+            }
+            IconButton {
+                y: (root.height - self.height) / 2;
+                size: Theme.u(24); icon-size: Theme.u(13);
+                icon: root.media.playing ? Icons.pause : Icons.play; accent: true; enabled: root.media.can-toggle;
+                activated => { root.toggle(); }
+            }
+            IconButton {
+                y: (root.height - self.height) / 2;
+                size: Theme.u(22); icon-size: Theme.u(13);
+                icon: Icons.skip-forward; enabled: root.media.can-next;
+                activated => { root.next(); }
+            }
+        }
+    }
+
+    // The seek line along the bottom edge.
+    if root.media.has-length: Rectangle {
+        x: Theme.u(4);
+        width: root.width - Theme.u(8);
+        y: root.height - 2px;
+        height: 2px;
+        border-radius: 1px;
+        background: Theme.div;
+        Rectangle {
+            width: round(parent.width * root.media.progress / 1px) * 1px;
+            height: parent.height;
+            border-radius: 1px;
+            background: Theme.accent;
+        }
+        TouchArea {
+            y: -Theme.u(5);
+            height: parent.height + Theme.u(5);
+            enabled: root.media.can-seek;
+            mouse-cursor: pointer;
+            clicked => { root.seek(self.mouse-x / parent.width); }
+        }
+    }
+}
+
+// modules/bar/Bar.qml.
 export component Bar inherits Window {
     in property <[Workspace]> workspaces;
-    in property <string> focused-title;
+    in property <string> app-class;
+    in property <bool> has-client;
+    in property <string> window-title;
+    in property <MediaInfo> media;
+    in property <int> eq-tick;
     in property <string> time;
     in property <string> date;
+    in property <string> net-label;
+    in property <string> net-icon: "wifi";
+    in property <string> volume-label;
+    in property <string> volume-icon: "volume";
     in property <int> battery: -1;
     in property <bool> charging;
-    in property <string> network: "wifi";
-    callback workspace-clicked(int);
-    callback workspace-scrolled(float);
+    in property <int> notifications;
+    in property <bool> quiet;
+
+    callback workspace-go(int);
+    callback workspace-step(int);
+    callback volume-step(int);
+    callback media-prev();
+    callback media-toggle();
+    callback media-next();
+    callback media-seek(float);
 
     background: transparent;
     default-font-family: Theme.font;
-    default-font-size: 13px;
+    default-font-weight: 500;
+    default-font-size: Theme.bar-fs();
 
+    // ── surface ──────────────────────────────────────────────────────────
     Rectangle {
         background: Theme.panel;
-        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.edge; }
+        Rectangle {
+            y: parent.height - 1px;
+            height: 1px;
+            background: Theme.edge;
+        }
+    }
 
-        // ── left: workspaces ─────────────────────────────────────────
-        HorizontalLayout {
-            x: 12px;
-            width: self.preferred-width;
-            alignment: start;
-            spacing: 6px;
-            for ws in workspaces: Rectangle {
-                y: (root.height - 10px) / 2;
-                height: 10px;
-                width: ws.active ? 26px : 10px;
-                border-radius: 5px;
-                background: ws.active ? Theme.accent : ws.occupied ? Theme.ink2 : Theme.ink3.with-alpha(0.45);
-                animate width, background { duration: 220ms; easing: ease-out; }
-                TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.workspace-clicked(ws.id); }
-                    scroll-event(e) => { root.workspace-scrolled(e.delta-y / 1px); accept }
+    // ══ left cluster ═════════════════════════════════════════════════════
+    left := HorizontalLayout {
+        x: 10px;
+        width: self.preferred-width;
+        spacing: 10px;
+        alignment: start;
+
+        Workspaces {
+            y: (root.height - self.height) / 2;
+            slots: root.workspaces;
+            go(id) => { root.workspace-go(id); }
+            step(d) => { root.workspace-step(d); }
+        }
+
+        // Divider
+        Rectangle {
+            width: 15px;
+            Rectangle {
+                x: 7px;
+                y: (root.height - 18px) / 2;
+                width: 1px;
+                height: 18px;
+                background: Theme.div;
+            }
+        }
+
+        // The focused app, with the accent underline.
+        Rectangle {
+            y: (root.height - 26px) / 2;
+            height: 26px;
+            width: app-name.preferred-width + 20px;
+            app-name := Text {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2 - 1px;
+                text: root.app-class != "" ? root.app-class : "Desktop";
+                font-size: Theme.fs(Theme.u(Theme.bar-app) / 1px);
+                font-weight: 700;
+                letter-spacing: 0.16px;
+                color: Theme.ink;
+            }
+            if root.has-client: Rectangle {
+                x: 10px;
+                width: parent.width - 20px;
+                y: parent.height - 3px - 2px;
+                height: 2px;
+                border-radius: 1px;
+                background: Theme.accent;
+            }
+        }
+
+        // "Window": the window actions menu (WindowMenuButton.qml).
+        Rectangle {
+            y: (root.height - 26px) / 2;
+            height: 26px;
+            width: menu-label.preferred-width + 20px;
+            opacity: root.has-client ? 1 : 0.45;
+            border-radius: Theme.r-sm;
+            background: menu-touch.has-hover && root.has-client ? Theme.hover : transparent;
+            menu-label := Text {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                text: "Window";
+                font-size: Theme.fs(Theme.bar-menu);
+                color: Theme.ink;
+            }
+            menu-touch := TouchArea { enabled: root.has-client; mouse-cursor: pointer; }
+        }
+    }
+
+    // ══ the middle ═══════════════════════════════════════════════════════
+    property <length> left-end: left.x + left.preferred-width;
+    property <length> middle-room: max(0px, (media-pill.visible ? media-pill.x : right.x) - root.left-end - 22px);
+
+    if root.window-title != "": Text {
+        x: root.left-end + 10px;
+        y: (root.height - self.height) / 2;
+        width: min(self.preferred-width, root.middle-room);
+        text: root.window-title;
+        overflow: elide;
+        font-size: Theme.fs(Theme.u(Theme.bar-title) / 1px);
+        font-weight: 400;
+        color: Theme.ink3;
+    }
+
+    // ══ what is playing ══════════════════════════════════════════════════
+    media-pill := MediaPill {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        media: root.media;
+        eq-tick: root.eq-tick;
+        room: root.width - 2 * max(root.left-end, right.preferred-width + 10px) - 16px;
+        prev => { root.media-prev(); }
+        toggle => { root.media-toggle(); }
+        next => { root.media-next(); }
+        seek(f) => { root.media-seek(f); }
+    }
+
+    // ══ right cluster ════════════════════════════════════════════════════
+    right := HorizontalLayout {
+        x: root.width - self.preferred-width - 10px;
+        width: self.preferred-width;
+        spacing: 2px;
+        alignment: end;
+
+        // Notifications
+        BarButton {
+            y: (root.height - self.height) / 2;
+            gap: 7px;
+            Glyph {
+                y: (26px - self.height) / 2;
+                data: root.quiet ? Icons.bell-off : Icons.bell;
+                size: Theme.u(Theme.bar-icon);
+                monochrome: true;
+                ink: root.quiet ? Theme.ink3 : Theme.ink;
+            }
+            if Theme.badges && root.notifications > 0: Rectangle {
+                y: (26px - self.height) / 2;
+                width: max(17px, badge.preferred-width + 10px);
+                height: 17px;
+                border-radius: 9px;
+                background: Theme.accent;
+                badge := Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: root.notifications;
+                    font-size: Theme.fs(Theme.u(Theme.bar-badge) / 1px);
+                    font-weight: 700;
+                    color: Theme.ink-on-accent;
                 }
             }
         }
 
-        // ── middle: the focused window ───────────────────────────────
-        Text {
-            width: min(self.preferred-width, root.width * 0.4);
-            x: (root.width - self.width) / 2;
-            vertical-alignment: center;
-            text: root.focused-title;
-            color: Theme.ink2;
-            overflow: elide;
-        }
+        // Status capsule → control center
+        BarButton {
+            y: (root.height - self.height) / 2;
+            gap: 13px;
+            pad: 12px;
+            scrolled(d) => { root.volume-step(d); }
 
-        // ── right: status and clock ──────────────────────────────────
-        HorizontalLayout {
-            x: root.width - self.width - 10px;
-            width: self.preferred-width;
-            alignment: end;
-            spacing: 4px;
-            padding-top: (root.height - 26px) / 2;
-            padding-bottom: (root.height - 26px) / 2;
-
-            BarButton {
-                HorizontalLayout {
-                    padding-left: 12px;
-                    padding-right: 12px;
-                    spacing: 13px;
-                    HorizontalLayout {
-                        spacing: 6px;
-                        Glyph { y: 5px; size: 16px; monochrome: true;
-                            data: root.network == "offline" ? Icons.wifi-off : root.network == "ethernet" ? Icons.monitor : Icons.wifi; }
-                    }
-                    if root.battery >= 0: HorizontalLayout {
-                        spacing: 6px;
-                        Rectangle {
-                            width: 16px; height: 16px; y: 5px;
-                            Glyph { size: 16px; data: root.charging ? Icons.battery-charging : Icons.battery; }
-                            if !root.charging: Rectangle {
-                                x: 16px / 24 * 4.2; y: 16px / 24 * 9.3;
-                                height: 16px / 24 * 5.4;
-                                width: max(1px, 16px / 24 * 13.5 * root.battery / 100);
-                                border-radius: 1px;
-                                background: root.battery <= 15 ? Theme.accent : Theme.ink;
-                            }
-                        }
-                        Text { vertical-alignment: center; text: root.battery + "%"; color: Theme.ink2; font-weight: 600; }
-                    }
+            HorizontalLayout {
+                spacing: 6px;
+                Glyph {
+                    y: (26px - self.height) / 2;
+                    data: root.net-icon == "wifi-off" ? Icons.wifi-off : Icons.wifi;
+                    size: Theme.u(Theme.bar-icon);
+                    monochrome: true;
+                }
+                if root.net-label != "": Text {
+                    vertical-alignment: center;
+                    text: root.net-label;
+                    color: Theme.ink2;
+                    overflow: elide;
+                    max-width: 120px;
                 }
             }
 
-            BarButton {
-                HorizontalLayout {
-                    padding-left: 12px;
-                    padding-right: 12px;
-                    spacing: 10px;
-                    Text { vertical-alignment: center; text: root.time; color: Theme.ink; font-weight: 600; font-size: 14px; }
-                    Text { vertical-alignment: center; text: root.date; color: Theme.ink2; }
+            if root.volume-label != "": HorizontalLayout {
+                spacing: 6px;
+                Glyph {
+                    y: (26px - self.height) / 2;
+                    data: root.volume-icon == "volume-x" ? Icons.volume-x : root.volume-icon == "volume-low" ? Icons.volume-low : Icons.volume;
+                    size: Theme.u(Theme.bar-icon);
+                    monochrome: true;
                 }
+                Text {
+                    vertical-alignment: center;
+                    text: root.volume-label;
+                    font-weight: 600;
+                    color: Theme.ink2;
+                }
+            }
+
+            if root.battery >= 0: HorizontalLayout {
+                spacing: 6px;
+                Rectangle {
+                    y: (26px - 16px) / 2;
+                    width: 16px;
+                    height: 16px;
+                    Glyph {
+                        size: Theme.u(Theme.bar-icon);
+                        data: root.charging ? Icons.battery-charging : Icons.battery;
+                    }
+                    // The real level inside the outline.
+                    if !root.charging: Rectangle {
+                        x: 2.8px;
+                        y: 6.2px;
+                        height: 3.6px;
+                        width: max(1px, 9px * root.battery / 100);
+                        border-radius: 1px;
+                        background: root.battery <= 15 ? Theme.accent : Theme.ink;
+                    }
+                }
+                Text {
+                    vertical-alignment: center;
+                    text: root.battery + "%";
+                    font-weight: 600;
+                    color: Theme.ink2;
+                }
+            }
+        }
+
+        // Clock → calendar
+        BarButton {
+            y: (root.height - self.height) / 2;
+            gap: 10px;
+            pad: 12px;
+            Text {
+                vertical-alignment: center;
+                text: root.time;
+                font-size: Theme.fs(Theme.u(Theme.bar-clock) / 1px);
+                font-weight: 600;
+                color: Theme.ink;
+            }
+            Text {
+                vertical-alignment: center;
+                text: root.date;
+                color: Theme.ink2;
+            }
+        }
+
+        // Power menu
+        BarButton {
+            y: (root.height - self.height) / 2;
+            pad: 5px;
+            Glyph {
+                y: (26px - self.height) / 2;
+                data: Icons.power;
+                size: Theme.u(Theme.bar-icon);
+                monochrome: true;
             }
         }
     }

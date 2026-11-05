@@ -1,15 +1,40 @@
-// The shell's palette, dark, as config/Appearance.qml has it. (Following
-// theme.json live comes with the settings port.)
+// The shell's look, set from Rust (src/theme.rs) out of the same theme.json
+// the Quickshell shell reads, so a change in Settings changes this too.
+// Sizes go through the same helpers as there: u() for the monitor's shell
+// scale, fs() for the text size setting, w() for the workspace switcher's.
 export global Theme {
-    out property <color> panel: #1d1b1aeb;
-    out property <color> ink: #f8f4f4;
-    out property <color> ink2: #bab6b6;
-    out property <color> ink3: #8a8686;
-    out property <color> accent: #ff563c;
-    out property <color> ink-on-accent: #ffffff;
-    out property <color> hover: #f8f4f417;
-    out property <color> sel: #f8f4f424;
-    out property <color> edge: #f8f4f429;
-    out property <length> r-cap: 9px;
-    out property <string> font: "Inter";
+    in-out property <color> panel: #1d1b1aeb;
+    in-out property <color> ink: #f8f4f4;
+    in-out property <color> ink2: #bab6b6;
+    in-out property <color> ink3: #8a8686;
+    in-out property <color> accent: #ff563c;
+    in-out property <color> ink-on-accent: #fff8f6;
+    in-out property <color> hover: #f8f4f417;
+    in-out property <color> sel: #f8f4f424;
+    in-out property <color> edge: #f8f4f429;
+    in-out property <color> rule: #f8f4f41a;
+    in-out property <color> div: #f8f4f438;
+    in-out property <length> r-cap: 14px;
+    in-out property <length> r-sm: 9px;
+    in-out property <string> font: "Inter";
+    // Shell scale for this monitor, text size, workspace switcher size.
+    in-out property <float> us: 1;
+    in-out property <float> ff: 1;
+    in-out property <float> ws: 1;
+    // The bar's settings, in px before scaling.
+    in-out property <float> bar-height: 40;
+    in-out property <float> bar-font: 12;
+    in-out property <float> bar-title: 12;
+    in-out property <float> bar-app: 16;
+    in-out property <float> bar-menu: 13;
+    in-out property <float> bar-clock: 13;
+    in-out property <float> bar-badge: 11;
+    in-out property <float> bar-icon: 16;
+    in-out property <bool> badges: true;
+
+    public pure function u(px: float) -> length { return max(1, round(px * us)) * 1px; }
+    public pure function fs(px: float) -> length { return round(px * ff) * 1px; }
+    public pure function w(px: float) -> length { return max(1, round(px * ws)) * 1px; }
+    // Config.Appearance.barFs(0): the bar's body text.
+    public pure function bar-fs() -> length { return fs(max(6, bar-font)); }
 }

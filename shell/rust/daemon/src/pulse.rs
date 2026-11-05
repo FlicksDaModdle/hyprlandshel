@@ -90,7 +90,11 @@ fn sink_json(s: &SinkInfo) -> Json {
         "ports": s.ports.iter().map(|p| json!({
             "name": opt(&p.name), "description": opt(&p.description), "availability": avail(p.available)
         })).collect::<Vec<_>>(),
-        "active_port": s.active_port.as_ref().map(|p| opt(&p.name)).unwrap_or_default()
+        "active_port": s.active_port.as_ref().map(|p| opt(&p.name)).unwrap_or_default(),
+        // For the Rust shell (rshell), which has no PipeWire binding of its
+        // own to read these from: 1.0 is 100 %.
+        "volume": s.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64,
+        "mute": s.mute
     })
 }
 
@@ -129,6 +133,7 @@ struct Acc {
     sources: Vec<Json>,
     inputs: Vec<Json>,
     outputs: Vec<Json>,
+    default_sink: String,
     done: u8,
 }
 
@@ -190,13 +195,14 @@ impl Session {
             move || {
                 let mut a = acc.lock().unwrap();
                 a.done += 1;
-                if a.done == 5 {
+                if a.done == 6 {
                     let _ = tx.send(json!({
                         "cmd": "_snap",
                         "data": {
                             "cards": std::mem::take(&mut a.cards), "sinks": std::mem::take(&mut a.sinks),
                             "sources": std::mem::take(&mut a.sources), "sinkInputs": std::mem::take(&mut a.inputs),
-                            "sourceOutputs": std::mem::take(&mut a.outputs)
+                            "sourceOutputs": std::mem::take(&mut a.outputs),
+                            "defaultSink": std::mem::take(&mut a.default_sink)
                         }
                     }));
                 }
@@ -219,6 +225,14 @@ impl Session {
         list!(get_source_info_list, sources, source_json);
         list!(get_sink_input_info_list, inputs, input_json);
         list!(get_source_output_info_list, outputs, output_json);
+        {
+            let acc = acc.clone();
+            let finish = finish.clone();
+            intro.get_server_info(move |info| {
+                acc.lock().unwrap().default_sink = info.default_sink_name.as_ref().map(|n| n.to_string()).unwrap_or_default();
+                finish();
+            });
+        }
         self.ml.borrow_mut().unlock();
     }
 
@@ -240,6 +254,15 @@ impl Session {
             "pa-profile" => { intro.set_card_profile_by_name(&st("card"), &st("profile"), done); }
             "pa-port" if st("kind") == "source" => { intro.set_source_port_by_name(&st("name"), &st("port"), done); }
             "pa-port" => { intro.set_sink_port_by_name(&st("name"), &st("port"), done); }
+            // The output's volume (1.0 = 100 %) and mute, by name: what the
+            // Rust shell's bar scrolls and its control center sets.
+            "pa-volume" => {
+                let v = cmd["volume"].as_f64().unwrap_or(0.0).clamp(0.0, 1.5);
+                let mut cv = pulse::volume::ChannelVolumes::default();
+                cv.set(2, pulse::volume::Volume((v * pulse::volume::Volume::NORMAL.0 as f64) as u32));
+                intro.set_sink_volume_by_name(&st("name"), &cv, done);
+            }
+            "pa-mute" => { intro.set_sink_mute_by_name(&st("name"), cmd["mute"].as_bool().unwrap_or(false), done); }
             "pa-move-input" => { intro.move_sink_input_by_name(n("index"), &st("sink"), done); }
             "pa-move-output" => { intro.move_source_output_by_name(n("index"), &st("source"), done); }
             "pa-latency" => {
