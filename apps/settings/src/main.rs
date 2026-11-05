@@ -11,6 +11,7 @@
 //!                               binds.lua) and exit; the shell runs this at
 //!                               login, as Quickshell's Devices.qml did
 
+mod display;
 mod hypr;
 mod prefs;
 mod rows;
@@ -193,6 +194,37 @@ fn main() {
         return;
     }
 
+    // Every pane's rows, advanced ones included: for checking against
+    // Settings.qml (tools/parity.py).
+    if args.first().map(String::as_str) == Some("--dump") {
+        // Each branch a pane can take: the settings that open one, in
+        // memory only (nothing is written), and the wallpaper's modes.
+        let variants: &[(&str, serde_json::Value)] = &[
+            ("", serde_json::json!({})),
+            ("", serde_json::json!({ "screenCorners": true, "cursorTheme": "system", "dockStyle": "taskbar", "nightMode": "times",
+                                     "saverMode": "low", "scrollMomentum": true, "liveSound": true, "liveRotate": true })),
+            ("", serde_json::json!({ "nightMode": "sun", "altTabHold": false, "motionStyle": "springy" })),
+            ("animated", serde_json::json!({ "wallpaperStyle": "topo", "topoLine": "custom", "topoGround": "custom", "topoDrift": true })),
+            ("animated", serde_json::json!({ "wallpaperStyle": "aurora", "animPalette": "custom" })),
+            ("image", serde_json::json!({})),
+            ("live", serde_json::json!({ "liveSound": true, "liveRotate": true })),
+        ];
+        for (mode, over) in variants {
+            let mut c = Ctx { p: prefs::Prefs::read(), ui: Ui { wallpaper_mode: mode.to_string(), ..Default::default() } };
+            for (k, v) in over.as_object().unwrap() {
+                c.p.v[prefs::key(k)] = v.clone();
+            }
+            for cat in rows::categories() {
+                for pane in cat.items.iter().chain(["Laptop"].iter()) {
+                    c.ui.pane = pane.to_string();
+                    for r in rows::shown_rows(pane, rows::rows_for(pane, &c), true) {
+                        println!("{pane}\t{}\t{}\t{}", r.row.kind, r.row.n, r.row.s);
+                    }
+                }
+            }
+        }
+        return;
+    }
     kit::init("hyprshell-settings");
     let ui = AppWindow::new().expect("window");
     kit::setup!(ui, "hyprshell-settings");
@@ -244,7 +276,21 @@ fn main() {
                     move |picked| {
                         let (Some(ui), Some(path)) = (weak.upgrade(), picked) else { return };
                         let mut s = st2.borrow_mut();
-                        s.c.set(&key, serde_json::json!(path.display().to_string()));
+                        let path = path.display().to_string();
+                        if let Some(list) = key.strip_prefix('+') {
+                            // Added to a list (the live wallpaper's folders
+                            // and files), not set.
+                            let mut v: Vec<String> = serde_json::from_str(&s.c.p.s(list)).unwrap_or_default();
+                            if list == "liveFolders" && v.is_empty() {
+                                v.push(format!("{}/Videos/Wallpapers", kit::home().display()));
+                            }
+                            if !v.contains(&path) {
+                                v.push(path);
+                            }
+                            s.c.set(list, serde_json::json!(serde_json::to_string(&v).unwrap_or_default()));
+                        } else {
+                            s.c.set(&key, serde_json::json!(path));
+                        }
                         s.c.ui.wallpaper_mode.clear();
                         show(&ui, &mut s);
                     },
@@ -492,6 +538,18 @@ fn main() {
         let st = st.clone();
         poll.start(slint::TimerMode::Repeated, Duration::from_millis(1000), move || {
             let Some(ui) = weak.upgrade() else { return };
+            // A display change on trial: the countdown, and back by itself.
+            let trial = st.borrow().c.ui.trial.as_ref().map(|t| t.until <= std::time::Instant::now());
+            if let Some(expired) = trial {
+                let mut s = st.borrow_mut();
+                if expired {
+                    display::revert_trial(&mut s.c);
+                }
+                if s.c.ui.pane == "Display" || expired {
+                    show(&ui, &mut s);
+                }
+                return;
+            }
             let changed = mtime() != st.borrow().seen;
             if changed {
                 let mut s = st.borrow_mut();

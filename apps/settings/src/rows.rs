@@ -56,6 +56,8 @@ pub struct Ui {
     pub tell: Vec<String>,
     /// Pick a file: (folder?, title, the key to set).
     pub pick: Option<(bool, String, String)>,
+    /// A display change on trial (Settings → Display).
+    pub trial: Option<crate::display::Trial>,
 }
 
 pub struct Ctx {
@@ -83,7 +85,7 @@ pub struct Spec {
     pub adv: bool,
 }
 
-fn base(kind: &str, n: &str, s: &str) -> Spec {
+pub(crate) fn base(kind: &str, n: &str, s: &str) -> Spec {
     Spec {
         row: Row { kind: kind.into(), n: n.into(), s: s.into(), step: 1.0, pick: -1, ..Default::default() },
         values: vec![],
@@ -124,17 +126,17 @@ pub fn panel(name: &str) -> Spec {
     r.row.panel = name.into();
     r
 }
-fn toggle_with(n: &str, s: &str, on: bool, f: impl Fn(&mut Ctx, bool) + 'static) -> Spec {
+pub(crate) fn toggle_with(n: &str, s: &str, on: bool, f: impl Fn(&mut Ctx, bool) + 'static) -> Spec {
     let mut r = base("toggle", n, s).on(move |c, v| f(c, v.b()));
     r.row.on = on;
     r
 }
 /// A switch on a theme.json key.
-fn toggle(p: &Prefs, n: &str, s: &str, key: &'static str) -> Spec {
+pub(crate) fn toggle(p: &Prefs, n: &str, s: &str, key: &'static str) -> Spec {
     toggle_with(n, s, p.b(key), move |c, v| c.set(key, json!(v)))
 }
 #[allow(clippy::too_many_arguments)]
-fn slider_with(n: &str, s: &str, min: f64, max: f64, step: f64, unit: &str, v: f64, f: impl Fn(&mut Ctx, f64) + 'static) -> Spec {
+pub(crate) fn slider_with(n: &str, s: &str, min: f64, max: f64, step: f64, unit: &str, v: f64, f: impl Fn(&mut Ctx, f64) + 'static) -> Spec {
     let mut r = base("slider", n, s).on(move |c, v| f(c, v.n()));
     r.row.min = min as f32;
     r.row.max = max as f32;
@@ -144,10 +146,10 @@ fn slider_with(n: &str, s: &str, min: f64, max: f64, step: f64, unit: &str, v: f
     r
 }
 /// A slider on a theme.json key, whole numbers.
-fn slider(p: &Prefs, n: &str, s: &str, min: f64, max: f64, unit: &str, key: &'static str) -> Spec {
+pub(crate) fn slider(p: &Prefs, n: &str, s: &str, min: f64, max: f64, unit: &str, key: &'static str) -> Spec {
     slider_with(n, s, min, max, 1.0, unit, p.f(key), move |c, v| c.set(key, json!(v.round() as i64)))
 }
-fn seg_with(n: &str, s: &str, opts: &[(&str, &str)], cur: &str, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
+pub(crate) fn seg_with(n: &str, s: &str, opts: &[(&str, &str)], cur: &str, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
     let mut r = base("seg", n, s).on(move |c, v| f(c, v.s()));
     r.row.options = strings(&opts.iter().map(|o| o.0.to_string()).collect::<Vec<_>>());
     r.values = opts.iter().map(|o| o.1.to_string()).collect();
@@ -155,10 +157,10 @@ fn seg_with(n: &str, s: &str, opts: &[(&str, &str)], cur: &str, f: impl Fn(&mut 
     r
 }
 /// Segments on a theme.json string key.
-fn seg(p: &Prefs, n: &str, s: &str, opts: &[(&str, &str)], key: &'static str) -> Spec {
+pub(crate) fn seg(p: &Prefs, n: &str, s: &str, opts: &[(&str, &str)], key: &'static str) -> Spec {
     seg_with(n, s, opts, &p.s(key), move |c, v| c.set(key, json!(v)))
 }
-fn menu_with(n: &str, s: &str, opts: Vec<String>, cur: &str, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
+pub(crate) fn menu_with(n: &str, s: &str, opts: Vec<String>, cur: &str, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
     let mut r = base("menu", n, s).on(move |c, v| f(c, v.s()));
     r.row.options = strings(&opts);
     r.row.pick = opts.iter().position(|o| o == cur).map(|i| i as i32).unwrap_or(-1);
@@ -166,16 +168,16 @@ fn menu_with(n: &str, s: &str, opts: Vec<String>, cur: &str, f: impl Fn(&mut Ctx
     r.values = opts;
     r
 }
-fn action(n: &str, s: &str, label: &str, f: impl Fn(&mut Ctx) + 'static) -> Spec {
+pub(crate) fn action(n: &str, s: &str, label: &str, f: impl Fn(&mut Ctx) + 'static) -> Spec {
     let mut r = base("action", n, s).on(move |c, _| f(c));
     r.row.label = label.into();
     r
 }
-type Press = (String, bool, bool, SetFn);
-fn btn(label: &str, quiet: bool, enabled: bool, f: impl Fn(&mut Ctx) + 'static) -> Press {
+pub(crate) type Press = (String, bool, bool, SetFn);
+pub(crate) fn btn(label: &str, quiet: bool, enabled: bool, f: impl Fn(&mut Ctx) + 'static) -> Press {
     (label.to_string(), quiet, enabled, Rc::new(move |c: &mut Ctx, _| f(c)))
 }
-fn buttons(n: &str, s: &str, list: Vec<Press>) -> Spec {
+pub(crate) fn buttons(n: &str, s: &str, list: Vec<Press>) -> Spec {
     let mut r = base("buttons", n, s);
     r.row.buttons = ModelRc::new(VecModel::from(
         list.iter().map(|b| Btn { label: b.0.clone().into(), quiet: b.1, enabled: b.2 }).collect::<Vec<_>>(),
@@ -183,30 +185,30 @@ fn buttons(n: &str, s: &str, list: Vec<Press>) -> Spec {
     r.presses = list.into_iter().map(|b| b.3).collect();
     r
 }
-fn meter(n: &str, s: &str, v: f64, label: &str, ink: bool) -> Spec {
+pub(crate) fn meter(n: &str, s: &str, v: f64, label: &str, ink: bool) -> Spec {
     let mut r = base("meter", n, s);
     r.row.num = v.clamp(0.0, 1.0) as f32;
     r.row.label = label.into();
     r.row.on = ink;
     r
 }
-fn text(n: &str, s: &str, v: &str, placeholder: &str, label: &str, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
+pub(crate) fn text(n: &str, s: &str, v: &str, placeholder: &str, label: &str, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
     let mut r = base("text", n, s).on(move |c, v| f(c, v.s())).value(v);
     r.row.placeholder = placeholder.into();
     r.row.label = label.into();
     r
 }
-fn color_row(n: &str, s: &str, hex: &str, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
+pub(crate) fn color_row(n: &str, s: &str, hex: &str, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
     let mut r = base("color", n, s).on(move |c, v| f(c, v.s())).value(hex);
     r.row.colour = parse_hex(hex).unwrap_or(Color::from_rgb_u8(0, 0, 0));
     r
 }
-fn keybind(n: &str, s: &str, v: &str, probe: bool, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
+pub(crate) fn keybind(n: &str, s: &str, v: &str, probe: bool, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
     let mut r = base("keybind", n, s).on(move |c, v| f(c, v.s())).value(v);
     r.row.on = probe;
     r
 }
-fn nav(n: &str, s: &str, icon: &str, target: String) -> Spec {
+pub(crate) fn nav(n: &str, s: &str, icon: &str, target: String) -> Spec {
     let mut r = base("nav", n, s).on(move |c, _| c.ui.pane = target.clone());
     r.row.icon = icon.into();
     r
@@ -336,8 +338,8 @@ pub fn rows_for(pane: &str, c: &Ctx) -> Vec<Spec> {
         "Clipboard" => clipboard(p),
         "Screenshots" => screenshots(p),
         "Notifications" => notifications(p),
-        "Display" => display(c),
-        "Network" => vec![panel("wifi")],
+        "Display" => crate::display::rows(c),
+        "Network" => network(),
         "Bluetooth" => vec![panel("bluetooth")],
         "Sound" => vec![panel("sound")],
         "Laptop" => vec![panel("laptop")],
@@ -587,7 +589,7 @@ fn wallpaper(c: &Ctx) -> Vec<Spec> {
         "gradient" => r.push(seg(p, "Tint", "Its temperature", &[("Warm", "Warm"), ("Neutral", "Neutral"), ("Cool", "Cool")], "tint")),
         "animated" => {
             r.push(panel("animated"));
-            r.extend(anim_rows(p));
+            r.extend(if p.s("wallpaperStyle") == "topo" { topo_rows(p) } else { anim_rows(p) });
             r.extend(motion_rows(p));
         }
         "image" => {
@@ -600,7 +602,137 @@ fn wallpaper(c: &Ctx) -> Vec<Spec> {
                 })],
             ));
         }
-        _ => r.extend(live_rows(p)),
+        _ => r.extend(live_rows(c)),
+    }
+    r.extend(boot_rows(p));
+    r
+}
+
+/// Settings.bootRows: the wallpaper in Limine's boot menu, through the
+/// root helper shell/limine/install.sh puts in place.
+const BOOT_HELPER: &str = "/usr/local/libexec/hyprshell-limine-theme";
+fn boot_rows(p: &Prefs) -> Vec<Spec> {
+    let mut r = vec![header("Boot menu", "")];
+    if !std::path::Path::new(BOOT_HELPER).exists() {
+        r.push(info("Limine", "To use this wallpaper in the Limine boot menu, run once: sudo shell/limine/install.sh", "Not set up"));
+        return r;
+    }
+    let _ = p;
+    r.push(buttons(
+        "Use this wallpaper in the boot menu",
+        "A still of it, with your accent, in Limine. Asks for your password.",
+        vec![btn("Update", false, true, boot_update), btn("Remove", true, true, |c| {
+            let ok = std::process::Command::new("pkexec").args([BOOT_HELPER, "--remove"]).status().is_ok_and(|s| s.success());
+            c.ui.toast = Some(if ok { "Taken out; the boot menu is Limine's own again".into() } else { "Not changed".into() });
+        })],
+    ));
+    r
+}
+
+/// BootTheme.update: a still of the wallpaper (a frame of the video, or
+/// the picture), handed to the helper with the accent.
+fn boot_update(c: &mut Ctx) {
+    let src = if !c.p.s("liveWallpaper").is_empty() { c.p.s("liveWallpaper") } else { c.p.s("wallpaper") };
+    if src.is_empty() {
+        c.ui.toast = Some("Pick an image or a live wallpaper first".into());
+        return;
+    }
+    let dir = hyprshell_kit::config_dir().join("hyprshell");
+    let _ = std::fs::create_dir_all(&dir);
+    let still = dir.join("boot-still.png");
+    let made = std::process::Command::new("ffmpeg")
+        .args(["-nostdin", "-loglevel", "error", "-y", "-ss", "2", "-i", &src, "-frames:v", "1"])
+        .arg(&still)
+        .status()
+        .is_ok_and(|s| s.success())
+        || std::process::Command::new("ffmpeg").args(["-nostdin", "-loglevel", "error", "-y", "-i", &src, "-frames:v", "1"]).arg(&still).status().is_ok_and(|s| s.success());
+    if !made {
+        c.ui.toast = Some("Couldn't make a still of it (ffmpeg)".into());
+        return;
+    }
+    let ok = std::process::Command::new("sh")
+        .args([
+            "-c",
+            "exec pkexec \"$1\" --accent \"$2\" --background \"$3\" --foreground \"$4\" < \"$5\"",
+            "boot-theme",
+            BOOT_HELPER,
+            &prefs::hex(c.p.accent()),
+            "#161514",
+            "#f8f4f4",
+        ])
+        .arg(&still)
+        .status()
+        .is_ok_and(|s| s.success());
+    c.ui.toast = Some(if ok { "In the boot menu from the next start".into() } else { "Not changed".into() });
+}
+
+fn topo_rows(p: &Prefs) -> Vec<Spec> {
+    let seed = p.i("topoSeed");
+    let shade = p.s("topoShade");
+    let motion = p.s("topoMotion");
+    let mut r = vec![
+        buttons(
+            "Terrain",
+            &format!("Map {seed}"),
+            vec![
+                btn("Previous", true, seed > 1, move |c| c.set("topoSeed", json!((seed - 1).max(1)))),
+                btn("Next", true, true, move |c| c.set("topoSeed", json!(seed + 1))),
+            ],
+        ),
+        slider(p, "Size", "How big the hills are", 25.0, 300.0, "%", "topoScale"),
+        slider(p, "Roughness", "Smooth hills to broken ground", 1.0, 6.0, "", "topoDetail"),
+        slider(p, "Flow", "How much the ridges wander", 0.0, 100.0, "%", "topoFlow"),
+        header("Lines", ""),
+        slider(p, "Contours", "Lines from the lowest ground to the highest", 4.0, 60.0, "", "topoLevels"),
+        slider_with("Width", "", 0.5, 4.0, 0.1, "px", p.f("topoWidth"), |c, v| c.set("topoWidth", json!((v * 10.0).round() / 10.0))),
+        seg_with(
+            "Index lines",
+            "Every so many drawn heavier, as on a survey map",
+            &[("Off", "0"), ("4th", "4"), ("5th", "5"), ("10th", "10")],
+            &p.i("topoMajor").to_string(),
+            |c, v| c.set("topoMajor", json!(v.parse::<i64>().unwrap_or(0))),
+        ),
+        seg(p, "Colour", "", &[("Ink", "ink"), ("Accent", "accent"), ("Custom", "custom")], "topoLine"),
+    ];
+    if p.s("topoLine") == "custom" {
+        r.push(color_row("Line colour", &p.s("topoLineCustom").to_uppercase(), &p.s("topoLineCustom"), |c, v| c.set("topoLineCustom", json!(v))));
+    }
+    r.extend([
+        slider(p, "Strength", "", 5.0, 100.0, "%", "topoStrength"),
+        slider(p, "Glow", "A soft light either side of each line", 0.0, 100.0, "%", "topoGlow"),
+        header("Ground", ""),
+        seg(
+            p,
+            "Shading",
+            match shade.as_str() {
+                "flat" => "One wash, top to bottom",
+                "bands" => "A step of colour between each pair of lines",
+                _ => "Darker low, lighter high",
+            },
+            &[("Flat", "flat"), ("Smooth", "smooth"), ("Bands", "bands")],
+            "topoShade",
+        ),
+        seg(p, "Colours", if p.s("topoGround") == "theme" { "The theme's, light or dark with it" } else { "" }, &[("Theme", "theme"), ("Custom", "custom")], "topoGround"),
+    ]);
+    if p.s("topoGround") == "custom" {
+        r.push(color_row("Low ground", &p.s("topoLow").to_uppercase(), &p.s("topoLow"), |c, v| c.set("topoLow", json!(v))));
+        r.push(color_row("High ground", &p.s("topoHigh").to_uppercase(), &p.s("topoHigh"), |c, v| c.set("topoHigh", json!(v))));
+    }
+    r.push(header("Motion", ""));
+    r.push(toggle(p, "Animate", "Off, the map is a still picture", "topoDrift"));
+    if p.b("topoDrift") {
+        r.push(seg(
+            p,
+            "What moves",
+            match motion.as_str() {
+                "drift" => "The terrain wanders",
+                "flow" => "The contours climb the slopes and the next takes their place",
+                _ => "The contours flow over wandering terrain",
+            },
+            &[("Terrain", "drift"), ("Contours", "flow"), ("Both", "both")],
+            "topoMotion",
+        ));
+        r.push(slider(p, "Speed", "", 5.0, 200.0, "%", "topoSpeed"));
     }
     r
 }
@@ -692,7 +824,33 @@ fn motion_rows(p: &Prefs) -> Vec<Spec> {
     ]
 }
 
-fn live_rows(p: &Prefs) -> Vec<Spec> {
+/// LiveWallpaper's folders (JSON list; ~/Videos/Wallpapers by default)
+/// and loose files, and the videos in them.
+fn live_sources(p: &Prefs) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let home = hyprshell_kit::home().display().to_string();
+    let folders: Vec<String> = serde_json::from_str::<Vec<String>>(&p.s("liveFolders"))
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| vec![format!("{home}/Videos/Wallpapers")]);
+    let files: Vec<String> = serde_json::from_str::<Vec<String>>(&p.s("liveFiles")).unwrap_or_default();
+    let is_video = |n: &str| {
+        let l = n.to_lowercase();
+        [".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".gif"].iter().any(|e| l.ends_with(e))
+    };
+    let mut videos: Vec<String> = vec![];
+    for f in &folders {
+        if let Ok(rd) = std::fs::read_dir(f) {
+            let mut v: Vec<String> = rd.flatten().map(|e| e.path().display().to_string()).filter(|n| is_video(n)).collect();
+            v.sort();
+            videos.extend(v);
+        }
+    }
+    videos.extend(files.iter().filter(|f| std::path::Path::new(f).exists()).cloned());
+    (folders, files, videos)
+}
+
+fn live_rows(c: &Ctx) -> Vec<Spec> {
+    let p = &c.p;
     let mut r = vec![];
     if !system::have("mpvpaper") {
         r.push(action(
@@ -703,17 +861,74 @@ fn live_rows(p: &Prefs) -> Vec<Spec> {
         ));
         return r;
     }
+    let home = hyprshell_kit::home().display().to_string();
+    let (folders, files, videos) = live_sources(p);
     let live = p.s("liveWallpaper");
     let on = !live.is_empty();
+    let title = live.rsplit('/').next().unwrap_or(&live).rsplit_once('.').map(|x| x.0).unwrap_or("").to_string();
+    let vids = videos.clone();
     r.push(buttons(
-        if on { live.rsplit('/').next().unwrap_or(&live) } else { "None on" },
-        if on { "Playing" } else { "Pick one below" },
-        if on { vec![btn("Turn off", true, true, |c| c.set("liveWallpaper", json!("")))] } else { vec![] },
+        if on { &title } else { "None on" },
+        if !on {
+            if videos.is_empty() {
+                ""
+            } else {
+                "Pick one below"
+            }
+        } else {
+            "Playing"
+        },
+        if on {
+            vec![
+                btn("Next", true, videos.len() > 1, move |c| {
+                    let now = c.p.s("liveWallpaper");
+                    let i = vids.iter().position(|v| *v == now).map(|i| (i + 1) % vids.len()).unwrap_or(0);
+                    if let Some(v) = vids.get(i) {
+                        c.set("liveWallpaper", json!(v));
+                    }
+                }),
+                btn("Turn off", true, true, |c| c.set("liveWallpaper", json!(""))),
+            ]
+        } else {
+            vec![]
+        },
     ));
+    let screens: Vec<String> = hypr::json("monitors").as_array().into_iter().flatten().filter_map(|m| m["name"].as_str().map(str::to_string)).collect();
+    if screens.len() > 1 {
+        r.push(seg(p, "Screens", "", &[("Same", "same"), ("Each its own", "each")], "liveLayout"));
+    }
+    let tidy = |f: &str| f.replace(&home, "~");
+    if videos.is_empty() {
+        r.push(action(
+            "No videos yet",
+            &format!("Put some in {}, or add a folder below. mp4, webm, mkv, mov and gif all play.", folders.iter().map(|f| tidy(f)).collect::<Vec<_>>().join(", ")),
+            "Look again",
+            |_| {},
+        ));
+    } else {
+        let mut g = panel("gallery");
+        g.row.value = SharedString::from(format!("{}", videos.len()));
+        r.push(g);
+        if !system::have("ffmpeg") {
+            r.push(info("No thumbnails", "Install ffmpeg for a still of each video here", ""));
+        }
+    }
+    let any_sources = !p.s("liveFolders").is_empty() || !p.s("liveFiles").is_empty();
     r.push(buttons(
-        "Video",
-        "mp4, webm, mkv, mov and gif all play",
-        vec![btn("Choose…", false, true, |c| c.ui.pick = Some((false, "Video".into(), "liveWallpaper".into())))],
+        "Folders",
+        &format!(
+            "{}{}",
+            folders.iter().map(|f| tidy(f)).collect::<Vec<_>>().join(", "),
+            if files.is_empty() { String::new() } else { format!(" and {} {}", files.len(), if files.len() == 1 { "file" } else { "files" }) }
+        ),
+        vec![
+            btn("Add folder…", true, true, |c| c.ui.pick = Some((true, "Folder of videos".into(), "+liveFolders".into()))),
+            btn("Add video…", true, true, |c| c.ui.pick = Some((false, "Video".into(), "+liveFiles".into()))),
+            btn("Reset", true, any_sources, |c| {
+                c.set("liveFolders", json!(""));
+                c.set("liveFiles", json!(""));
+            }),
+        ],
     ));
     r.push(header("Playback", ""));
     r.push(seg(p, "Scaling", "How a video meets a screen of another shape", &[("Fill", "fill"), ("Fit", "fit"), ("Stretch", "stretch")], "liveScaling"));
@@ -729,6 +944,44 @@ fn live_rows(p: &Prefs) -> Vec<Spec> {
         "livePauseCovered",
     ));
     r.push(toggle(p, "Pause on battery", "Holds the frame on screen while unplugged", "livePauseOnBattery"));
+    let delays: Vec<i64> = {
+        let mut d = vec![5, 10, 15, 30, 60, 120, 360, 720, 1440];
+        let cur = p.i("liveDelay");
+        if !d.contains(&cur) {
+            d.push(cur);
+            d.sort();
+        }
+        d
+    };
+    let label = |m: i64| {
+        if m < 60 {
+            format!("{m} minutes")
+        } else if m == 60 {
+            "1 hour".into()
+        } else if m < 1440 {
+            format!("{} hours", m / 60)
+        } else if m == 1440 {
+            "1 day".into()
+        } else {
+            format!("{} days", m / 1440)
+        }
+    };
+    r.push(toggle(
+        p,
+        "Rotate",
+        if videos.len() < 2 { "Needs two or more videos" } else { "Move on to another video every so often" },
+        "liveRotate",
+    ));
+    if p.b("liveRotate") {
+        let labels: Vec<String> = delays.iter().map(|m| label(*m)).collect();
+        let (ls, ds) = (labels.clone(), delays.clone());
+        r.push(menu_with("Every", "", labels, &label(p.i("liveDelay")), move |c, v| {
+            if let Some(i) = ls.iter().position(|l| *l == v) {
+                c.set("liveDelay", json!(ds[i]));
+            }
+        }));
+        r.push(seg(p, "Order", "", &[("In order", "sequential"), ("Shuffled", "random")], "liveOrder"));
+    }
     r
 }
 
@@ -1147,6 +1400,7 @@ fn notifications(p: &Prefs) -> Vec<Spec> {
         toggle(p, "Badge counts", "Numeric badge on the bar bell", "badges"),
         seg(p, "Grouping", "Stack by source app, or by arrival time", &[("App", "App"), ("Time", "Time")], "grouping"),
         slider(p, "Banner timeout", "How long a banner stays up before it retires to the center", 2.0, 20.0, "s", "popupTimeout"),
+        info("Waiting in the center", "Notifications the shell is currently holding", "—"),
         toggle(
             p,
             "Keep a history",
@@ -1166,112 +1420,67 @@ fn notifications(p: &Prefs) -> Vec<Spec> {
             },
             |c, v| c.set("notifHistoryDays", json!(v.parse::<i64>().unwrap_or(7))),
         ),
+        action("Forget the history", "Everything kept so far", "Clear", |c| c.ui.tell.push("clearHistory".into())),
     ]
 }
 
-fn display(c: &Ctx) -> Vec<Spec> {
-    let p = &c.p;
-    let mons: Vec<Value> = hypr::json("monitors").as_array().cloned().unwrap_or_default();
-    if mons.is_empty() {
-        return vec![info("No display", "Hyprland reported no monitors", "—")];
-    }
-    let m = mons.iter().find(|x| x["name"] == c.ui.display_pick.as_str()).unwrap_or(&mons[0]).clone();
-    let name = m["name"].as_str().unwrap_or("").to_string();
-    let (w, h) = (m["width"].as_i64().unwrap_or(0), m["height"].as_i64().unwrap_or(0));
-    let rate = m["refreshRate"].as_f64().unwrap_or(0.0);
-    let cur_res = format!("{w}x{h}");
-    let scale = m["scale"].as_f64().unwrap_or(1.0);
-    let mut r = vec![];
-    if mons.len() > 1 {
-        let opts: Vec<(String, String)> =
-            mons.iter().map(|x| (format!("{}{}", x["name"].as_str().unwrap_or(""), if x["focused"] == true { " ·" } else { "" }), x["name"].as_str().unwrap_or("").to_string())).collect();
-        let refs: Vec<(&str, &str)> = opts.iter().map(|o| (o.0.as_str(), o.1.as_str())).collect();
-        r.push(seg_with("Display", "Which screen these settings apply to", &refs, &name, |c, v| c.ui.display_pick = v));
-    }
-    r.push(header(
-        &name,
-        &format!(
-            "{}{}  ·  {cur_res} at {} Hz",
-            m["description"].as_str().filter(|s| !s.is_empty()).unwrap_or("Display"),
-            if m["focused"] == true { "  ·  focused" } else { "" },
-            rate.round()
-        ),
-    ));
-    // Modes: "2560x1600@165.00Hz", by resolution, rates deduped on the
-    // rounded value.
-    let mut by_res: Vec<(String, Vec<f64>)> = vec![];
-    for md in m["availableModes"].as_array().into_iter().flatten().filter_map(|v| v.as_str()) {
-        let Some((res, hz)) = md.split_once('@') else { continue };
-        let Ok(hz) = hz.trim_end_matches("Hz").parse::<f64>() else { continue };
-        match by_res.iter_mut().find(|e| e.0 == res) {
-            Some(e) => {
-                if !e.1.iter().any(|x| x.round() == hz.round()) {
-                    e.1.push(hz)
-                }
-            }
-            None => by_res.push((res.to_string(), vec![hz])),
-        }
-    }
-    let area = |r: &str| r.split_once('x').map(|(a, b)| a.parse::<i64>().unwrap_or(0) * b.parse::<i64>().unwrap_or(0)).unwrap_or(0);
-    by_res.sort_by_key(|e| -area(&e.0));
-    let res_list: Vec<String> = by_res.iter().map(|e| e.0.clone()).collect();
-    let mut rate_list = by_res.iter().find(|e| e.0 == cur_res).map(|e| e.1.clone()).unwrap_or_default();
-    rate_list.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    let hz = |x: f64| format!("{} Hz", x.round());
-    {
-        let (n2, by) = (name.clone(), by_res.clone());
-        let s = if res_list.len() > 1 { format!("{} modes reported by this output", res_list.len()) } else { "Only one mode reported".into() };
-        r.push(if res_list.len() > 1 {
-            menu_with("Resolution", &s, res_list.clone(), &cur_res, move |c, v| {
-                let rates = by.iter().find(|e| e.0 == v).map(|e| e.1.clone()).unwrap_or_default();
-                let best = rates.iter().cloned().min_by(|a, b| (a - rate).abs().partial_cmp(&(b - rate).abs()).unwrap_or(std::cmp::Ordering::Equal)).unwrap_or(60.0);
-                set_mode(c, &n2, &format!("{v}@{}", (best * 1000.0).round() / 1000.0));
-            })
-        } else {
-            info("Resolution", &s, &cur_res)
-        });
-    }
-    {
-        let labels: Vec<String> = rate_list.iter().map(|x| hz(*x)).collect();
-        let (n2, rl, cr) = (name.clone(), rate_list.clone(), cur_res.clone());
-        let s = if rate_list.len() <= 1 { "Only one rate at this resolution".to_string() } else { format!("Rates available at {cur_res}") };
-        r.push(if rate_list.len() > 1 {
-            menu_with("Refresh rate", &s, labels.clone(), &hz(rate), move |c, v| {
-                if let Some(k) = labels.iter().position(|l| *l == v) {
-                    set_mode(c, &n2, &format!("{cr}@{}", (rl[k] * 1000.0).round() / 1000.0));
-                }
-            })
-        } else {
-            info("Refresh rate", &s, hz(rate))
-        });
-    }
-    {
-        let scales = hypr::valid_scales(w as f64, h as f64);
-        let labels: Vec<String> = scales.iter().map(|x| format!("{}%", (x * 100.0).round())).collect();
-        let n2 = name.clone();
-        let s = if scales.len() > 1 { format!("Whole-pixel scales available at {cur_res}") } else { format!("No fractional scale divides {cur_res} cleanly") };
-        let cur = format!("{}%", (scale * 100.0).round());
-        r.push(if scales.len() > 1 {
-            menu_with("Scale", &s, labels.clone(), &cur, move |c, v| {
-                if let Some(k) = labels.iter().position(|l| *l == v) {
-                    hypr::save_display(&mut c.p, &n2, json!({ "scale": scales[k] }));
-                    hypr::apply_display(&c.p, &n2);
-                }
-            })
-        } else {
-            info("Scale", &s, cur)
-        });
-    }
-    r.push(toggle_with("Adaptive sync", "VRR while a fullscreen client is focused", m["vrr"].as_bool().unwrap_or(false), |_, v| {
-        hypr::set_config(json!({ "misc": { "vrr": if v { 2 } else { 0 } } }))
-    }));
-    let _ = p;
-    r
+/// Settings → Network: the Wi-Fi panel, and Wi-Fi performance through
+/// scripts/wifi-tune.sh (WifiTune.qml).
+fn wifi_tune() -> std::path::PathBuf {
+    hyprshell_kit::config_dir().join("quickshell/hyprshell/scripts/wifi-tune.sh")
 }
-
-fn set_mode(c: &mut Ctx, name: &str, mode: &str) {
-    hypr::save_display(&mut c.p, name, json!({ "mode": mode }));
-    hypr::apply_display(&c.p, name);
+fn network() -> Vec<Spec> {
+    let mut r = vec![panel("wifi")];
+    let Some(status) = system::run("bash", &[&wifi_tune().display().to_string(), "--status"]) else { return r };
+    let field = |k: &str| status.lines().find_map(|l| l.split_once('\t').filter(|(a, _)| *a == k).map(|(_, b)| b.to_string())).unwrap_or_default();
+    let (backend, iwd, powersave) = (field("backend"), field("iwd") == "yes", field("powersave"));
+    let tune = |args: Vec<&'static str>, done: &'static str| {
+        move |c: &mut Ctx, _v: bool| {
+            let mut cmd = std::process::Command::new("pkexec");
+            cmd.arg("bash").arg(wifi_tune()).args(&args);
+            let ok = cmd.status().map(|s| s.code());
+            c.ui.toast = Some(match ok {
+                Ok(Some(0)) => done.to_string(),
+                Ok(Some(126)) | Ok(Some(127)) => "Not changed: the password wasn't given".into(),
+                _ => "That didn't work".into(),
+            });
+        }
+    };
+    r.push(header("Wi-Fi performance", ""));
+    let on_iwd = backend == "iwd";
+    r.push(toggle_with(
+        "Faster Wi-Fi (iwd)",
+        &if on_iwd {
+            "On: NetworkManager uses iwd, which finds networks and joins them faster. Your saved networks are kept; a university (802.1X) one may ask for its sign-in again".to_string()
+        } else {
+            format!("NetworkManager uses wpa_supplicant now. iwd scans and joins faster; Wi-Fi reconnects by itself when it switches{}", if iwd { "" } else { ". It's installed first" })
+        },
+        on_iwd,
+        move |c, v| {
+            if v {
+                tune(vec!["--iwd", "on"], "Wi-Fi now goes through iwd. Wi-Fi reconnects by itself")(c, v)
+            } else {
+                tune(vec!["--iwd", "off"], "Wi-Fi goes through wpa_supplicant again")(c, v)
+            }
+        },
+    ));
+    r.push(toggle_with(
+        "Wi-Fi power saving",
+        if powersave == "off" {
+            "Off: steadier, quicker to wake, at a little battery"
+        } else {
+            "Turning it off is the usual cure for dropouts and slow reconnects on this laptop's Wi-Fi"
+        },
+        powersave != "off",
+        move |c, v| {
+            if v {
+                tune(vec!["--powersave", "on"], "Power saving back on")(c, v)
+            } else {
+                tune(vec!["--powersave", "off"], "Power saving off: steadier Wi-Fi, a little more battery")(c, v)
+            }
+        },
+    ));
+    r
 }
 
 fn power(p: &Prefs) -> Vec<Spec> {
@@ -1341,6 +1550,7 @@ fn power(p: &Prefs) -> Vec<Spec> {
         Some((dev, v)) => r.push(slider_with("Brightness", &dev, 1.0, 100.0, 1.0, "%", (v * 100.0).round(), |_, v| system::set_brightness(v / 100.0))),
         None => r.push(info("Brightness", "No backlight device was found", "—")),
     }
+    r.extend(crate::display::night_rows(p));
     r
 }
 
@@ -1595,7 +1805,9 @@ fn touchpad(p: &Prefs) -> Vec<Spec> {
 
 fn about(p: &Prefs) -> Vec<Spec> {
     let i = system::info();
-    let rust = system::run("pidof", &["hyprshell-rs"]).is_some();
+    let ipc = !hypr::json("version").is_null();
+    let spaces = hypr::json("workspaces").as_array().map(|a| a.iter().filter(|w| w["id"].as_i64().unwrap_or(0) > 0).count()).unwrap_or(0);
+    let focused = hypr::json("activeworkspace")["id"].as_i64().unwrap_or(0);
     let every = p.i("updatesEvery");
     vec![
         info("Device", &i.distro, if i.host.is_empty() { "—".into() } else { i.host.clone() }),
@@ -1604,9 +1816,15 @@ fn about(p: &Prefs) -> Vec<Spec> {
         meter("Storage", &i.disk_label, i.disk_ratio, &format!("{}%", (i.disk_ratio * 100.0).round()), true),
         info("Kernel", "Running kernel release", if i.kernel.is_empty() { "—".into() } else { i.kernel.clone() }),
         info("Compositor", "Wayland session", if i.hyprland.is_empty() { "hyprland".into() } else { format!("hyprland {}", i.hyprland) }),
-        info("Shell", if rust { "The Rust shell (hyprshell-rs)" } else { "Quickshell" }, if rust { "hyprshell-rs" } else { "quickshell" }),
+        info(
+            "Compositor link",
+            if ipc { "Quickshell's own Hyprland IPC — live events" } else { "No IPC; falling back to polling hyprctl" },
+            if ipc { "connected" } else { "degraded" },
+        ),
+        info("Workspaces seen", &format!("What the bar's pills are drawn from — focused is {focused}"), format!("{spaces} of {} slots", spaces.max(5))),
         info("Uptime", "Since last boot", &i.uptime),
         info("Shell config", &hyprshell_kit::theme::theme_path().display().to_string(), "theme.json"),
+        action("Reload shell", "Re-read the QML tree without logging out", "Reload", |c| c.ui.tell.push("reloadShell".into())),
         header("Updates", ""),
         action("Pending updates", "Opens the updates panel", "Show", |c| c.ui.tell.push("toggleUpdates".into())),
         toggle(p, "Check for updates", "In the background, without a password (checkupdates syncs a copy of the databases)", "updatesAuto"),
