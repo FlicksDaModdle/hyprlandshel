@@ -3,6 +3,13 @@ Description=Hyprshell face unlock (the face models, kept loaded)
 Documentation=file:///usr/local/share/hyprshell-face/README.md
 # Ready before the login screen comes up, so its first face scan finds it.
 Before=greetd.service display-manager.service
+# After the camera's driver is loaded (install.sh lists uvcvideo in
+# /etc/modules-load.d): which devices DeviceAllow=char-video4linux lets it
+# open is worked out when it starts, and started before the driver it
+# could open no camera at all. (If it ever is, it restarts itself on the
+# first "Operation not permitted".)
+Wants=systemd-modules-load.service
+After=systemd-modules-load.service
 
 [Service]
 # Ready once the models are loaded and the socket is there.

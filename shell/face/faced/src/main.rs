@@ -197,6 +197,24 @@ fn hint_text(kind: &str) -> &'static str {
     }
 }
 
+/// "Operation not permitted" opening a camera is the service's own device
+/// sandbox, not the camera: systemd works out which devices the unit may
+/// open (DeviceAllow=char-video4linux) when it starts, from the drivers
+/// loaded at that moment, and a service started before the camera's driver
+/// was may open no camera until it starts again. So it starts again — a
+/// moment after this answer has gone, by exiting for systemd to restart it
+/// (Restart=on-failure) — and the next try sees the camera.
+fn restart_if_walled_off(e: &std::io::Error) {
+    if e.raw_os_error() != Some(libc::EPERM) {
+        return;
+    }
+    eprintln!("hyprshell-faced: the camera is walled off from this service (it started before the camera's driver); restarting so the next try can open it");
+    std::thread::spawn(|| {
+        std::thread::sleep(Duration::from_millis(400));
+        std::process::exit(75);
+    });
+}
+
 fn unavailable(message: &str) -> Value {
     json!({ "result": "unavailable", "message": message })
 }
@@ -443,6 +461,7 @@ fn verify(engine: &mut Engine, config: &Config, faces: &Faces, hints: &Hints) ->
             Ok(c) => c,
             Err(e) => {
                 stop.store(true, Ordering::Relaxed);
+                restart_if_walled_off(&e);
                 return unavailable(&format!("the infrared camera: {e}"));
             }
         };
@@ -575,7 +594,10 @@ fn enrol(engine: &mut Engine, config: &Config, user: &str, request: &Value) -> V
 
     let mut camera = match Camera::open(&config.ir_device, &Want { mjpeg: None }) {
         Ok(c) => c,
-        Err(e) => return unavailable(&format!("the infrared camera: {e}")),
+        Err(e) => {
+            restart_if_walled_off(&e);
+            return unavailable(&format!("the infrared camera: {e}"));
+        }
     };
     // Five sure faces, a little apart in time, in at most six seconds.
     let deadline = Instant::now() + Duration::from_secs(6);

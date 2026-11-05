@@ -51,6 +51,7 @@ PERSON=${SUDO_USER:-}
 
 if [ "${1:-}" = --uninstall ]; then
     systemctl disable --now hyprshell-faced.service 2>/dev/null || true
+    rm -f /etc/modules-load.d/hyprshell-face.conf
     rm -f "$UNIT" /usr/local/libexec/hyprshell-faced /usr/local/bin/hyprshell-face "$PAMDIR/pam_hyprshell_face.so"
     rm -f "$SHARE/yunet.onnx" "$SHARE/sface.onnx" "$SHARE/README.md"
     rmdir "$SHARE" 2>/dev/null || true
@@ -97,6 +98,10 @@ install -D -m 644 -o root -g root "$cache/yunet.onnx" "$SHARE/yunet.onnx"
 install -D -m 644 -o root -g root "$cache/sface.onnx" "$SHARE/sface.onnx"
 install -D -m 644 -o root -g root "$HERE/README.md" "$SHARE/README.md"
 install -D -m 644 -o root -g root "$HERE/hyprshell-faced.service" "$UNIT"
+# The camera driver loaded early in boot, before the service starts: its
+# device sandbox is worked out from the drivers loaded at that moment.
+printf '# Hyprshell face unlock: the camera driver, loaded before hyprshell-faced starts.\nuvcvideo\n' \
+    > /etc/modules-load.d/hyprshell-face.conf
 
 # Settings, the first time: the cameras Howdy uses, if it's set up.
 if [ ! -f "$CONF" ]; then
