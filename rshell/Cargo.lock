@@ -1356,6 +1356,7 @@ checksum = "48ce8546b993eaf241d69ded33b1be6d205dd9857ec879d9d18bd05d3676e144"
 name = "hyprshell-rs"
 version = "0.1.0"
 dependencies = [
+ "async-io",
  "image",
  "libc",
  "regex",

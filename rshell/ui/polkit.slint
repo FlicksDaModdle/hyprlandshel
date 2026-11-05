@@ -1,0 +1,147 @@
+// The password prompt for polkit (modules/polkit/PolkitPrompt.qml): a card
+// in the middle of a dimmed screen. A click outside isn't "cancel".
+import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+
+component Button inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary;
+    in property <bool> active: true;
+    callback clicked();
+    height: 32px;
+    width: l.preferred-width + 28px;
+    border-radius: Theme.r-sm;
+    background: primary ? (t.has-hover && active ? Theme.accent.darker(0.1) : Theme.accent) : (t.has-hover ? Theme.sel : Theme.hover);
+    opacity: active ? 1 : 0.6;
+    l := Text {
+        x: 14px;
+        y: (parent.height - self.height) / 2;
+        text: root.label;
+        font-size: Theme.fs(12.5);
+        font-weight: 600;
+        color: root.primary ? Theme.ink-on-accent : Theme.ink;
+    }
+    t := TouchArea { enabled: root.active; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component PolkitPrompt inherits Window {
+    in property <string> message;
+    in property <string> action;
+    in property <[string]> users;
+    in property <int> user;
+    in property <string> note;
+    in property <bool> failed;
+    in property <bool> busy;
+    in-out property <string> password;
+    callback submit();
+    callback cancel();
+    callback pick-user(int);
+    public function take-keys() { field.focus(); }
+
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-weight: 500;
+    forward-focus: field;
+
+    Rectangle { background: #0000004d; }
+    TouchArea {}
+
+    card := Rectangle {
+        width: 420px;
+        height: body.preferred-height + 44px;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: Theme.r-cap;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.edge;
+        body := VerticalLayout {
+            x: 22px;
+            y: 24px;
+            width: parent.width - 44px;
+            height: self.preferred-height;
+            spacing: 12px;
+            HorizontalLayout {
+                spacing: 12px;
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 18px;
+                    background: Theme.seam;
+                    Glyph { x: 8px; y: 8px; data: Icons.lock; size: 20px; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: "Authentication required"; font-size: Theme.fs(15); font-weight: 600; color: Theme.ink; }
+                    if root.users.length > 0: Text {
+                        text: "As " + root.users[root.user];
+                        font-size: Theme.fs(12);
+                        color: Theme.ink3;
+                    }
+                }
+            }
+            Text { text: root.message; wrap: word-wrap; font-size: Theme.fs(13); color: Theme.ink2; }
+            if root.users.length > 1: HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for u[i] in root.users: Button { label: u; primary: i == root.user; clicked => { root.pick-user(i); } }
+            }
+            VerticalLayout {
+                spacing: 6px;
+                Text { text: "Password"; font-size: Theme.fs(11.5); font-weight: 600; color: Theme.ink2; }
+                Rectangle {
+                    height: 36px;
+                    border-radius: Theme.r-sm;
+                    background: Theme.hover;
+                    border-width: field.has-focus ? 2px : 1px;
+                    border-color: field.has-focus ? Theme.accent : Theme.edge;
+                    FocusScope {
+                        x: 12px;
+                        width: parent.width - 24px;
+                        key-pressed(e) => {
+                            if (e.text == Key.Escape) { root.cancel(); return accept; }
+                            if (e.text == Key.Return && !root.busy) { root.submit(); return accept; }
+                            reject
+                        }
+                        field := TextInput {
+                            height: 36px;
+                            vertical-alignment: center;
+                            input-type: InputType.password;
+                            enabled: !root.busy;
+                            text <=> root.password;
+                            font-size: Theme.fs(13);
+                            color: Theme.ink;
+                        }
+                    }
+                }
+            }
+            if root.note != "" || root.failed: Text {
+                wrap: word-wrap;
+                text: root.note != "" ? root.note : "That wasn't right. Try again.";
+                font-size: Theme.fs(12);
+                color: root.failed ? Theme.accent : Theme.ink3;
+            }
+            HorizontalLayout {
+                height: 32px;
+                spacing: 8px;
+                Text {
+                    vertical-alignment: center;
+                    text: root.action;
+                    overflow: elide;
+                    font-size: Theme.fs(10.5);
+                    color: Theme.ink3;
+                }
+                Button { horizontal-stretch: 0; label: "Cancel"; clicked => { root.cancel(); } }
+                Button {
+                    horizontal-stretch: 0;
+                    label: root.busy ? "Checking…" : "Authenticate";
+                    primary: true;
+                    active: !root.busy;
+                    clicked => { root.submit(); }
+                }
+            }
+        }
+    }
+}

@@ -314,6 +314,11 @@ struct BarOn {
     fullscreen: bool,
     /// The height and room last given the dock's surface.
     applied: (u32, i32),
+    /// The wallpaper's surface, what was last drawn on it, and whether a
+    /// drawing is under way.
+    ground: usize,
+    ground_done: Option<(crate::ground::Spec, u32, u32)>,
+    ground_busy: bool,
 }
 
 /// The dock's measures on one monitor, logical px (Dock.qml's).
@@ -498,6 +503,23 @@ pub struct App {
     osd_springs: [Spring; 3],
     /// The dock tile a menu is open for: (monitor, tile).
     menu_for: Option<(usize, usize)>,
+    /// The polkit agent: its prompt, the request on it and those waiting,
+    /// and where it tells the agent how each ended.
+    prompt: crate::PolkitPrompt,
+    prompt_window: Rc<MinimalSoftwareWindow>,
+    prompt_surface: Option<usize>,
+    auth: Option<crate::polkit::Request>,
+    auth_queue: Vec<crate::polkit::Request>,
+    auth_user: usize,
+    outcomes: std::sync::Arc<std::sync::Mutex<HashMap<String, bool>>>,
+    polkit_rx: Receiver<crate::polkit::Event>,
+    said_tx: Sender<crate::polkit::Said>,
+    said_rx: Receiver<crate::polkit::Said>,
+    prompt_acts: Rc<RefCell<Vec<i32>>>,
+    ground_spec: crate::ground::Spec,
+    ground_tx: Sender<(usize, crate::ground::Spec, u32, u32, Vec<u8>)>,
+    ground_rx: Receiver<(usize, crate::ground::Spec, u32, u32, Vec<u8>)>,
+    live: crate::ground::Live,
     /// The monitor in use when last asked (for sizes that follow its scale).
     focused_bar_cached: usize,
     launcher: crate::launch_ui::Host,
@@ -571,6 +593,16 @@ impl App {
             theme_into!(panels, &look, us);
             wire_panels(&panels, &actions);
             panels.set_user(user_name().into());
+            // The wallpaper, under everything.
+            let ground = shell.add_picture(qh, Some(output), &wl::Placement {
+                namespace: "quickshell:wallpaper",
+                layer: Layer::Background,
+                anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+                width: 0,
+                height: 0,
+                exclusive: -1,
+                keyboard: KeyboardInteractivity::None,
+            });
             // The dock, under everything on this monitor.
             let dock = crate::Dock::new().expect("the dock");
             theme_into!(dock, &look, us);
@@ -623,6 +655,9 @@ impl App {
                 over: false,
                 fullscreen: false,
                 applied: ((geom.head + geom.breadth + geom.edge) as u32, geom.exclusive),
+                ground,
+                ground_done: None,
+                ground_busy: false,
             });
         }
 
@@ -643,6 +678,24 @@ impl App {
         theme_into!(launcher.ui, &look, 1.0);
         let (icon_tx, icon_rx) = channel();
 
+        let (ground_tx, ground_rx) = channel();
+        let outcomes = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let (polkit_tx, polkit_rx) = channel();
+        crate::polkit::start(polkit_tx, wake.try_clone().expect("wake"), outcomes.clone());
+        let (said_tx, said_rx) = channel();
+        let prompt = crate::PolkitPrompt::new().expect("the password prompt");
+        let prompt_window = crate::platform::take_adapter().expect("the prompt's window");
+        theme_into!(prompt, &look, 1.0);
+        // -1 submit, -2 cancel, n ≥ 0 that user.
+        let prompt_acts: Rc<RefCell<Vec<i32>>> = Rc::new(RefCell::new(Vec::new()));
+        {
+            let q = prompt_acts.clone();
+            prompt.on_submit(move || q.borrow_mut().push(-1));
+            let q = prompt_acts.clone();
+            prompt.on_cancel(move || q.borrow_mut().push(-2));
+            let q = prompt_acts.clone();
+            prompt.on_pick_user(move |i| q.borrow_mut().push(i));
+        }
         let switch_acts = Rc::new(RefCell::new(Vec::new()));
         let switcher = crate::switch_ui::Host::new(switch_acts.clone());
         theme_into!(switcher.ui, &look, 1.0);
@@ -659,6 +712,21 @@ impl App {
             osd_until: None,
             osd_springs: [Spring::new(24.0), Spring::new(0.0), Spring::new(0.86)],
             launcher,
+            prompt,
+            prompt_window,
+            prompt_surface: None,
+            auth: None,
+            auth_queue: Vec::new(),
+            auth_user: 0,
+            outcomes,
+            polkit_rx,
+            said_tx,
+            said_rx,
+            prompt_acts,
+            ground_spec: crate::ground::spec(&raw, look.dark),
+            ground_tx,
+            ground_rx,
+            live: crate::ground::Live::new(),
             focused_bar_cached: 0,
             clients: Vec::new(),
             active_addr: String::new(),
@@ -943,6 +1011,8 @@ impl App {
         }
 
         self.step_docks(shell, dt);
+        self.step_ground(shell);
+        self.step_polkit(shell, qh);
         self.step_switcher(shell, qh);
         self.step_osd(shell, dt);
 
@@ -971,6 +1041,7 @@ impl App {
                 self.refresh_extras();
             }
             self.refresh_second();
+            self.live.tick();
         }
     }
 
@@ -1260,11 +1331,15 @@ impl App {
         theme_into!(self.toasts, &self.look, 1.0);
         theme_into!(self.switcher.ui, &self.look, 1.0);
         theme_into!(self.osd, &self.look, 1.0);
+        theme_into!(self.prompt, &self.look, 1.0);
         let us = self.bars.get(self.focused_bar_cached).map(|b| self.look.screen_scale(&b.monitor)).unwrap_or(1.0);
         theme_into!(self.launcher.ui, &self.look, us);
         self.launcher.configure(&theme::raw(), us, &user_name());
         // Pins and the dock's tile settings may have changed with it.
         self.dock_tiles();
+        let raw = theme::raw();
+        self.ground_spec = crate::ground::spec(&raw, self.look.dark);
+        self.live.follow(&raw);
     }
 
     fn refresh_second(&mut self) {
@@ -1716,6 +1791,9 @@ impl App {
     // ── doing ────────────────────────────────────────────────────────────
 
     pub fn run_actions(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        if !self.prompt_acts.borrow().is_empty() {
+            self.step_polkit(shell, qh);
+        }
         let sw: Vec<crate::switch_ui::Act> = std::mem::take(&mut *self.switch_acts.borrow_mut());
         let any = !sw.is_empty();
         for a in sw {
@@ -2141,6 +2219,140 @@ impl App {
                     other => self.power(other),
                 }
             }
+        }
+    }
+
+    /// The polkit prompt: requests in, the user's answers out to polkit's
+    /// helper, and what the helper said back.
+    fn step_polkit(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        use crate::polkit::{Event, Said};
+        while let Ok(ev) = self.polkit_rx.try_recv() {
+            match ev {
+                Event::Begin(r) => self.auth_queue.push(r),
+                Event::Cancelled(cookie) => {
+                    self.auth_queue.retain(|r| r.cookie != cookie);
+                    if self.auth.as_ref().is_some_and(|r| r.cookie == cookie) {
+                        self.end_auth(shell, false);
+                    }
+                }
+            }
+        }
+        let acts: Vec<i32> = std::mem::take(&mut *self.prompt_acts.borrow_mut());
+        for a in acts {
+            match a {
+                -1 => {
+                    let Some(r) = &self.auth else { continue };
+                    let pw = self.prompt.get_password().to_string();
+                    if pw.is_empty() || self.prompt.get_busy() {
+                        continue;
+                    }
+                    self.prompt.set_password("".into());
+                    self.prompt.set_busy(true);
+                    self.prompt.set_failed(false);
+                    self.prompt.set_note("".into());
+                    let user = r.users.get(self.auth_user).map(|u| u.0.clone()).unwrap_or_default();
+                    crate::polkit::attempt(user, r.cookie.clone(), pw, self.said_tx.clone(), self.wake.try_clone().expect("wake"));
+                }
+                -2 => self.end_auth(shell, false),
+                i => {
+                    self.auth_user = i.max(0) as usize;
+                    self.prompt.set_user(i);
+                }
+            }
+        }
+        while let Ok(said) = self.said_rx.try_recv() {
+            match said {
+                Said::Success => self.end_auth(shell, true),
+                Said::Failure(m) => {
+                    self.prompt.set_busy(false);
+                    self.prompt.set_failed(true);
+                    self.prompt.set_note(m.into());
+                    self.prompt.invoke_take_keys();
+                }
+                Said::Info(m) | Said::Ask(m) => self.prompt.set_note(m.into()),
+            }
+        }
+        // The next request, when none is showing.
+        if self.auth.is_none() && !self.auth_queue.is_empty() {
+            let r = self.auth_queue.remove(0);
+            let me = user_name();
+            self.auth_user = r.users.iter().position(|u| u.0 == me).unwrap_or(0);
+            let names: Vec<SharedString> = r.users.iter().map(|u| u.0.clone().into()).collect();
+            self.prompt.set_users(model(names));
+            self.prompt.set_user(self.auth_user as i32);
+            self.prompt.set_message(r.message.clone().into());
+            self.prompt.set_action(r.action.clone().into());
+            self.prompt.set_password("".into());
+            self.prompt.set_busy(false);
+            self.prompt.set_failed(false);
+            self.prompt.set_note("".into());
+            self.auth = Some(r);
+            if self.prompt_surface.is_none() {
+                let bar = self.focused_bar();
+                let output = self.bars.get(bar).map(|b| b.output.clone());
+                self.prompt_surface = Some(shell.add_window(qh, self.prompt_window.clone(), output.as_ref(), &wl::Placement {
+                    namespace: "quickshell:polkit",
+                    layer: Layer::Overlay,
+                    anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+                    width: 0,
+                    height: 0,
+                    exclusive: -1,
+                    keyboard: KeyboardInteractivity::Exclusive,
+                }));
+            }
+            self.prompt.invoke_take_keys();
+        }
+    }
+
+    /// Tells polkit how the request on the prompt ended, and takes it down.
+    fn end_auth(&mut self, shell: &mut wl::Shell, ok: bool) {
+        if let Some(r) = self.auth.take() {
+            if let Ok(mut o) = self.outcomes.lock() {
+                o.insert(r.cookie, ok);
+            }
+        }
+        self.prompt.set_password("".into());
+        self.prompt.set_busy(false);
+        if self.auth_queue.is_empty() {
+            if let Some(id) = self.prompt_surface.take() {
+                shell.remove(id);
+            }
+        }
+    }
+
+    /// Each screen's wallpaper: drawn on a helper thread when the screen's
+    /// size or the wallpaper changes, then put on its surface.
+    fn step_ground(&mut self, shell: &mut wl::Shell) {
+        while let Ok((bar, spec, w, h, px)) = self.ground_rx.try_recv() {
+            if let Some(b) = self.bars.get_mut(bar) {
+                b.ground_busy = false;
+                shell.set_picture(b.ground, w, h, |out| out.copy_from_slice(&px[..out.len()]));
+                b.ground_done = Some((spec, w, h));
+            }
+        }
+        for (i, b) in self.bars.iter_mut().enumerate() {
+            let Some((w, h)) = shell.pictures.get(b.ground).and_then(|p| p.pixel_size()) else { continue };
+            let want = (self.ground_spec.clone(), w, h);
+            if b.ground_busy || b.ground_done.as_ref() == Some(&want) {
+                continue;
+            }
+            b.ground_busy = true;
+            let (tx, spec) = (self.ground_tx.clone(), self.ground_spec.clone());
+            let dark = self.look.dark;
+            let raw = theme::raw();
+            let mut wake = self.wake.try_clone().expect("wake");
+            std::thread::spawn(move || {
+                // A picture that won't open falls back to the gradient.
+                let px = crate::ground::draw(&spec, w, h).unwrap_or_else(|| {
+                    let mut r = raw.clone();
+                    r["wallpaper"] = serde_json::Value::String(String::new());
+                    crate::ground::draw(&crate::ground::spec(&r, dark), w, h).unwrap_or_default()
+                });
+                if px.len() >= (w * h * 4) as usize {
+                    let _ = tx.send((i, spec, w, h, px));
+                    let _ = std::io::Write::write_all(&mut wake, b"!");
+                }
+            });
         }
     }
 

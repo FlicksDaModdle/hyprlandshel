@@ -75,6 +75,30 @@ pub struct ShellSurface {
     sized: (u32, u32, f64),
 }
 
+/// A surface showing one still picture, drawn by the caller straight into
+/// the compositor's buffer with no Slint in between: the wallpaper, which
+/// changes rarely and is the size of the screen, so it shouldn't also be
+/// kept in a drawing buffer and spare copies.
+pub struct Picture {
+    layer: LayerSurface,
+    fractional: Option<wp_fractional_scale_v1::WpFractionalScaleV1>,
+    viewport: Option<wp_viewport::WpViewport>,
+    pub width: u32,
+    pub height: u32,
+    pub scale: f64,
+    configured: bool,
+    pool: Option<SlotPool>,
+    buffer: Option<smithay_client_toolkit::shm::slot::Buffer>,
+}
+
+impl Picture {
+    /// The size in device pixels to draw at, once the compositor has said.
+    pub fn pixel_size(&self) -> Option<(u32, u32)> {
+        (self.configured && self.width > 0 && self.height > 0)
+            .then(|| (((self.width as f64) * self.scale).round() as u32, ((self.height as f64) * self.scale).round() as u32))
+    }
+}
+
 pub struct Shell {
     registry: RegistryState,
     pub outputs: OutputState,
@@ -87,6 +111,7 @@ pub struct Shell {
     /// A removed surface's last frame, kept for its window: Slint redraws
     /// only what changed, so the window's next surface starts from it.
     kept: Vec<(Rc<MinimalSoftwareWindow>, Vec<Bgra>)>,
+    pub pictures: Vec<Picture>,
     /// By id: a removed surface leaves a hole, so the ids of the rest hold.
     pub surfaces: Vec<Option<ShellSurface>>,
     pointer: Option<wl_pointer::WlPointer>,
@@ -122,6 +147,7 @@ impl Shell {
             fractional,
             viewporter,
             surfaces: Vec::new(),
+            pictures: Vec::new(),
             kept: Vec::new(),
             pointer: None,
             keyboard: None,
@@ -195,6 +221,63 @@ impl Shell {
             self.surfaces.push(Some(s));
             self.surfaces.len() - 1
         }
+    }
+
+    /// A picture surface (see Picture); its index in `pictures`.
+    pub fn add_picture(&mut self, qh: &QueueHandle<Self>, output: Option<&wl_output::WlOutput>, p: &Placement) -> usize {
+        let surface = self.compositor.create_surface(qh);
+        let fractional = self.fractional.as_ref().map(|m| m.get_fractional_scale(&surface, qh, surface.id()));
+        let viewport = match (&self.fractional, &self.viewporter) {
+            (Some(_), Some(v)) => Some(v.get_viewport(&surface, qh, ())),
+            _ => None,
+        };
+        // It takes no input: clicks on the desktop go to the panel layer or
+        // nowhere.
+        if let Ok(r) = smithay_client_toolkit::compositor::Region::new(&self.compositor) {
+            surface.set_input_region(Some(r.wl_region()));
+        }
+        let layer = self.layer_shell.create_layer_surface(qh, surface, p.layer, Some(p.namespace), output);
+        layer.set_anchor(p.anchor);
+        layer.set_size(p.width, p.height);
+        layer.set_exclusive_zone(p.exclusive);
+        layer.set_keyboard_interactivity(p.keyboard);
+        layer.commit();
+        let scale = output.and_then(|o| self.outputs.info(o)).map(|i| i.scale_factor as f64).unwrap_or(1.0);
+        self.pictures.push(Picture { layer, fractional, viewport, width: p.width, height: p.height, scale, configured: false, pool: None, buffer: None });
+        self.pictures.len() - 1
+    }
+
+    /// Puts a picture on its surface: `fill` writes it, BGRA, `w`×`h`
+    /// device pixels, into the buffer the compositor will read.
+    pub fn set_picture(&mut self, id: usize, w: u32, h: u32, fill: impl FnOnce(&mut [u8])) {
+        let shm = &self.shm;
+        let Some(p) = self.pictures.get_mut(id) else { return };
+        let stride = w as i32 * 4;
+        let len = (stride * h as i32) as usize;
+        // The last one goes first, so there is only ever the one.
+        p.buffer = None;
+        let pool = p.pool.get_or_insert_with(|| SlotPool::new(len, shm).expect("shm pool"));
+        if pool.len() < len {
+            let _ = pool.resize(len);
+        }
+        let Ok((buffer, canvas)) = pool.create_buffer(w as i32, h as i32, stride, wl_shm::Format::Xrgb8888) else { return };
+        fill(&mut canvas[..len]);
+        let surface = p.layer.wl_surface();
+        if let Some(vp) = &p.viewport {
+            surface.set_buffer_scale(1);
+            vp.set_destination(p.width as i32, p.height as i32);
+        } else {
+            surface.set_buffer_scale(p.scale.round().max(1.0) as i32);
+        }
+        surface.damage_buffer(0, 0, w as i32, h as i32);
+        if buffer.attach_to(surface).is_ok() {
+            p.layer.commit();
+        }
+        p.buffer = Some(buffer);
+    }
+
+    fn picture_of(&self, surface: &wl_surface::WlSurface) -> Option<usize> {
+        self.pictures.iter().position(|p| p.layer.wl_surface() == surface)
     }
 
     /// Takes a surface off the screen. Its Slint window is handed back, to
@@ -372,6 +455,17 @@ impl LayerShellHandler for Shell {
     }
 
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, c: LayerSurfaceConfigure, _: u32) {
+        if let Some(i) = self.picture_of(layer.wl_surface()) {
+            let p = &mut self.pictures[i];
+            if c.new_size.0 > 0 {
+                p.width = c.new_size.0;
+            }
+            if c.new_size.1 > 0 {
+                p.height = c.new_size.1;
+            }
+            p.configured = true;
+            return;
+        }
         let Some(i) = self.index_of(layer.wl_surface()) else { return };
         let s = self.at(i);
         if c.new_size.0 > 0 {
@@ -390,6 +484,12 @@ impl LayerShellHandler for Shell {
 impl CompositorHandler for Shell {
     fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &wl_surface::WlSurface, factor: i32) {
         // Only without fractional scaling: with it, preferred_scale decides.
+        if let Some(i) = self.picture_of(surface) {
+            if self.pictures[i].fractional.is_none() {
+                self.pictures[i].scale = factor.max(1) as f64;
+            }
+            return;
+        }
         let Some(i) = self.index_of(surface) else { return };
         let s = self.at(i);
         if s.fractional.is_none() {
@@ -413,6 +513,9 @@ impl Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, wayland_client::backe
         _: &QueueHandle<Self>,
     ) {
         if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
+            if let Some(p) = state.pictures.iter_mut().find(|p| &p.layer.wl_surface().id() == surface) {
+                p.scale = scale as f64 / 120.0;
+            }
             if let Some(s) = state.surfaces.iter_mut().flatten().find(|s| &s.layer.wl_surface().id() == surface) {
                 s.scale = scale as f64 / 120.0;
                 s.adapter.request_redraw();

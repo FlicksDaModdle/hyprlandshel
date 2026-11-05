@@ -38,6 +38,8 @@ branch; the Quickshell shell stays the one in use until this has caught up.
   pinned app each is, the tiles, and what clicking one does.
 - `src/switch_ui.rs`, `ui/switcher.slint` — Alt+Tab; `ui/osd.slint` — the
   volume / brightness popup.
+- `src/ground.rs` — the wallpaper and mpvpaper; `src/polkit.rs`,
+  `ui/polkit.slint` — the polkit agent and its prompt.
 - `src/spring.rs` — common/Spring.qml's springs, for every animation that
   bounces.
 - `src/app.rs` — the shell: bars, panels, banners, and what each click does.
@@ -102,7 +104,15 @@ connection, the Hyprland event pipe and Slint's next timer.
    Hyprland every 50 ms, as the QML one does); a quick Alt+Tab switches
    without showing it. Live window pictures come later: each tile shows
    the app's glyph for now.
-8. The keybinds: hyprshell.cmd's launcher and panel toggles, volume, mute, microphone,
+8. The wallpaper (Wallpaper.qml): the chosen picture, cropped to fill, or
+   the theme's tinted gradient, drawn once per screen at its own pixel size
+   straight into the compositor's buffer (no drawing buffer kept). A live
+   wallpaper is mpvpaper, kept running as LiveWallpaper.qml does and ended
+   with the shell. The shader styles show as the gradient for now.
+9. The polkit agent (PolkitPrompt.qml): the password prompt for whatever
+   asks for admin rights. The password goes only to polkit's helper, over
+   its socket (polkit 126 on) or to the setuid helper's input.
+10. The keybinds: hyprshell.cmd's launcher and panel toggles, volume, mute, microphone,
    brightness, theme, Do not disturb, lock, Mail, updates.
 
 Not yet: the OSD for the volume and brightness keys, the Wi-Fi network and
