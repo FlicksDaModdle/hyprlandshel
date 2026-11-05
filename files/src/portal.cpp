@@ -185,6 +185,47 @@ QVariantList FileChooserPortal::parseFilters(const QVariantMap &options) {
         out.append(f);
     }
     arg.endArray();
+
+    // current_filter, (sa(us)): the one the caller wants in force at first.
+    // Marked in the list, or added to its front when the caller named one
+    // that isn't among its filters (the spec allows that).
+    const QVariant cur = options.value(QStringLiteral("current_filter"));
+    if (cur.canConvert<QDBusArgument>()) {
+        const QDBusArgument c = cur.value<QDBusArgument>();
+        QString name;
+        QStringList patterns;
+        c.beginStructure();
+        c >> name;
+        c.beginArray();
+        while (!c.atEnd()) {
+            c.beginStructure();
+            uint kind = 0;
+            QString value;
+            c >> kind >> value;
+            c.endStructure();
+            if (!value.isEmpty()) patterns.append(value);
+        }
+        c.endArray();
+        c.endStructure();
+        bool marked = false;
+        for (QVariant &v : out) {
+            QVariantMap f = v.toMap();
+            if (f.value(QStringLiteral("name")).toString() == name
+                && f.value(QStringLiteral("patterns")).toStringList() == patterns) {
+                f.insert(QStringLiteral("current"), true);
+                v = f;
+                marked = true;
+                break;
+            }
+        }
+        if (!marked && (!name.isEmpty() || !patterns.isEmpty())) {
+            QVariantMap f;
+            f.insert(QStringLiteral("name"), name);
+            f.insert(QStringLiteral("patterns"), patterns);
+            f.insert(QStringLiteral("current"), true);
+            out.prepend(f);
+        }
+    }
     return out;
 }
 

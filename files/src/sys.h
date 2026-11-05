@@ -36,6 +36,13 @@ public:
     // Whether anything is at a path — a file, a folder, a dangling link.
     Q_INVOKABLE bool exists(const QString &path) const;
 
+    // The file name suffixes ("png", "tar.gz") a MIME type covers, from the
+    // system's shared MIME database: an exact type with every type that
+    // counts as one (so "text/plain" takes .py and .c, which are text),
+    // aliases resolved, and a whole group for "image/*". Empty when the
+    // type is unknown, so the caller can tell "nothing" from "anything".
+    Q_INVOKABLE QStringList mimeSuffixes(const QString &type) const;
+
     // This program's own executable, to run it again as `--pick` for a
     // folder dialog of its own.
     Q_INVOKABLE QString appPath() const;

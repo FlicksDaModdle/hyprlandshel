@@ -33,8 +33,9 @@ QtObject {
 
     // ── how it is shown ───────────────────────────────────────────────────
     readonly property string view: FilesService.view          // grid | list
-    readonly property string sortBy: FilesService.sortBy      // name | size | modified
-    readonly property bool sortReverse: FilesService.sortReverse
+    // This folder's: Downloads keeps its own (FilesService.sortByFor).
+    readonly property string sortBy: FilesService.sortByFor(root.cwd)    // name | size | modified | type
+    readonly property bool sortReverse: FilesService.sortReverseFor(root.cwd)
     readonly property bool showHidden: FilesService.showHidden
 
     // ── what is picked ────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ QtObject {
     // through it — and never in the trash, where the date shown is when a
     // thing was deleted and the columns are different anyway.
     readonly property bool grouping:
-        root.svc.groupByDate && root.sortBy === "modified" && !root.inTrash
+        root.svc.groupFor(root.cwd) && root.sortBy === "modified" && !root.inTrash
 
     // The heading that belongs *above* entry `i`, or "" when it carries on
     // from the one before it. Deliberately a lookup beside the list rather

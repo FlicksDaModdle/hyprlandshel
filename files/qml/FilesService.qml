@@ -76,6 +76,36 @@ QtObject {
     // Windows Explorer does. Only applies when sorting by date.
     property bool groupByDate: true
 
+    // Downloads keeps its own sort, as Windows 11's does: newest first and
+    // broken into date groups, while every other folder stays A to Z.
+    // Changed while in Downloads, it changes only Downloads'; the global
+    // sort above is everywhere else's.
+    property string downloadsDir: ""
+    property string dlSortBy: "modified"
+    property bool dlSortReverse: true
+    property bool dlGroup: true
+    onDlSortByChanged:      setPref("downloadsSortBy", dlSortBy)
+    onDlSortReverseChanged: setPref("downloadsSortReverse", dlSortReverse)
+    onDlGroupChanged:       setPref("downloadsGroupByDate", dlGroup)
+    function isDownloads(path) {
+        return root.downloadsDir !== "" && String(path || "").replace(/\/+$/, "") === root.downloadsDir.replace(/\/+$/, "");
+    }
+    function sortByFor(path) { return isDownloads(path) ? root.dlSortBy : root.sortBy; }
+    function sortReverseFor(path) { return isDownloads(path) ? root.dlSortReverse : root.sortReverse; }
+    function groupFor(path) { return isDownloads(path) ? root.dlGroup : root.groupByDate; }
+    // Clicking a column: the same column again turns the order round;
+    // a new one starts the way Explorer starts it — names A to Z, sizes
+    // and dates largest and newest first.
+    function sortColumn(path, key) {
+        const by = sortByFor(path), rev = sortReverseFor(path);
+        const next = by === key ? !rev : (key === "modified" || key === "size");
+        if (isDownloads(path)) { root.dlSortBy = key; root.dlSortReverse = next; }
+        else { root.sortBy = key; root.sortReverse = next; }
+    }
+    function setGroup(path, on) {
+        if (isDownloads(path)) root.dlGroup = on; else root.groupByDate = on;
+    }
+
     // The list view's column widths, dragged by their dividers. Name takes
     // whatever is left, so it is not stored: widening Size narrows Name,
     // which is what dragging a divider means.
@@ -108,6 +138,9 @@ QtObject {
         root.bookmarksRaw = pref("bookmarks", "");
         root.terminal = pref("terminal", "");
         root.groupByDate = pref("groupByDate", true);
+        root.dlSortBy = pref("downloadsSortBy", "modified");
+        root.dlSortReverse = pref("downloadsSortReverse", true);
+        root.dlGroup = pref("downloadsGroupByDate", true);
         root.sizeWidth = pref("sizeWidth", 96);
         root.typeWidth = pref("typeWidth", 116);
         root.timeWidth = pref("timeWidth", 104);
@@ -220,8 +253,24 @@ QtObject {
 
     // The suffixes a MIME pattern stands for, or null when it stands for
     // something this does not know.
+    // From the system's MIME database (Sys.mimeSuffixes) first, which
+    // knows every type and the ones that count as it; the table above is
+    // only the fallback for a type that database doesn't have. Remembered,
+    // since the list is filtered again on every change to the folder.
+    property var mimeCache: ({})
     function mimeSuffixes(type) {
         const t = String(type).toLowerCase();
+        if (root.mimeCache[t] !== undefined) return root.mimeCache[t];
+        let found = null;
+        try {
+            const db = Sys.mimeSuffixes(t);
+            if (db && db.length > 0) found = Array.from(db);
+        } catch (e) { found = null; }
+        if (found === null) found = root.mimeTable(t);
+        root.mimeCache[t] = found;
+        return found;
+    }
+    function mimeTable(t) {
         if (root.mimeExts[t] !== undefined) return root.mimeExts[t];
         const slash = t.indexOf("/");
         if (slash > 0 && t.slice(slash + 1) === "*") {
@@ -244,7 +293,7 @@ QtObject {
                 const exts = root.mimeSuffixes(p);
                 if (exts === null) return null;
                 for (const e of exts)
-                    res.push(new RegExp("\\." + e + "$", "i"));
+                    res.push(new RegExp("\\." + String(e).replace(/[.\\+^$|()\[\]{}*?]/g, "\\$&") + "$", "i"));
                 continue;
             }
             res.push(root.globRe(p));
@@ -313,7 +362,8 @@ QtObject {
     // when it last changed, like everything else, rather than all of them
     // being lifted out into a block of their own above the dates.
     readonly property var dateGroups: ["Today", "Yesterday", "Earlier this week", "Last week",
-                                       "Earlier this month", "Earlier this year", "Older", "Unknown"]
+                                       "Earlier this month", "Last month", "Earlier this year",
+                                       "A long time ago", "Unknown"]
     function sortEntries(list, by, reverse, grouped) {
         const dir = reverse ? -1 : 1;
         const sorted = (list || []).slice();
@@ -328,7 +378,6 @@ QtObject {
                 const a = x.e, b = y.e;
                 if (x.g !== y.g) return x.g - y.g;
                 if (a.dir !== b.dir) return a.dir ? -1 : 1;
-                if (a.dir) return root.compareNames(a.name, b.name);
                 return ((a.mtime - b.mtime) || root.compareNames(a.name, b.name)) * dir;
             });
             return keyed.map(k => k.e);
@@ -359,6 +408,10 @@ QtObject {
         return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000;
     }
 
+    // Explorer's groups for "Date modified", in its order and with its
+    // words. Weeks start on the locale's first day, as Explorer's do (Sunday
+    // in the US, Monday in most of Europe). A date in the future, from a
+    // clock that was wrong or a file from another time zone, is Today.
     function dateGroup(mtime) {
         if (!mtime) return "Unknown";
         const now = new Date();
@@ -366,16 +419,18 @@ QtObject {
         const t = mtime;
         if (t >= today) return "Today";
         if (t >= today - 86400) return "Yesterday";
-        // The rest of the current week, counting from Monday, which is what
-        // "earlier this week" means to everyone who is not a calendar.
-        const dow = (now.getDay() + 6) % 7;          // Monday = 0
-        if (t >= today - dow * 86400) return "Earlier this week";
-        if (t >= today - (dow + 7) * 86400) return "Last week";
+        const first = Qt.locale().firstDayOfWeek;          // 0 = Sunday … 6
+        const sinceStart = (now.getDay() - first + 7) % 7;  // days into this week
+        const weekStart = today - sinceStart * 86400;
+        if (t >= weekStart) return "Earlier this week";
+        if (t >= weekStart - 7 * 86400) return "Last week";
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000;
         if (t >= monthStart) return "Earlier this month";
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime() / 1000;
+        if (t >= lastMonthStart) return "Last month";
         const yearStart = new Date(now.getFullYear(), 0, 1).getTime() / 1000;
         if (t >= yearStart) return "Earlier this year";
-        return "Older";
+        return "A long time ago";
     }
 
     // ── names and paths ───────────────────────────────────────────────────
@@ -728,6 +783,7 @@ QtObject {
             { key: "MUSIC", label: "Music", icon: "music" },
             { key: "VIDEOS", label: "Videos", icon: "film" }
         ];
+        root.downloadsDir = dirs.DOWNLOAD && dirs.DOWNLOAD !== root.home ? dirs.DOWNLOAD : root.home + "/Downloads";
         const out = [{ label: "Home", path: root.home, icon: "home" }];
         for (const w of want) {
             const p = dirs[w.key];

@@ -27,11 +27,46 @@ Window {
     // disk, and the file someone means is often spelled in a way it did
     // not think of. Being unable to reach a file that is right there is
     // the worse failure of the two.
-    property int filterIndex: dlg.filters.length > 0 ? 0 : -1
+    //
+    // It starts on the one the caller asked for (current_filter), or else
+    // its first.
+    property int filterIndex: {
+        if (dlg.filters.length === 0) return -1;
+        for (let i = 0; i < dlg.filters.length; i++)
+            if (dlg.filters[i] && dlg.filters[i].current) return i;
+        return 0;
+    }
 
     readonly property var activePatterns:
         dlg.filterIndex >= 0 && dlg.filterIndex < dlg.filters.length
         ? (dlg.filters[dlg.filterIndex].patterns || []) : []
+
+    // A filter's extensions as Windows shows them beside it ("*.png;
+    // *.jpg"), here as ".png .jpg …": globs as written, MIME types through
+    // the system's database. Shown for the one in force, and used as the
+    // name of one the caller left unnamed.
+    function extsOf(f) {
+        const out = [];
+        for (const raw of (f && f.patterns) || []) {
+            const p = String(raw).trim();
+            if (p.indexOf("/") >= 0) {
+                for (const e of (FilesService.mimeSuffixes(p) || [])) out.push("." + e);
+            } else if (p !== "") {
+                out.push(p.replace(/^\*\./, "."));
+            }
+        }
+        return out.filter((e, i) => out.indexOf(e) === i);
+    }
+    function nameOf(f) {
+        if (f && f.name) return f.name;
+        const e = dlg.extsOf(f).slice(0, 3).map(x => x.replace(/^\./, "").toUpperCase());
+        return e.length > 0 ? e.join(", ") + " files" : "Files";
+    }
+    readonly property string activeExts: {
+        if (dlg.filterIndex < 0 || dlg.filterIndex >= dlg.filters.length) return "";
+        const e = dlg.extsOf(dlg.filters[dlg.filterIndex]);
+        return e.length > 8 ? e.slice(0, 8).join("  ") + "  +" + (e.length - 8) + " more" : e.join("  ");
+    }
 
     readonly property bool saving: dlg.mode === "save"
     readonly property bool pickingFolder: dlg.directory || dlg.mode === "savefiles"
@@ -189,8 +224,7 @@ Window {
                                 id: label
                                 anchors.centerIn: parent
                                 text: parent.isAll ? "All files"
-                                                   : (dlg.filters[parent.index].name
-                                                      || "Files")
+                                                   : dlg.nameOf(dlg.filters[parent.index])
                                 font.pixelSize: Appearance.fs(11.5)
                                 color: parent.on ? Appearance.inkOnAccent
                                                  : Appearance.ink2
@@ -204,6 +238,16 @@ Window {
                                 onClicked: dlg.filterIndex = parent.isAll ? -1 : parent.index
                             }
                         }
+                    }
+
+                    // What the one in force lets through.
+                    StyledText {
+                        visible: dlg.activeExts !== ""
+                        anchors.verticalCenter: parent.verticalCenter
+                        leftPadding: 6
+                        text: dlg.activeExts
+                        font.pixelSize: Appearance.fs(11)
+                        color: Appearance.ink3
                     }
                 }
             }

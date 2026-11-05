@@ -189,8 +189,5 @@ Item {
         else if (key === "modified") FilesService.timeWidth = v;
     }
 
-    function sortByKey(key) {
-        if (FilesService.sortBy === key) FilesService.sortReverse = !FilesService.sortReverse;
-        else { FilesService.sortBy = key; FilesService.sortReverse = false; }
-    }
+    function sortByKey(key) { FilesService.sortColumn(header.app.cwd, key); }
 }
