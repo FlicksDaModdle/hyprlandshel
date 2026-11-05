@@ -46,3 +46,19 @@ pub fn listen(tx: Sender<String>, mut wake: UnixStream) {
         std::thread::sleep(std::time::Duration::from_secs(1));
     });
 }
+
+/// Runs a dispatcher. Hyprland with a Lua config (0.55 on) takes it as Lua,
+/// `hl.dsp.focus({ workspace = 3 })`, and answers anything else with an
+/// error; an older one takes the hyprlang words, `workspace 3`. The Lua is
+/// tried first and the old words only if it was refused.
+pub fn dispatch(lua: &str, legacy: &str) {
+    let ok = |r: Option<String>| r.is_some_and(|t| t.trim() == "ok");
+    if !ok(ask(&format!("dispatch {lua}"))) && !legacy.is_empty() {
+        ask(&format!("dispatch {legacy}"));
+    }
+}
+
+/// A Lua string literal.
+pub fn lua_str(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}

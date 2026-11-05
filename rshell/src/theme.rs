@@ -31,8 +31,15 @@ const PRESETS: [(&str, &str); 4] =
     [("#ec3013", "#ff563c"), ("#ae1800", "#e8452b"), ("#2d2b2b", "#d7d3d3"), ("#7c1405", "#c94b39")];
 
 pub struct Theme {
-    #[allow(dead_code)] // the panels pick light or dark artwork by it
     pub dark: bool,
+    /// "light", "dark" or "auto", as Settings has it.
+    pub mode: String,
+    pub dnd: bool,
+    pub show_tray: bool,
+    pub tray_open: bool,
+    pub updates_in_bar: bool,
+    pub mail_in_bar: bool,
+    pub seam: Rgba,
     pub accent: Rgba,
     pub ink_on_accent: Rgba,
     pub ink: Rgba,
@@ -136,6 +143,13 @@ pub fn load() -> Theme {
 
     Theme {
         dark,
+        mode: mode.to_string(),
+        dnd: flag("dnd", false),
+        show_tray: flag("showTray", true),
+        tray_open: flag("trayOpen", false),
+        updates_in_bar: flag("updatesInBar", true),
+        mail_in_bar: flag("mailInBar", true),
+        seam: Rgba(accent.0, accent.1, accent.2, if dark { 0.24 } else { 0.18 }),
         accent,
         ink_on_accent,
         ink: if dark { Rgba(0xf8, 0xf4, 0xf4, 1.0) } else { Rgba(0x20, 0x1e, 0x1d, 1.0) },
@@ -163,4 +177,31 @@ pub fn load() -> Theme {
         badges: flag("badges", true),
         screen_scales,
     }
+}
+
+/// Changes one setting in theme.json, keeping the rest as they are: what
+/// the theme chip, the bell's right click and the tray's chevron write.
+pub fn set(key: &str, value: Value) {
+    let p = path();
+    let mut v: Value = std::fs::read_to_string(&p).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null);
+    if !v.is_object() {
+        v = Value::Object(Default::default());
+    }
+    v[key] = value;
+    if let Ok(text) = serde_json::to_string_pretty(&v) {
+        // Written beside it and moved into place, so the Quickshell shell
+        // (or Settings) never reads half a file.
+        if let Some(dir) = p.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let tmp = p.with_extension("json.rshell");
+        if std::fs::write(&tmp, text).is_ok() {
+            let _ = std::fs::rename(&tmp, &p);
+        }
+    }
+}
+
+/// theme.json as it is, for settings this shell passes on without using.
+pub fn raw() -> Value {
+    std::fs::read_to_string(path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null)
 }

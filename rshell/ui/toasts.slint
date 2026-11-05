@@ -1,0 +1,33 @@
+// Banners for new notifications (NotificationToasts.qml): a column of
+// cards at the top right, on a surface sized to them.
+import { Theme } from "theme.slint";
+import { NoteCard } from "panels.slint";
+import { Note } from "types.slint";
+
+export component Toasts inherits Window {
+    in property <[Note]> notes;
+    callback dismiss(int);
+    callback act(int, string);
+    callback hovered(bool);
+    out property <length> wanted-height: col.preferred-height;
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-weight: 500;
+    default-font-size: Theme.fs(12);
+    // Held while the pointer is on them, as the Quickshell ones are.
+    TouchArea {
+        changed has-hover => { root.hovered(self.has-hover); }
+        col := VerticalLayout {
+            alignment: start;
+            padding-top: 10px;
+            padding-right: 12px;
+            spacing: 10px;
+            for n in root.notes: NoteCard {
+                toast: true;
+                note: n;
+                dismiss(id) => { root.dismiss(id); }
+                act(id, k) => { root.act(id, k); }
+            }
+        }
+    }
+}

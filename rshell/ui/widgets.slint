@@ -1,0 +1,219 @@
+// The pieces the bar and the panels share, after modules/common/*.qml.
+import { Icons, GlyphData } from "icons.slint";
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+
+// common/BarButton.qml: a capsule that tints under the pointer and while
+// its panel is open; 26 high, at least 26 wide, padding either side. It
+// says where its middle is when pressed, so the panel opens under it.
+export component BarButton inherits Rectangle {
+    in property <bool> open;
+    in property <bool> accent-when-open;
+    in property <length> pad: 10px;
+    in property <length> gap: 8px;
+    in property <bool> interactive: true;
+    callback activated(length);
+    callback secondary();
+    callback scrolled(int);
+    height: 26px;
+    width: max(26px, row.preferred-width + root.pad * 2);
+    border-radius: Theme.r-cap;
+    background: open ? (accent-when-open ? Theme.accent : Theme.sel)
+        : (touch.has-hover && interactive ? Theme.hover : transparent);
+    animate background { duration: 140ms; }
+    row := HorizontalLayout {
+        x: (parent.width - self.preferred-width) / 2;
+        width: self.preferred-width;
+        spacing: root.gap;
+        alignment: center;
+        @children
+    }
+    touch := TouchArea {
+        enabled: root.interactive;
+        mouse-cursor: pointer;
+        clicked => { root.activated(root.absolute-position.x + root.width / 2); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) { root.secondary(); }
+        }
+        scroll-event(e) => { root.scrolled(e.delta-y > 0 ? 1 : -1); accept }
+    }
+}
+
+// common/IconButton.qml.
+export component IconButton inherits Rectangle {
+    in property <GlyphData> icon;
+    in property <length> size: 22px;
+    in property <length> icon-size: 13px;
+    in property <bool> accent;
+    in property <bool> enabled: true;
+    in property <color> ink: Theme.ink;
+    callback activated();
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    opacity: enabled ? 1 : 0.4;
+    background: accent ? Theme.accent : (t.has-hover && enabled ? Theme.hover : transparent);
+    Glyph {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        data: root.icon;
+        size: root.icon-size;
+        monochrome: true;
+        ink: root.accent ? Theme.ink-on-accent : root.ink;
+    }
+    t := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.activated(); }
+    }
+}
+
+// common/PanelSurface.qml: the translucent sheet every dropdown is, with
+// its hairline edge and the accent seam across the top.
+export component PanelSurface inherits Rectangle {
+    in property <bool> seam: true;
+    border-radius: Theme.r-cap;
+    background: Theme.panel;
+    clip: true;
+    // Clicks on the sheet stay on it rather than reaching the click-away
+    // catcher behind.
+    TouchArea {}
+    @children
+    Rectangle {
+        border-radius: root.border-radius;
+        border-width: 1px;
+        border-color: Theme.edge;
+    }
+    // Between the corners: the software renderer doesn't clip to them.
+    if root.seam: HorizontalLayout {
+        x: root.border-radius;
+        width: root.width - 2 * root.border-radius;
+        y: 0;
+        height: 2px;
+        Rectangle { width: min(40px, root.width); background: Theme.accent; }
+        Rectangle { background: Theme.seam; }
+    }
+}
+
+// Section heading: "SESSION", "UPCOMING".
+export component Caps inherits Text {
+    font-size: Theme.fs(11);
+    font-weight: 600;
+    letter-spacing: 0.9px;
+    color: Theme.ink2;
+}
+
+// common/Toggle.qml: the pill switch.
+export component Toggle inherits Rectangle {
+    in property <bool> checked;
+    callback toggled(bool);
+    width: 36px;
+    height: 20px;
+    border-radius: 10px;
+    background: checked ? Theme.accent : Theme.sel;
+    animate background { duration: 160ms; }
+    Rectangle {
+        x: root.checked ? root.width - self.width - 2px : 2px;
+        animate x { duration: 200ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.15); }
+        y: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: root.checked ? Theme.ink-on-accent : Theme.ink2;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(!root.checked); }
+    }
+}
+
+// common/FillSlider.qml: a trough that fills from the left, dragged or
+// clicked anywhere along it.
+export component FillSlider inherits Rectangle {
+    in property <float> value;
+    callback moved(float);
+    property <float> shown: touch.pressed ? self.dragged : root.value;
+    property <float> dragged;
+    height: 20px;
+    border-radius: 10px;
+    background: Theme.sel;
+    clip: true;
+    Rectangle {
+        x: 0;
+        width: max(root.height, root.width * clamp(root.shown, 0, 1));
+        background: Theme.accent;
+        border-radius: root.border-radius;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.dragged = clamp(self.mouse-x / root.width, 0, 1);
+                root.moved(root.dragged);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.dragged = clamp(self.mouse-x / root.width, 0, 1);
+                root.moved(root.dragged);
+            }
+        }
+    }
+}
+
+// One row of a menu (MenuList.qml): accent under the pointer.
+export component MenuRow inherits Rectangle {
+    in property <string> label;
+    in property <string> hint;
+    in property <GlyphData> icon;
+    in property <bool> has-icon;
+    in property <bool> danger;
+    in property <bool> enabled: true;
+    in property <length> row-height: 29px;
+    callback activated();
+    property <color> danger-ink: Theme.dark ? #ff6b61 : #d42c1f;
+    property <bool> lit: t.has-hover && root.enabled;
+    height: row-height;
+    border-radius: Theme.r-sm;
+    background: lit ? (danger ? danger-ink : Theme.accent) : transparent;
+    opacity: enabled ? 1 : 0.45;
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 11px;
+        spacing: 10px;
+        if root.has-icon: Glyph {
+            y: (root.height - self.height) / 2;
+            data: root.icon;
+            size: 14px;
+            ink: root.lit ? Theme.ink-on-accent : (root.danger ? root.danger-ink : Theme.ink);
+            accent: root.lit ? Theme.ink-on-accent : Theme.accent;
+        }
+        Text {
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+            text: root.label;
+            overflow: elide;
+            font-size: Theme.fs(12);
+            color: root.lit ? Theme.ink-on-accent : (root.danger ? root.danger-ink : Theme.ink);
+        }
+        if root.hint != "": Text {
+            horizontal-stretch: 0;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            text: root.hint;
+            font-size: Theme.fs(11);
+            font-weight: 400;
+            color: root.lit ? Theme.ink-on-accent : Theme.ink3;
+        }
+    }
+    t := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.activated(); }
+    }
+}
+
+export component Rule inherits Rectangle {
+    height: 1px;
+    background: Theme.rule;
+}

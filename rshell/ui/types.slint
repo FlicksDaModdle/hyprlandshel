@@ -1,0 +1,39 @@
+// The data the Rust side hands the bar and its panels.
+
+export struct Workspace { id: int, focused: bool, occupied: bool, urgent: bool }
+
+export struct MediaInfo {
+    available: bool, playing: bool, title: string, artist: string,
+    art: image, has-art: bool, progress: float, has-length: bool,
+    position: string, length: string, player: string,
+    can-prev: bool, can-next: bool, can-toggle: bool, can-seek: bool,
+}
+
+// A status notifier (tray) item: its picture, or the first letter of its
+// name when it has none that can be found.
+export struct TrayItem { key: string, icon: image, has-icon: bool, letter: string, tip: string, passive: bool }
+
+// A row of a tray item's menu (com.canonical.dbusmenu).
+export struct MenuEntry {
+    id: int, label: string, enabled: bool, separator: bool,
+    toggle: int /* 0 none, 1 check, 2 radio */, checked: bool, submenu: bool,
+    icon: image, has-icon: bool,
+}
+
+export struct NoteAction { key: string, label: string }
+
+export struct Note {
+    id: int, app: string, summary: string, body: string, time: string,
+    icon: image, has-icon: bool, urgent: bool, actions: [NoteAction],
+}
+
+export struct DriveRow { drive: string, name: string, detail: string, part: string, mount: string, mounted: bool }
+
+export struct TimerRow { label: string, left: string, running: bool, pomodoro: bool }
+
+// A control center tile; `kind` picks its glyph.
+export struct Tile { kind: string, name: string, sub: string, on: bool }
+
+export struct PrivacyRow { kind: string, name: string }
+
+export struct DayCell { day: int, today: bool }

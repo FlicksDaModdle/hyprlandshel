@@ -1,77 +1,8 @@
 import { Icons, GlyphData } from "icons.slint";
 import { Theme } from "theme.slint";
 import { Glyph } from "glyph.slint";
-
-export { Theme }
-
-export struct Workspace { id: int, focused: bool, occupied: bool, urgent: bool }
-
-export struct MediaInfo {
-    available: bool, playing: bool, title: string, artist: string,
-    art: image, has-art: bool, progress: float, has-length: bool,
-    can-prev: bool, can-next: bool, can-toggle: bool, can-seek: bool,
-}
-
-// common/BarButton.qml: a capsule that tints under the pointer and while
-// its panel is open; 26 high, at least 26 wide, padding either side.
-component BarButton inherits Rectangle {
-    in property <bool> open;
-    in property <length> pad: 10px;
-    in property <length> gap: 8px;
-    in property <bool> interactive: true;
-    callback activated();
-    callback secondary();
-    callback scrolled(int);
-    height: 26px;
-    width: max(26px, row.preferred-width + root.pad * 2);
-    border-radius: Theme.r-cap;
-    background: open ? Theme.sel : (touch.has-hover && interactive ? Theme.hover : transparent);
-    animate background { duration: 140ms; }
-    row := HorizontalLayout {
-        x: (parent.width - self.preferred-width) / 2;
-        width: self.preferred-width;
-        spacing: root.gap;
-        alignment: center;
-        @children
-    }
-    touch := TouchArea {
-        enabled: root.interactive;
-        mouse-cursor: pointer;
-        clicked => { root.activated(); }
-        pointer-event(e) => {
-            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) { root.secondary(); }
-        }
-        scroll-event(e) => { root.scrolled(e.delta-y > 0 ? 1 : -1); accept }
-    }
-}
-
-// common/IconButton.qml, as the media controls use it.
-component IconButton inherits Rectangle {
-    in property <GlyphData> icon;
-    in property <length> size: 22px;
-    in property <length> icon-size: 13px;
-    in property <bool> accent;
-    in property <bool> enabled: true;
-    callback activated();
-    width: size;
-    height: size;
-    border-radius: size / 2;
-    opacity: enabled ? 1 : 0.4;
-    background: accent ? Theme.accent : (t.has-hover && enabled ? Theme.hover : transparent);
-    Glyph {
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        data: root.icon;
-        size: root.icon-size;
-        monochrome: true;
-        ink: root.accent ? Theme.ink-on-accent : Theme.ink;
-    }
-    t := TouchArea {
-        enabled: root.enabled;
-        mouse-cursor: pointer;
-        clicked => { root.activated(); }
-    }
-}
+import { BarButton, IconButton } from "widgets.slint";
+import { Workspace, MediaInfo, TrayItem } from "types.slint";
 
 // modules/bar/Workspaces.qml: a recessed capsule of pills. The focused one
 // (or the one under the pointer, or an urgent one) opens out to show its
@@ -154,6 +85,8 @@ component MediaPill inherits Rectangle {
     callback toggle();
     callback next();
     callback seek(float);
+    in property <bool> open;
+    callback opened(length);
     property <length> text-room: max(0px, min(Theme.u(168), root.room - Theme.u(151)));
     property <bool> show-text: self.text-room >= Theme.u(70);
     property <length> min-pill: Theme.u(148);
@@ -161,9 +94,14 @@ component MediaPill inherits Rectangle {
     height: Theme.u(30);
     width: content.preferred-width + Theme.u(8);
     border-radius: Theme.r-cap;
-    background: hover.has-hover ? Theme.hover : transparent;
+    background: hover.has-hover || root.open ? Theme.hover : transparent;
 
-    hover := TouchArea {}
+    // The whole pill is the media panel's button; the controls on top of
+    // it take their own clicks.
+    hover := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.opened(root.absolute-position.x + root.width / 2); }
+    }
 
     content := HorizontalLayout {
         x: Theme.u(4);
@@ -275,6 +213,7 @@ component MediaPill inherits Rectangle {
         border-radius: 1px;
         background: Theme.div;
         Rectangle {
+            x: 0;
             width: round(parent.width * root.media.progress / 1px) * 1px;
             height: parent.height;
             border-radius: 1px;
@@ -308,6 +247,24 @@ export component Bar inherits Window {
     in property <bool> charging;
     in property <int> notifications;
     in property <bool> quiet;
+    // Which panel is open from this bar ("" for none), for the tint.
+    in property <string> open-panel;
+    // The tray.
+    in property <[TrayItem]> tray;
+    in property <bool> show-tray: true;
+    in property <bool> tray-open;
+    // Indicators that come and go.
+    in property <bool> mic-in-use;
+    in property <bool> camera-in-use;
+    in property <bool> screen-shared;
+    in property <bool> has-timer;
+    in property <string> timer-text;
+    in property <bool> timer-running;
+    in property <bool> timer-pomodoro;
+    in property <int> updates;
+    in property <bool> show-updates;
+    in property <int> mail-unread: -1;
+    in property <bool> has-drives;
 
     callback workspace-go(int);
     callback workspace-step(int);
@@ -316,6 +273,15 @@ export component Bar inherits Window {
     callback media-toggle();
     callback media-next();
     callback media-seek(float);
+    // A panel to open under x (or close, if it is the one open).
+    callback toggle-panel(string, length);
+    callback toggle-dnd();
+    callback open-mail();
+    callback tray-toggle();
+    callback tray-activate(string, length);
+    callback tray-secondary(string);
+    callback tray-menu(string, length);
+    callback tray-scroll(string, int);
 
     background: transparent;
     default-font-family: Theme.font;
@@ -389,7 +355,7 @@ export component Bar inherits Window {
             width: menu-label.preferred-width + 20px;
             opacity: root.has-client ? 1 : 0.45;
             border-radius: Theme.r-sm;
-            background: menu-touch.has-hover && root.has-client ? Theme.hover : transparent;
+            background: root.open-panel == "window" ? Theme.sel : menu-touch.has-hover && root.has-client ? Theme.hover : transparent;
             menu-label := Text {
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
@@ -397,7 +363,11 @@ export component Bar inherits Window {
                 font-size: Theme.fs(Theme.bar-menu);
                 color: Theme.ink;
             }
-            menu-touch := TouchArea { enabled: root.has-client; mouse-cursor: pointer; }
+            menu-touch := TouchArea {
+                enabled: root.has-client;
+                mouse-cursor: pointer;
+                clicked => { root.toggle-panel("window", parent.absolute-position.x + parent.width / 2); }
+            }
         }
     }
 
@@ -427,6 +397,8 @@ export component Bar inherits Window {
         toggle => { root.media-toggle(); }
         next => { root.media-next(); }
         seek(f) => { root.media-seek(f); }
+        open: root.open-panel == "media";
+        opened(x) => { root.toggle-panel("media", x); }
     }
 
     // ══ right cluster ════════════════════════════════════════════════════
@@ -436,9 +408,165 @@ export component Bar inherits Window {
         spacing: 2px;
         alignment: end;
 
+        // The tray (TrayRow.qml): a chevron, the items when open, a divider.
+        if root.show-tray && root.tray.length > 0: HorizontalLayout {
+            spacing: 2px;
+            Rectangle {
+                y: (root.height - 26px) / 2;
+                width: 22px;
+                height: 26px;
+                border-radius: Theme.r-cap;
+                background: chev.has-hover ? Theme.hover : transparent;
+                Glyph {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    data: root.tray-open ? Icons.chevron-right : Icons.chevron-left;
+                    size: Theme.u(Theme.bar-icon);
+                    monochrome: true;
+                    ink: root.tray-open ? Theme.ink2 : Theme.ink;
+                }
+                chev := TouchArea { mouse-cursor: pointer; clicked => { root.tray-toggle(); } }
+            }
+            if root.tray-open: HorizontalLayout {
+                spacing: 2px;
+                for item in root.tray: Rectangle {
+                    y: (root.height - 26px) / 2;
+                    width: 26px;
+                    height: 26px;
+                    border-radius: Theme.r-cap;
+                    background: ta.has-hover ? Theme.hover : transparent;
+                    opacity: item.passive ? 0.55 : 1;
+                    if item.has-icon: Image {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        width: 15px;
+                        height: 15px;
+                        source: item.icon;
+                        image-fit: contain;
+                    }
+                    if !item.has-icon: Text {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        text: item.letter;
+                        font-size: Theme.fs(11);
+                        font-weight: 700;
+                        color: Theme.ink2;
+                    }
+                    ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.tray-activate(item.key, parent.absolute-position.x + parent.width / 2); }
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
+                                root.tray-menu(item.key, parent.absolute-position.x + parent.width / 2);
+                            }
+                            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.middle) {
+                                root.tray-secondary(item.key);
+                            }
+                        }
+                        scroll-event(e) => { root.tray-scroll(item.key, e.delta-y > 0 ? 1 : -1); accept }
+                    }
+                }
+            }
+            Rectangle {
+                width: 13px;
+                Rectangle {
+                    x: 6px;
+                    y: (root.height - 18px) / 2;
+                    width: 1px;
+                    height: 18px;
+                    background: Theme.div;
+                }
+            }
+        }
+
+        // Privacy: who has the microphone, the camera, the screen.
+        if root.mic-in-use || root.camera-in-use || root.screen-shared: BarButton {
+            y: (root.height - self.height) / 2;
+            gap: 3px;
+            open: root.open-panel == "privacy";
+            activated(x) => { root.toggle-panel("privacy", x); }
+            if root.mic-in-use: Rectangle {
+                y: (26px - self.height) / 2;
+                width: Theme.u(Theme.bar-icon) + 8px; height: self.width; border-radius: self.width / 2;
+                background: Theme.accent;
+                Glyph { x: 4px; y: 4px; data: Icons.mic; size: Theme.u(Theme.bar-icon) - 2px; monochrome: true; ink: Theme.ink-on-accent; }
+            }
+            if root.camera-in-use: Rectangle {
+                y: (26px - self.height) / 2;
+                width: Theme.u(Theme.bar-icon) + 8px; height: self.width; border-radius: self.width / 2;
+                background: Theme.accent;
+                Glyph { x: 4px; y: 4px; data: Icons.camera; size: Theme.u(Theme.bar-icon) - 2px; monochrome: true; ink: Theme.ink-on-accent; }
+            }
+            if root.screen-shared: Rectangle {
+                y: (26px - self.height) / 2;
+                width: Theme.u(Theme.bar-icon) + 8px; height: self.width; border-radius: self.width / 2;
+                background: Theme.accent;
+                Glyph { x: 4px; y: 4px; data: Icons.monitor; size: Theme.u(Theme.bar-icon) - 2px; monochrome: true; ink: Theme.ink-on-accent; }
+            }
+        }
+
+        // Timers: the soonest countdown.
+        if root.has-timer: BarButton {
+            y: (root.height - self.height) / 2;
+            gap: 6px;
+            open: root.open-panel == "timers";
+            activated(x) => { root.toggle-panel("timers", x); }
+            Glyph {
+                y: (26px - self.height) / 2;
+                data: root.timer-pomodoro ? Icons.pomodoro : Icons.timer;
+                size: Theme.u(Theme.bar-icon);
+            }
+            Text {
+                vertical-alignment: center;
+                text: root.timer-text;
+                font-weight: 600;
+                color: root.timer-running ? Theme.ink : Theme.ink3;
+            }
+        }
+
+        // Updates waiting.
+        if root.show-updates && root.updates > 0: BarButton {
+            y: (root.height - self.height) / 2;
+            gap: 5px;
+            open: root.open-panel == "updates";
+            activated(x) => { root.toggle-panel("updates", x); }
+            Glyph { y: (26px - self.height) / 2; data: Icons.package; size: Theme.u(Theme.bar-icon); }
+            Text { vertical-alignment: center; text: root.updates; font-weight: 600; color: Theme.ink; }
+        }
+
+        // Mail, while it runs: unread count.
+        if root.mail-unread >= 0: BarButton {
+            y: (root.height - self.height) / 2;
+            gap: 5px;
+            activated => { root.open-mail(); }
+            Glyph {
+                y: (26px - self.height) / 2;
+                data: Icons.mail;
+                size: Theme.u(Theme.bar-icon);
+                accent: root.mail-unread > 0 ? Theme.accent : Theme.ink;
+            }
+            if root.mail-unread > 0: Text {
+                vertical-alignment: center;
+                text: root.mail-unread > 99 ? "99+" : root.mail-unread;
+                font-weight: 600;
+                color: Theme.ink;
+            }
+        }
+
+        // USB drives plugged in.
+        if root.has-drives: BarButton {
+            y: (root.height - self.height) / 2;
+            open: root.open-panel == "drives";
+            activated(x) => { root.toggle-panel("drives", x); }
+            Glyph { y: (26px - self.height) / 2; data: Icons.drive; size: Theme.u(Theme.bar-icon); monochrome: true; }
+        }
+
         // Notifications
         BarButton {
             y: (root.height - self.height) / 2;
+            open: root.open-panel == "notifications";
+            activated(x) => { root.toggle-panel("notifications", x); }
+            secondary => { root.toggle-dnd(); }
             gap: 7px;
             Glyph {
                 y: (26px - self.height) / 2;
@@ -469,6 +597,8 @@ export component Bar inherits Window {
             y: (root.height - self.height) / 2;
             gap: 13px;
             pad: 12px;
+            open: root.open-panel == "control";
+            activated(x) => { root.toggle-panel("control", x); }
             scrolled(d) => { root.volume-step(d); }
 
             HorizontalLayout {
@@ -538,6 +668,8 @@ export component Bar inherits Window {
             y: (root.height - self.height) / 2;
             gap: 10px;
             pad: 12px;
+            open: root.open-panel == "calendar";
+            activated(x) => { root.toggle-panel("calendar", x); }
             Text {
                 vertical-alignment: center;
                 text: root.time;
@@ -556,11 +688,15 @@ export component Bar inherits Window {
         BarButton {
             y: (root.height - self.height) / 2;
             pad: 5px;
+            open: root.open-panel == "power";
+            accent-when-open: true;
+            activated(x) => { root.toggle-panel("power", x); }
             Glyph {
                 y: (26px - self.height) / 2;
                 data: Icons.power;
                 size: Theme.u(Theme.bar-icon);
                 monochrome: true;
+                ink: root.open-panel == "power" ? Theme.ink-on-accent : Theme.ink;
             }
         }
     }

@@ -55,7 +55,16 @@ fn read(c: &Connection) -> Media {
         let s = |k: &str| md.get(k).and_then(|v| String::try_from(v.try_clone().ok()?).ok()).unwrap_or_default();
         m.title = s("xesam:title");
         m.art = s("mpris:artUrl");
-        m.track = s("mpris:trackid");
+        // An object path by the spec; some players send a string.
+        m.track = md
+            .get("mpris:trackid")
+            .and_then(|v| {
+                zbus::zvariant::OwnedObjectPath::try_from(v.try_clone().ok()?)
+                    .map(|p| p.to_string())
+                    .ok()
+                    .or_else(|| String::try_from(v.try_clone().ok()?).ok())
+            })
+            .unwrap_or_default();
         m.artist = md
             .get("xesam:artist")
             .and_then(|v| Vec::<String>::try_from(v.try_clone().ok()?).ok())
@@ -108,7 +117,8 @@ pub fn start(tx: Sender<Media>, cmds: Receiver<Cmd>, mut wake: UnixStream) {
                     let at = (f.clamp(0.0, 1.0) * last.length_us as f64) as i64;
                     match zbus::zvariant::ObjectPath::try_from(last.track.as_str()) {
                         Ok(track) => c.call_method(Some(bus), path, Some(PLAYER), "SetPosition", &(track, at)),
-                        Err(_) => continue,
+                        // No track id: the same place, as a step from here.
+                        Err(_) => c.call_method(Some(bus), path, Some(PLAYER), "Seek", &(at - last.position_us,)),
                     }
                 }
             };

@@ -5,17 +5,19 @@
 #
 #   bash ~/hyprlandshel/rshell/try.sh
 #
-# While it runs, only what has been ported is there: the bar for now. The
-# dock, launcher, panels, notifications and the lock screen are Quickshell's
-# and come back with it, so Super+L does nothing until you stop this.
+# While it runs, only what has been ported is there: the top bar with its
+# panels, tray and indicators, and notifications. The dock, launcher,
+# overview, Alt+Tab, OSD and lock screen are Quickshell's and come back with
+# it; Super+L uses hyprlock meanwhile if it's installed.
 set -u
 cd "$(dirname "$0")" || exit 1
 
 command -v cargo >/dev/null || { echo "cargo isn't installed: sudo pacman -S --needed rust"; exit 1; }
 echo "Building…"
 cargo build --release -q || exit 1
-# This branch's hyprshell-daemon too: the network and sound come from it,
-# and the volume it reports is new here. Without PulseAudio's headers it
+# This branch's hyprshell-daemon too: the network, sound, backlight,
+# Bluetooth, drives and the keybinds' commands come from it, and the volume
+# and microphone levels it reports are new here. Without PulseAudio's headers it
 # builds without its sound part (then there's no volume in the bar).
 if cargo build --release -q --manifest-path ../shell/rust/Cargo.toml -p hyprshell-daemon 2>/dev/null \
    || cargo build --release -q --manifest-path ../shell/rust/Cargo.toml -p hyprshell-daemon --no-default-features; then

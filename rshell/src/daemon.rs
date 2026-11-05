@@ -10,7 +10,38 @@ use std::process::{ChildStdin, Command, Stdio};
 use std::sync::mpsc::Sender;
 
 #[derive(Clone, Default)]
+pub struct Drive {
+    pub path: String,
+    pub name: String,
+    pub detail: String,
+    /// The first filesystem: what clicking the row mounts or opens.
+    pub part: String,
+    pub mount: String,
+}
+
+#[derive(Clone, Default)]
 pub struct State {
+    pub wifi_on: bool,
+    pub net_available: bool,
+    pub wired: bool,
+    /// Backlight, 0..1; None without one.
+    pub brightness: Option<f64>,
+    pub bl_max: u64,
+    /// The default source (microphone): name, level, mute.
+    pub mic: Option<(String, f64, bool)>,
+    /// Apps recording from a microphone, and with the camera open.
+    pub mic_apps: Vec<String>,
+    pub camera_apps: Vec<String>,
+    pub drives: Vec<Drive>,
+    /// Bluetooth: there is an adapter; it is on; what is connected.
+    pub bt_available: bool,
+    pub bt_on: bool,
+    pub bt_label: String,
+    /// asusd: the platform profile now and those there are; the keyboard
+    /// light's level (-1 without one).
+    pub rog_profile: i64,
+    pub rog_profiles: Vec<i64>,
+    pub kbd_level: i64,
     /// What the bar says about the network: the Wi-Fi's name, "Wi-Fi off",
     /// "not connected", or "" until the daemon has spoken.
     pub net_label: String,
@@ -76,6 +107,8 @@ pub fn start(tx: Sender<Value>, mut wake: UnixStream) -> Daemon {
     });
     let mut d = Daemon { stdin };
     d.send(json!({ "cmd": "pa-watch", "on": true }));
+    // The keybinds' commands (hyprshell.cmd), read for this shell now.
+    d.send(json!({ "cmd": "cmd-watch", "shellPid": std::process::id(), "socket": "" }));
     d
 }
 
@@ -83,12 +116,14 @@ pub fn start(tx: Sender<Value>, mut wake: UnixStream) -> Daemon {
 pub fn apply(s: &mut State, ev: &Value) -> bool {
     match ev["ev"].as_str() {
         Some("net") => {
+            s.net_available = ev["available"] == true;
             if ev["available"] != true {
                 s.net_label = "no network".into();
                 s.net_icon = "wifi-off";
                 return true;
             }
             let wifi_on = ev["wifiEnabled"].as_bool().unwrap_or(true);
+            s.wifi_on = wifi_on;
             let active = ev["active"].as_array().cloned().unwrap_or_default();
             let wifi = active.iter().find(|a| a["type"] == "802-11-wireless");
             let wired = active.iter().find(|a| a["type"] == "802-3-ethernet");
@@ -104,6 +139,7 @@ pub fn apply(s: &mut State, ev: &Value) -> bool {
                 "not connected".into()
             };
             s.net_icon = if !wifi_on && wired.is_none() || !connected { "wifi-off" } else { "wifi" };
+            s.wired = wired.is_some_and(|a| a["state"] == "activated");
             true
         }
         Some("pa") if ev["available"] == true => {
@@ -115,8 +151,129 @@ pub fn apply(s: &mut State, ev: &Value) -> bool {
                 s.sink = d["name"].as_str().unwrap_or("").to_string();
                 s.have_audio = true;
             }
+            let source = ev["defaultSource"].as_str().unwrap_or("");
+            let sources = ev["sources"].as_array().cloned().unwrap_or_default();
+            s.mic = sources
+                .iter()
+                .find(|x| x["name"] == source)
+                .or_else(|| sources.iter().find(|x| x["monitor"] != true))
+                .filter(|x| x["monitor"] != true)
+                .map(|x| (x["name"].as_str().unwrap_or("").to_string(), x["volume"].as_f64().unwrap_or(0.0), x["mute"].as_bool().unwrap_or(false)));
+            // Who is recording from a microphone (Privacy.qml's micApps):
+            // not the system's own, and not a speaker's monitor.
+            let monitors: Vec<i64> = sources.iter().filter(|x| x["monitor"] == true).filter_map(|x| x["index"].as_i64()).collect();
+            let mut apps: Vec<String> = Vec::new();
+            for o in ev["sourceOutputs"].as_array().into_iter().flatten() {
+                if o["source"].as_i64().is_some_and(|i| monitors.contains(&i)) {
+                    continue;
+                }
+                let p = &o["properties"];
+                let bin = p["application.process.binary"].as_str().unwrap_or("").to_lowercase();
+                if ["pipewire", "wireplumber", "quickshell", "qs", "hyprshell-daemon", "hyprshell-rs", "pavucontrol"].contains(&bin.as_str())
+                    || p["stream.monitor"] == "true"
+                {
+                    continue;
+                }
+                let name = p["application.name"].as_str().filter(|x| !x.is_empty()).map(str::to_string).unwrap_or(bin);
+                if !name.is_empty() && !apps.contains(&name) {
+                    apps.push(name);
+                }
+            }
+            s.mic_apps = apps;
+            true
+        }
+        Some("backlight") => {
+            if ev["available"] == true && ev["max"].as_u64().unwrap_or(0) > 0 {
+                s.bl_max = ev["max"].as_u64().unwrap_or(0);
+                s.brightness = Some(ev["value"].as_f64().unwrap_or(0.0) / s.bl_max as f64);
+            } else {
+                s.brightness = None;
+            }
+            true
+        }
+        Some("camera") => {
+            s.camera_apps = ev["apps"].as_array().into_iter().flatten().filter_map(|a| a["name"].as_str().map(str::to_string)).collect();
+            true
+        }
+        Some("usb") => {
+            s.drives = ev["drives"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|d| {
+                    let parts = d["parts"].as_array().cloned().unwrap_or_default();
+                    let first = parts.iter().find(|p| p["mount"].as_str().is_some_and(|m| !m.is_empty())).or(parts.first());
+                    let label = first.and_then(|p| p["label"].as_str()).filter(|l| !l.is_empty());
+                    let size = d["size"].as_f64().unwrap_or(0.0);
+                    let mount = first.and_then(|p| p["mount"].as_str()).unwrap_or("").to_string();
+                    Drive {
+                        path: d["path"].as_str().unwrap_or("").to_string(),
+                        name: label.or(d["name"].as_str()).unwrap_or("Drive").to_string(),
+                        detail: format!("{}{}", human(size), if mount.is_empty() { " · not mounted".to_string() } else { format!(" · {mount}") }),
+                        part: first.and_then(|p| p["path"].as_str()).unwrap_or("").to_string(),
+                        mount,
+                    }
+                })
+                .collect();
+            true
+        }
+        Some("bt") => {
+            s.bt_available = ev["available"] == true;
+            s.bt_on = ev["adapter"]["powered"] == true;
+            let connected: Vec<&str> = ev["devices"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|d| d["connected"] == true)
+                .filter_map(|d| d["name"].as_str())
+                .collect();
+            s.bt_label = if !s.bt_on {
+                "off".into()
+            } else if connected.len() == 1 {
+                connected[0].to_string()
+            } else if connected.len() > 1 {
+                format!("{} connected", connected.len())
+            } else {
+                "on".into()
+            };
+            true
+        }
+        Some("rog") => {
+            if ev["available"] != true {
+                s.rog_profiles.clear();
+                s.kbd_level = -1;
+                return true;
+            }
+            s.rog_profile = ev["platform"]["profile"].as_i64().unwrap_or(-1);
+            let have: Vec<i64> = ev["platform"]["choices"].as_array().into_iter().flatten().filter_map(|x| x.as_i64()).collect();
+            // Quiet, Balanced, Performance: the order people think in.
+            s.rog_profiles = [3, 2, 0, 1, 4].into_iter().filter(|p| have.contains(p)).collect();
+            s.kbd_level = ev["aura"][0]["brightness"].as_i64().unwrap_or(-1);
             true
         }
         _ => false,
+    }
+}
+
+fn human(bytes: f64) -> String {
+    if bytes <= 0.0 {
+        return String::new();
+    }
+    let gb = bytes / 1e9;
+    if gb >= 1.0 {
+        format!("{gb:.0} GB")
+    } else {
+        format!("{:.0} MB", bytes / 1e6)
+    }
+}
+
+pub fn profile_name(p: i64) -> &'static str {
+    match p {
+        0 => "Balanced",
+        1 => "Performance",
+        2 => "Quiet",
+        3 => "Low power",
+        4 => "Custom",
+        _ => "Profile",
     }
 }

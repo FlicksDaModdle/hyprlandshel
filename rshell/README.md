@@ -19,11 +19,26 @@ branch; the Quickshell shell stays the one in use until this has caught up.
   `.socket.sock`, events from `.socket2.sock`. No `hyprctl` per question.
 - `src/theme.rs` — theme.json, worked out as config/Appearance.qml does.
 - `src/daemon.rs` — hyprshell-daemon (the same one the Quickshell shell
-  runs) for the network and the sound.
-- `src/mpris.rs` — what's playing, over D-Bus.
+  runs): network, sound and microphone, backlight, Bluetooth, USB drives,
+  the camera, ROG, and the keybinds' commands from hyprshell.cmd.
+- `src/mpris.rs` — what's playing, over D-Bus; `src/art.rs` decodes the
+  album art (files, or web addresses fetched once into ~/.cache) and every
+  other picture: PNG, JPEG, WebP, and SVG drawn at its shown size.
+- `src/tray.rs` — the system tray: this shell is the StatusNotifierWatcher
+  apps register with and the host that shows them, and their menus come
+  over com.canonical.dbusmenu. `src/icons.rs` finds icons in the icon theme.
+- `src/notify.rs` — the notification server (org.freedesktop.Notifications).
+- `src/extras.rs` — updates (checkupdates, paru/yay), Mail's unread count,
+  timers.
 - `src/sys.rs` — the battery, from /sys.
-- `ui/` — the components. `ui/icons.slint` is generated from the shell's own
-  glyphs by `node tools/gen-icons.js`, so both shells draw the same icons.
+- `src/app.rs` — the shell: bars, panels, banners, and what each click does.
+- `ui/` — the components: `bar.slint`, `panels.slint`, `toasts.slint`, and
+  `widgets.slint` for what they share. `ui/icons.slint` is generated from
+  the shell's own glyphs by `node tools/gen-icons.js`, so both shells draw
+  the same icons.
+
+Dispatches to Hyprland go as Lua (`hl.dsp.focus({ workspace = 3 })`), as a
+Lua-config Hyprland wants them, with the old hyprlang words as the fallback.
 
 One thread runs Slint and Wayland, asleep in poll() on the Wayland
 connection, the Hyprland event pipe and Slint's next timer.
@@ -31,25 +46,37 @@ connection, the Hyprland event pipe and Slint's next timer.
 ## Done
 
 1. The layer-shell platform, and the top bar as modules/bar/Bar.qml lays
-   it out: the workspace capsule (focused and hovered pills open to their
-   number, dots and rings, urgent; click, scroll), the focused app with
-   its underline, Window, the title, the media pill (MPRIS: title, artist,
-   equaliser, previous / play-pause / next, seek line), notifications, the
-   status capsule (Wi-Fi name, volume — scroll to change — and battery),
-   the clock and power. Colours, accent, translucency, rounding, text size,
-   the bar's sizes, the 24-hour clock and the per-monitor shell scale come
-   from theme.json, read again when it changes.
+   it out: the workspace capsule, the focused app and its underline, the
+   title, the media pill (with album art), notifications, the status
+   capsule, the clock and power — and the tray, privacy (microphone,
+   camera, screen sharing), timers, updates, Mail and drives indicators.
+   Look and sizes from theme.json, read again when it changes.
+2. Every bar button opens what it opens in the Quickshell shell, on an
+   overlay that closes on a click anywhere else or Esc:
+   - Window: fullscreen, maximize, float, pin, center, split, move to
+     workspace, close, and the six snap layouts.
+   - Media: art, title, artist, player, seek bar with times, controls.
+   - Notifications: the list with actions, dismiss, Clear, Do not disturb
+     (also the bell's right click).
+   - Control center: theme (Light / Dark / Auto), Wi-Fi, Bluetooth,
+     Airplane, Do not disturb, Performance and Keyboard light (ROG), and
+     the volume, brightness and microphone sliders (click the icon to mute).
+   - Calendar: the month, with previous / next.
+   - Power: Lock (hyprlock), Suspend, Log out, Restart, Shut down; uptime.
+   - Tray menus (submenus, checks, separators), drives (open, mount,
+     eject), timers, updates (install in a terminal), privacy.
+3. Notifications: the server, banners at the top right (held while the
+   pointer is on them, urgent ones until dismissed), the count on the bell,
+   and the daemon's history.
+4. The keybinds: hyprshell.cmd's panel toggles, volume, mute, microphone,
+   brightness, theme, Do not disturb, lock, Mail, updates.
 
-   Still to come for the bar: the tray, the indicators (recording,
-   privacy, timers, updates, mail, drives), the notification count (when
-   notifications are ported), album art, auto-hide, and the panels its
-   buttons open.
+Not yet: the OSD for the volume and brightness keys, the Wi-Fi network and
+Bluetooth device lists, the per-app mixer, night light, auto-hide.
 
 ## Next
 
-2. The dock / taskbar, and the hyprshell-daemon connection (volume, Wi-Fi
-   name, notifications count, ROG).
-3. Launcher, control center, notifications, OSD.
-4. Lock screen and face unlock.
-5. Settings, overview, Alt+Tab.
-6. Files, Task Manager, Terminal and Mail in Slint.
+3. The dock / taskbar.
+4. Launcher, OSD, overview, Alt+Tab.
+5. Lock screen and face unlock.
+6. Settings.

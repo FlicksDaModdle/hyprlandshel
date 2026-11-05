@@ -1356,7 +1356,9 @@ checksum = "48ce8546b993eaf241d69ded33b1be6d205dd9857ec879d9d18bd05d3676e144"
 name = "hyprshell-rs"
 version = "0.1.0"
 dependencies = [
+ "image",
  "libc",
+ "resvg",
  "serde_json",
  "slint",
  "slint-build",
@@ -1852,6 +1854,7 @@ checksum = "85ab80394333c02fe689eaf900ab500fbd0c2213da414687ebf995a65d5a6104"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
+ "image-webp",
  "moxcms",
  "num-traits",
  "png",

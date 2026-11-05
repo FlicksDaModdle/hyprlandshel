@@ -1,0 +1,1035 @@
+// The dropdowns that hang under the bar (modules/panels/*.qml), on one
+// full-screen overlay surface that is only there while one is open: a
+// click anywhere off a panel closes it, as PanelLayer.qml's catcher does.
+import { Icons, GlyphData } from "icons.slint";
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+import { IconButton, PanelSurface, Caps, Toggle, FillSlider, MenuRow, Rule } from "widgets.slint";
+import { MediaInfo, MenuEntry, Note, NoteAction, DriveRow, TimerRow, Tile, PrivacyRow, DayCell } from "types.slint";
+
+// Where each panel sits: under the button it came from, kept a gutter in
+// from the screen's edges, sliding down a little as it fades in.
+component Drop inherits Rectangle {
+    in property <bool> shown;
+    in property <length> anchor;
+    in property <length> top;
+    in property <length> screen-width;
+    in property <length> panel-width;
+    x: max(12px, min(anchor - panel-width / 2, screen-width - panel-width - 12px));
+    y: top + (shown ? 0px : -10px);
+    width: panel-width;
+    height: l.preferred-height;
+    opacity: shown ? 1 : 0;
+    visible: self.opacity > 0.01;
+    animate y { duration: 280ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.0); }
+    animate opacity { duration: 160ms; }
+    l := VerticalLayout { @children }
+}
+
+// ── power (PowerMenu.qml) ────────────────────────────────────────────────
+component PowerEntry inherits Rectangle {
+    in property <string> label;
+    in property <string> hint;
+    in property <GlyphData> icon;
+    callback activated();
+    height: 42px;
+    border-radius: Theme.r-sm;
+    background: t.has-hover ? Theme.hover : transparent;
+    animate background { duration: 140ms; }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 10px;
+        spacing: 10px;
+        Rectangle {
+            y: (root.height - self.height) / 2;
+            width: 26px;
+            height: 26px;
+            border-radius: Theme.r-sm;
+            background: Theme.hover;
+            border-width: 1px;
+            border-color: Theme.rule;
+            Glyph {
+                x: 6px; y: 6px;
+                data: root.icon;
+                size: 14px;
+                monochrome: true;
+                ink: t.has-hover ? Theme.accent : Theme.ink2;
+            }
+        }
+        Text { horizontal-stretch: 1; vertical-alignment: center; text: root.label; font-size: Theme.fs(13); color: Theme.ink; }
+        Text {
+            horizontal-stretch: 0;
+            vertical-alignment: center;
+            text: root.hint;
+            font-size: Theme.fs(11);
+            font-weight: 400;
+            color: Theme.ink3;
+        }
+    }
+    t := TouchArea { mouse-cursor: pointer; clicked => { root.activated(); } }
+}
+
+component PowerMenu inherits PanelSurface {
+    in property <string> user;
+    in property <string> uptime;
+    in property <string> hyprland;
+    callback act(string);
+    VerticalLayout {
+        padding-top: 12px;
+        HorizontalLayout {
+            height: 24px;
+            padding-left: 14px;
+            padding-right: 14px;
+            Caps { vertical-alignment: center; text: "SESSION"; }
+            Text {
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                text: root.user;
+                font-size: Theme.fs(11);
+                font-weight: 400;
+                color: Theme.ink3;
+            }
+        }
+        VerticalLayout {
+            padding-left: 6px;
+            padding-right: 6px;
+            padding-bottom: 8px;
+            spacing: 1px;
+            PowerEntry { label: "Lock"; hint: "super L"; icon: Icons.lock; activated => { root.act("lock"); } }
+            PowerEntry { label: "Suspend"; icon: Icons.moon; activated => { root.act("suspend"); } }
+            PowerEntry { label: "Log out"; hint: "super ⇧ E"; icon: Icons.log-out; activated => { root.act("logout"); } }
+            PowerEntry { label: "Restart"; icon: Icons.reboot; activated => { root.act("reboot"); } }
+            PowerEntry { label: "Shut down"; icon: Icons.power; activated => { root.act("poweroff"); } }
+        }
+        Rule {}
+        HorizontalLayout {
+            height: 29px;
+            padding-left: 14px;
+            padding-right: 14px;
+            Text { vertical-alignment: center; text: "Uptime " + root.uptime; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
+            Text {
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                text: root.hyprland;
+                font-size: Theme.fs(11);
+                font-weight: 400;
+                color: Theme.ink3;
+            }
+        }
+    }
+}
+
+// ── the focused window (WindowMenuPanel.qml) ─────────────────────────────
+component SnapTile inherits Rectangle {
+    in property <float> fx;
+    in property <float> fy;
+    in property <float> fw;
+    in property <float> fh;
+    callback activated();
+    width: 76px;
+    height: 48px;
+    border-radius: Theme.r-sm;
+    background: Theme.hover;
+    border-width: 1px;
+    border-color: t.has-hover ? Theme.accent : transparent;
+    Rectangle {
+        x: 4px + (root.width - 8px) * root.fx;
+        y: 4px + (root.height - 8px) * root.fy;
+        width: (root.width - 8px) * root.fw;
+        height: (root.height - 8px) * root.fh;
+        border-radius: 3px;
+        background: Theme.accent;
+        opacity: 0.5;
+    }
+    t := TouchArea { mouse-cursor: pointer; clicked => { root.activated(); } }
+}
+
+component WindowMenu inherits PanelSurface {
+    seam: false;
+    callback act(string);
+    callback snap(int);
+    VerticalLayout {
+        padding: 6px;
+        MenuRow { label: "Fullscreen"; hint: "super F"; activated => { root.act("fullscreen"); } }
+        MenuRow { label: "Maximize"; hint: "super ⇧ F"; activated => { root.act("maximize"); } }
+        MenuRow { label: "Float"; hint: "super V"; activated => { root.act("float"); } }
+        MenuRow { label: "Pin"; hint: "super ⇧ P"; activated => { root.act("pin"); } }
+        Rectangle { height: 5px; Rule { y: 2px; } }
+        MenuRow { label: "Center"; activated => { root.act("center"); } }
+        MenuRow { label: "Toggle split"; hint: "super J"; activated => { root.act("togglesplit"); } }
+        Rectangle { height: 5px; Rule { y: 2px; } }
+        MenuRow { label: "Move to next workspace"; activated => { root.act("next"); } }
+        MenuRow { label: "Move to previous workspace"; activated => { root.act("prev"); } }
+        Rectangle { height: 5px; Rule { y: 2px; } }
+        MenuRow { label: "Close window"; hint: "super Q"; activated => { root.act("close"); } }
+        Rectangle { height: 8px; }
+        Rule {}
+        Text {
+            text: "Snap layout";
+            font-size: Theme.fs(11);
+            font-weight: 600;
+            color: Theme.ink3;
+            height: self.preferred-height + 18px;
+            vertical-alignment: center;
+            x: 5px;
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            SnapTile { fx: 0; fy: 0; fw: 0.5; fh: 1; activated => { root.snap(0); } }
+            SnapTile { fx: 0.5; fy: 0; fw: 0.5; fh: 1; activated => { root.snap(1); } }
+            SnapTile { fx: 0; fy: 0; fw: 1; fh: 0.5; activated => { root.snap(2); } }
+        }
+        Rectangle { height: 6px; }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            SnapTile { fx: 0; fy: 0.5; fw: 1; fh: 0.5; activated => { root.snap(3); } }
+            SnapTile { fx: 0; fy: 0; fw: 1; fh: 1; activated => { root.snap(4); } }
+            SnapTile { fx: 0.15; fy: 0.12; fw: 0.7; fh: 0.76; activated => { root.snap(5); } }
+        }
+        Rectangle { height: 4px; }
+    }
+}
+
+// ── the calendar (CalendarPanel.qml) ─────────────────────────────────────
+component CalendarPanel inherits PanelSurface {
+    in property <string> month;
+    in property <[DayCell]> cells;
+    in property <bool> away;
+    callback step(int);
+    callback reset();
+    property <length> cell-w: (root.width - 28px - 2px * 6) / 7;
+    VerticalLayout {
+        padding-top: 12px;
+        padding-bottom: 14px;
+        HorizontalLayout {
+            height: 34px;
+            padding-left: 14px;
+            padding-right: 12px;
+            spacing: 2px;
+            Text {
+                vertical-alignment: center;
+                text: root.month;
+                font-size: Theme.fs(13);
+                font-weight: 600;
+                color: Theme.ink;
+                TouchArea { enabled: root.away; clicked => { root.reset(); } }
+            }
+            IconButton { y: 4px; size: 26px; icon-size: 14px; icon: Icons.chevron-left; ink: Theme.ink2; activated => { root.step(-1); } }
+            IconButton { y: 4px; size: 26px; icon-size: 14px; icon: Icons.chevron-right; ink: Theme.ink2; activated => { root.step(1); } }
+        }
+        Rectangle { height: 10px; }
+        Rectangle {
+            height: 24px;
+            for d[i] in ["S", "M", "T", "W", "T", "F", "S"]: Text {
+                x: 14px + i * (root.cell-w + 2px) + (root.cell-w - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                text: d;
+                font-size: Theme.fs(11);
+                font-weight: 600;
+                color: i == 0 || i == 6 ? Theme.div : Theme.ink3;
+            }
+        }
+        Rectangle {
+            height: ceil(root.cells.length / 7) * 36px;
+            for c[i] in root.cells: Rectangle {
+                x: 14px + mod(i, 7) * (root.cell-w + 2px);
+                y: floor(i / 7) * 36px;
+                width: root.cell-w;
+                height: 34px;
+                border-radius: 9px;
+                background: c.today ? Theme.accent : (c.day > 0 && h.has-hover ? Theme.hover : transparent);
+                if c.day > 0: Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: c.day;
+                    font-size: Theme.fs(12);
+                    color: c.today ? Theme.ink-on-accent : Theme.ink2;
+                }
+                h := TouchArea {}
+            }
+        }
+    }
+}
+
+// ── control center (ControlCenter.qml, the main view) ─────────────────────
+component CcTile inherits Rectangle {
+    in property <Tile> tile;
+    callback activated();
+    pure function glyph(kind: string) -> GlyphData {
+        if (kind == "wifi") { return Icons.wifi; }
+        if (kind == "wifi-off") { return Icons.wifi-off; }
+        if (kind == "bluetooth") { return Icons.bluetooth; }
+        if (kind == "airplane") { return Icons.plane; }
+        if (kind == "performance") { return Icons.zap; }
+        if (kind == "keyboard") { return Icons.keyboard; }
+        if (kind == "dnd") { return Icons.bell-off; }
+        if (kind == "night") { return Icons.moon; }
+        return Icons.dot;
+    }
+    height: 88px;
+    border-radius: Theme.r-cap;
+    background: tile.on ? Theme.accent : (t.has-hover ? Theme.sel : Theme.hover);
+    animate background { duration: 160ms; }
+    Glyph {
+        x: 12px; y: 12px;
+        data: root.glyph(root.tile.kind);
+        size: 18px;
+        monochrome: true;
+        ink: root.tile.on ? Theme.ink-on-accent : Theme.ink;
+    }
+    VerticalLayout {
+        x: 12px;
+        width: root.width - 24px;
+        y: root.height - self.preferred-height - 11px;
+        height: self.preferred-height;
+        spacing: 2px;
+        Text {
+            text: root.tile.name;
+            font-size: Theme.fs(12);
+            font-weight: 600;
+            color: root.tile.on ? Theme.ink-on-accent : Theme.ink;
+        }
+        Text {
+            text: root.tile.sub;
+            overflow: elide;
+            font-size: Theme.fs(11);
+            font-weight: 400;
+            opacity: root.tile.on ? 0.75 : 1;
+            color: root.tile.on ? Theme.ink-on-accent : Theme.ink3;
+        }
+    }
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - 8px;
+        width: min(28px, parent.width * 0.25);
+        height: 3px;
+        border-radius: 1.5px;
+        background: root.tile.on ? Theme.ink-on-accent : Theme.div;
+        opacity: root.tile.on ? 0.55 : 1;
+    }
+    t := TouchArea { mouse-cursor: pointer; clicked => { root.activated(); } }
+}
+
+component CcSlider inherits VerticalLayout {
+    in property <GlyphData> icon;
+    in property <string> label;
+    in property <string> value-text;
+    in property <float> value;
+    callback moved(float);
+    callback icon-clicked();
+    spacing: 7px;
+    HorizontalLayout {
+        height: 15px;
+        spacing: 8px;
+        Glyph {
+            data: root.icon;
+            size: 15px;
+            monochrome: true;
+            ink: Theme.ink2;
+            TouchArea { mouse-cursor: pointer; clicked => { root.icon-clicked(); } }
+        }
+        Text { horizontal-stretch: 1; vertical-alignment: center; text: root.label; font-size: Theme.fs(12); color: Theme.ink2; }
+        Text {
+            horizontal-stretch: 0;
+            vertical-alignment: center;
+            text: root.value-text;
+            font-size: Theme.fs(12);
+            font-weight: 600;
+            color: Theme.ink;
+        }
+    }
+    FillSlider { value: root.value; moved(v) => { root.moved(v); } }
+}
+
+component ControlCenter inherits PanelSurface {
+    in property <string> user;
+    in property <string> session;
+    in property <string> theme-mode;
+    in property <[Tile]> tiles;
+    in property <float> volume;
+    in property <bool> muted;
+    in property <bool> has-brightness;
+    in property <float> brightness;
+    in property <bool> has-mic;
+    in property <float> mic;
+    in property <bool> mic-muted;
+    callback cycle-theme();
+    callback tile(string);
+    callback set-volume(float);
+    callback toggle-mute();
+    callback set-brightness(float);
+    callback set-mic(float);
+    callback toggle-mic();
+    property <length> tile-w: (root.width - 24px - 12px) / 3;
+    VerticalLayout {
+        HorizontalLayout {
+            height: 62px;
+            padding-left: 16px;
+            padding-right: 16px;
+            spacing: 12px;
+            Rectangle {
+                y: 14px;
+                width: 34px;
+                height: 34px;
+                border-radius: Theme.r-sm;
+                background: Theme.accent;
+                Glyph { x: 8px; y: 8px; data: Icons.user; size: 18px; monochrome: true; ink: Theme.ink-on-accent; }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 2px;
+                Text { text: root.user; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+                Text { text: root.session; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
+            }
+            Rectangle {
+                y: 16px;
+                height: 30px;
+                width: chip.preferred-width + 24px;
+                horizontal-stretch: 0;
+                border-radius: 9px;
+                background: ct.has-hover ? Theme.sel : Theme.hover;
+                chip := HorizontalLayout {
+                    x: 12px;
+                    width: self.preferred-width;
+                    spacing: 8px;
+                    Glyph {
+                        y: (30px - self.height) / 2;
+                        data: root.theme-mode == "auto" ? Icons.sun-moon : (Theme.dark ? Icons.moon : Icons.sun);
+                        size: 13px;
+                    }
+                    Text {
+                        vertical-alignment: center;
+                        text: root.theme-mode == "auto" ? "Auto" : (Theme.dark ? "Dark" : "Light");
+                        font-size: Theme.fs(12);
+                        font-weight: 600;
+                        color: Theme.ink;
+                    }
+                }
+                ct := TouchArea { mouse-cursor: pointer; clicked => { root.cycle-theme(); } }
+            }
+        }
+        Rectangle {
+            height: ceil(root.tiles.length / 3) * 94px + 6px;
+            for t[i] in root.tiles: CcTile {
+                x: 12px + mod(i, 3) * (root.tile-w + 6px);
+                y: floor(i / 3) * 94px;
+                width: root.tile-w;
+                tile: t;
+                activated => { root.tile(t.kind); }
+            }
+        }
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 4px;
+            padding-bottom: 16px;
+            spacing: 14px;
+            CcSlider {
+                icon: root.muted || root.volume <= 0.001 ? Icons.volume-x : root.volume < 0.5 ? Icons.volume-low : Icons.volume;
+                label: "Volume";
+                value-text: root.muted ? "muted" : round(root.volume * 100) + "%";
+                value: root.volume;
+                moved(v) => { root.set-volume(v); }
+                icon-clicked => { root.toggle-mute(); }
+            }
+            if root.has-brightness: CcSlider {
+                icon: Icons.sun;
+                label: "Brightness";
+                value-text: round(root.brightness * 100) + "%";
+                value: root.brightness;
+                moved(v) => { root.set-brightness(v); }
+            }
+            if root.has-mic: CcSlider {
+                icon: root.mic-muted ? Icons.mic-off : Icons.mic;
+                label: "Microphone";
+                value-text: root.mic-muted ? "muted" : round(root.mic * 100) + "%";
+                value: root.mic;
+                moved(v) => { root.set-mic(v); }
+                icon-clicked => { root.toggle-mic(); }
+            }
+        }
+    }
+}
+
+// ── notifications (NotificationCenter.qml) ───────────────────────────────
+export component NoteCard inherits Rectangle {
+    in property <Note> note;
+    in property <bool> toast;
+    callback dismiss(int);
+    callback act(int, string);
+    border-radius: Theme.r-cap;
+    background: toast ? Theme.panel : (h.has-hover ? Theme.sel : Theme.hover);
+    border-width: toast ? 1px : 0px;
+    border-color: Theme.edge;
+    height: col.preferred-height;
+    h := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.act(root.note.id, "default"); }
+    }
+    col := VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 10px;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: Theme.r-sm;
+                background: root.note.has-icon ? transparent : Theme.hover;
+                clip: true;
+                if root.note.has-icon: Image { width: 32px; height: 32px; source: root.note.icon; image-fit: contain; }
+                if !root.note.has-icon: Glyph { x: 8px; y: 8px; data: Icons.bell; size: 16px; }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.note.app;
+                        overflow: elide;
+                        font-size: Theme.fs(11);
+                        font-weight: 600;
+                        color: root.note.urgent ? Theme.accent : Theme.ink3;
+                    }
+                    Text {
+                        horizontal-stretch: 0;
+                        text: root.note.time;
+                        font-size: Theme.fs(11);
+                        font-weight: 400;
+                        color: Theme.ink3;
+                    }
+                }
+                Text {
+                    text: root.note.summary;
+                    wrap: word-wrap;
+                    font-size: Theme.fs(13);
+                    font-weight: 600;
+                    color: Theme.ink;
+                }
+                if root.note.body != "": Text {
+                    text: root.note.body;
+                    wrap: word-wrap;
+                    max-height: 4 * Theme.fs(12) * 1.35;
+                    overflow: elide;
+                    font-size: Theme.fs(12);
+                    font-weight: 400;
+                    color: Theme.ink2;
+                }
+            }
+            IconButton {
+                y: 0;
+                horizontal-stretch: 0;
+                size: 22px;
+                icon-size: 12px;
+                icon: Icons.x;
+                ink: Theme.ink2;
+                activated => { root.dismiss(root.note.id); }
+            }
+        }
+        if root.note.actions.length > 0: HorizontalLayout {
+            padding-left: 42px;
+            spacing: 6px;
+            alignment: start;
+            for a in root.note.actions: Rectangle {
+                height: 26px;
+                width: al.preferred-width + 20px;
+                border-radius: Theme.r-sm;
+                background: at.has-hover ? Theme.accent : Theme.sel;
+                al := Text {
+                    x: 10px;
+                    y: (parent.height - self.height) / 2;
+                    text: a.label;
+                    font-size: Theme.fs(12);
+                    font-weight: 600;
+                    color: at.has-hover ? Theme.ink-on-accent : Theme.ink;
+                }
+                at := TouchArea { mouse-cursor: pointer; clicked => { root.act(root.note.id, a.key); } }
+            }
+        }
+    }
+}
+
+component NotificationCenter inherits PanelSurface {
+    in property <[Note]> notes;
+    in property <bool> quiet;
+    callback dismiss(int);
+    callback act(int, string);
+    callback clear();
+    callback toggle-dnd();
+    VerticalLayout {
+        HorizontalLayout {
+            height: 52px;
+            padding-left: 16px;
+            padding-right: 12px;
+            spacing: 10px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 2px;
+                Text { text: "Notifications"; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+                Text {
+                    text: root.notes.length == 0 ? "All caught up" : root.notes.length + (root.notes.length == 1 ? " notification" : " notifications");
+                    font-size: Theme.fs(11);
+                    font-weight: 400;
+                    color: Theme.ink3;
+                }
+            }
+            Text { horizontal-stretch: 0; vertical-alignment: center; text: "Do not disturb"; font-size: Theme.fs(11); color: Theme.ink2; }
+            Toggle { y: 16px; checked: root.quiet; toggled => { root.toggle-dnd(); } }
+            if root.notes.length > 0: Rectangle {
+                y: 13px;
+                height: 26px;
+                width: cl.preferred-width + 20px;
+                horizontal-stretch: 0;
+                border-radius: Theme.r-sm;
+                background: ctl.has-hover ? Theme.sel : Theme.hover;
+                cl := Text { x: 10px; y: (parent.height - self.height) / 2; text: "Clear"; font-size: Theme.fs(12); font-weight: 600; color: Theme.ink; }
+                ctl := TouchArea { mouse-cursor: pointer; clicked => { root.clear(); } }
+            }
+        }
+        Rule {}
+        if root.notes.length == 0: VerticalLayout {
+            height: 120px;
+            alignment: center;
+            spacing: 8px;
+            Glyph {
+                x: (root.width - self.width) / 2;
+                data: root.quiet ? Icons.bell-off : Icons.bell;
+                size: 28px;
+                ink: Theme.ink3;
+            }
+            Text {
+                horizontal-alignment: center;
+                text: root.quiet ? "Quiet: banners are held back" : "Nothing new";
+                font-size: Theme.fs(12);
+                color: Theme.ink3;
+            }
+        }
+        if root.notes.length > 0: Flickable {
+            height: min(list.preferred-height, 460px);
+            content-height: list.preferred-height;
+            list := VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+                for n in root.notes: NoteCard {
+                    note: n;
+                    dismiss(id) => { root.dismiss(id); }
+                    act(id, k) => { root.act(id, k); }
+                }
+            }
+        }
+    }
+}
+
+// ── what's playing (MediaPanel.qml, in short) ────────────────────────────
+component MediaPanel inherits PanelSurface {
+    in property <MediaInfo> media;
+    callback prev();
+    callback toggle();
+    callback next();
+    callback seek(float);
+    VerticalLayout {
+        padding: 14px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 12px;
+            Rectangle {
+                width: 72px;
+                height: 72px;
+                border-radius: Theme.r-sm;
+                clip: true;
+                background: Theme.hover;
+                if root.media.has-art: Image { width: 72px; height: 72px; source: root.media.art; image-fit: cover; }
+                if !root.media.has-art: Glyph { x: 22px; y: 22px; data: Icons.music; size: 28px; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                Text { text: root.media.title; overflow: elide; font-size: Theme.fs(14); font-weight: 600; color: Theme.ink; }
+                Text { text: root.media.artist; overflow: elide; font-size: Theme.fs(12); color: Theme.ink2; }
+                Text { text: root.media.player; overflow: elide; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
+            }
+        }
+        if root.media.has-length: VerticalLayout {
+            spacing: 4px;
+            Rectangle {
+                height: 6px;
+                border-radius: 3px;
+                background: Theme.sel;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * root.media.progress;
+                    border-radius: 3px;
+                    background: Theme.accent;
+                }
+                TouchArea {
+                    y: -6px;
+                    height: 18px;
+                    enabled: root.media.can-seek;
+                    mouse-cursor: pointer;
+                    clicked => { root.seek(self.mouse-x / self.width); }
+                }
+            }
+            HorizontalLayout {
+                Text { text: root.media.position; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
+                Text { horizontal-alignment: right; text: root.media.length; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 10px;
+            IconButton { size: 34px; icon-size: 16px; icon: Icons.skip-back; enabled: root.media.can-prev; activated => { root.prev(); } }
+            IconButton {
+                size: 40px; icon-size: 18px; accent: true;
+                icon: root.media.playing ? Icons.pause : Icons.play;
+                enabled: root.media.can-toggle;
+                activated => { root.toggle(); }
+            }
+            IconButton { size: 34px; icon-size: 16px; icon: Icons.skip-forward; enabled: root.media.can-next; activated => { root.next(); } }
+        }
+    }
+}
+
+// ── USB drives (DrivesPanel.qml) ─────────────────────────────────────────
+component DrivesPanel inherits PanelSurface {
+    in property <[DriveRow]> drives;
+    callback open-mount(string);
+    callback mount(string);
+    callback eject(string);
+    VerticalLayout {
+        padding: 6px;
+        padding-top: 12px;
+        Caps { x: 8px; text: "DRIVES"; height: 24px; vertical-alignment: center; }
+        for d in root.drives: Rectangle {
+            height: 48px;
+            border-radius: Theme.r-sm;
+            background: dt.has-hover ? Theme.hover : transparent;
+            dt := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    if (d.mounted) { root.open-mount(d.mount); } else { root.mount(d.part); }
+                }
+            }
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 6px;
+                spacing: 10px;
+                Glyph { y: 14px; data: Icons.drive; size: 18px; }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: d.name; overflow: elide; font-size: Theme.fs(12.5); font-weight: 600; color: Theme.ink; }
+                    Text { text: d.detail; overflow: elide; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
+                }
+                Rectangle {
+                    y: 11px;
+                    height: 26px;
+                    width: el.preferred-width + 20px;
+                    horizontal-stretch: 0;
+                    border-radius: Theme.r-sm;
+                    background: et.has-hover ? Theme.accent : Theme.sel;
+                    el := Text {
+                        x: 10px; y: (parent.height - self.height) / 2;
+                        text: "Eject";
+                        font-size: Theme.fs(12); font-weight: 600;
+                        color: et.has-hover ? Theme.ink-on-accent : Theme.ink;
+                    }
+                    et := TouchArea { mouse-cursor: pointer; clicked => { root.eject(d.drive); } }
+                }
+            }
+        }
+    }
+}
+
+// ── timers, updates, privacy: a heading and rows ──────────────────────────
+component TimersPanel inherits PanelSurface {
+    in property <[TimerRow]> timers;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 6px;
+        Caps { text: "TIMERS"; }
+        for t in root.timers: HorizontalLayout {
+            height: 34px;
+            spacing: 10px;
+            Glyph { y: 8px; data: t.pomodoro ? Icons.pomodoro : Icons.timer; size: 18px; }
+            Text { vertical-alignment: center; text: t.label; overflow: elide; font-size: Theme.fs(12.5); color: Theme.ink; }
+            Text {
+                horizontal-stretch: 0;
+                vertical-alignment: center;
+                text: t.left;
+                font-size: Theme.fs(13);
+                font-weight: 600;
+                color: t.running ? Theme.ink : Theme.ink3;
+            }
+        }
+    }
+}
+
+component UpdatesPanel inherits PanelSurface {
+    in property <int> count;
+    in property <[string]> packages;
+    callback run();
+    VerticalLayout {
+        padding: 14px;
+        spacing: 8px;
+        HorizontalLayout {
+            Caps { vertical-alignment: center; text: "UPDATES"; }
+            Text { horizontal-alignment: right; vertical-alignment: center; text: root.count + " waiting"; font-size: Theme.fs(11); color: Theme.ink3; }
+        }
+        VerticalLayout {
+            spacing: 2px;
+            for p in root.packages: Text { text: p; overflow: elide; font-size: Theme.fs(12); font-weight: 400; color: Theme.ink2; }
+            if root.count > root.packages.length: Text {
+                text: "and " + (root.count - root.packages.length) + " more";
+                font-size: Theme.fs(12);
+                color: Theme.ink3;
+            }
+        }
+        Rectangle {
+            height: 32px;
+            border-radius: Theme.r-sm;
+            background: ut.has-hover ? Theme.accent : Theme.sel;
+            Text {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                text: "Install in a terminal";
+                font-size: Theme.fs(12.5);
+                font-weight: 600;
+                color: ut.has-hover ? Theme.ink-on-accent : Theme.ink;
+            }
+            ut := TouchArea { mouse-cursor: pointer; clicked => { root.run(); } }
+        }
+    }
+}
+
+component PrivacyPanel inherits PanelSurface {
+    in property <[PrivacyRow]> rows;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 6px;
+        Caps { text: "IN USE"; }
+        for r in root.rows: HorizontalLayout {
+            height: 30px;
+            spacing: 10px;
+            Rectangle {
+                y: 4px;
+                width: 22px; height: 22px; border-radius: 11px;
+                background: Theme.accent;
+                Glyph {
+                    x: 4px; y: 4px; size: 14px; monochrome: true; ink: Theme.ink-on-accent;
+                    data: r.kind == "mic" ? Icons.mic : r.kind == "camera" ? Icons.camera : Icons.monitor;
+                }
+            }
+            Text {
+                vertical-alignment: center;
+                text: (r.kind == "mic" ? "Microphone" : r.kind == "camera" ? "Camera" : "Screen") + " · " + r.name;
+                overflow: elide;
+                font-size: Theme.fs(12.5);
+                color: Theme.ink;
+            }
+        }
+    }
+}
+
+// ── a tray item's menu (TrayMenu.qml) ────────────────────────────────────
+component TrayMenu inherits PanelSurface {
+    seam: false;
+    in property <string> heading;
+    in property <[MenuEntry]> entries;
+    in property <bool> nested;
+    in property <bool> toggles;
+    callback pick(int, bool);
+    callback back();
+    VerticalLayout {
+        padding: 6px;
+        if root.nested: MenuRow { label: root.heading; icon: Icons.chevron-left; has-icon: true; activated => { root.back(); } }
+        if root.nested: Rectangle { height: 5px; Rule { y: 2px; } }
+        for e in root.entries: Rectangle {
+            height: e.separator ? 9px : 29px;
+            if e.separator: Rule { y: 4px; }
+            if !e.separator: MenuRow {
+                width: parent.width;
+                label: e.label;
+                enabled: e.enabled;
+                hint: e.submenu ? "›" : "";
+                // Every row keeps the check's place when any row can have
+                // one, so the labels line up.
+                has-icon: root.toggles;
+                icon: e.toggle > 0 && e.checked ? Icons.check : {};
+                activated => { root.pick(e.id, e.submenu); }
+            }
+        }
+    }
+}
+
+export component Panels inherits Window {
+    // Which is open: power, window, calendar, control, notifications,
+    // media, drives, timers, updates, privacy, tray; "" while closing.
+    in property <string> which;
+    in property <length> anchor;
+    in property <length> top: 50px;
+    callback dismiss();
+
+    // power
+    in property <string> user;
+    in property <string> uptime;
+    in property <string> hyprland;
+    callback power(string);
+    // window
+    callback window-act(string);
+    callback window-snap(int);
+    // calendar
+    in property <string> month;
+    in property <[DayCell]> cells;
+    in property <bool> month-away;
+    callback month-step(int);
+    callback month-reset();
+    // control center
+    in property <string> session;
+    in property <string> theme-mode;
+    in property <[Tile]> tiles;
+    in property <float> volume;
+    in property <bool> muted;
+    in property <bool> has-brightness;
+    in property <float> brightness;
+    in property <bool> has-mic;
+    in property <float> mic;
+    in property <bool> mic-muted;
+    callback cycle-theme();
+    callback tile(string);
+    callback set-volume(float);
+    callback toggle-mute();
+    callback set-brightness(float);
+    callback set-mic(float);
+    callback toggle-mic();
+    // notifications
+    in property <[Note]> notes;
+    in property <bool> quiet;
+    callback note-dismiss(int);
+    callback note-act(int, string);
+    callback notes-clear();
+    callback toggle-dnd();
+    // media
+    in property <MediaInfo> media;
+    callback media-prev();
+    callback media-toggle();
+    callback media-next();
+    callback media-seek(float);
+    // drives, timers, updates, privacy
+    in property <[DriveRow]> drives;
+    callback drive-open(string);
+    callback drive-mount(string);
+    callback drive-eject(string);
+    in property <[TimerRow]> timers;
+    in property <int> update-count;
+    in property <[string]> update-names;
+    callback run-updates();
+    in property <[PrivacyRow]> privacy;
+    // tray menu
+    in property <string> menu-heading;
+    in property <[MenuEntry]> menu;
+    in property <bool> menu-nested;
+    in property <bool> menu-toggles;
+    callback menu-pick(int, bool);
+    callback menu-back();
+
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-weight: 500;
+    default-font-size: Theme.fs(12);
+
+    // The click-away catcher.
+    TouchArea {
+        clicked => { root.dismiss(); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) { root.dismiss(); }
+        }
+    }
+
+    Drop {
+        shown: root.which == "power"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 248px;
+        PowerMenu { user: root.user; uptime: root.uptime; hyprland: root.hyprland; act(a) => { root.power(a); } }
+    }
+    Drop {
+        shown: root.which == "window"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 262px;
+        WindowMenu { act(a) => { root.window-act(a); } snap(i) => { root.window-snap(i); } }
+    }
+    Drop {
+        shown: root.which == "calendar"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 320px;
+        CalendarPanel {
+            month: root.month; cells: root.cells; away: root.month-away;
+            step(d) => { root.month-step(d); }
+            reset => { root.month-reset(); }
+        }
+    }
+    Drop {
+        shown: root.which == "control"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 384px;
+        ControlCenter {
+            user: root.user; session: root.session; theme-mode: root.theme-mode; tiles: root.tiles;
+            volume: root.volume; muted: root.muted;
+            has-brightness: root.has-brightness; brightness: root.brightness;
+            has-mic: root.has-mic; mic: root.mic; mic-muted: root.mic-muted;
+            cycle-theme => { root.cycle-theme(); }
+            tile(k) => { root.tile(k); }
+            set-volume(v) => { root.set-volume(v); }
+            toggle-mute => { root.toggle-mute(); }
+            set-brightness(v) => { root.set-brightness(v); }
+            set-mic(v) => { root.set-mic(v); }
+            toggle-mic => { root.toggle-mic(); }
+        }
+    }
+    Drop {
+        shown: root.which == "notifications"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 380px;
+        NotificationCenter {
+            notes: root.notes; quiet: root.quiet;
+            dismiss(id) => { root.note-dismiss(id); }
+            act(id, k) => { root.note-act(id, k); }
+            clear => { root.notes-clear(); }
+            toggle-dnd => { root.toggle-dnd(); }
+        }
+    }
+    Drop {
+        shown: root.which == "media"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 340px;
+        MediaPanel {
+            media: root.media;
+            prev => { root.media-prev(); }
+            toggle => { root.media-toggle(); }
+            next => { root.media-next(); }
+            seek(f) => { root.media-seek(f); }
+        }
+    }
+    Drop {
+        shown: root.which == "drives"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 300px;
+        DrivesPanel {
+            drives: root.drives;
+            open-mount(m) => { root.drive-open(m); }
+            mount(p) => { root.drive-mount(p); }
+            eject(d) => { root.drive-eject(d); }
+        }
+    }
+    Drop {
+        shown: root.which == "timers"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 280px;
+        TimersPanel { timers: root.timers; }
+    }
+    Drop {
+        shown: root.which == "updates"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 300px;
+        UpdatesPanel { count: root.update-count; packages: root.update-names; run => { root.run-updates(); } }
+    }
+    Drop {
+        shown: root.which == "privacy"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 280px;
+        PrivacyPanel { rows: root.privacy; }
+    }
+    Drop {
+        shown: root.which == "tray"; anchor: root.anchor; top: root.top; screen-width: root.width; panel-width: 240px;
+        TrayMenu {
+            heading: root.menu-heading; entries: root.menu; nested: root.menu-nested; toggles: root.menu-toggles;
+            pick(id, sub) => { root.menu-pick(id, sub); }
+            back => { root.menu-back(); }
+        }
+    }
+}

@@ -113,7 +113,11 @@ fn source_json(s: &SourceInfo) -> Json {
         "ports": s.ports.iter().map(|p| json!({
             "name": opt(&p.name), "description": opt(&p.description), "availability": avail(p.available)
         })).collect::<Vec<_>>(),
-        "active_port": s.active_port.as_ref().map(|p| opt(&p.name)).unwrap_or_default()
+        "active_port": s.active_port.as_ref().map(|p| opt(&p.name)).unwrap_or_default(),
+        // The microphone's level and mute, for rshell's control center.
+        "volume": s.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64,
+        "mute": s.mute,
+        "monitor": s.monitor_of_sink.is_some()
     })
 }
 
@@ -134,6 +138,7 @@ struct Acc {
     inputs: Vec<Json>,
     outputs: Vec<Json>,
     default_sink: String,
+    default_source: String,
     done: u8,
 }
 
@@ -202,7 +207,8 @@ impl Session {
                             "cards": std::mem::take(&mut a.cards), "sinks": std::mem::take(&mut a.sinks),
                             "sources": std::mem::take(&mut a.sources), "sinkInputs": std::mem::take(&mut a.inputs),
                             "sourceOutputs": std::mem::take(&mut a.outputs),
-                            "defaultSink": std::mem::take(&mut a.default_sink)
+                            "defaultSink": std::mem::take(&mut a.default_sink),
+                            "defaultSource": std::mem::take(&mut a.default_source)
                         }
                     }));
                 }
@@ -229,7 +235,10 @@ impl Session {
             let acc = acc.clone();
             let finish = finish.clone();
             intro.get_server_info(move |info| {
-                acc.lock().unwrap().default_sink = info.default_sink_name.as_ref().map(|n| n.to_string()).unwrap_or_default();
+                let mut a = acc.lock().unwrap();
+                a.default_sink = info.default_sink_name.as_ref().map(|n| n.to_string()).unwrap_or_default();
+                a.default_source = info.default_source_name.as_ref().map(|n| n.to_string()).unwrap_or_default();
+                drop(a);
                 finish();
             });
         }
@@ -263,6 +272,13 @@ impl Session {
                 intro.set_sink_volume_by_name(&st("name"), &cv, done);
             }
             "pa-mute" => { intro.set_sink_mute_by_name(&st("name"), cmd["mute"].as_bool().unwrap_or(false), done); }
+            "pa-source-volume" => {
+                let v = cmd["volume"].as_f64().unwrap_or(0.0).clamp(0.0, 1.5);
+                let mut cv = pulse::volume::ChannelVolumes::default();
+                cv.set(2, pulse::volume::Volume((v * pulse::volume::Volume::NORMAL.0 as f64) as u32));
+                intro.set_source_volume_by_name(&st("name"), &cv, done);
+            }
+            "pa-source-mute" => { intro.set_source_mute_by_name(&st("name"), cmd["mute"].as_bool().unwrap_or(false), done); }
             "pa-move-input" => { intro.move_sink_input_by_name(n("index"), &st("sink"), done); }
             "pa-move-output" => { intro.move_source_output_by_name(n("index"), &st("source"), done); }
             "pa-latency" => {

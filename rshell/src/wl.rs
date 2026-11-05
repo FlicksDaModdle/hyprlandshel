@@ -27,13 +27,15 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
+use slint::platform::Key;
 use std::rc::Rc;
 use wayland_client::{
     globals::GlobalList,
-    protocol::{wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
+    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
     Connection, Dispatch, Proxy, QueueHandle,
 };
 use wayland_protocols::wp::fractional_scale::v1::client::{wp_fractional_scale_manager_v1, wp_fractional_scale_v1};
+use wayland_protocols::wp::cursor_shape::v1::client::{wp_cursor_shape_device_v1, wp_cursor_shape_manager_v1};
 use wayland_protocols::wp::viewporter::client::{wp_viewport, wp_viewporter};
 
 /// Where and how a surface sits on its output.
@@ -62,6 +64,8 @@ pub struct ShellSurface {
     viewport: Option<wp_viewport::WpViewport>,
     configured: bool,
     pool: Option<SlotPool>,
+    /// The size last asked of the compositor.
+    asked: (u32, u32),
     pixels: Vec<Bgra>,
     sized: (u32, u32, f64),
 }
@@ -75,10 +79,16 @@ pub struct Shell {
     shm: Shm,
     fractional: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
     viewporter: Option<wp_viewporter::WpViewporter>,
-    pub surfaces: Vec<ShellSurface>,
+    /// By id: a removed surface leaves a hole, so the ids of the rest hold.
+    pub surfaces: Vec<Option<ShellSurface>>,
     pointer: Option<wl_pointer::WlPointer>,
-    /// The surface under the pointer, and where on it (logical).
-    hover: Option<(usize, LogicalPosition)>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    cursor_shapes: Option<wp_cursor_shape_manager_v1::WpCursorShapeManagerV1>,
+    cursor: Option<wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
+    /// The surface with the keyboard, when one has it.
+    focus: Option<usize>,
+    /// Keys pressed on a surface that wants them (Esc, for now), by id.
+    pub keys: Vec<(usize, Key)>,
     pub closed: bool,
 }
 
@@ -89,6 +99,7 @@ impl Shell {
         let shm = Shm::bind(globals, qh).map_err(|e| format!("wl_shm: {e}"))?;
         let fractional = globals.bind::<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, _, _>(qh, 1..=1, ()).ok();
         let viewporter = globals.bind::<wp_viewporter::WpViewporter, _, _>(qh, 1..=1, ()).ok();
+        let cursor_shapes = globals.bind::<wp_cursor_shape_manager_v1::WpCursorShapeManagerV1, _, _>(qh, 1..=1, ()).ok();
         Ok(Shell {
             registry: RegistryState::new(globals),
             outputs: OutputState::new(globals, qh),
@@ -100,7 +111,11 @@ impl Shell {
             viewporter,
             surfaces: Vec::new(),
             pointer: None,
-            hover: None,
+            keyboard: None,
+            cursor_shapes,
+            cursor: None,
+            focus: None,
+            keys: Vec::new(),
             closed: false,
         })
     }
@@ -108,6 +123,18 @@ impl Shell {
     /// Puts the Slint window made last on a new layer surface.
     pub fn add(&mut self, qh: &QueueHandle<Self>, output: Option<&wl_output::WlOutput>, p: &Placement) -> usize {
         let adapter = platform::take_adapter().expect("a Slint window is made before it is placed");
+        self.add_window(qh, adapter, output, p)
+    }
+
+    /// Puts a Slint window on a new layer surface: one made earlier and
+    /// taken off its last one, as a panel is each time it opens.
+    pub fn add_window(
+        &mut self,
+        qh: &QueueHandle<Self>,
+        adapter: Rc<MinimalSoftwareWindow>,
+        output: Option<&wl_output::WlOutput>,
+        p: &Placement,
+    ) -> usize {
         let surface = self.compositor.create_surface(qh);
         let fractional = self.fractional.as_ref().map(|m| m.get_fractional_scale(&surface, qh, surface.id()));
         let viewport = match (&self.fractional, &self.viewporter) {
@@ -126,7 +153,7 @@ impl Shell {
             .and_then(|o| self.outputs.info(o))
             .map(|i| i.scale_factor as f64)
             .unwrap_or(1.0);
-        self.surfaces.push(ShellSurface {
+        let s = ShellSurface {
             layer,
             adapter,
             output: output.cloned(),
@@ -137,20 +164,61 @@ impl Shell {
             viewport,
             configured: false,
             pool: None,
+            asked: (p.width, p.height),
             pixels: Vec::new(),
             sized: (0, 0, 0.0),
-        });
-        self.surfaces.len() - 1
+        };
+        if let Some(free) = self.surfaces.iter().position(|s| s.is_none()) {
+            self.surfaces[free] = Some(s);
+            free
+        } else {
+            self.surfaces.push(Some(s));
+            self.surfaces.len() - 1
+        }
+    }
+
+    /// Takes a surface off the screen. Its Slint window is handed back, to
+    /// be put on another later.
+    pub fn remove(&mut self, id: usize) -> Option<Rc<MinimalSoftwareWindow>> {
+        let s = self.surfaces.get_mut(id)?.take()?;
+        if self.focus == Some(id) {
+            self.focus = None;
+        }
+        if let Some(f) = &s.fractional {
+            f.destroy();
+        }
+        if let Some(v) = &s.viewport {
+            v.destroy();
+        }
+        s.adapter.window().dispatch_event(WindowEvent::PointerExited);
+        let adapter = s.adapter.clone();
+        drop(s);
+        Some(adapter)
+    }
+
+    /// A new logical size for a surface sized to its content (the toasts).
+    pub fn resize(&mut self, id: usize, width: u32, height: u32) {
+        if let Some(Some(s)) = self.surfaces.get_mut(id) {
+            if s.asked != (width, height) {
+                s.asked = (width, height);
+                s.layer.set_size(width, height);
+                s.layer.commit();
+            }
+        }
     }
 
     fn index_of(&self, surface: &wl_surface::WlSurface) -> Option<usize> {
-        self.surfaces.iter().position(|s| s.layer.wl_surface() == surface)
+        self.surfaces.iter().position(|s| s.as_ref().is_some_and(|s| s.layer.wl_surface() == surface))
+    }
+
+    fn at(&mut self, i: usize) -> &mut ShellSurface {
+        self.surfaces[i].as_mut().expect("a live surface")
     }
 
     /// Draws every surface whose component has changed.
     pub fn draw(&mut self) {
         let shm = &self.shm;
-        for s in &mut self.surfaces {
+        for s in self.surfaces.iter_mut().flatten() {
             if !s.configured || s.width == 0 || s.height == 0 {
                 continue;
             }
@@ -196,7 +264,7 @@ impl Shell {
     }
 
     pub fn animating(&self) -> bool {
-        self.surfaces.iter().any(|s| s.adapter.window().has_active_animations())
+        self.surfaces.iter().flatten().any(|s| s.adapter.window().has_active_animations())
     }
 }
 
@@ -205,13 +273,13 @@ impl Shell {
 impl LayerShellHandler for Shell {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
         if let Some(i) = self.index_of(layer.wl_surface()) {
-            self.surfaces[i].configured = false;
+            self.at(i).configured = false;
         }
     }
 
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, c: LayerSurfaceConfigure, _: u32) {
         let Some(i) = self.index_of(layer.wl_surface()) else { return };
-        let s = &mut self.surfaces[i];
+        let s = self.at(i);
         if c.new_size.0 > 0 {
             s.width = c.new_size.0;
         }
@@ -229,9 +297,10 @@ impl CompositorHandler for Shell {
     fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &wl_surface::WlSurface, factor: i32) {
         // Only without fractional scaling: with it, preferred_scale decides.
         let Some(i) = self.index_of(surface) else { return };
-        if self.surfaces[i].fractional.is_none() {
-            self.surfaces[i].scale = factor.max(1) as f64;
-            self.surfaces[i].adapter.request_redraw();
+        let s = self.at(i);
+        if s.fractional.is_none() {
+            s.scale = factor.max(1) as f64;
+            s.adapter.request_redraw();
         }
     }
     fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
@@ -250,7 +319,7 @@ impl Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, wayland_client::backe
         _: &QueueHandle<Self>,
     ) {
         if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
-            if let Some(s) = state.surfaces.iter_mut().find(|s| &s.layer.wl_surface().id() == surface) {
+            if let Some(s) = state.surfaces.iter_mut().flatten().find(|s| &s.layer.wl_surface().id() == surface) {
                 s.scale = scale as f64 / 120.0;
                 s.adapter.request_redraw();
             }
@@ -275,14 +344,20 @@ impl PointerHandler for Shell {
         for ev in events {
             let Some(i) = self.index_of(&ev.surface) else { continue };
             let at = LogicalPosition::new(ev.position.0 as f32, ev.position.1 as f32);
-            let window = self.surfaces[i].adapter.window();
+            let adapter = self.at(i).adapter.clone();
+            let window = adapter.window();
             match ev.kind {
-                PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
-                    self.hover = Some((i, at));
+                PointerEventKind::Enter { serial } => {
+                    // The arrow, not whatever the window left behind.
+                    if let Some(c) = &self.cursor {
+                        c.set_shape(serial, wp_cursor_shape_device_v1::Shape::Default);
+                    }
+                    window.dispatch_event(WindowEvent::PointerMoved { position: at });
+                }
+                PointerEventKind::Motion { .. } => {
                     window.dispatch_event(WindowEvent::PointerMoved { position: at });
                 }
                 PointerEventKind::Leave { .. } => {
-                    self.hover = None;
                     window.dispatch_event(WindowEvent::PointerExited);
                 }
                 PointerEventKind::Press { button, .. } | PointerEventKind::Release { button, .. } => {
@@ -319,16 +394,55 @@ impl SeatHandler for Shell {
     fn new_capability(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat, cap: Capability) {
         if cap == Capability::Pointer && self.pointer.is_none() {
             self.pointer = self.seats.get_pointer(qh, &seat).ok();
+            if let (Some(m), Some(p)) = (&self.cursor_shapes, &self.pointer) {
+                self.cursor = Some(m.get_pointer(p, qh, ()));
+            }
+        }
+        // Raw keys, no keymap: all a panel needs is Esc, which is the same
+        // key on every layout.
+        if cap == Capability::Keyboard && self.keyboard.is_none() {
+            self.keyboard = Some(seat.get_keyboard(qh, ()));
         }
     }
     fn remove_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat, cap: Capability) {
         if cap == Capability::Pointer {
+            if let Some(c) = self.cursor.take() {
+                c.destroy();
+            }
             if let Some(p) = self.pointer.take() {
                 p.release();
             }
         }
+        if cap == Capability::Keyboard {
+            if let Some(k) = self.keyboard.take() {
+                k.release();
+            }
+        }
     }
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
+}
+
+impl Dispatch<wl_keyboard::WlKeyboard, ()> for Shell {
+    fn event(state: &mut Self, _: &wl_keyboard::WlKeyboard, event: wl_keyboard::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        match event {
+            wl_keyboard::Event::Enter { surface, .. } => state.focus = state.index_of(&surface),
+            wl_keyboard::Event::Leave { .. } => state.focus = None,
+            wl_keyboard::Event::Key { key, state: wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed), .. } => {
+                // evdev codes: 1 is Esc.
+                if let (Some(i), 1) = (state.focus, key) {
+                    state.keys.push((i, Key::Escape));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<wp_cursor_shape_manager_v1::WpCursorShapeManagerV1, ()> for Shell {
+    fn event(_: &mut Self, _: &wp_cursor_shape_manager_v1::WpCursorShapeManagerV1, _: wp_cursor_shape_manager_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+}
+impl Dispatch<wp_cursor_shape_device_v1::WpCursorShapeDeviceV1, ()> for Shell {
+    fn event(_: &mut Self, _: &wp_cursor_shape_device_v1::WpCursorShapeDeviceV1, _: wp_cursor_shape_device_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
 }
 
 // ── the rest SCTK asks for ──────────────────────────────────────────────────
