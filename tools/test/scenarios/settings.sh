@@ -16,8 +16,8 @@ test_laptop_profile_click() {
     start_settings Laptop
     sleep 1
     # "Quiet" in the Profile row.
-    click 1242 276
-    wait_for 3 in_log daemon.log '"rog-profile".*"profile": 2' || fail "Quiet wasn't sent to asusd"
+    click 1242 236
+    wait_for 3 in_log daemon.log '"rog-profile".*"profile": ?2' || fail "Quiet wasn't sent to asusd"
 }
 TT_TESTS+=(test_laptop_profile_click)
 
