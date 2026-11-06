@@ -102,7 +102,7 @@ pub struct Lock {
     pub actions: std::rc::Rc<std::cell::RefCell<Vec<Act>>>,
 }
 
-type Px = SharedPixelBuffer<Rgba8Pixel>;
+pub type Px = SharedPixelBuffer<Rgba8Pixel>;
 
 pub enum Act {
     Typed(String),
@@ -145,7 +145,7 @@ fn face_enabled() -> bool {
 
 /// BGRX, as the wallpaper is drawn, into an image; and a blurred, smaller
 /// copy for what's frosted (the card, the pills).
-fn images(bgrx: &[u8], w: u32, h: u32) -> (Px, Px) {
+pub fn images(bgrx: &[u8], w: u32, h: u32) -> (Px, Px) {
     let mut full = SharedPixelBuffer::<Rgba8Pixel>::new(w, h);
     for (d, s) in full.make_mut_slice().iter_mut().zip(bgrx.chunks_exact(4)) {
         *d = Rgba8Pixel { r: s[2], g: s[1], b: s[0], a: 255 };
@@ -217,7 +217,7 @@ fn images(bgrx: &[u8], w: u32, h: u32) -> (Px, Px) {
 /// lens closing into a ring and a tick when it finds you; dimmed and red
 /// when it doesn't.
 #[allow(clippy::too_many_arguments)]
-fn face_glyph(px: u32, state: &str, ink: (u8, u8, u8), accent: (u8, u8, u8), sweep: f64, turn: f64, close: f64, tick: f64, dim: f64) -> Image {
+pub fn face_glyph(px: u32, state: &str, ink: (u8, u8, u8), accent: (u8, u8, u8), sweep: f64, turn: f64, close: f64, tick: f64, dim: f64) -> Image {
     let s = 100.0;
     let col = match state {
         "found" => accent,
@@ -294,7 +294,7 @@ fn face_glyph(px: u32, state: &str, ink: (u8, u8, u8), accent: (u8, u8, u8), swe
 /// LoginView's scrim: a little darker at the top behind the clock, more at
 /// the bottom behind the corner line, clear between; stronger over a
 /// picture. One pixel wide, to be stretched over the screen.
-fn scrim(vivid: bool) -> Image {
+pub fn scrim(vivid: bool) -> Image {
     let stops: [(f64, f64); 4] = if vivid { [(0.0, 0.34), (0.38, 0.10), (0.72, 0.16), (1.0, 0.52)] } else { [(0.0, 0.04), (0.38, 0.0), (0.72, 0.0), (1.0, 0.07)] };
     let n = 512u32;
     let mut px = SharedPixelBuffer::<Rgba8Pixel>::new(1, n);
@@ -308,7 +308,27 @@ fn scrim(vivid: bool) -> Image {
     Image::from_rgba8(px)
 }
 
-fn rgb(c: crate::theme::Rgba) -> (u8, u8, u8) {
+/// The view's glyphs.
+pub fn glyph_set() -> LockGlyphs {
+    let g = crate::glyphs::glyph;
+    LockGlyphs {
+        lock: g("lock"),
+        eye: g("eye"),
+        go: g("chevron-right"),
+        moon: g("moon"),
+        restart: g("rotate-cw"),
+        power: g("power"),
+        battery: g("battery"),
+        bell: g("bell"),
+        net: g("wifi"),
+        left: g("chevron-left"),
+        right: g("chevron-right"),
+        monitor: g("monitor"),
+        down: g("chevron-down"),
+    }
+}
+
+pub fn rgb(c: crate::theme::Rgba) -> (u8, u8, u8) {
     (c.0, c.1, c.2)
 }
 
@@ -360,6 +380,10 @@ impl Lock {
             keyboard_missing: false,
             actions: Default::default(),
         }
+    }
+
+    pub fn has_actions(&self) -> bool {
+        !self.actions.borrow().is_empty()
     }
 
     /// Something to draw soon: a frame's time.
@@ -754,6 +778,7 @@ impl Lock {
             battery: crate::glyphs::glyph(if w.battery.is_some_and(|b| b.1) { "battery-charging" } else { "battery" }),
             bell: crate::glyphs::glyph("bell"),
             net: crate::glyphs::glyph(w.net_icon),
+            ..glyph_set()
         };
         let status = if !self.status.is_empty() { self.status.clone() } else if self.face_state.is_empty() { self.info.clone() } else { String::new() };
         let face_first = matches!(self.face_state.as_str(), "looking" | "found");
@@ -881,14 +906,14 @@ impl Lock {
 }
 
 /// The time, broken up, in local time.
-struct Now {
-    hour: u32,
-    min: u32,
-    day: u32,
-    weekday: &'static str,
-    month: &'static str,
+pub struct Now {
+    pub hour: u32,
+    pub min: u32,
+    pub day: u32,
+    pub weekday: &'static str,
+    pub month: &'static str,
 }
-fn chrono_now() -> Now {
+pub fn chrono_now() -> Now {
     // SAFETY: localtime_r into our own struct.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     let t = unsafe { libc::time(std::ptr::null_mut()) };

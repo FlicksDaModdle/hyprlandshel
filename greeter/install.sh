@@ -14,12 +14,17 @@
 #   sudo ./install.sh --quiet-boot  …and keep the boot's text off the screen
 #                                  (adds quiet-boot options to Limine's
 #                                  kernel command line; a copy is kept)
+#   sudo ./install.sh --rust       the Rust login screen (hyprshell-rs
+#                                  --greeter, built in rshell/) in place of
+#                                  the Quickshell one; run again without it to
+#                                  go back
 #
 # How it fits together:
 #
 #   greetd  →  /etc/hyprshell-greeter/start.sh (a clear console, no cursor)
 #           →  Hyprland, with /etc/hyprshell-greeter/hyprland.lua
 #           →  quickshell -p /usr/share/hyprshell-greeter/shell.qml
+#              (--rust: /usr/share/hyprshell-greeter/hyprshell-rs --greeter)
 #
 # The greeter runs as greetd's own unprivileged user. Your password goes to
 # greetd, which checks it with PAM and starts your session as you.
@@ -35,7 +40,7 @@ REPO=$(cd "$HERE/.." && pwd)
 # Everything below is under $ROOT, which is / unless --root is given (for
 # trying the install out on a scratch directory).
 ROOT=""
-enable=0 uninstall=0 themeonly=0 status=0 keyring=1 quietboot=0
+enable=0 uninstall=0 themeonly=0 status=0 keyring=1 quietboot=0 rust=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --enable)    enable=1 ;;
@@ -44,6 +49,7 @@ while [ $# -gt 0 ]; do
         --status)    status=1 ;;
         --no-keyring) keyring=0 ;;
         --quiet-boot) quietboot=1 ;;
+        --rust)      rust=1 ;;
         --root)      shift; ROOT="${1%/}" ;;
         -h|--help)   sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) printf 'unknown option %s\n' "$1" >&2; exit 2 ;;
@@ -277,7 +283,12 @@ fi
 # ── what it needs ─────────────────────────────────────────────────────────
 command -v greetd >/dev/null 2>&1 || [ -x /usr/bin/greetd ] || die "greetd is not installed (pacman -S greetd)"
 QS=$(command -v qs 2>/dev/null || command -v quickshell 2>/dev/null || true)
-[ -n "$QS" ] || die "quickshell is not installed"
+RS="$REPO/rshell/target/release/hyprshell-rs"
+if [ "$rust" = 1 ]; then
+    [ -x "$RS" ] || die "the Rust shell isn't built — (cd rshell && cargo build --release) first"
+else
+    [ -n "$QS" ] || die "quickshell is not installed"
+fi
 if command -v start-hyprland >/dev/null 2>&1; then
     COMP="$(command -v start-hyprland) -- --config /etc/hyprshell-greeter/hyprland.lua"
 elif command -v Hyprland >/dev/null 2>&1; then
@@ -300,6 +311,11 @@ cp -R "$REPO/shell/quickshell/modules/icons" "$SHARE.new/shell/modules/icons"
 # under the card exactly as the desktop does.
 cp -R "$REPO/shell/quickshell/modules/background" "$SHARE.new/shell/modules/background"
 sh "$HERE/source-sum.sh" > "$SHARE.new/.source" 2>/dev/null || true
+# The Rust login screen, beside it: the same binary as the Rust shell, run
+# with --greeter. Copied, not linked: greetd's user can't reach your home.
+if [ "$rust" = 1 ]; then
+    install -m 755 "$RS" "$SHARE.new/hyprshell-rs"
+fi
 rm -rf "$SHARE"
 mv "$SHARE.new" "$SHARE"
 chmod -R a+rX "$SHARE"
@@ -345,10 +361,16 @@ if [ -n "$PERSON" ]; then
 fi
 
 mkdir -p "$ETC"
+# What its Hyprland starts: the Rust greeter, or Quickshell with the QML one.
+if [ "$rust" = 1 ]; then
+    greeter_cmd="/usr/share/hyprshell-greeter/hyprshell-rs --greeter"
+else
+    greeter_cmd="$QS -p /usr/share/hyprshell-greeter/shell.qml"
+fi
 sed -e "s|@STATE@|/var/lib/hyprshell-greeter|g" \
     -e "s|@SHARE@|/usr/share/hyprshell-greeter|g" \
     -e "s|@CACHE@|/var/cache/hyprshell-greeter|g" \
-    -e "s|@QS@|$QS|g" \
+    -e "s|@GREETER@|$greeter_cmd|g" \
     -e "s|@KB_LAYOUT@|$layout|g" \
     -e "s|@KB_VARIANT@|$variant|g" \
     "$HERE/hyprland.lua" > "$ETC/hyprland.lua"

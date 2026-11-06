@@ -13,12 +13,15 @@
 //! poll() on the Wayland connection, a wake pipe the helper threads write
 //! to, and the time until Slint's next timer or animation frame.
 
+#[macro_use]
 mod app;
 mod art;
 mod daemon;
 mod dock;
 mod extras;
 mod glyphs;
+mod greetd;
+mod greeter;
 mod ground;
 mod hypr;
 mod icons;
@@ -51,6 +54,11 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("--pam-helper") {
         pam::helper(args.get(2).map(String::as_str).unwrap_or("login"), args.get(3).map(String::as_str).unwrap_or(""));
+    }
+    // The login screen, run by greetd (greeter.rs).
+    if args.get(1).map(String::as_str) == Some("--greeter") {
+        greeter::run();
+        return;
     }
     slint::platform::set_platform(Box::new(platform::ShellPlatform)).expect("the platform is set once");
 

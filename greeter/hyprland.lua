@@ -55,5 +55,7 @@ hl.config({
 })
 
 hl.on("hyprland.start", function()
-    hl.exec_cmd("@QS@ -p @SHARE@/shell.qml; hyprctl dispatch 'hl.dsp.exit()'")
+    -- The login screen (install.sh fills this in: Quickshell with
+    -- shell.qml, or the Rust one, `hyprshell-rs --greeter`).
+    hl.exec_cmd("@GREETER@; hyprctl dispatch 'hl.dsp.exit()'")
 end)

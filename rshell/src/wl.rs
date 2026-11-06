@@ -352,6 +352,10 @@ impl Shell {
     pub fn all_outputs(&self) -> Vec<wl_output::WlOutput> {
         self.outputs.outputs().collect()
     }
+    /// An output's size on the desktop, logical pixels.
+    pub fn output_logical(&self, o: &wl_output::WlOutput) -> (i32, i32) {
+        self.outputs.info(o).and_then(|i| i.logical_size).unwrap_or((0, 0))
+    }
     /// An output's name (eDP-1), as Hyprland calls it.
     pub fn output_name(&self, o: &wl_output::WlOutput) -> String {
         self.outputs.info(o).and_then(|i| i.name).unwrap_or_default()

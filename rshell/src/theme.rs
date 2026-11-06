@@ -79,7 +79,21 @@ impl Theme {
     }
 }
 
+thread_local! {
+    /// The greeter's: the theme of the person picked, in their greeter
+    /// folder, in place of the usual one.
+    static OVERRIDE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Reads the theme from `p` from now on (None: the usual place again).
+pub fn set_path(p: Option<PathBuf>) {
+    OVERRIDE.with(|o| *o.borrow_mut() = p);
+}
+
 pub fn path() -> PathBuf {
+    if let Some(p) = OVERRIDE.with(|o| o.borrow().clone()) {
+        return p;
+    }
     let cfg = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"));

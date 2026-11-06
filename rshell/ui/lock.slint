@@ -11,6 +11,20 @@ import { Glyph } from "glyph.slint";
 export struct LockGlyphs {
     lock: GlyphData, eye: GlyphData, go: GlyphData, moon: GlyphData, restart: GlyphData, power: GlyphData,
     battery: GlyphData, bell: GlyphData, net: GlyphData,
+    // The greeter's: ‹ › beside the name, the session's screen and ▾.
+    left: GlyphData, right: GlyphData, monitor: GlyphData, down: GlyphData,
+}
+
+// ‹ and › beside the name (the greeter's other people).
+component Stepper inherits Rectangle {
+    in property <GlyphData> glyph;
+    callback step();
+    width: 28px * Theme.us;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: sta.has-hover ? Theme.sel : transparent;
+    Glyph { data: root.glyph; size: 15px * Theme.us; ink: Theme.ink2; monochrome: true; }
+    sta := TouchArea { mouse-cursor: pointer; clicked => { root.step(); } }
 }
 
 component PowerButton inherits Rectangle {
@@ -70,6 +84,24 @@ export component LockView inherits Window {
     in property <string> net-label;
     in property <int> notes;
     in property <LockGlyphs> glyphs;
+    // ── the greeter's (src/greeter.rs) ──
+    // The screen with the card and the keys; the others show the clock.
+    in property <bool> primary: true;
+    // The bottom-left line: the machine's name, in place of the lock's
+    // battery, network and notifications.
+    in property <bool> greeter;
+    in property <string> corner-text;
+    in property <bool> can-step-user;
+    in property <string> session-name;
+    in property <bool> can-step-session;
+    // A further question from PAM (a one-time code), asked in the field;
+    // shown in clear when prompt-echo.
+    in property <string> prompt;
+    in property <bool> prompt-echo;
+    callback step-user(int);
+    callback step-session(int);
+    // The pointer moved on this screen, or it was clicked: the card comes here.
+    callback claimed();
     callback submit();
     callback edited(string);
     callback escape();
@@ -122,18 +154,46 @@ export component LockView inherits Window {
     // A click anywhere puts the keys back in the field; the pointer moving
     // says you're back (the face is looked for again).
     TouchArea {
+        property <length> fx: -1px;
+        property <length> fy;
         clicked => { keys.focus(); }
         moved => { root.woke(); }
-        pointer-event(e) => { if (e.kind == PointerEventKind.move) { root.woke(); } }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.move) {
+                root.woke();
+                // A real move, not the pointer merely being here as the
+                // screen appears.
+                if (!root.primary) {
+                    if (self.fx < 0) {
+                        self.fx = self.mouse-x;
+                        self.fy = self.mouse-y;
+                    } else if (abs(self.mouse-x - self.fx) + abs(self.mouse-y - self.fy) > 24px) {
+                        root.claimed();
+                    }
+                }
+            }
+            if (e.kind == PointerEventKind.down && !root.primary) { root.claimed(); }
+        }
     }
 
     // Esc, and the keys the field doesn't use, come up through here.
     FocusScope {
-    key-pressed(e) => {
+    // Up and Down before the field sees them (it would move its cursor).
+    capture-key-pressed(e) => {
+        // Esc: the field emptied (in a greeter preview, on an empty field, out).
         if (e.text == Key.Escape) {
             root.escape();
             return accept;
         }
+        if (!e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta && root.can-step-user) {
+            if (e.text == Key.UpArrow) { root.step-user(-1); return accept; }
+            if (e.text == Key.DownArrow) { root.step-user(1); return accept; }
+        }
+        reject
+    }
+    key-pressed(e) => {
+        if (e.text == Key.Tab && root.can-step-session) { root.step-session(e.modifiers.shift ? -1 : 1); return accept; }
+        if (e.text == Key.Backtab && root.can-step-session) { root.step-session(-1); return accept; }
         reject
     }
     stage := Rectangle {
@@ -143,7 +203,7 @@ export component LockView inherits Window {
         transform-origin: { x: self.width / 2, y: self.height * 0.42 };
 
         // ── your face ──
-        if root.face-state != "": Image {
+        if root.primary && root.face-state != "": Image {
             x: (parent.width - self.width) / 2;
             y: max(14px * root.k, clock.y - self.height - 48px * root.k);
             width: 58px * root.k;
@@ -151,7 +211,7 @@ export component LockView inherits Window {
             source: root.face;
             TouchArea { enabled: root.can-retry-face; mouse-cursor: root.can-retry-face ? pointer : default; clicked => { root.retry-face(); keys.focus(); } }
         }
-        if root.face-state == "failed": Rectangle {
+        if root.primary && root.face-state == "failed": Rectangle {
             x: (parent.width - self.width) / 2;
             y: max(14px * root.k, clock.y - 106px * root.k) + 66px * root.k;
             width: missed.preferred-width + 24px * root.k;
@@ -173,9 +233,9 @@ export component LockView inherits Window {
         }
 
         // ── clock ──
-        property <bool> face-up: root.face-state != "";
+        property <bool> face-up: root.primary && root.face-state != "";
         clock := VerticalLayout {
-            property <length> rest-y: max((stage.face-up ? 124px : 16px) * root.k,
+            property <length> rest-y: !root.primary ? (stage.height - self.preferred-height) / 2 : max((stage.face-up ? 124px : 16px) * root.k,
                 min(stage.height * 0.13 + (stage.face-up ? 66px * root.k : 0px), stage.height - 96px * root.k - card.height - 24px * root.k - self.preferred-height));
             x: (parent.width - self.preferred-width) / 2;
             width: self.preferred-width;
@@ -189,6 +249,7 @@ export component LockView inherits Window {
 
         // ── the card ──
         card := Rectangle {
+            visible: root.primary;
             width: 392px * root.k;
             height: col.preferred-height + 52px * root.k;
             x: (parent.width - self.width) / 2 + root.shake;
@@ -237,7 +298,13 @@ export component LockView inherits Window {
                 }
                 VerticalLayout {
                     spacing: 3px * root.k;
-                    Text { horizontal-alignment: center; text: root.user-name; overflow: elide; font-size: Theme.fs(20) * root.k; font-weight: 600; color: Theme.ink; }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px * root.k;
+                        if root.can-step-user: VerticalLayout { alignment: center; Stepper { glyph: root.glyphs.left; step => { root.step-user(-1); keys.focus(); } } }
+                        Text { horizontal-alignment: center; vertical-alignment: center; max-width: 240px * root.k; text: root.user-name; overflow: elide; font-size: Theme.fs(20) * root.k; font-weight: 600; color: Theme.ink; }
+                        if root.can-step-user: VerticalLayout { alignment: center; Stepper { glyph: root.glyphs.right; step => { root.step-user(1); keys.focus(); } } }
+                    }
                     if root.subtitle != "": HorizontalLayout {
                         alignment: center;
                         spacing: 6px * root.k;
@@ -268,7 +335,7 @@ export component LockView inherits Window {
                         vertical-alignment: center;
                         single-line: true;
                         read-only: root.busy || root.leaving;
-                        input-type: root.reveal ? InputType.text : InputType.password;
+                        input-type: root.reveal || (root.prompt != "" && root.prompt-echo) ? InputType.text : InputType.password;
                         font-size: (root.reveal ? Theme.fs(14) : Theme.fs(18)) * root.k;
                         letter-spacing: root.reveal ? 0px : 3px;
                         color: Theme.ink;
@@ -282,7 +349,7 @@ export component LockView inherits Window {
                     if root.entered == "": Text {
                         x: 22px * root.k;
                         vertical-alignment: center;
-                        text: root.busy ? "Checking…" : "Password";
+                        text: root.busy ? "Checking…" : root.prompt != "" ? root.prompt : "Password";
                         font-size: Theme.fs(13.5) * root.k;
                         color: Theme.ink3;
                     }
@@ -344,25 +411,57 @@ export component LockView inherits Window {
             height: self.preferred-height;
             opacity: root.shown;
             spacing: 18px * root.k;
-            if root.has-battery: HorizontalLayout {
+            if root.greeter: Text { text: root.corner-text; font-size: Theme.fs(12.5) * root.k; font-weight: 500; color: root.fg3; }
+            if !root.greeter && root.has-battery: HorizontalLayout {
                 spacing: 7px * root.k;
                 VerticalLayout { alignment: center; Glyph { data: root.glyphs.battery; size: 15px * root.k; ink: root.fg3; monochrome: true; } }
                 Text { vertical-alignment: center; text: root.battery-text; font-size: Theme.fs(12) * root.k; color: root.fg3; }
             }
-            HorizontalLayout {
+            if !root.greeter: HorizontalLayout {
                 spacing: 7px * root.k;
                 VerticalLayout { alignment: center; Glyph { data: root.glyphs.net; size: 15px * root.k; ink: root.fg3; monochrome: true; } }
                 Text { vertical-alignment: center; text: root.net-label; font-size: Theme.fs(12) * root.k; color: root.fg3; }
             }
-            if root.notes > 0: HorizontalLayout {
+            if !root.greeter && root.notes > 0: HorizontalLayout {
                 spacing: 7px * root.k;
                 VerticalLayout { alignment: center; Glyph { data: root.glyphs.bell; size: 15px * root.k; ink: root.fg3; monochrome: true; } }
                 Text { vertical-alignment: center; text: root.notes + (root.notes == 1 ? " notification" : " notifications"); font-size: Theme.fs(12) * root.k; color: root.fg3; }
             }
         }
 
+        // What you are logging into, under the card (the greeter's): a click,
+        // or Tab, for the next one.
+        spill := Rectangle {
+            visible: root.primary && root.session-name != "";
+            x: (parent.width - self.width) / 2;
+            y: card.y + card.height + 16px * root.k;
+            width: srow.preferred-width + 30px * root.k;
+            height: 34px * root.k;
+            opacity: root.shown;
+            border-radius: self.height / 2;
+            Rectangle {
+                width: parent.width;
+                height: parent.height;
+                border-radius: parent.border-radius - 1px;
+                clip: true;
+                Image { x: -spill.x; y: -spill.y; width: stage.width; height: stage.height; source: root.frost; image-fit: cover; }
+            }
+            Rectangle { border-radius: parent.border-radius; background: sta.has-hover ? root.pill-hover : root.pill; border-width: 1px; border-color: root.pill-edge; }
+            srow := HorizontalLayout {
+                x: 15px * root.k;
+                width: self.preferred-width;
+                height: parent.height;
+                spacing: 8px * root.k;
+                VerticalLayout { alignment: center; Glyph { data: root.glyphs.monitor; size: 15px * root.k; ink: root.pill-ink; monochrome: true; } }
+                Text { vertical-alignment: center; text: root.session-name; font-size: Theme.fs(12.5) * root.k; font-weight: 600; color: root.pill-ink; }
+                if root.can-step-session: VerticalLayout { alignment: center; Glyph { data: root.glyphs.down; size: 13px * root.k; ink: root.pill-ink2; monochrome: true; } }
+            }
+            sta := TouchArea { mouse-cursor: pointer; clicked => { if (root.can-step-session) { root.step-session(1); } keys.focus(); } }
+        }
+
         // Sleep, restart, shut down: round buttons on a frosted pill.
         ppill := Rectangle {
+            visible: root.primary;
             width: prow.preferred-width + 12px * root.k;
             height: 52px * root.k;
             x: parent.width - 26px * root.k - self.width;

@@ -56,6 +56,25 @@ whichever greetd will actually read.
 To look at it without logging out: `qs -p greeter/shell.qml`. It takes the
 screen; Escape on an empty field leaves. Nothing logs in from a preview.
 
+## The Rust login screen
+
+The same login screen is also part of the Rust shell (`rshell/`): the lock
+screen's view, run as `hyprshell-rs --greeter`, talking to greetd's socket
+itself. It reads the same files — your greeter folder, `/etc/passwd`, the
+session list, the remembered choice — and behaves the same: face first when
+face unlock is in greetd's PAM file, a second PAM question asked in the
+field, Up/Down for people, Tab for sessions, the card following the pointer.
+
+```sh
+(cd ../rshell && cargo build --release)
+sudo ./install.sh --rust       # use it
+sudo ./install.sh              # back to the Quickshell one
+```
+
+To look at it without logging out: `../rshell/target/release/hyprshell-rs
+--greeter` from your session (outside greetd it's a preview; Escape on an
+empty field leaves).
+
 ## Using it
 
 - **Type your password** — there is no field to click first — and Enter.
@@ -76,6 +95,7 @@ same field.
 ```
 greetd  →  Hyprland, /etc/hyprshell-greeter/hyprland.lua
         →  quickshell -p /usr/share/hyprshell-greeter/shell.qml
+           (or, with --rust, /usr/share/hyprshell-greeter/hyprshell-rs --greeter)
 ```
 
 ```

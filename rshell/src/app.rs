@@ -1997,6 +1997,10 @@ impl App {
     // ── doing ────────────────────────────────────────────────────────────
 
     pub fn run_actions(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        // The lock screen's keys and clicks, this frame.
+        if self.lock.has_actions() {
+            self.step_lock(shell, qh, 0.0);
+        }
         if !self.prompt_acts.borrow().is_empty() {
             self.step_polkit(shell, qh);
         }
