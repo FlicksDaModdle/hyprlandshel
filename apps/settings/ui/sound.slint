@@ -117,6 +117,46 @@ export global Snd {
     callback mixer();
 }
 
+// The live levels (src/sound.rs): the glance's output and microphone, the
+// inspected output and input; each with its hold line.
+export global Meters {
+    in property <float> out;
+    in property <float> out-hold;
+    in property <float> in;
+    in property <float> in-hold;
+    in property <float> io;
+    in property <float> io-hold;
+    in property <float> ii;
+    in property <float> ii-hold;
+}
+
+// SoundLevel.qml: a live level meter, on a decibel scale from -60 dB to 0
+// (which is how loud reads to an ear), with a slow-falling hold line, like
+// a mixing desk's, so a single loud moment stays readable.
+component SoundLevel inherits Rectangle {
+    in property <float> level;
+    in property <float> hold;
+    border-radius: self.height / 2;
+    background: Theme.hover;
+    border-width: 1px;
+    border-color: Theme.rule;
+    clip: true;
+    Rectangle {
+        x: 0;
+        width: parent.width * max(0, min(1, root.level));
+        height: parent.height;
+        border-radius: parent.border-radius;
+        background: root.level > 0.94 ? #d93a2b : Theme.accent;
+        animate width { duration: 90ms; easing: ease-out; }
+    }
+    if root.hold > 0.02: Rectangle {
+        x: min(parent.width - 2px, parent.width * root.hold);
+        width: 2px;
+        height: parent.height;
+        background: Theme.ink2;
+    }
+}
+
 component Round inherits Rectangle {
     in property <string> glyph;
     in property <bool> lit;
@@ -177,6 +217,15 @@ component Glance inherits VerticalLayout {
             font-size: Theme.fs(12);
             font-weight: 600;
             color: Theme.ink;
+        }
+    }
+    // What the microphone hears; what the output plays.
+    if Snd.meters && root.has: HorizontalLayout {
+        padding-right: 50px;
+        SoundLevel {
+            height: 6px;
+            level: root.out ? Meters.out : Meters.in;
+            hold: root.out ? Meters.out-hold : Meters.in-hold;
         }
     }
 }
@@ -335,6 +384,20 @@ component Inspector inherits Card {
                 }
             }
             Text { width: 46px; horizontal-alignment: right; vertical-alignment: center; text: root.mix.pct + "%"; font-size: Theme.fs(12); font-weight: 600; color: root.mix.loud ? #d93a2b : Theme.ink; }
+        }
+        // ── live level ──
+        if Snd.meters: InspectRow {
+            label: root.out ? "Playing" : "Hearing";
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                SoundLevel {
+                    height: 10px;
+                    level: root.out ? Meters.io : Meters.ii;
+                    hold: root.out ? Meters.io-hold : Meters.ii-hold;
+                }
+            }
+            Rectangle { width: 50px; }
         }
         // ── balance and fade ──
         if root.mix.has-balance: InspectRow {

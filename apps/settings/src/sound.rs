@@ -4,7 +4,7 @@
 
 use crate::daemon::Daemon;
 use crate::prefs::Prefs;
-use crate::{AppWindow, Snd, SndApp, SndChan, SndDev, SndMix, SndOpt};
+use crate::{AppWindow, Meters, Snd, SndApp, SndChan, SndDev, SndMix, SndOpt};
 use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
@@ -23,6 +23,8 @@ pub struct Node {
     /// Each channel's name ("front-left") and level, in order.
     pub channels: Vec<String>,
     pub volumes: Vec<f64>,
+    /// An output's monitor source: what its level is read from.
+    pub monitor: String,
 }
 
 #[derive(Clone, Default)]
@@ -202,6 +204,10 @@ pub fn app_glyph(hint: &str) -> &'static str {
 
 #[derive(Default)]
 pub struct Sound {
+    /// The sources whose levels the daemon is sending, and each one's
+    /// level and hold line (0–1, on the meter's dB scale).
+    pub peak_names: Vec<String>,
+    pub levels: std::collections::HashMap<String, (f64, f64)>,
     pub up: bool,
     pub seen: bool,
     pub sinks: Vec<Node>,
@@ -237,6 +243,7 @@ fn node(v: &Value, sink: bool) -> Node {
         sink,
         channels: chans(v).0,
         volumes: chans(v).1,
+        monitor: v["monitorSource"].as_str().unwrap_or("").to_string(),
     }
 }
 
@@ -259,12 +266,82 @@ fn nicknames(p: &Prefs) -> serde_json::Map<String, Value> {
 }
 
 impl Sound {
+    /// The sources to read levels from: the glance's and the inspector's,
+    /// while the pane is up and meters are on.
+    fn wanted_peaks(&self, p: &Prefs) -> Vec<String> {
+        if !self.watching || !p.b("soundMeters") {
+            return vec![];
+        }
+        let out = |n: Option<&Node>| n.map(|n| if n.monitor.is_empty() { format!("{}.monitor", n.name) } else { n.monitor.clone() });
+        let mut v: Vec<String> = [
+            out(self.sinks.iter().find(|n| n.name == self.default_sink)),
+            out(self.inspected(true)),
+            self.sources.iter().find(|n| n.name == self.default_source).map(|n| n.name.clone()),
+            self.inspected(false).map(|n| n.name.clone()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        v.dedup();
+        v.sort();
+        v.dedup();
+        v
+    }
+    pub fn sync_peaks(&mut self, d: &mut Daemon, p: &Prefs) {
+        let want = self.wanted_peaks(p);
+        if want != self.peak_names {
+            d.send(json!({ "cmd": "pa-peaks", "sources": want }));
+            self.levels.retain(|k, _| want.contains(k));
+            self.peak_names = want;
+        }
+    }
+    /// A pa-peak: onto the meter's scale, the hold line pushed up.
+    pub fn peak(&mut self, ev: &Value) {
+        let name = ev["name"].as_str().unwrap_or("").to_string();
+        let p = ev["peak"].as_f64().unwrap_or(0.0);
+        let level = if p > 0.0 { (1.0 + 20.0 * p.log10() / 60.0).clamp(0.0, 1.0) } else { 0.0 };
+        let e = self.levels.entry(name).or_insert((0.0, 0.0));
+        e.0 = level;
+        e.1 = e.1.max(level);
+    }
+    /// The hold lines fall back (0.02 every 50 ms, as SoundLevel's timer).
+    pub fn decay(&mut self, dt: f64) {
+        for (l, h) in self.levels.values_mut() {
+            *h = (*h - 0.02 * dt / 0.05).max(*l);
+        }
+    }
+    pub fn publish_meters(&self, ui: &AppWindow) {
+        let m = ui.global::<Meters>();
+        let mon = |n: Option<&Node>, out: bool| {
+            n.map(|n| if !out { n.name.clone() } else if n.monitor.is_empty() { format!("{}.monitor", n.name) } else { n.monitor.clone() })
+                .and_then(|k| self.levels.get(&k).copied())
+                .unwrap_or((0.0, 0.0))
+        };
+        let o = mon(self.sinks.iter().find(|n| n.name == self.default_sink), true);
+        let i = mon(self.sources.iter().find(|n| n.name == self.default_source), false);
+        let io = mon(self.inspected(true), true);
+        let ii = mon(self.inspected(false), false);
+        m.set_out(o.0 as f32);
+        m.set_out_hold(o.1 as f32);
+        m.set_in(i.0 as f32);
+        m.set_in_hold(i.1 as f32);
+        m.set_io(io.0 as f32);
+        m.set_io_hold(io.1 as f32);
+        m.set_ii(ii.0 as f32);
+        m.set_ii_hold(ii.1 as f32);
+    }
+
     pub fn watch(&mut self, d: &mut Daemon, on: bool) {
         if self.watching == on {
             return;
         }
         self.watching = on;
         d.send(json!({ "cmd": "pa-watch", "on": on }));
+        if !on && !self.peak_names.is_empty() {
+            d.send(json!({ "cmd": "pa-peaks", "sources": [] }));
+            self.peak_names.clear();
+            self.levels.clear();
+        }
         if on {
             d.send(json!({ "cmd": "pa-snapshot" }));
         }

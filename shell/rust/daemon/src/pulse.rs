@@ -16,8 +16,12 @@
 //!            pa-latency {card, port, usec}
 //!            pa-load {module, args, tag}   → pa-module {tag, index}
 //!            pa-unload {index}
+//!            pa-peaks {sources: [name]}     live levels of these sources (an
+//!                                           output's is its monitor source),
+//!                                           25 a second; [] for none
 //! Events:    pa {available, cards, sinks, sources, sinkInputs, sourceOutputs}
 //!            pa-done {op, ok}
+//!            pa-peak {name, peak}          0–1, linear
 
 use crate::out;
 use libpulse_binding as pulse;
@@ -99,6 +103,7 @@ fn sink_json(s: &SinkInfo) -> Json {
             "name": opt(&p.name), "description": opt(&p.description), "availability": avail(p.available)
         })).collect::<Vec<_>>(),
         "active_port": s.active_port.as_ref().map(|p| opt(&p.name)).unwrap_or_default(),
+        "monitorSource": opt(&s.monitor_source_name),
         // For the Rust shell (rshell), which has no PipeWire binding of its
         // own to read these from: 1.0 is 100 %.
         "volume": s.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64,
@@ -166,6 +171,8 @@ struct Session {
     ml: Rc<RefCell<Mainloop>>,
     ctx: Rc<RefCell<Context>>,
     tx: Sender<Json>,
+    /// Live level streams (pa-peaks), by source name.
+    peaks: RefCell<Vec<(String, Rc<RefCell<pulse::stream::Stream>>)>>,
 }
 
 impl Session {
@@ -190,7 +197,68 @@ impl Session {
         }
         ctx.borrow_mut().connect(None, FlagSet::NOAUTOSPAWN, None).map_err(|e| format!("{e}"))?;
         ml.borrow_mut().start().map_err(|e| format!("{e}"))?;
-        Ok(Session { ml, ctx, tx: tx.clone() })
+        Ok(Session { ml, ctx, tx: tx.clone(), peaks: RefCell::new(Vec::new()) })
+    }
+
+    /// The sources whose levels are wanted: streams made for the new ones
+    /// (mono, 25 Hz, the server's own peak detection: a sample each is the
+    /// peak since the last), the rest stopped.
+    fn peaks(&self, names: &[String]) {
+        use pulse::stream::{FlagSet as SFlags, PeekResult, Stream};
+        self.ml.borrow_mut().lock();
+        let mut list = self.peaks.borrow_mut();
+        list.retain(|(n, st)| {
+            let keep = names.contains(n);
+            if !keep {
+                let mut st = st.borrow_mut();
+                st.set_read_callback(None);
+                let _ = st.disconnect();
+            }
+            keep
+        });
+        for name in names {
+            if list.iter().any(|(n, _)| n == name) {
+                continue;
+            }
+            let spec = pulse::sample::Spec { format: pulse::sample::Format::F32le, channels: 1, rate: 25 };
+            let Some(st) = Stream::new(&mut self.ctx.borrow_mut(), "hyprshell level", &spec, None) else { continue };
+            let st = Rc::new(RefCell::new(st));
+            let attr = pulse::def::BufferAttr { maxlength: u32::MAX, tlength: u32::MAX, prebuf: u32::MAX, minreq: u32::MAX, fragsize: 4 };
+            {
+                let (weak, tx, n) = (Rc::downgrade(&st), self.tx.clone(), name.clone());
+                st.borrow_mut().set_read_callback(Some(Box::new(move |_| {
+                    let Some(st) = weak.upgrade() else { return };
+                    let Ok(mut st) = st.try_borrow_mut() else { return };
+                    let mut peak: Option<f32> = None;
+                    // Everything there, the loudest of it.
+                    while let Ok(r) = st.peek() {
+                        match r {
+                            PeekResult::Empty => break,
+                            PeekResult::Hole(_) => {}
+                            PeekResult::Data(d) => {
+                                for c in d.chunks_exact(4) {
+                                    let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]).abs();
+                                    peak = Some(peak.map_or(v, |p| p.max(v)));
+                                }
+                            }
+                        }
+                        let _ = st.discard();
+                    }
+                    if let Some(p) = peak {
+                        let _ = tx.send(json!({ "cmd": "_peak", "name": n, "peak": p.min(1.0) }));
+                    }
+                })));
+            }
+            let ok = st
+                .borrow_mut()
+                .connect_record(Some(name), Some(&attr), SFlags::PEAK_DETECT | SFlags::ADJUST_LATENCY | SFlags::DONT_MOVE)
+                .is_ok();
+            if ok {
+                list.push((name.clone(), st));
+            }
+        }
+        drop(list);
+        self.ml.borrow_mut().unlock();
     }
 
     fn state(&self) -> State {
@@ -328,6 +396,7 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
+        self.peaks(&[]);
         self.ml.borrow_mut().lock();
         self.ctx.borrow_mut().set_state_callback(None);
         self.ctx.borrow_mut().set_subscribe_callback(None);
@@ -441,6 +510,11 @@ fn session(rx: &Receiver<Json>, tx: &Sender<Json>, watching: &mut bool) -> Resul
                 }
             }
             "_loaded" => out::emit(json!({ "ev": "pa-module", "tag": cmd["tag"], "index": cmd["index"] })),
+            "pa-peaks" => {
+                let names: Vec<String> = cmd["sources"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect();
+                s.peaks(&names);
+            }
+            "_peak" => out::emit(json!({ "ev": "pa-peak", "name": cmd["name"], "peak": cmd["peak"] })),
             _ => s.act(&cmd),
         }
     }

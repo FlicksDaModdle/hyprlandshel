@@ -175,6 +175,8 @@ fn show(ui: &AppWindow, st: &mut State) {
         snd.watch(st.daemon(), on_snd);
         if on_snd {
             snd.publish(ui, &st.c.p);
+            let State { daemon, c, .. } = st;
+            snd.sync_peaks(daemon.get_or_insert_with(daemon::Daemon::start), &c.p);
         }
         st.snd = snd;
         if on_net {
@@ -658,8 +660,23 @@ fn main() {
             if cb && s.c.ui.pane == "Bluetooth" {
                 bt.publish(&ui);
             }
+            // Live levels: many a second, so straight to the meters.
+            let mut peaked = false;
+            for ev in evs.iter().filter(|e| e["ev"] == "pa-peak") {
+                s.snd.peak(ev);
+                peaked = true;
+            }
+            if peaked && s.c.ui.pane == "Sound" {
+                s.snd.decay(0.08);
+                s.snd.publish_meters(&ui);
+            }
             if evs.iter().fold(false, |a, ev| s.snd.event(ev) || a) && s.c.ui.pane == "Sound" {
                 s.snd.publish(&ui, &s.c.p);
+                // The device in use may have changed: its level, then.
+                let State { daemon, c, snd, .. } = &mut *s;
+                if let Some(d) = daemon.as_mut() {
+                    snd.sync_peaks(d, &c.p);
+                }
             }
             s.net = net;
             s.bt = bt;
@@ -946,6 +963,10 @@ fn wire_sound(ui: &AppWindow, st: &Rc<RefCell<State>>) {
             let mut m = std::mem::take(&mut s.snd);
             f(&mut m, &mut s.c.p);
             m.publish(&ui, &s.c.p);
+            // A device picked, meters switched: the levels wanted change.
+            let State { daemon, c, .. } = &mut *s;
+            m.sync_peaks(daemon.get_or_insert_with(daemon::Daemon::start), &c.p);
+            m.publish_meters(&ui);
             s.snd = m;
         })
     };
