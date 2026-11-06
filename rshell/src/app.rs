@@ -468,6 +468,8 @@ pub struct App {
     look_stamp: Option<SystemTime>,
     sound: daemon::State,
     daemon: daemon::Daemon,
+    /// The equalizer, noise suppression and listening (AudioFx.qml).
+    fx: crate::audiofx::Fx,
     media: mpris::Media,
     media_cmd: Sender<mpris::Cmd>,
     art: (String, Option<slint::Image>),
@@ -738,6 +740,7 @@ impl App {
             osd_until: None,
             osd_springs: [Spring::new(24.0), Spring::new(0.0), Spring::new(0.86)],
             ident: Vec::new(),
+            fx: crate::audiofx::Fx::new(),
             ident_until: None,
             launcher,
             prompt,
@@ -866,7 +869,9 @@ impl App {
 
         // The daemon.
         let mut changed = false;
+        let mut fx_due = false;
         while let Ok(ev) = self.daemon_rx.try_recv() {
+            fx_due |= self.fx.event(&ev);
             if ev["ev"] == "cmd" {
                 if let Some(line) = ev["line"].as_str() {
                     self.command(shell, qh, line);
@@ -942,6 +947,9 @@ impl App {
                 continue;
             }
             changed |= daemon::apply(&mut self.sound, &ev);
+        }
+        if fx_due {
+            self.fx.sync(&theme::raw(), &mut self.daemon);
         }
         if changed {
             self.refresh_lists();
@@ -1121,6 +1129,7 @@ impl App {
 
         if self.last_tick.elapsed() >= Duration::from_secs(1) {
             self.last_tick = Instant::now();
+            self.fx.sync(&theme::raw(), &mut self.daemon);
             let stamp = theme::modified();
             if stamp != self.look_stamp {
                 self.look_stamp = stamp;
@@ -2761,6 +2770,8 @@ impl App {
             // Settings → Display → Identify: "identify DP-1,eDP-1", the
             // screens in the order its map numbers them.
             "identify" => self.identify(shell, qh, arg),
+            // Settings → Sound: listening to a microphone, a chain tried again.
+            "fxListen" | "fxRetry" => self.fx.command(name, arg),
             // The Settings app, on a page if one is named.
             "openSettings" => {
                 let mut argv = vec!["hyprshell-settings"];

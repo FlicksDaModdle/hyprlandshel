@@ -32,6 +32,7 @@ mod spring;
 mod switch_ui;
 mod sys;
 mod theme;
+mod audiofx;
 mod tray;
 mod wl;
 
