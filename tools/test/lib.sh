@@ -58,7 +58,6 @@ tt_setup() {
     tt_build || return 1
     TT_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/hyprshell-test.XXXXXX")
     chmod 700 "$TT_ROOT"
-    : > "$TT_ROOT/sessions"
     TT_OUT=${XDG_RUNTIME_DIR:-/tmp}/hyprshell-test
     rm -rf "${TT_OUT:?}"
     mkdir -p "$TT_OUT"
@@ -120,24 +119,32 @@ tt_teardown() {
 }
 
 # ── running ─────────────────────────────────────────────────────────────────
-# Everything a test starts runs in a session of its own (setsid), listed in
-# $TT_ROOT/sessions: stopped, and looked for, by that, never by name — so a
-# shell of yours that happens to be running is never touched.
-tt_spawn() {
-    setsid "$@" &
-    echo $! >> "$TT_ROOT/sessions"
+# What the tests start is known by its environment: everything started in
+# here, and everything that starts in turn (Settings from the shell, which
+# gives it a session of its own), carries TT_LOGS=<this run's folder>. Only
+# those are looked for, and stopped — never by name — so a shell of yours
+# that happens to be running is never touched.
+tt_spawn() { setsid "$@" & }
+# This run's processes: "pid name" lines.
+tt_ours() {
+    local p
+    for p in /proc/[0-9]*; do
+        [ "${p#/proc/}" = "$$" ] && continue
+        grep -qzx "TT_LOGS=$TT_LOGS" "$p/environ" 2>/dev/null || continue
+        printf '%s %s\n' "${p#/proc/}" "$(cat "$p/comm" 2>/dev/null)"
+    done
 }
-tt_sids() { [ -s "$TT_ROOT/sessions" ] && paste -sd, "$TT_ROOT/sessions"; }
 tt_stop_all() {
-    local sids
-    sids=$(tt_sids)
-    if [ -n "$sids" ]; then
-        pkill -s "$sids" 2>/dev/null
+    local pids
+    # Not this script, nor the subshells it runs tests in.
+    pids=$(tt_ours | awk '$2 != "bash" && $2 != "sh" && $2 != "sleep" && $2 != "sway" && $2 != "dbus-daemon" && $2 != "swaybg" { print $1 }')
+    if [ -n "$pids" ]; then
+        # shellcheck disable=SC2086
+        kill $pids 2>/dev/null
         sleep 0.3
-        pkill -9 -s "$sids" 2>/dev/null
+        # shellcheck disable=SC2086
+        kill -9 $pids 2>/dev/null
     fi
-    : > "$TT_ROOT/sessions"
-    pkill -f "greetd.py $TT_ROOT" 2>/dev/null
     sleep 0.2
 }
 
@@ -216,15 +223,14 @@ wait_for() {
     return 1
 }
 in_log() { grep -qE -- "$2" "$TT_LOGS/$1" 2>/dev/null; }
-# A program of this test's is running (and not just a zombie waiting to be
-# reaped).
+# A program of this run's is running (and not just a zombie waiting to be
+# reaped). Names as the kernel keeps them: at most 15 characters.
 alive() {
-    local sids p
-    sids=$(tt_sids)
-    [ -n "$sids" ] || return 1
-    for p in $(pgrep -s "$sids" -x "$1"); do
-        ps -o stat= -p "$p" 2>/dev/null | grep -qv Z && return 0
-    done
+    local pid name
+    while read -r pid name; do
+        [ "$name" = "${1:0:15}" ] || continue
+        grep -q '^State:.*Z' "/proc/$pid/status" 2>/dev/null || return 0
+    done < <(tt_ours)
     return 1
 }
 gone() { ! alive "$1"; }
