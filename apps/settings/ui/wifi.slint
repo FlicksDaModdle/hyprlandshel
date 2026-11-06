@@ -5,7 +5,7 @@
 // editor. What it shows comes from src/net.rs.
 
 import { Theme, Icon, Switch } from "@kit";
-import { Segmented, NetButton, NetField, SignalBars, Caption, Line, Card, Link } from "common.slint";
+import { Segmented, NetButton, NetField, SignalBars, Caption, Line, Card, Link, Choice, Labeled } from "common.slint";
 
 export struct KV { k: string, v: string }
 export struct WifiNet {
@@ -21,6 +21,18 @@ export struct WifiNet {
     err: string,
     busy: bool,
     signin: string,
+    // What its security is, worked out from NetworkManager's flags.
+    sec: string,
+    sec-detail: string,
+    sec-warn: string,
+    // "open", "password", "wep" or "enterprise"; and the key-mgmt.
+    form: string,
+    sec-key: string,
+    // Band, channel, speed, BSSID.
+    place: string,
+    // A saved one: its profile's security, and whether it has been read.
+    profile-sec: string,
+    info-ready: bool,
 }
 export struct SavedNet { ssid: string, uuid: string, sub: string }
 
@@ -41,6 +53,7 @@ export global Wifi {
     in property <bool> show-all;
     in property <string> open-ssid;
     in property <bool> edit-signin;
+    in property <bool> edit-general;
     in property <bool> new-password;
     in property <bool> hidden-open;
     in property <string> hidden-err;
@@ -48,7 +61,7 @@ export global Wifi {
     in property <[SavedNet]> away;
     in property <bool> show-saved;
     in property <string> vpn;
-    // The form (WifiPanel's f* properties), typed into here.
+    // The form.
     in-out property <string> f-password;
     in-out property <string> f-identity;
     in-out property <string> f-eap: "peap";
@@ -58,8 +71,28 @@ export global Wifi {
     in-out property <string> f-domain;
     in-out property <string> f-anon;
     in-out property <bool> f-more;
+    in-out property <string> f-sec: "auto";
+    in-out property <string> f-wep-type: "key";
+    in-out property <string> f-client-cert;
+    in-out property <string> f-private-key;
+    in-out property <string> f-key-pass;
+    in-out property <string> f-peap-ver;
+    in-out property <string> f-pac-file;
+    in-out property <string> f-fast-prov: "1";
+    in-out property <bool> f-adv;
+    // General settings (KDE's General, Wi-Fi, IPv4 and IPv6 tabs).
+    in-out property <bool> g-auto: true;
+    in-out property <bool> g-all: true;
+    in-out property <string> g-metered: "auto";
+    in-out property <string> g-mac;
+    in-out property <string> g-band;
+    in-out property <string> g-v4: "auto";
+    in-out property <string> g-addr;
+    in-out property <string> g-gw;
+    in-out property <string> g-dns;
+    in-out property <bool> g-dns-only;
+    in-out property <string> g-v6: "auto";
     in-out property <string> h-name;
-    in-out property <string> h-kind: "psk";
     callback set-wifi(bool);
     callback disconnect();
     callback toggle-details();
@@ -75,123 +108,348 @@ export global Wifi {
     callback row-autoconnect(string, bool);
     callback close-row();
     callback join-enterprise(string, bool);
+    // A new network: its name, its detected key-mgmt, hidden.
+    callback connect-new(string, string, bool);
+    callback edit-settings(string);
+    callback save-settings(string);
     callback toggle-all();
     callback toggle-hidden();
-    callback join-hidden();
     callback toggle-saved();
     callback forget-uuid(string);
     callback open-editor();
-    callback pick-ca();
+    // "ca", "cert", "key" or "pac".
+    callback pick-file(string);
+
+    // The securities there are to pick, KDE's list.
+    out property <[string]> sec-values: ["auto", "none", "owe", "wep", "wpa-psk", "sae", "wpa-eap", "wpa-eap-suite-b-192"];
+    out property <[string]> sec-labels: ["Automatic", "None (open)", "Enhanced Open (OWE)", "WEP", "WPA/WPA2 Personal", "WPA3 Personal", "WPA/WPA2/WPA3 Enterprise", "WPA3 Enterprise 192-bit"];
+    pure public function sec-index(v: string) -> int {
+        v == "none" ? 1 : v == "owe" ? 2 : v == "wep" ? 3 : v == "wpa-psk" ? 4 : v == "sae" ? 5 : v == "wpa-eap" ? 6 : v == "wpa-eap-suite-b-192" ? 7 : 0
+    }
+    // The form a security takes; `auto` is what was worked out.
+    pure public function form-for(auto: string) -> string {
+        f-sec == "auto" ? auto
+            : (f-sec == "none" || f-sec == "owe") ? "open"
+            : f-sec == "wep" ? "wep"
+            : (f-sec == "wpa-eap" || f-sec == "wpa-eap-suite-b-192") ? "enterprise"
+            : "password"
+    }
 }
 
-// The university sign-in: KDE's options (WifiPanel's signInForm).
+// A file field: its name, and Choose / Change.
+component FileField inherits VerticalLayout {
+    in property <string> label;
+    in property <string> path;
+    in property <string> which;
+    in property <string> hint;
+    spacing: 5px;
+    Text { text: root.label; font-size: Theme.fs(12); font-weight: 500; color: Theme.ink2; }
+    HorizontalLayout {
+        alignment: start;
+        spacing: 10px;
+        NetButton { label: root.path == "" ? "Choose file…" : "Change…"; clicked => { Wifi.pick-file(root.which); } }
+        Text { vertical-alignment: center; text: root.path == "" ? "None chosen" : root.path; overflow: elide; max-width: 420px; font-size: Theme.fs(12); color: root.path == "" ? Theme.ink3 : Theme.ink; }
+    }
+    if root.hint != "": Text { text: root.hint; wrap: word-wrap; font-size: Theme.fs(11); color: Theme.ink3; }
+}
+
+// The sign-in an enterprise network takes: every method KDE offers but
+// LEAP (Cisco's, long broken).
 component SignIn inherits VerticalLayout {
     in property <string> target;
     in property <bool> saved;
     in property <bool> busy;
     in property <bool> hidden;
+    in property <string> key;
     spacing: 12px;
     Line { text: "This network signs you in with your own account — usually your university or work email and password (eduroam: your full email address)."; }
+    Labeled {
+        label: "Authentication";
+        hint: Wifi.f-eap == "peap" ? "Protected EAP: a password inside an encrypted tunnel. The most common; Windows' default."
+            : Wifi.f-eap == "ttls" ? "Tunneled TLS: like PEAP, with more inner methods. Common at universities."
+            : Wifi.f-eap == "tls" ? "A certificate of your own instead of a password. Your IT department gives you the files."
+            : Wifi.f-eap == "pwd" ? "A password, checked without certificates."
+            : "Cisco's EAP-FAST: a tunnel set up from a PAC file or provisioned on first connect.";
+        Choice {
+            labels: ["Protected EAP (PEAP)", "Tunneled TLS (TTLS)", "TLS (certificate)", "PWD", "FAST"];
+            current: Wifi.f-eap == "peap" ? 0 : Wifi.f-eap == "ttls" ? 1 : Wifi.f-eap == "tls" ? 2 : Wifi.f-eap == "pwd" ? 3 : 4;
+            picked(i) => {
+                Wifi.f-eap = i == 0 ? "peap" : i == 1 ? "ttls" : i == 2 ? "tls" : i == 3 ? "pwd" : "fast";
+                if (Wifi.f-eap == "ttls") { Wifi.f-phase2 = "pap"; }
+                if (Wifi.f-eap == "peap" || Wifi.f-eap == "fast") { Wifi.f-phase2 = "mschapv2"; }
+            }
+        }
+    }
     NetField {
-                label: "Username";
+        label: Wifi.f-eap == "tls" ? "Identity" : "Username";
         placeholder: "name@university.edu";
         text <=> Wifi.f-identity;
     }
-    NetField {
-                label: "Password";
+    if Wifi.f-eap != "tls": NetField {
+        label: "Password";
         placeholder: root.saved ? "Unchanged" : "";
         secret: true;
         text <=> Wifi.f-password;
     }
+    if Wifi.f-eap == "tls": VerticalLayout {
+        spacing: 12px;
+        FileField { label: "Your certificate"; path: Wifi.f-client-cert; which: "cert"; hint: "A .pem, .crt or .p12 file. A .p12 holds the key too: choose it for both."; }
+        FileField { label: "Private key"; path: Wifi.f-private-key; which: "key"; }
+        NetField { label: "Private key password"; secret: true; placeholder: root.saved ? "Unchanged" : ""; text <=> Wifi.f-key-pass; }
+    }
+    if Wifi.f-eap == "peap" || Wifi.f-eap == "ttls" || Wifi.f-eap == "fast": Labeled {
+        label: "Inner authentication";
+        if Wifi.f-eap == "ttls": Choice {
+            labels: ["PAP", "MSCHAP", "MSCHAPv2", "MSCHAPv2 (no EAP)", "CHAP", "EAP-MSCHAPv2", "EAP-GTC", "EAP-MD5"];
+            current: Wifi.f-phase2 == "pap" ? 0 : Wifi.f-phase2 == "mschap" ? 1 : Wifi.f-phase2 == "mschapv2" ? 2 : Wifi.f-phase2 == "chap" ? 4
+                : Wifi.f-phase2 == "eap-mschapv2" ? 5 : Wifi.f-phase2 == "eap-gtc" ? 6 : Wifi.f-phase2 == "eap-md5" ? 7 : -1;
+            picked(i) => { Wifi.f-phase2 = i == 0 ? "pap" : i == 1 ? "mschap" : i == 2 || i == 3 ? "mschapv2" : i == 4 ? "chap" : i == 5 ? "eap-mschapv2" : i == 6 ? "eap-gtc" : "eap-md5"; }
+        }
+        if Wifi.f-eap == "peap": Choice {
+            labels: ["MSCHAPv2", "GTC", "MD5"];
+            current: Wifi.f-phase2 == "mschapv2" ? 0 : Wifi.f-phase2 == "gtc" ? 1 : Wifi.f-phase2 == "md5" ? 2 : -1;
+            picked(i) => { Wifi.f-phase2 = i == 0 ? "mschapv2" : i == 1 ? "gtc" : "md5"; }
+        }
+        if Wifi.f-eap == "fast": Choice {
+            labels: ["MSCHAPv2", "GTC"];
+            current: Wifi.f-phase2 == "gtc" ? 1 : 0;
+            picked(i) => { Wifi.f-phase2 = i == 0 ? "mschapv2" : "gtc"; }
+        }
+    }
     HorizontalLayout {
         alignment: start;
-        Link { text: Wifi.f-more ? "Fewer options" : "More options"; clicked => { Wifi.f-more = !Wifi.f-more; } }
+        Link { text: Wifi.f-more ? "Fewer options" : "Certificates and more options"; clicked => { Wifi.f-more = !Wifi.f-more; } }
     }
     if Wifi.f-more: VerticalLayout {
         spacing: 12px;
-        Line { text: "Your university's IT pages list these, often under \"eduroam\" or \"Wi-Fi on Linux\". PEAP with MSCHAPv2 is the most common; TTLS with PAP is next."; }
-        VerticalLayout {
-            spacing: 5px;
-            Text { text: "Sign-in method"; font-size: Theme.fs(12); font-weight: 500; color: Theme.ink2; }
-            HorizontalLayout {
-                alignment: start;
-                Segmented {
-                    options: ["PEAP", "TTLS", "PWD"];
-                    current: Wifi.f-eap == "peap" ? 0 : Wifi.f-eap == "ttls" ? 1 : Wifi.f-eap == "pwd" ? 2 : -1;
-                    picked(i) => {
-                        Wifi.f-eap = i == 0 ? "peap" : i == 1 ? "ttls" : "pwd";
-                        if (Wifi.f-eap == "ttls" && Wifi.f-phase2 == "mschapv2") { Wifi.f-phase2 = "pap"; }
-                        if (Wifi.f-eap == "peap" && Wifi.f-phase2 == "pap") { Wifi.f-phase2 = "mschapv2"; }
-                    }
+        Line { text: "Your organisation's IT pages list these, often under \"eduroam\" or \"Wi-Fi on Linux\"."; }
+        if Wifi.f-eap == "peap": Labeled {
+            label: "PEAP version";
+            hint: "Leave on Automatic unless told otherwise.";
+            Segmented {
+                options: ["Automatic", "Version 0", "Version 1"];
+                current: Wifi.f-peap-ver == "0" ? 1 : Wifi.f-peap-ver == "1" ? 2 : 0;
+                picked(i) => { Wifi.f-peap-ver = i == 0 ? "" : i == 1 ? "0" : "1"; }
+            }
+        }
+        if Wifi.f-eap == "fast": Labeled {
+            label: "PAC provisioning";
+            Segmented {
+                options: ["Off", "Anonymous", "Authenticated", "Both"];
+                current: Wifi.f-fast-prov == "0" ? 0 : Wifi.f-fast-prov == "2" ? 2 : Wifi.f-fast-prov == "3" ? 3 : 1;
+                picked(i) => { Wifi.f-fast-prov = i == 0 ? "0" : i == 1 ? "1" : i == 2 ? "2" : "3"; }
+            }
+        }
+        if Wifi.f-eap == "fast": FileField { label: "PAC file"; path: Wifi.f-pac-file; which: "pac"; hint: "Optional: one is made on first connect when provisioning is on."; }
+        Labeled {
+            label: "CA certificate";
+            Segmented {
+                options: ["Don't check", "System's", "File…"];
+                current: Wifi.f-ca == "none" ? 0 : Wifi.f-ca == "system" ? 1 : 2;
+                picked(i) => {
+                    Wifi.f-ca = i == 0 ? "none" : i == 1 ? "system" : "file";
+                    if (Wifi.f-ca == "file" && Wifi.f-ca-file == "") { Wifi.pick-file("ca"); }
                 }
             }
         }
-        if Wifi.f-eap != "pwd": VerticalLayout {
-            spacing: 5px;
-            Text { text: "Inner authentication"; font-size: Theme.fs(12); font-weight: 500; color: Theme.ink2; }
-            HorizontalLayout {
-                alignment: start;
-                if Wifi.f-eap == "ttls": Segmented {
-                    options: ["PAP", "MSCHAPv2", "MSCHAP", "CHAP"];
-                    current: Wifi.f-phase2 == "pap" ? 0 : Wifi.f-phase2 == "mschapv2" ? 1 : Wifi.f-phase2 == "mschap" ? 2 : Wifi.f-phase2 == "chap" ? 3 : -1;
-                    picked(i) => { Wifi.f-phase2 = i == 0 ? "pap" : i == 1 ? "mschapv2" : i == 2 ? "mschap" : "chap"; }
-                }
-                if Wifi.f-eap != "ttls": Segmented {
-                    options: ["MSCHAPv2", "GTC", "MD5"];
-                    current: Wifi.f-phase2 == "mschapv2" ? 0 : Wifi.f-phase2 == "gtc" ? 1 : Wifi.f-phase2 == "md5" ? 2 : -1;
-                    picked(i) => { Wifi.f-phase2 = i == 0 ? "mschapv2" : i == 1 ? "gtc" : "md5"; }
-                }
-            }
+        Line {
+            text: Wifi.f-ca == "none"
+                ? "Joins without checking it's really your organisation's network. Works everywhere, but a fake network with the same name could collect your password."
+                : Wifi.f-ca == "system"
+                ? "Checks the server against the certificates this computer trusts. Add the domain below too."
+                : (Wifi.f-ca-file != "" ? Wifi.f-ca-file : "No file chosen");
         }
-        VerticalLayout {
-            spacing: 5px;
-            Text { text: "Server certificate"; font-size: Theme.fs(12); font-weight: 500; color: Theme.ink2; }
-            HorizontalLayout {
-                alignment: start;
-                Segmented {
-                    options: ["Don't check", "System's", "File…"];
-                    current: Wifi.f-ca == "none" ? 0 : Wifi.f-ca == "system" ? 1 : 2;
-                    picked(i) => {
-                        Wifi.f-ca = i == 0 ? "none" : i == 1 ? "system" : "file";
-                        if (Wifi.f-ca == "file" && Wifi.f-ca-file == "") { Wifi.pick-ca(); }
-                    }
-                }
-            }
-            Line {
-                text: Wifi.f-ca == "none"
-                    ? "Joins without checking it's really your university's network. Works everywhere, but a fake network with the same name could collect your password."
-                    : Wifi.f-ca == "system"
-                    ? "Checks the server against the certificates this computer trusts. Add the domain below too."
-                    : (Wifi.f-ca-file != "" ? Wifi.f-ca-file : "No file chosen");
-            }
-            if Wifi.f-ca == "file": HorizontalLayout {
-                alignment: start;
-                NetButton { label: Wifi.f-ca-file == "" ? "Choose file…" : "Change file…"; clicked => { Wifi.pick-ca(); } }
-            }
+        if Wifi.f-ca == "file": HorizontalLayout {
+            alignment: start;
+            NetButton { label: Wifi.f-ca-file == "" ? "Choose file…" : "Change file…"; clicked => { Wifi.pick-file("ca"); } }
         }
         NetField {
-                        label: "Domain";
+            label: "Domain";
             placeholder: "radius.university.edu";
             hint: "Optional. The server's name must end in this — what makes the certificate check mean something.";
             text <=> Wifi.f-domain;
         }
-        NetField {
-                        label: "Anonymous identity";
+        if Wifi.f-eap != "tls" && Wifi.f-eap != "pwd": NetField {
+            label: "Anonymous identity";
             placeholder: "anonymous@university.edu";
             hint: "Optional. What's sent before the encrypted part; some networks ask for one.";
             text <=> Wifi.f-anon;
         }
     }
+}
+
+// A switch with its words, for the general settings.
+component SwitchRow inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> text;
+    in property <bool> on;
+    callback toggled(bool);
+    spacing: 12px;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        Text { text: root.title; font-size: Theme.fs(12.5); color: Theme.ink; }
+        if root.text != "": Text { text: root.text; wrap: word-wrap; font-size: Theme.fs(11); color: Theme.ink3; }
+    }
+    VerticalLayout { alignment: center; Switch { on: root.on; toggled(v) => { root.toggled(v); } } }
+}
+
+// KDE's General, Wi-Fi, IPv4 and IPv6 tabs, folded into one list.
+component Advanced inherits VerticalLayout {
+    spacing: 14px;
+    Caption { text: "GENERAL"; }
+    SwitchRow { title: "Connect automatically"; text: "Whenever it's in range."; on: Wifi.g-auto; toggled(v) => { Wifi.g-auto = v; } }
+    SwitchRow {
+        title: "All users may connect to this network";
+        text: Wifi.g-all ? "The password is kept for the whole computer." : "Only you; the network stays down until you're signed in.";
+        on: Wifi.g-all;
+        toggled(v) => { Wifi.g-all = v; }
+    }
+    Labeled {
+        label: "Metered";
+        hint: "A metered network (a phone's hotspot) holds back updates and other big downloads.";
+        Segmented {
+            options: ["Automatic", "Yes", "No"];
+            current: Wifi.g-metered == "yes" ? 1 : Wifi.g-metered == "no" ? 2 : 0;
+            picked(i) => { Wifi.g-metered = i == 0 ? "auto" : i == 1 ? "yes" : "no"; }
+        }
+    }
+    Caption { text: "WI-FI"; }
+    Labeled {
+        label: "Hardware address";
+        hint: Wifi.g-mac == "random" ? "A new made-up address each time it connects: harder to track, but captive portals forget you."
+            : Wifi.g-mac == "stable" ? "A made-up address that stays the same on this network: private, and still recognised."
+            : Wifi.g-mac == "permanent" ? "The card's own address, the one printed on it."
+            : Wifi.g-mac == "preserve" ? "Whatever address the card has when it connects."
+            : "NetworkManager's default for this computer.";
+        Choice {
+            labels: ["Default", "The card's own", "Random each time", "Random, fixed for this network", "Keep the current one"];
+            current: Wifi.g-mac == "permanent" ? 1 : Wifi.g-mac == "random" ? 2 : Wifi.g-mac == "stable" ? 3 : Wifi.g-mac == "preserve" ? 4 : 0;
+            picked(i) => { Wifi.g-mac = i == 1 ? "permanent" : i == 2 ? "random" : i == 3 ? "stable" : i == 4 ? "preserve" : ""; }
+        }
+    }
+    Labeled {
+        label: "Band";
+        hint: "Holding it to one band stops it hopping between a router's 2.4 and 5 GHz halves.";
+        Segmented {
+            options: ["Any", "2.4 GHz", "5 GHz"];
+            current: Wifi.g-band == "bg" ? 1 : Wifi.g-band == "a" ? 2 : 0;
+            picked(i) => { Wifi.g-band = i == 1 ? "bg" : i == 2 ? "a" : ""; }
+        }
+    }
+    Caption { text: "IPV4"; }
+    Labeled {
+        label: "Address";
+        Segmented {
+            options: ["Automatic (DHCP)", "Manual", "Off"];
+            current: Wifi.g-v4 == "manual" ? 1 : Wifi.g-v4 == "disabled" ? 2 : 0;
+            picked(i) => { Wifi.g-v4 = i == 0 ? "auto" : i == 1 ? "manual" : "disabled"; }
+        }
+    }
+    if Wifi.g-v4 == "manual": NetField { label: "IP address"; placeholder: "192.168.1.50/24"; hint: "With its prefix; a bare address is taken as /24."; text <=> Wifi.g-addr; }
+    if Wifi.g-v4 == "manual": NetField { label: "Gateway"; placeholder: "192.168.1.1"; text <=> Wifi.g-gw; }
+    if Wifi.g-v4 != "disabled": NetField {
+        label: "DNS servers";
+        placeholder: Wifi.g-v4 == "manual" ? "1.1.1.1, 9.9.9.9" : "From the network";
+        hint: "Separated by commas.";
+        text <=> Wifi.g-dns;
+    }
+    if Wifi.g-v4 == "auto" && Wifi.g-dns != "": SwitchRow {
+        title: "Only these DNS servers";
+        text: "Ignore the ones the network hands out.";
+        on: Wifi.g-dns-only;
+        toggled(v) => { Wifi.g-dns-only = v; }
+    }
+    Caption { text: "IPV6"; }
+    Labeled {
+        label: "Address";
+        Segmented {
+            options: ["Automatic", "Ignore", "Off"];
+            current: Wifi.g-v6 == "ignore" ? 1 : Wifi.g-v6 == "disabled" ? 2 : 0;
+            picked(i) => { Wifi.g-v6 = i == 0 ? "auto" : i == 1 ? "ignore" : "disabled"; }
+        }
+    }
+}
+
+// What a network's security is, and the picker to say otherwise.
+component SecurityPick inherits VerticalLayout {
+    in property <string> found;
+    in property <string> detail;
+    in property <string> warn;
+    in property <bool> hidden;
+    spacing: 5px;
+    Labeled {
+        label: "Security";
+        Choice {
+            labels: [root.hidden ? "Automatic (WPA/WPA2/WPA3 Personal)" : "Automatic: " + root.found, "None (open)", "Enhanced Open (OWE)", "WEP", "WPA/WPA2 Personal", "WPA3 Personal", "WPA/WPA2/WPA3 Enterprise", "WPA3 Enterprise 192-bit"];
+            current: Wifi.sec-index(Wifi.f-sec);
+            picked(i) => { Wifi.f-sec = Wifi.sec-values[i]; }
+        }
+    }
+    if !root.hidden && root.detail != "": Text { text: "The network offers: " + root.detail; wrap: word-wrap; font-size: Theme.fs(11); color: Theme.ink3; }
+    if !root.hidden && Wifi.f-sec != "auto": Text { text: "Set by hand: if the network doesn't use this, joining fails."; wrap: word-wrap; font-size: Theme.fs(11); color: Theme.ink3; }
+    if root.warn != "" && Wifi.f-sec == "auto": Text { text: root.warn; wrap: word-wrap; font-size: Theme.fs(11); color: #d93a2b; }
+}
+
+// A network not yet saved: its security, what that asks for, the general
+// settings, Connect. The hidden-network form is this too.
+component NewForm inherits VerticalLayout {
+    in property <string> target;
+    in property <string> found;
+    in property <string> found-form;
+    in property <string> found-key;
+    in property <string> detail;
+    in property <string> warn;
+    in property <bool> hidden;
+    in property <bool> busy;
+    property <string> form: Wifi.form-for(root.found-form);
+    spacing: 12px;
+    SecurityPick { found: root.found; detail: root.detail; warn: root.warn; hidden: root.hidden; }
+    if root.form == "password": NetField {
+        label: "Password";
+        secret: true;
+        hint: "8 to 63 characters, as written on the router or by whoever runs it.";
+        text <=> Wifi.f-password;
+        accepted => { if (Wifi.f-password != "") { Wifi.connect-new(root.target, root.found-key, root.hidden); } }
+    }
+    if root.form == "wep": VerticalLayout {
+        spacing: 12px;
+        Labeled {
+            label: "Key type";
+            Segmented {
+                options: ["Key", "Passphrase"];
+                current: Wifi.f-wep-type == "passphrase" ? 1 : 0;
+                picked(i) => { Wifi.f-wep-type = i == 0 ? "key" : "passphrase"; }
+            }
+        }
+        NetField {
+            label: Wifi.f-wep-type == "passphrase" ? "Passphrase" : "Key";
+            secret: true;
+            hint: Wifi.f-wep-type == "passphrase" ? "The words the key is made from (128-bit)." : "5 or 13 characters, or 10 or 26 hexadecimal digits.";
+            text <=> Wifi.f-password;
+        }
+    }
+    if root.form == "enterprise": SignIn { target: root.target; saved: false; busy: root.busy; hidden: root.hidden; key: root.found-key; }
+    HorizontalLayout {
+        alignment: start;
+        Link { text: Wifi.f-adv ? "Hide advanced settings" : "Advanced settings"; clicked => { Wifi.f-adv = !Wifi.f-adv; } }
+    }
+    if Wifi.f-adv: Advanced { }
     HorizontalLayout {
         alignment: start;
         spacing: 8px;
         NetButton {
-            label: root.busy ? "Connecting…" : root.saved ? "Save and connect" : "Connect";
+            label: root.busy ? "Connecting…" : "Connect";
             primary: true;
-            active: !root.busy && Wifi.f-identity != "" && (Wifi.f-password != "" || root.saved);
-            clicked => { Wifi.join-enterprise(root.target, root.hidden); }
+            active: !root.busy && root.target != ""
+                && (root.form == "open"
+                    || ((root.form == "password" || root.form == "wep") && Wifi.f-password != "")
+                    || (root.form == "enterprise" && Wifi.f-identity != ""
+                        && (Wifi.f-eap == "tls" ? (Wifi.f-client-cert != "" && Wifi.f-private-key != "") : Wifi.f-password != "")))
+                && (Wifi.g-v4 != "manual" || Wifi.g-addr != "");
+            clicked => { Wifi.connect-new(root.target, root.found-key, root.hidden); }
         }
-        NetButton { label: "Cancel"; clicked => { Wifi.cancel-edit(); } }
+        NetButton { label: "Cancel"; clicked => { if (root.hidden) { Wifi.toggle-hidden(); } else { Wifi.close-row(); } } }
     }
 }
 
@@ -239,36 +497,53 @@ component NetRow inherits Rectangle {
             padding-right: 14px;
             padding-bottom: 14px;
             spacing: 12px;
+            if root.net.place != "": Text { text: root.net.place; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
             if root.net.err != "": Line { text: root.net.err; color: #d93a2b; }
             // ── saved ───────────────────────────────────────────────
             if root.net.saved: VerticalLayout {
                 spacing: 12px;
+                Line {
+                    text: "Security: " + root.net.sec + (root.net.sec-detail != "" ? " (" + root.net.sec-detail + ")" : "")
+                        + (root.net.profile-sec != "" && root.net.profile-sec != root.net.sec ? ". Saved as " + root.net.profile-sec + "." : ".");
+                }
                 if root.net.saved-enterprise: Line { text: root.net.signin; }
-                HorizontalLayout {
+                if !Wifi.edit-signin && !Wifi.new-password && !Wifi.edit-general: HorizontalLayout {
                     alignment: start;
                     spacing: 8px;
-                    if !Wifi.edit-signin && !Wifi.new-password: NetButton {
+                    NetButton {
                         label: root.net.busy ? "Connecting…" : "Connect";
                         primary: true;
                         active: !root.net.busy;
                         clicked => { Wifi.join(root.net.ssid, ""); }
                     }
-                    if !root.net.saved-enterprise && !Wifi.new-password: NetButton { label: "New password"; clicked => { Wifi.new-password-mode(); } }
-                    if root.net.saved-enterprise && !Wifi.edit-signin: NetButton { label: "Change sign-in"; clicked => { Wifi.change-signin(root.net.ssid); } }
+                    if !root.net.saved-enterprise && root.net.form != "open": NetButton { label: "New password"; clicked => { Wifi.new-password-mode(); } }
+                    if root.net.saved-enterprise: NetButton { label: "Change sign-in"; clicked => { Wifi.change-signin(root.net.ssid); } }
+                    NetButton { label: "Settings"; active: root.net.info-ready; clicked => { Wifi.edit-settings(root.net.ssid); } }
                     NetButton { label: "Forget"; danger: true; clicked => { Wifi.forget(root.net.ssid); } }
                 }
-                if !Wifi.edit-signin && !Wifi.new-password: HorizontalLayout {
+                if !Wifi.edit-signin && !Wifi.new-password && !Wifi.edit-general: HorizontalLayout {
                     alignment: start;
                     spacing: 10px;
                     VerticalLayout { alignment: center; Switch { on: root.net.autoconnect; toggled(v) => { Wifi.row-autoconnect(root.net.ssid, v); } } }
                     Text { vertical-alignment: center; text: "Connect automatically"; font-size: Theme.fs(12); color: Theme.ink; }
                 }
+                if Wifi.edit-general: VerticalLayout {
+                    spacing: 12px;
+                    Advanced { }
+                    Line { text: "Changes take effect the next time it connects."; }
+                    HorizontalLayout {
+                        alignment: start;
+                        spacing: 8px;
+                        NetButton { label: "Save"; primary: true; active: Wifi.g-v4 != "manual" || Wifi.g-addr != ""; clicked => { Wifi.save-settings(root.net.ssid); } }
+                        NetButton { label: "Cancel"; clicked => { Wifi.cancel-edit(); } }
+                    }
+                }
             }
-            // ── a password (new home network, or a saved one's new one) ──
-            if (!root.net.saved && root.net.secured && !root.net.enterprise) || Wifi.new-password: VerticalLayout {
+            // ── a saved one's new password ──────────────────────────
+            if root.net.saved && Wifi.new-password: VerticalLayout {
                 spacing: 12px;
                 NetField {
-                                        label: "Password";
+                    label: "Password";
                     secret: true;
                     text <=> Wifi.f-password;
                     accepted => { if (Wifi.f-password != "") { Wifi.join(root.net.ssid, Wifi.f-password); } }
@@ -285,24 +560,30 @@ component NetRow inherits Rectangle {
                     NetButton { label: "Cancel"; clicked => { Wifi.close-row(); } }
                 }
             }
-            // ── open, new ───────────────────────────────────────────
-            if !root.net.saved && !root.net.secured: VerticalLayout {
-                spacing: 10px;
-                Line { text: "An open network: anyone nearby can see what you send over it that isn't encrypted."; }
+            // ── a saved one's sign-in ───────────────────────────────
+            if root.net.saved && Wifi.edit-signin: VerticalLayout {
+                spacing: 12px;
+                SignIn { target: root.net.ssid; saved: true; busy: root.net.busy; key: root.net.sec-key; }
                 HorizontalLayout {
                     alignment: start;
+                    spacing: 8px;
                     NetButton {
-                        label: root.net.busy ? "Connecting…" : "Connect";
+                        label: root.net.busy ? "Connecting…" : "Save and connect";
                         primary: true;
-                        active: !root.net.busy;
-                        clicked => { Wifi.join(root.net.ssid, ""); }
+                        active: !root.net.busy && Wifi.f-identity != "";
+                        clicked => { Wifi.join-enterprise(root.net.ssid, false); }
                     }
+                    NetButton { label: "Cancel"; clicked => { Wifi.cancel-edit(); } }
                 }
             }
-            // ── sign-in: new university network, or a saved one's ───
-            if (!root.net.saved && root.net.enterprise) || Wifi.edit-signin: SignIn {
+            // ── new ─────────────────────────────────────────────────
+            if !root.net.saved: NewForm {
                 target: root.net.ssid;
-                saved: root.net.saved;
+                found: root.net.sec;
+                found-form: root.net.form;
+                found-key: root.net.sec-key;
+                detail: root.net.sec-detail;
+                warn: root.net.sec-warn;
                 busy: root.net.busy;
             }
         }
@@ -427,28 +708,8 @@ export component WifiPanel inherits VerticalLayout {
         }
         if Wifi.hidden-open: VerticalLayout {
             spacing: 12px;
-            NetField { label: "Network name"; text <=> Wifi.h-name; }
-            HorizontalLayout {
-                alignment: start;
-                Segmented {
-                    options: ["Password", "Sign-in", "Open"];
-                    current: Wifi.h-kind == "psk" ? 0 : Wifi.h-kind == "enterprise" ? 1 : 2;
-                    picked(i) => { Wifi.h-kind = i == 0 ? "psk" : i == 1 ? "enterprise" : "open"; }
-                }
-            }
-            if Wifi.h-kind == "psk": NetField { label: "Password"; secret: true; text <=> Wifi.f-password; }
-            if Wifi.h-kind == "enterprise": SignIn { target: Wifi.h-name; saved: false; busy: Wifi.hidden-busy; hidden: true; }
-            if Wifi.h-kind != "enterprise": HorizontalLayout {
-                alignment: start;
-                spacing: 8px;
-                NetButton {
-                    label: Wifi.hidden-busy ? "Connecting…" : "Connect";
-                    primary: true;
-                    active: Wifi.h-name != "" && (Wifi.h-kind == "open" || Wifi.f-password != "");
-                    clicked => { Wifi.join-hidden(); }
-                }
-                NetButton { label: "Cancel"; clicked => { Wifi.toggle-hidden(); } }
-            }
+            NetField { label: "Network name"; hint: "Exactly as the router has it, capitals included."; text <=> Wifi.h-name; }
+            NewForm { target: Wifi.h-name; found-form: "password"; hidden: true; busy: Wifi.hidden-busy; }
             if Wifi.hidden-err != "": Line { text: Wifi.hidden-err; color: #d93a2b; }
         }
     }

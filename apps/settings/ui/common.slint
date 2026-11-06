@@ -176,3 +176,61 @@ export component Link inherits Text {
     color: lta.has-hover ? Theme.ink : Theme.accent;
     lta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
+
+// A drop-down: the choice shown, the list on a click (KDE's combo boxes).
+export component Choice inherits Rectangle {
+    in property <[string]> labels;
+    in property <int> current;
+    in property <length> cap: 320px;
+    callback picked(int);
+    width: root.cap;
+    height: 34px;
+    border-radius: Theme.r-sm;
+    background: Theme.ground;
+    border-width: 1px;
+    border-color: cta.has-hover ? Theme.ink3 : Theme.rule;
+    Text {
+        x: 11px;
+        width: parent.width - 40px;
+        vertical-alignment: center;
+        overflow: elide;
+        text: root.current >= 0 && root.current < root.labels.length ? root.labels[root.current] : "";
+        font-size: Theme.fs(13);
+        color: Theme.ink;
+    }
+    Icon { x: parent.width - 26px; y: 10px; name: "chevronDown"; size: 14px; ink: Theme.ink3; }
+    cta := TouchArea { mouse-cursor: pointer; clicked => { pop.show(); } }
+    pop := PopupWindow {
+        y: root.height + 4px;
+        width: root.width;
+        Rectangle {
+            height: list.preferred-height;
+            border-radius: Theme.r-sm;
+            background: Theme.dialog;
+            border-width: 1px;
+            border-color: Theme.edge;
+            list := VerticalLayout {
+                padding: 4px;
+                spacing: 1px;
+                for l[i] in root.labels: Rectangle {
+                    height: 30px;
+                    border-radius: Theme.r-sm;
+                    background: oh.has-hover ? Theme.hover : transparent;
+                    Text { x: 9px; width: parent.width - 36px; vertical-alignment: center; overflow: elide; text: l; font-size: Theme.fs(12.5); color: Theme.ink; }
+                    if i == root.current: Icon { x: parent.width - 25px; y: 7px; name: "check"; size: 16px; ink: Theme.accent; }
+                    oh := TouchArea { mouse-cursor: pointer; clicked => { root.picked(i); } }
+                }
+            }
+        }
+    }
+}
+
+// A label over a control, as NetField lays its own out.
+export component Labeled inherits VerticalLayout {
+    in property <string> label;
+    in property <string> hint;
+    spacing: 5px;
+    Text { text: root.label; font-size: Theme.fs(12); font-weight: 500; color: Theme.ink2; }
+    HorizontalLayout { alignment: start; @children }
+    if root.hint != "": Text { text: root.hint; wrap: word-wrap; font-size: Theme.fs(11); color: Theme.ink3; }
+}

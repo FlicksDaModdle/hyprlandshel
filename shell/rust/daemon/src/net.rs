@@ -163,6 +163,13 @@ impl Net {
             "security": security(u(&p, "Flags"), u(&p, "WpaFlags"), u(&p, "RsnFlags")),
             "freq": u(&p, "Frequency"),
             "rate": format!("{} Mbit/s", u(&p, "MaxBitrate") / 1000),
+            // NetworkManager's own flags, for telling WPA2 from WPA3, a
+            // transition network from either, and the ciphers apart.
+            "flags": u(&p, "Flags"),
+            "wpaFlags": u(&p, "WpaFlags"),
+            "rsnFlags": u(&p, "RsnFlags"),
+            "bssid": s(&p, "HwAddress"),
+            "mode": u(&p, "Mode"),
             "inUse": in_use
         }))
     }

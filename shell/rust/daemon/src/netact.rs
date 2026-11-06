@@ -14,9 +14,20 @@
 //!
 //! Commands:  net-up {id, uuid, secret?}         a saved network; a secret
 //!                                               given replaces its password
-//!            net-join {id, ssid, secret?, hidden?}
+//!            net-join {id, ssid, secret?, hidden?, keyMgmt?, wepType?,
+//!                      general?}
 //!            net-enterprise {id, ssid, uuid?, secret?, hidden?, eap, phase2,
-//!                            identity, anonymous, domain, ca}
+//!                            identity, anonymous, domain, ca, clientCert?,
+//!                            privateKey?, keySecret?, peapVer?, pacFile?,
+//!                            fastProv?, keyMgmt?, general?}
+//!            net-edit {id, uuid, general}   a saved profile's settings
+//!
+//! `keyMgmt` picks the security outright ("none", "owe", "wep", "wpa-psk",
+//! "sae", "wpa-eap", "wpa-eap-suite-b-192"); without it NetworkManager
+//! works it out from the network in range. `general` is everything else a
+//! profile has: {autoconnect, metered, allUsers, mac, band, hidden,
+//! ipv4 {method, address, gateway, dns, ignoreAutoDns}, ipv6 {method}};
+//! what it leaves out is left as it is.
 //!            net-forget {id, uuid}
 //!            net-autoconnect {id, uuid, on}
 //!            net-disconnect {id}
@@ -25,7 +36,8 @@
 //!            net-profile {id, uuid}
 //! Events:    net-done {id, ok, error}
 //!            net-profile {uuid, eap, phase2, identity, anonymous, domain,
-//!                         ca, systemCa}
+//!                         ca, systemCa, clientCert, privateKey, peapVer,
+//!                         pacFile, fastProv, keyMgmt, general}
 //!
 //! A new network that will not come up is removed again, as nmcli does: a
 //! profile with a wrong password would otherwise be retried for ever.
@@ -341,6 +353,14 @@ impl Act {
         let mut s = Settings::new();
         s.insert("connection".into(), Self::connection(ssid));
         s.insert("802-11-wireless".into(), Self::wireless(ssid, hidden));
+        if let Some(km) = c["keyMgmt"].as_str().filter(|k| !k.is_empty()) {
+            if let Some(sec) = Self::security(km, secret, c["wepType"].as_str().unwrap_or("key"))? {
+                s.insert("802-11-wireless-security".into(), sec);
+            }
+            Self::general(&c["general"], &mut s)?;
+            return self.add_and_activate(s, &dev, ap.as_deref());
+        }
+        Self::general(&c["general"], &mut s)?;
         if !secret.is_empty() {
             let mut sec = Section::new();
             // With the network in range NetworkManager works out the kind
@@ -355,6 +375,121 @@ impl Act {
         self.add_and_activate(s, &dev, ap.as_deref())
     }
 
+    /// The security section for a kind picked outright: None for an open
+    /// network.
+    fn security(km: &str, secret: &str, wep_type: &str) -> Result<Option<Section>, String> {
+        let mut sec = Section::new();
+        match km {
+            "none" | "open" => return Ok(None),
+            "owe" => {
+                sec.insert("key-mgmt".into(), ov("owe"));
+            }
+            "wep" => {
+                if secret.is_empty() {
+                    return Err("Secrets were required, but not provided".into());
+                }
+                sec.insert("key-mgmt".into(), ov("none"));
+                sec.insert("auth-alg".into(), ov("open"));
+                sec.insert("wep-tx-keyidx".into(), ov(0u32));
+                // 1: the key itself (5 or 13 characters, or 10 or 26 hex
+                // digits); 2: a passphrase it is made from.
+                sec.insert("wep-key-type".into(), ov(if wep_type == "passphrase" { 2u32 } else { 1u32 }));
+                sec.insert("wep-key0".into(), ov(secret));
+                sec.insert("wep-key-flags".into(), ov(0u32));
+            }
+            "wpa-psk" | "sae" => {
+                if secret.is_empty() {
+                    return Err("Secrets were required, but not provided".into());
+                }
+                sec.insert("key-mgmt".into(), ov(km));
+                sec.insert("psk".into(), ov(secret));
+                sec.insert("psk-flags".into(), ov(0u32));
+            }
+            other => return Err(format!("invalid property: unknown security {other}")),
+        }
+        Ok(Some(sec))
+    }
+
+    /// The rest of a profile (KDE's General, Wi-Fi, IPv4 and IPv6 tabs):
+    /// only what `g` names is changed.
+    fn general(g: &Json, s: &mut Settings) -> Result<(), String> {
+        if !g.is_object() {
+            return Ok(());
+        }
+        let conn = s.entry("connection".into()).or_default();
+        if let Some(on) = g["autoconnect"].as_bool() {
+            conn.insert("autoconnect".into(), ov(on));
+        }
+        if let Some(m) = g["metered"].as_str() {
+            conn.insert("metered".into(), ov(match m { "yes" => 1i32, "no" => 2, _ => 0 }));
+        }
+        if let Some(all) = g["allUsers"].as_bool() {
+            let me = std::env::var("USER").unwrap_or_default();
+            let list: Vec<String> = if all || me.is_empty() { vec![] } else { vec![format!("user:{me}")] };
+            conn.insert("permissions".into(), ov(list));
+        }
+        let wl = s.entry("802-11-wireless".into()).or_default();
+        if let Some(m) = g["mac"].as_str() {
+            if m.is_empty() {
+                wl.remove("cloned-mac-address");
+                wl.remove("assigned-mac-address");
+            } else if ["preserve", "permanent", "random", "stable"].contains(&m) {
+                wl.remove("cloned-mac-address");
+                wl.insert("assigned-mac-address".into(), ov(m));
+            } else {
+                return Err(format!("invalid property: MAC address mode {m}"));
+            }
+        }
+        if let Some(b) = g["band"].as_str() {
+            if b.is_empty() {
+                wl.remove("band");
+            } else {
+                wl.insert("band".into(), ov(b));
+            }
+        }
+        if let Some(h) = g["hidden"].as_bool() {
+            wl.insert("hidden".into(), ov(h));
+        }
+        let v4 = &g["ipv4"];
+        if v4.is_object() {
+            let ip = s.entry("ipv4".into()).or_default();
+            let method = v4["method"].as_str().unwrap_or("auto");
+            ip.insert("method".into(), ov(method));
+            for k in ["addresses", "address-data", "gateway", "dns", "dns-data"] {
+                ip.remove(k);
+            }
+            if method == "manual" {
+                let (addr, prefix) = parse_cidr(v4["address"].as_str().unwrap_or(""))?;
+                let mut a: HashMap<String, OwnedValue> = HashMap::new();
+                a.insert("address".into(), ov(addr.to_string()));
+                a.insert("prefix".into(), ov(prefix));
+                ip.insert("address-data".into(), ov(vec![a]));
+                let gw = v4["gateway"].as_str().unwrap_or("").trim();
+                if !gw.is_empty() {
+                    gw.parse::<std::net::Ipv4Addr>().map_err(|_| format!("invalid property: gateway {gw}"))?;
+                    ip.insert("gateway".into(), ov(gw));
+                }
+            }
+            let dns = parse_dns(v4["dns"].as_str().unwrap_or(""))?;
+            if !dns.is_empty() {
+                // Network byte order, as NetworkManager keeps them.
+                ip.insert("dns".into(), ov(dns.iter().map(|d| u32::from_ne_bytes(d.octets())).collect::<Vec<u32>>()));
+            }
+            ip.insert("ignore-auto-dns".into(), ov(v4["ignoreAutoDns"].as_bool().unwrap_or(false) && !dns.is_empty()));
+        }
+        if let Some(m) = g["ipv6"]["method"].as_str() {
+            s.entry("ipv6".into()).or_default().insert("method".into(), ov(m));
+        }
+        Ok(())
+    }
+
+    fn edit(&self, c: &Json) -> Result<(), String> {
+        let path = self.connection_for(c["uuid"].as_str().unwrap_or("")).map_err(err)?;
+        let mut s = self.settings(&path).map_err(err)?;
+        Self::general(&c["general"], &mut s)?;
+        self.update(&path, s).map_err(err)
+    }
+
     /// The sign-in a university or office network takes: the method, the
     /// inner method, who you are, and how the server is checked.
     fn eap_section(c: &Json, mut x: Section) -> Section {
@@ -362,10 +497,46 @@ impl Act {
         x.insert("eap".into(), ov(vec![eap.to_string()]));
         let phase2 = c["phase2"].as_str().unwrap_or("");
         x.remove("phase2-autheap");
-        if eap == "pwd" || phase2.is_empty() {
-            x.remove("phase2-auth");
-        } else {
-            x.insert("phase2-auth".into(), ov(phase2));
+        x.remove("phase2-auth");
+        if eap != "pwd" && eap != "tls" && !phase2.is_empty() {
+            // TTLS's inner EAP methods ("eap-mschapv2") go in a key of
+            // their own.
+            match phase2.strip_prefix("eap-") {
+                Some(inner) => x.insert("phase2-autheap".into(), ov(inner)),
+                None => x.insert("phase2-auth".into(), ov(phase2)),
+            };
+        }
+        // A file, as NetworkManager spells one: its URI, NUL-ended.
+        let file = |p: &str| {
+            let mut b = format!("file://{p}").into_bytes();
+            b.push(0);
+            b
+        };
+        for k in ["client-cert", "private-key", "phase1-peapver", "pac-file", "phase1-fast-provisioning"] {
+            x.remove(k);
+        }
+        if eap == "tls" {
+            for (field, key) in [("clientCert", "client-cert"), ("privateKey", "private-key")] {
+                if let Some(p) = c[field].as_str().map(str::trim).filter(|p| !p.is_empty()) {
+                    x.insert(key.into(), ov(file(p)));
+                }
+            }
+            if let Some(pw) = c["keySecret"].as_str().filter(|s| !s.is_empty()) {
+                x.insert("private-key-password".into(), ov(pw));
+            }
+            x.insert("private-key-password-flags".into(), ov(0u32));
+        }
+        if eap == "peap" {
+            if let Some(v) = c["peapVer"].as_str().filter(|v| *v == "0" || *v == "1") {
+                x.insert("phase1-peapver".into(), ov(v));
+            }
+        }
+        if eap == "fast" {
+            if let Some(p) = c["pacFile"].as_str().map(str::trim).filter(|p| !p.is_empty()) {
+                x.insert("pac-file".into(), ov(p));
+            }
+            let prov = c["fastProv"].as_str().filter(|v| ["0", "1", "2", "3"].contains(v)).unwrap_or("1");
+            x.insert("phase1-fast-provisioning".into(), ov(prov));
         }
         for (field, key) in [("identity", "identity"), ("anonymous", "anonymous-identity"), ("domain", "domain-suffix-match")] {
             match c[field].as_str().map(str::trim).filter(|v| !v.is_empty()) {
@@ -380,17 +551,16 @@ impl Act {
         let ca = c["ca"].as_str().unwrap_or("none");
         x.insert("system-ca-certs".into(), ov(ca == "system"));
         if ca != "none" && ca != "system" && !ca.is_empty() {
-            // A file, as NetworkManager spells one: its URI, NUL-ended.
-            let mut b = format!("file://{ca}").into_bytes();
-            b.push(0);
-            x.insert("ca-cert".into(), ov(b));
+            x.insert("ca-cert".into(), ov(file(ca)));
         } else {
             x.remove("ca-cert");
         }
-        if let Some(pw) = c["secret"].as_str().filter(|s| !s.is_empty()) {
-            x.insert("password".into(), ov(pw));
+        if eap != "tls" {
+            if let Some(pw) = c["secret"].as_str().filter(|s| !s.is_empty()) {
+                x.insert("password".into(), ov(pw));
+            }
+            x.insert("password-flags".into(), ov(0u32));
         }
-        x.insert("password-flags".into(), ov(0u32));
         x
     }
 
@@ -405,10 +575,11 @@ impl Act {
             let mut s = self.settings(&path).map_err(err)?;
             let x = s.remove("802-1x").unwrap_or_default();
             s.insert("802-1x".into(), Self::eap_section(c, x));
-            s.entry("802-11-wireless-security".into()).or_default().insert("key-mgmt".into(), ov("wpa-eap"));
+            s.entry("802-11-wireless-security".into()).or_default().insert("key-mgmt".into(), ov(Self::eap_mgmt(c)));
             if hidden {
                 s.entry("802-11-wireless".into()).or_default().insert("hidden".into(), ov(true));
             }
+            Self::general(&c["general"], &mut s)?;
             self.update(&path, s).map_err(err)?;
             return self.activate(&path, &dev);
         }
@@ -416,11 +587,21 @@ impl Act {
         s.insert("connection".into(), Self::connection(ssid));
         s.insert("802-11-wireless".into(), Self::wireless(ssid, hidden));
         let mut sec = Section::new();
-        sec.insert("key-mgmt".into(), ov("wpa-eap"));
+        sec.insert("key-mgmt".into(), ov(Self::eap_mgmt(c)));
         s.insert("802-11-wireless-security".into(), sec);
         s.insert("802-1x".into(), Self::eap_section(c, Section::new()));
+        Self::general(&c["general"], &mut s)?;
         let ap = if hidden { None } else { self.ap_for(&dev, ssid) };
         self.add_and_activate(s, &dev, ap.as_deref())
+    }
+
+    /// WPA3 Enterprise's 192-bit mode, when asked for; plain 802.1X else.
+    fn eap_mgmt(c: &Json) -> &'static str {
+        if c["keyMgmt"] == "wpa-eap-suite-b-192" {
+            "wpa-eap-suite-b-192"
+        } else {
+            "wpa-eap"
+        }
     }
 
     fn forget(&self, c: &Json) -> Result<(), String> {
@@ -491,16 +672,71 @@ impl Act {
             Some(Value::Array(a)) => a.iter().find_map(|v| if let Value::Str(s) = v { Some(s.to_string()) } else { None }).unwrap_or_default(),
             _ => String::new(),
         };
-        let phase2 = { let p = str_of(x.get("phase2-auth")); if p.is_empty() { str_of(x.get("phase2-autheap")) } else { p } };
-        let mut ca = String::from_utf8_lossy(&bytes_of(x.get("ca-cert"))).trim_end_matches('\0').to_string();
-        if let Some(rest) = ca.strip_prefix("file://") {
-            ca = rest.to_string();
-        }
+        let phase2 = {
+            let p = str_of(x.get("phase2-auth"));
+            let e = str_of(x.get("phase2-autheap"));
+            if !p.is_empty() { p } else if !e.is_empty() { format!("eap-{e}") } else { String::new() }
+        };
+        let path_of = |k: &str| {
+            let v = String::from_utf8_lossy(&bytes_of(x.get(k))).trim_end_matches('\0').to_string();
+            v.strip_prefix("file://").map(str::to_string).unwrap_or(v)
+        };
+        let conn = s.get("connection").unwrap_or(&empty);
+        let wl = s.get("802-11-wireless").unwrap_or(&empty);
+        let v4 = s.get("ipv4").unwrap_or(&empty);
+        let v6 = s.get("ipv6").unwrap_or(&empty);
+        let metered = match conn.get("metered").map(|v| &**v) {
+            Some(Value::I32(1)) => "yes",
+            Some(Value::I32(2)) => "no",
+            _ => "auto",
+        };
+        let all_users = match conn.get("permissions").map(|v| &**v) {
+            Some(Value::Array(a)) => a.is_empty(),
+            _ => true,
+        };
+        let address = match v4.get("address-data").map(|v| &**v) {
+            Some(Value::Array(a)) => a
+                .iter()
+                .find_map(|d| {
+                    let d: HashMap<String, OwnedValue> = d.try_clone().ok().and_then(|o| HashMap::try_from(o).ok())?;
+                    let p = match d.get("prefix").map(|v| &**v) { Some(Value::U32(p)) => *p, _ => 24 };
+                    Some(format!("{}/{p}", str_of(d.get("address"))))
+                })
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        let dns = match v4.get("dns").map(|v| &**v) {
+            Some(Value::Array(a)) => a
+                .iter()
+                .filter_map(|v| if let Value::U32(n) = v { Some(std::net::Ipv4Addr::from(n.to_ne_bytes()).to_string()) } else { None })
+                .collect::<Vec<_>>()
+                .join(", "),
+            _ => String::new(),
+        };
+        let m4 = { let m = str_of(v4.get("method")); if m.is_empty() { "auto".to_string() } else { m } };
+        let m6 = { let m = str_of(v6.get("method")); if m.is_empty() { "auto".to_string() } else { m } };
+        let mac = { let a = str_of(wl.get("assigned-mac-address")); if a.is_empty() { str_of(wl.get("cloned-mac-address")) } else { a } };
         out::emit(json!({
             "ev": "net-profile", "uuid": uuid, "eap": eap, "phase2": phase2,
             "identity": str_of(x.get("identity")), "anonymous": str_of(x.get("anonymous-identity")),
-            "domain": str_of(x.get("domain-suffix-match")), "ca": ca,
-            "systemCa": matches!(x.get("system-ca-certs").map(|v| &**v), Some(Value::Bool(true)))
+            "domain": str_of(x.get("domain-suffix-match")), "ca": path_of("ca-cert"),
+            "systemCa": matches!(x.get("system-ca-certs").map(|v| &**v), Some(Value::Bool(true))),
+            "clientCert": path_of("client-cert"), "privateKey": path_of("private-key"),
+            "peapVer": str_of(x.get("phase1-peapver")), "pacFile": str_of(x.get("pac-file")),
+            "fastProv": str_of(x.get("phase1-fast-provisioning")),
+            "keyMgmt": str_of(s.get("802-11-wireless-security").and_then(|w| w.get("key-mgmt"))),
+            "general": {
+                "autoconnect": !matches!(conn.get("autoconnect").map(|v| &**v), Some(Value::Bool(false))),
+                "metered": metered, "allUsers": all_users, "mac": mac,
+                "band": str_of(wl.get("band")),
+                "hidden": matches!(wl.get("hidden").map(|v| &**v), Some(Value::Bool(true))),
+                "ipv4": {
+                    "method": m4,
+                    "address": address, "gateway": str_of(v4.get("gateway")), "dns": dns,
+                    "ignoreAutoDns": matches!(v4.get("ignore-auto-dns").map(|v| &**v), Some(Value::Bool(true)))
+                },
+                "ipv6": { "method": m6 }
+            }
         }));
         Ok(())
     }
@@ -516,9 +752,27 @@ impl Act {
             "net-vpn" => self.vpn(c),
             "net-secret" => self.secret(c),
             "net-profile" => self.profile(c),
+            "net-edit" => self.edit(c),
             other => Err(format!("unknown command {other}")),
         }
     }
+}
+
+/// "192.168.1.20/24" (a bare address is a /24).
+fn parse_cidr(s: &str) -> Result<(std::net::Ipv4Addr, u32), String> {
+    let s = s.trim();
+    let (a, p) = s.split_once('/').unwrap_or((s, "24"));
+    let addr = a.trim().parse().map_err(|_| format!("invalid property: address {s}"))?;
+    let prefix: u32 = p.trim().parse().ok().filter(|p| *p <= 32).ok_or_else(|| format!("invalid property: prefix {p}"))?;
+    Ok((addr, prefix))
+}
+
+/// "1.1.1.1, 9.9.9.9" (commas or spaces).
+fn parse_dns(s: &str) -> Result<Vec<std::net::Ipv4Addr>, String> {
+    s.split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|x| !x.is_empty())
+        .map(|x| x.parse().map_err(|_| format!("invalid property: DNS server {x}")))
+        .collect()
 }
 
 /// A D-Bus error as its message: "org.freedesktop.NetworkManager.
@@ -541,7 +795,7 @@ fn err(e: zbus::Error) -> String {
 pub fn is_action(cmd: &str) -> bool {
     matches!(
         cmd,
-        "net-up" | "net-join" | "net-enterprise" | "net-forget" | "net-autoconnect" | "net-disconnect" | "net-vpn" | "net-secret" | "net-profile"
+        "net-up" | "net-join" | "net-enterprise" | "net-forget" | "net-autoconnect" | "net-disconnect" | "net-vpn" | "net-secret" | "net-profile" | "net-edit"
     )
 }
 
@@ -593,5 +847,36 @@ mod tests {
         let pwd = Act::eap_section(&json!({ "eap": "pwd", "phase2": "mschapv2", "ca": "system" }), Section::new());
         assert!(!pwd.contains_key("phase2-auth"));
         assert!(matches!(pwd.get("system-ca-certs").map(|v| &**v), Some(Value::Bool(true))));
+    }
+
+    #[test]
+    fn eap_more() {
+        let tls = Act::eap_section(&json!({ "eap": "tls", "identity": "me", "clientCert": "/c.pem", "privateKey": "/k.pem", "keySecret": "kp", "secret": "x", "ca": "none" }), Section::new());
+        assert_eq!(bytes_of(tls.get("client-cert")), b"file:///c.pem\0".to_vec());
+        assert_eq!(str_of(tls.get("private-key-password")), "kp");
+        assert!(!tls.contains_key("password"));
+        let ttls = Act::eap_section(&json!({ "eap": "ttls", "phase2": "eap-mschapv2", "ca": "none" }), Section::new());
+        assert_eq!(str_of(ttls.get("phase2-autheap")), "mschapv2");
+        assert!(!ttls.contains_key("phase2-auth"));
+        let peap = Act::eap_section(&json!({ "eap": "peap", "phase2": "mschapv2", "peapVer": "0", "ca": "none" }), Section::new());
+        assert_eq!(str_of(peap.get("phase1-peapver")), "0");
+    }
+
+    #[test]
+    fn security_and_general() {
+        assert!(Act::security("none", "", "key").unwrap().is_none());
+        let wep = Act::security("wep", "abcde", "key").unwrap().unwrap();
+        assert_eq!(str_of(wep.get("key-mgmt")), "none");
+        assert_eq!(str_of(wep.get("wep-key0")), "abcde");
+        assert!(Act::security("sae", "", "key").is_err());
+        let mut s = Settings::new();
+        let g = json!({ "metered": "yes", "mac": "random", "ipv4": { "method": "manual", "address": "10.0.0.5/16", "gateway": "10.0.0.1", "dns": "1.1.1.1, 9.9.9.9", "ignoreAutoDns": true }, "ipv6": { "method": "disabled" } });
+        Act::general(&g, &mut s).unwrap();
+        assert!(matches!(s["connection"].get("metered").map(|v| &**v), Some(Value::I32(1))));
+        assert_eq!(str_of(s["802-11-wireless"].get("assigned-mac-address")), "random");
+        assert_eq!(str_of(s["ipv4"].get("gateway")), "10.0.0.1");
+        assert_eq!(str_of(s["ipv6"].get("method")), "disabled");
+        assert!(Act::general(&json!({ "ipv4": { "method": "manual", "address": "nope" } }), &mut s).is_err());
+        assert!(Act::general(&json!({ "ipv4": { "method": "auto", "dns": "1.1.1" } }), &mut s).is_err());
     }
 }

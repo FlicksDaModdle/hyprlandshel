@@ -690,8 +690,9 @@ fn wire_wifi(ui: &AppWindow, st: &Rc<RefCell<State>>) {
         n.edit_signin = true;
     });
     on!(on_cancel_edit, [], |n, _d, _ui| {
-        if n.edit_signin {
+        if n.edit_signin || n.edit_general {
             n.edit_signin = false;
+            n.edit_general = false;
         } else {
             n.open_ssid.clear();
             n.hidden_open = false;
@@ -711,26 +712,14 @@ fn wire_wifi(ui: &AppWindow, st: &Rc<RefCell<State>>) {
         n.open_ssid.clear();
         n.list = n.networks.iter().filter(|x| !x.in_use).cloned().collect();
     });
+    // A saved enterprise network's sign-in, changed: its general settings
+    // stay as they are.
     on!(on_join_enterprise, [target: SharedString, hidden: bool], |n, d, ui| {
         let w = ui.global::<Wifi>();
-        let ca = if w.get_f_ca() == "file" {
-            let f = w.get_f_ca_file();
-            if f.is_empty() { "none".to_string() } else { f.to_string() }
-        } else {
-            w.get_f_ca().to_string()
-        };
-        n.join_enterprise(
-            d,
-            target.trim(),
-            w.get_f_identity().trim(),
-            &w.get_f_password(),
-            &w.get_f_eap(),
-            &w.get_f_phase2(),
-            &ca,
-            w.get_f_domain().trim(),
-            w.get_f_anon().trim(),
-            hidden,
-        );
+        let (ca, eap, phase2) = enterprise_basics(ui);
+        let picked = w.get_f_sec();
+        let extra = enterprise_extra(ui, if picked == "wpa-eap-suite-b-192" { "wpa-eap-suite-b-192" } else { "wpa-eap" }, None);
+        n.join_enterprise(d, target.trim(), w.get_f_identity().trim(), &w.get_f_password(), &eap, &phase2, &ca, w.get_f_domain().trim(), w.get_f_anon().trim(), hidden, extra);
     });
     on!(on_toggle_all, [], |n, _d, _ui| n.show_all = !n.show_all);
     on!(on_toggle_hidden, [], |n, _d, ui| {
@@ -738,9 +727,40 @@ fn wire_wifi(ui: &AppWindow, st: &Rc<RefCell<State>>) {
         net::reset_form(ui);
         n.hidden_open = !n.hidden_open;
     });
-    on!(on_join_hidden, [], |n, d, ui| {
+    // A new network (or a hidden one): the security picked, or the one
+    // worked out, and what it asks for.
+    on!(on_connect_new, [target: SharedString, found_key: SharedString, hidden: bool], |n, d, ui| {
         let w = ui.global::<Wifi>();
-        n.join_hidden(d, w.get_h_name().trim(), &w.get_h_kind(), &w.get_f_password());
+        let picked = w.get_f_sec().to_string();
+        let key = if picked == "auto" { found_key.to_string() } else { picked.clone() };
+        let form = if picked == "auto" {
+            if hidden { "password" } else { net::form_of(&key) }
+        } else {
+            net::form_of(&picked)
+        };
+        // Hidden and Automatic: NetworkManager takes a password as WPA2/3.
+        let form = if hidden && picked == "auto" && w.get_f_password().is_empty() { "open" } else { form };
+        let general = net::general(ui, hidden);
+        if form == "enterprise" {
+            let extra = enterprise_extra(ui, &key, Some(general));
+            let (ca, eap, phase2) = enterprise_basics(ui);
+            n.join_enterprise(d, target.trim(), w.get_f_identity().trim(), &w.get_f_password(), &eap, &phase2, &ca, w.get_f_domain().trim(), w.get_f_anon().trim(), hidden, extra);
+            return;
+        }
+        // Automatic leaves the kind to NetworkManager, as before; picked by
+        // hand, it's asked for outright.
+        let key = if picked == "auto" { "" } else { picked.as_str() };
+        let secret = if form == "open" { String::new() } else { w.get_f_password().to_string() };
+        n.join_new(d, target.trim(), key, &secret, &w.get_f_wep_type(), hidden, general);
+    });
+    on!(on_edit_settings, [ssid: SharedString], |n, _d, ui| {
+        if n.prefill_general(ui, &ssid) {
+            n.edit_general = true;
+        }
+    });
+    on!(on_save_settings, [ssid: SharedString], |n, d, ui| {
+        let g = net::general(ui, false);
+        n.save_general(d, &ssid, g);
     });
     on!(on_toggle_saved, [], |n, _d, _ui| n.show_saved = !n.show_saved);
     on!(on_forget_uuid, [uuid: SharedString], |n, d, _ui| n.forget(d, &uuid));
@@ -749,15 +769,37 @@ fn wire_wifi(ui: &AppWindow, st: &Rc<RefCell<State>>) {
     });
     {
         let weak = ui.as_weak();
-        w.on_pick_ca(move || {
+        w.on_pick_file(move |which| {
             let weak = weak.clone();
+            let which = which.to_string();
+            let (title, filters): (&'static str, &'static [(&'static str, &'static [&'static str])]) = match which.as_str() {
+                "cert" => ("Your certificate", &[("Certificates", &["*.pem", "*.crt", "*.cer", "*.der", "*.p12", "*.pfx"]), ("All files", &["*"])]),
+                "key" => ("Private key", &[("Keys", &["*.pem", "*.key", "*.der", "*.p12", "*.pfx"]), ("All files", &["*"])]),
+                "pac" => ("PAC file", &[("PAC files", &["*.pac"]), ("All files", &["*"])]),
+                _ => ("CA certificate", &[("Certificates", &["*.pem", "*.crt", "*.cer", "*.der"]), ("All files", &["*"])]),
+            };
             kit::spawn(
-                || kit::portal::open_file("CA certificate", &[("Certificates", &["*.pem", "*.crt", "*.cer", "*.der"]), ("All files", &["*"])]),
+                move || kit::portal::open_file(title, filters),
                 move |f| {
                     if let (Some(ui), Some(f)) = (weak.upgrade(), f) {
                         let w = ui.global::<Wifi>();
-                        w.set_f_ca_file(f.display().to_string().into());
-                        w.set_f_ca("file".into());
+                        let path: SharedString = f.display().to_string().into();
+                        match which.as_str() {
+                            "cert" => {
+                                // A .p12 holds the key as well.
+                                let p12 = path.ends_with(".p12") || path.ends_with(".pfx");
+                                if p12 && w.get_f_private_key().is_empty() {
+                                    w.set_f_private_key(path.clone());
+                                }
+                                w.set_f_client_cert(path);
+                            }
+                            "key" => w.set_f_private_key(path),
+                            "pac" => w.set_f_pac_file(path),
+                            _ => {
+                                w.set_f_ca_file(path);
+                                w.set_f_ca("file".into());
+                            }
+                        }
                     }
                 },
             );
@@ -908,4 +950,35 @@ fn wire_sound(ui: &AppWindow, st: &Rc<RefCell<State>>) {
             None => m.last_error = "No mixer app is installed (pavucontrol or pwvucontrol).".into(),
         }
     });
+}
+
+/// The enterprise form's server check, method and inner method.
+fn enterprise_basics(ui: &AppWindow) -> (String, String, String) {
+    let w = ui.global::<Wifi>();
+    let ca = if w.get_f_ca() == "file" {
+        let f = w.get_f_ca_file();
+        if f.is_empty() { "none".to_string() } else { f.to_string() }
+    } else {
+        w.get_f_ca().to_string()
+    };
+    (ca, w.get_f_eap().to_string(), w.get_f_phase2().to_string())
+}
+
+/// The rest of the enterprise form: certificates, PEAP version, FAST, the
+/// key management, and (for a new network) the general settings.
+fn enterprise_extra(ui: &AppWindow, key: &str, general: Option<serde_json::Value>) -> serde_json::Value {
+    let w = ui.global::<Wifi>();
+    let mut x = serde_json::json!({
+        "keyMgmt": if key == "wpa-eap-suite-b-192" { "wpa-eap-suite-b-192" } else { "wpa-eap" },
+        "clientCert": w.get_f_client_cert().as_str(),
+        "privateKey": w.get_f_private_key().as_str(),
+        "keySecret": w.get_f_key_pass().as_str(),
+        "peapVer": w.get_f_peap_ver().as_str(),
+        "pacFile": w.get_f_pac_file().as_str(),
+        "fastProv": w.get_f_fast_prov().as_str(),
+    });
+    if let Some(g) = general {
+        x["general"] = g;
+    }
+    x
 }
