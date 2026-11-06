@@ -1,0 +1,201 @@
+// AppearancePreview.qml: the top of Settings → Appearance, the shell in
+// miniature, drawn from the settings below it, so every change shows here
+// as it is made — the theme, the accent, how much of the desktop comes
+// through the surfaces, and how round everything is.
+//
+// A desktop with colour in it, so translucency has something to show; a
+// bar along the top, a window, a panel with the accent seam and a switch
+// in it, and the dock.
+
+import { Theme } from "@kit";
+
+// What the preview needs that kit's Theme doesn't carry (src/main.rs).
+export global Look {
+    // Translucency, 0–1.
+    in property <float> t: 0.5;
+    in property <length> bar-h: 40px;
+}
+
+export component AppearancePreview inherits Rectangle {
+    // Everything is drawn at this fraction of its real size.
+    property <float> k: 0.42;
+    property <float> panel-a: 1 - Look.t * (Theme.dark ? 0.56 : 0.44);
+    property <float> sheet-a: 1 - Look.t * (Theme.dark ? 0.24 : 0.20);
+    property <color> panel: Theme.dark ? rgba(29, 27, 26, root.panel-a) : rgba(248, 247, 247, root.panel-a);
+    property <color> sheet: Theme.dark ? rgba(35, 33, 32, root.sheet-a) : rgba(250, 249, 249, root.sheet-a);
+    property <color> seam: Theme.accent.with-alpha(Theme.dark ? 0.24 : 0.18);
+    property <length> bar-h: round(Look.bar-h / 1px * root.k) * 1px;
+
+    height: 200px;
+    border-radius: Theme.r;
+    clip: true;
+    background: Theme.ground;
+
+    // ── the desktop ───────────────────────────────────────────────────
+    Rectangle {
+        background: @linear-gradient(90deg, Theme.ground.mix(Theme.accent, 0.70), Theme.ground.mix(#4d73f2, Theme.dark ? 0.78 : 0.84));
+    }
+    Rectangle {
+        x: parent.width * 0.52;
+        y: parent.height * 0.18;
+        width: parent.width * 0.42;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.accent.with-alpha(0.55);
+    }
+    Rectangle {
+        x: parent.width * 0.04;
+        y: parent.height * 0.52;
+        width: parent.width * 0.30;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: rgba(89, 140, 255, Theme.dark ? 0.35 : 0.28);
+    }
+
+    // ── the bar ───────────────────────────────────────────────────────
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: root.bar-h;
+        background: root.panel;
+        HorizontalLayout {
+            x: 10px;
+            height: parent.height;
+            alignment: start;
+            spacing: 4px;
+            VerticalLayout { alignment: center; Rectangle { width: 9px; height: 9px; border-radius: 4.5px; background: Theme.accent; } }
+            for i in 3: VerticalLayout { alignment: center; Rectangle { width: 5px; height: 5px; border-radius: 2.5px; background: Theme.ink3; } }
+            Rectangle { width: 8px; }
+            VerticalLayout { alignment: center; Rectangle { width: 40px; height: 5px; border-radius: 2.5px; background: Theme.ink; } }
+        }
+        HorizontalLayout {
+            x: parent.width - self.width - 10px;
+            width: self.preferred-width;
+            height: parent.height;
+            spacing: 6px;
+            for i in 3: VerticalLayout { alignment: center; Rectangle { width: 12px; height: 5px; border-radius: 2.5px; background: Theme.ink2; } }
+            VerticalLayout { alignment: center; Rectangle { width: 22px; height: 5px; border-radius: 2.5px; background: Theme.ink; } }
+        }
+    }
+
+    // ── a window ──────────────────────────────────────────────────────
+    win := Rectangle {
+        x: parent.width * 0.06;
+        y: root.bar-h + 12px;
+        width: parent.width * 0.50;
+        height: parent.height - root.bar-h - 52px;
+        border-radius: max(0px, Theme.r * root.k * 1.4);
+        background: root.sheet;
+        border-width: 1px;
+        border-color: Theme.edge;
+        clip: true;
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 18px;
+            Rectangle { x: 8px; y: 5px; width: 3px; height: 8px; border-radius: 1.5px; background: Theme.accent; }
+            Rectangle { x: 16px; y: 7px; width: 34px; height: 4px; border-radius: 2px; background: Theme.ink; }
+            for i in 3: Rectangle {
+                x: parent.width - 8px - 5px - (2 - i) * 10px;
+                y: 6.5px;
+                width: 5px;
+                height: 5px;
+                border-radius: 1px;
+                background: Theme.ink3;
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.rule; }
+        }
+        for w[i] in [0.8, 0.55, 0.7, 0.4, 0.62]: Rectangle {
+            x: 10px;
+            y: 26px + i * 10px;
+            width: (win.width - 20px) * w;
+            height: 4px;
+            border-radius: 2px;
+            background: i == 0 ? Theme.ink : Theme.ink3;
+            opacity: i == 0 ? 1 : 0.7;
+        }
+        // A selected row, in the accent.
+        Rectangle {
+            x: 8px;
+            y: win.height - 26px;
+            width: win.width - 16px;
+            height: 16px;
+            border-radius: max(0px, Theme.r-sm * root.k * 1.2);
+            background: Theme.accent.with-alpha(0.18);
+            Rectangle { x: 6px; y: 6px; width: 40px; height: 4px; border-radius: 2px; background: Theme.accent; }
+        }
+    }
+
+    // ── a panel, as the control center drops one ──────────────────────
+    pan := Rectangle {
+        width: parent.width * 0.30;
+        x: parent.width - self.width - parent.width * 0.05;
+        y: root.bar-h + 8px;
+        height: 96px;
+        border-radius: max(0px, Theme.r * root.k * 1.3);
+        background: root.panel;
+        border-width: 1px;
+        border-color: Theme.edge;
+        clip: true;
+        // The seam every panel carries.
+        Rectangle { x: 0; y: 0; width: 18px; height: 2px; background: Theme.accent; }
+        Rectangle { x: 18px; y: 0; width: parent.width - 18px; height: 2px; background: root.seam; }
+        for i in 4: Rectangle {
+            width: (pan.width - 22px) / 2;
+            height: 22px;
+            x: 8px + mod(i, 2) * (self.width + 6px);
+            y: 12px + floor(i / 2) * 28px;
+            border-radius: max(0px, Theme.r-sm * root.k * 1.2);
+            background: i == 0 ? Theme.accent : Theme.hover;
+            Rectangle { x: 6px; y: 9px; width: 14px; height: 4px; border-radius: 2px; background: i == 0 ? Theme.ink-on-accent : Theme.ink2; }
+        }
+        // A slider.
+        Rectangle {
+            x: 8px;
+            y: pan.height - 18px;
+            width: pan.width - 16px;
+            height: 7px;
+            border-radius: 3.5px;
+            background: Theme.hover;
+            Rectangle { x: 0; width: parent.width * 0.62; height: parent.height; border-radius: 3.5px; background: Theme.accent; }
+        }
+    }
+
+    // ── the dock ──────────────────────────────────────────────────────
+    Rectangle {
+        width: 7 * 18px + 6 * 5px + 14px;
+        height: 28px;
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 8px;
+        border-radius: max(0px, Theme.r * root.k * 1.2);
+        background: root.panel;
+        border-width: 1px;
+        border-color: Theme.edge;
+        for i in 7: Rectangle {
+            x: 7px + i * 23px;
+            y: 5px;
+            width: 18px;
+            height: 18px;
+            border-radius: max(0px, Theme.r-sm * root.k);
+            background: i == 2 ? Theme.sel : Theme.hover;
+            Rectangle {
+                x: 5px;
+                y: 5px;
+                width: 8px;
+                height: 8px;
+                border-radius: 2px;
+                background: i == 2 ? Theme.accent : Theme.ink2;
+                opacity: i == 2 ? 1 : 0.8;
+            }
+        }
+    }
+
+    // The edge, over everything.
+    Rectangle {
+        border-radius: parent.border-radius;
+        border-width: 1px;
+        border-color: Theme.rule;
+    }
+}

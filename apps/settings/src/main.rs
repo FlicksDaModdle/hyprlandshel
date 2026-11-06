@@ -113,6 +113,10 @@ fn show(ui: &AppWindow, st: &mut State) {
     g.set_shorts(ModelRc::new(VecModel::from(specs.iter().map(|r| SharedString::from(short(&r.row.s))).collect::<Vec<_>>())));
     g.set_rows(ModelRc::new(VecModel::from(specs.iter().map(|r| r.row.clone()).collect::<Vec<_>>())));
     st.specs = specs;
+    // The Appearance preview's own two numbers (kit's Theme has the rest).
+    let look = ui.global::<Look>();
+    look.set_t((st.c.p.f("translucency").clamp(0.0, 100.0) / 100.0) as f32);
+    look.set_bar_h(st.c.p.f("barHeight") as f32);
     // The live panels: what they show, kept up only while they're up.
     let (on_net, on_bt, on_snd) = (pane == "Network", pane == "Bluetooth", pane == "Sound");
     if on_net || on_bt || on_snd || st.daemon.is_some() {
