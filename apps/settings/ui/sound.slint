@@ -4,11 +4,24 @@
 // from src/sound.rs.
 
 import { Theme, Icon, Switch, Slider } from "@kit";
-import { Segmented, NetButton, NetField, Caption, Line, Card, Link } from "common.slint";
+import { Segmented, NetButton, NetField, Caption, Line, Card, Link, FillBar, CenterBar } from "common.slint";
 
 export struct SndDev { name: string, label: string, sub: string, glyph: string, in-use: bool, picked: bool, muted: bool, level: float, pct: int, loud: bool, dim: bool }
 export struct SndOpt { value: string, label: string }
-export struct SndApp { index: int, playing: bool, name: string, media: string, muted: bool, level: float, pct: int, target: int }
+export struct SndApp {
+    index: int, playing: bool, name: string, media: string, muted: bool, level: float, pct: int, target: int,
+    // Its glyph, the device it's on ("Speakers  ▾"), whether there's a
+    // choice of device, its balance, and its key for the row opened.
+    glyph: string, device: string, multi: bool, has-balance: bool, balance: float, balance-text: string, key: string,
+}
+export struct SndChan { name: string, level: float, pct: int }
+// The inspected device's level, balance, fade and channels.
+export struct SndMix {
+    level: float, pct: int, loud: bool, muted: bool, ceiling: float,
+    has-balance: bool, balance: float, balance-text: string,
+    has-fade: bool, fade: float, fade-text: string,
+    channels: [SndChan],
+}
 
 export global Snd {
     in property <bool> up: true;
@@ -58,6 +71,12 @@ export global Snd {
     in property <[SndApp]> recording;
     in property <[string]> sink-names;
     in property <[string]> source-names;
+    in property <[string]> sink-glyphs;
+    in property <[string]> source-glyphs;
+    in property <SndMix> io-mix;
+    in property <SndMix> ii-mix;
+    // The app row opened: "<key>:route" or "<key>:more".
+    in-out property <string> open-key;
     in property <int> step;
     in property <int> limit;
     in property <bool> feedback;
@@ -84,6 +103,10 @@ export global Snd {
     callback app-volume(int, bool, float);
     callback app-mute(int, bool, bool);
     callback app-move(int, bool, int);
+    callback app-balance(int, bool, float);
+    callback balance(string, float);
+    callback fade(string, float);
+    callback channel(string, int, float);
     callback set-step(int);
     callback set-limit(int);
     callback set-feedback(bool);
@@ -258,6 +281,8 @@ component Inspector inherits Card {
     property <int> port: root.out ? Snd.io-port : Snd.ii-port;
     property <int> profile: root.out ? Snd.io-profile : Snd.ii-profile;
     property <float> delay: root.out ? Snd.io-delay : Snd.ii-delay;
+    property <SndMix> mix: root.out ? Snd.io-mix : Snd.ii-mix;
+    property <bool> channels-open;
     in-out property <string> nick;
     height: col.preferred-height + 32px;
     col := VerticalLayout {
@@ -275,6 +300,85 @@ component Inspector inherits Card {
                 Text { text: (root.out ? Snd.io-in-use : Snd.ii-in-use) ? "In use" : "Not in use"; font-size: Theme.fs(12); color: Theme.ink3; }
             }
             if !(root.out ? Snd.io-in-use : Snd.ii-in-use): VerticalLayout { alignment: center; NetButton { label: "Use this"; primary: true; clicked => { Snd.use(root.name); } } }
+            VerticalLayout { alignment: center; NetButton { label: root.mix.muted ? "Unmute" : "Mute"; primary: root.mix.muted; clicked => { Snd.mute(root.name, !root.mix.muted); } } }
+        }
+        // ── level ──
+        InspectRow {
+            label: root.out ? "Volume" : "Input level";
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: mta.has-hover ? Theme.ink3.with-alpha(0.25) : transparent;
+                    Icon { x: 5px; y: 5px; name: "minus"; size: 12px; ink: Theme.ink2; }
+                    mta := TouchArea { mouse-cursor: pointer; clicked => { Snd.volume(root.name, root.mix.pct / 100 - Snd.step / 100); } }
+                }
+            }
+            FillBar {
+                horizontal-stretch: 1;
+                value: root.mix.level;
+                fill: root.mix.muted ? Theme.ink3 : Theme.accent;
+                mark: root.mix.ceiling > 1 ? 1 / root.mix.ceiling : -1;
+                released(v) => { Snd.volume(root.name, v * root.mix.ceiling); }
+            }
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: pta.has-hover ? Theme.ink3.with-alpha(0.25) : transparent;
+                    Icon { x: 5px; y: 5px; name: "plus"; size: 12px; ink: Theme.ink2; }
+                    pta := TouchArea { mouse-cursor: pointer; clicked => { Snd.volume(root.name, root.mix.pct / 100 + Snd.step / 100); } }
+                }
+            }
+            Text { width: 46px; horizontal-alignment: right; vertical-alignment: center; text: root.mix.pct + "%"; font-size: Theme.fs(12); font-weight: 600; color: root.mix.loud ? #d93a2b : Theme.ink; }
+        }
+        // ── balance and fade ──
+        if root.mix.has-balance: InspectRow {
+            label: "Balance";
+            Text { vertical-alignment: center; text: "L"; font-size: Theme.fs(11); color: Theme.ink3; }
+            CenterBar { horizontal-stretch: 1; value: root.mix.balance; moved(v) => { Snd.balance(root.name, v); } }
+            Text { vertical-alignment: center; text: "R"; font-size: Theme.fs(11); color: Theme.ink3; }
+            Text { width: 46px; horizontal-alignment: right; vertical-alignment: center; text: root.mix.balance-text; font-size: Theme.fs(12); color: Theme.ink; }
+        }
+        if root.mix.has-fade: InspectRow {
+            label: "Fade";
+            Text { vertical-alignment: center; text: "Front"; font-size: Theme.fs(11); color: Theme.ink3; }
+            CenterBar { horizontal-stretch: 1; value: root.mix.fade; moved(v) => { Snd.fade(root.name, v); } }
+            Text { vertical-alignment: center; text: "Rear"; font-size: Theme.fs(11); color: Theme.ink3; }
+            Text { width: 46px; horizontal-alignment: right; vertical-alignment: center; text: root.mix.fade-text; font-size: Theme.fs(12); color: Theme.ink; }
+        }
+        // ── each channel ──
+        if root.mix.channels.length > 1: InspectRow {
+            label: "Channels";
+            Text {
+                vertical-alignment: center;
+                text: root.mix.channels.length + " — " + (root.channels-open ? "hide" : "set each one");
+                font-size: Theme.fs(11);
+                color: Theme.accent;
+                TouchArea { mouse-cursor: pointer; clicked => { root.channels-open = !root.channels-open; } }
+            }
+        }
+        if root.channels-open && root.mix.channels.length > 1: VerticalLayout {
+            spacing: 6px;
+            for c[i] in root.mix.channels: HorizontalLayout {
+                padding-left: 108px;
+                spacing: 6px;
+                height: 20px;
+                Text { width: 90px; vertical-alignment: center; overflow: elide; text: c.name; font-size: Theme.fs(11.5); color: Theme.ink2; }
+                FillBar {
+                    horizontal-stretch: 1;
+                    trough: 8px;
+                    height: 20px;
+                    value: c.level;
+                    mark: root.mix.ceiling > 1 ? 1 / root.mix.ceiling : -1;
+                    released(v) => { Snd.channel(root.name, i, v * root.mix.ceiling); }
+                }
+                Text { width: 46px; horizontal-alignment: right; vertical-alignment: center; text: c.pct + "%"; font-size: Theme.fs(11.5); color: Theme.ink2; }
+            }
         }
         if root.out: InspectRow {
             label: "Test";
@@ -358,73 +462,103 @@ component Inspector inherits Card {
 // SoundApps.qml: an app with its own level and device.
 component AppRow inherits Rectangle {
     in property <SndApp> a;
-    height: 56px;
+    property <bool> route-open: Snd.open-key == root.a.key + ":route";
+    property <bool> more-open: Snd.open-key == root.a.key + ":more";
+    property <[string]> names: root.a.playing ? Snd.sink-names : Snd.source-names;
+    property <[string]> glyphs: root.a.playing ? Snd.sink-glyphs : Snd.source-glyphs;
+    height: col.preferred-height + 12px;
     border-radius: Theme.r-sm;
-    background: ah.has-hover ? Theme.hover : transparent;
+    background: ah.has-hover || root.route-open || root.more-open ? Theme.hover : transparent;
     ah := TouchArea { }
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        spacing: 12px;
-        VerticalLayout {
-            alignment: center;
-            Round {
-                glyph: root.a.muted ? (root.a.playing ? "volumeX" : "micOff") : (root.a.playing ? "volume" : "mic");
-                lit: !root.a.muted;
-                clicked => { Snd.app-mute(root.a.index, root.a.playing, !root.a.muted); }
-            }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 1px;
-            Text { text: root.a.name; overflow: elide; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
-            if root.a.media != "": Text { text: root.a.media; overflow: elide; font-size: Theme.fs(11.5); color: Theme.ink3; }
-        }
-        VerticalLayout {
-            alignment: center;
-            Slider {
-                width: 160px;
-                minimum: 0;
-                maximum: 1;
-                step: 0.01;
-                value: root.a.level;
-                fill: root.a.muted ? Theme.ink3 : Theme.accent;
-                released(v) => { Snd.app-volume(root.a.index, root.a.playing, v); }
-            }
-        }
-        Text { width: 38px; horizontal-alignment: right; vertical-alignment: center; text: root.a.pct + "%"; font-size: Theme.fs(12); color: Theme.ink2; }
-        VerticalLayout {
-            alignment: center;
-            NetButton {
-                label: "···";
-                clicked => { pop.show(); }
-            }
-        }
-    }
-    pop := PopupWindow {
-        x: root.width - 240px;
-        y: 50px;
-        width: 230px;
-        Rectangle {
-            height: opts.preferred-height;
-            border-radius: Theme.r-sm;
-            background: Theme.dialog;
-            border-width: 1px;
-            border-color: Theme.edge;
-            opts := VerticalLayout {
-                padding: 4px;
-                spacing: 1px;
-                Text { x: 9px; text: root.a.playing ? "Play through" : "Record from"; font-size: Theme.fs(11); color: Theme.ink3; }
-                for d[i] in root.a.playing ? Snd.sink-names : Snd.source-names: Rectangle {
-                    height: 29px;
-                    border-radius: Theme.r-sm;
-                    background: oh.has-hover ? Theme.hover : transparent;
-                    Text { x: 9px; width: parent.width - 36px; vertical-alignment: center; overflow: elide; text: d; font-size: Theme.fs(12); color: Theme.ink; }
-                    if i == root.a.target: Icon { x: parent.width - 25px; y: 6px; name: "check"; size: 16px; ink: Theme.accent; }
-                    oh := TouchArea { mouse-cursor: pointer; clicked => { Snd.app-move(root.a.index, root.a.playing, i); } }
+    col := VerticalLayout {
+        x: 12px;
+        y: 6px;
+        width: parent.width - 24px;
+        height: self.preferred-height;
+        spacing: 6px;
+        HorizontalLayout {
+            height: 36px;
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 34px;
+                    height: 34px;
+                    border-radius: 17px;
+                    background: root.a.muted ? Theme.ink3.with-alpha(0.25) : root.a.playing ? Theme.sel : Theme.accent.with-alpha(0.18);
+                    Icon {
+                        x: 9px;
+                        y: 9px;
+                        name: root.a.muted ? (root.a.playing ? "volumeX" : "micOff") : root.a.glyph;
+                        size: 16px;
+                        ink: root.a.playing ? Theme.ink2 : Theme.accent;
+                        acc: Theme.accent;
+                    }
+                    TouchArea { mouse-cursor: pointer; clicked => { Snd.app-mute(root.a.index, root.a.playing, !root.a.muted); } }
                 }
             }
+            VerticalLayout {
+                width: min(200px, root.width * 0.3);
+                alignment: center;
+                spacing: 1px;
+                Text { text: root.a.name; overflow: elide; font-size: Theme.fs(13); font-weight: 500; color: Theme.ink; }
+                if root.a.media != "": Text { text: root.a.media; overflow: elide; font-size: Theme.fs(11.5); color: Theme.ink3; }
+            }
+            FillBar {
+                horizontal-stretch: 1;
+                trough: 12px;
+                y: (36px - self.height) / 2;
+                value: root.a.level;
+                fill: root.a.muted ? Theme.ink3 : Theme.accent;
+                released(v) => { Snd.app-volume(root.a.index, root.a.playing, v * (root.a.playing ? Snd.limit / 100 : 1.5)); }
+            }
+            Text { width: 44px; horizontal-alignment: right; vertical-alignment: center; text: root.a.muted ? "Muted" : root.a.pct + "%"; font-size: Theme.fs(12); color: Theme.ink2; }
+            if root.a.multi: VerticalLayout {
+                alignment: center;
+                NetButton { label: root.a.device; clicked => { Snd.open-key = root.route-open ? "" : root.a.key + ":route"; } }
+            }
+            if root.a.has-balance: VerticalLayout {
+                alignment: center;
+                NetButton { label: "···"; clicked => { Snd.open-key = root.more-open ? "" : root.a.key + ":more"; } }
+            }
+        }
+        // Where it plays, or what it records from.
+        if root.route-open: VerticalLayout {
+            padding-left: 46px;
+            spacing: 2px;
+            for d[i] in root.names: Rectangle {
+                height: 30px;
+                border-radius: Theme.r-sm;
+                background: i == root.a.target ? Theme.sel : dh.has-hover ? Theme.ink3.with-alpha(0.25) : transparent;
+                Icon { x: 8px; y: 8px; name: i < root.glyphs.length ? root.glyphs[i] : "speaker"; size: 14px; ink: Theme.ink2; }
+                Text {
+                    x: 30px;
+                    width: parent.width - 60px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    text: d;
+                    font-size: Theme.fs(12);
+                    font-weight: i == root.a.target ? 600 : 400;
+                    color: Theme.ink;
+                }
+                if i == root.a.target: Icon { x: parent.width - 22px; y: 8px; name: "check"; size: 14px; ink: Theme.accent; }
+                dh := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        if (i != root.a.target) { Snd.app-move(root.a.index, root.a.playing, i); }
+                        Snd.open-key = "";
+                    }
+                }
+            }
+        }
+        // Its own balance.
+        if root.more-open: HorizontalLayout {
+            height: 24px;
+            padding-left: 46px;
+            spacing: 0px;
+            Text { width: 70px; vertical-alignment: center; text: "Balance"; font-size: Theme.fs(12); color: Theme.ink2; }
+            CenterBar { horizontal-stretch: 1; value: root.a.balance; moved(v) => { Snd.app-balance(root.a.index, root.a.playing, v); } }
+            Text { width: 60px; horizontal-alignment: right; vertical-alignment: center; text: root.a.balance-text; font-size: Theme.fs(12); color: Theme.ink; }
         }
     }
 }
@@ -505,7 +639,7 @@ export component SoundPanel inherits VerticalLayout {
     if Snd.tab == 2: VerticalLayout {
         spacing: 14px;
         Caption { text: "PLAYING"; }
-        if Snd.playing.length == 0: Line { text: "Nothing is playing. Apps show up here while they make sound, each with its own level, and the device it plays through."; }
+        if Snd.playing.length == 0: Line { text: "Nothing is playing. Apps show up here while they make sound, each with its own level, balance and output — remembered for next time."; }
         VerticalLayout { spacing: 2px; for a in Snd.playing: AppRow { a: a; } }
         Caption { text: "USING A MICROPHONE"; }
         if Snd.recording.length == 0: Line { text: "No app is listening to a microphone right now."; }

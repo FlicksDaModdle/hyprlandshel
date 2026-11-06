@@ -1006,6 +1006,10 @@ fn wire_sound(ui: &AppWindow, st: &Rc<RefCell<State>>) {
     on!(on_app_volume, [i: i32, playing: bool, v: f32], |m, p| m.stream_volume(p, i, playing, v as f64));
     on!(on_app_mute, [i: i32, playing: bool, v: bool], |m, _p| m.stream_mute(i, playing, v));
     on!(on_app_move, [i: i32, playing: bool, to: i32], |m, _p| m.stream_move(i, playing, to));
+    on!(on_app_balance, [i: i32, playing: bool, b: f32], |m, p| m.stream_balance(p, i, playing, b as f64));
+    on!(on_balance, [n: SharedString, b: f32], |m, p| m.set_balance(p, &n, b as f64));
+    on!(on_fade, [n: SharedString, b: f32], |m, p| m.set_fade(p, &n, b as f64));
+    on!(on_channel, [n: SharedString, i: i32, v: f32], |m, p| m.set_channel(p, &n, i.max(0) as usize, v as f64));
     on!(on_set_step, [v: i32], |m, p| put(m, p, "volumeStep", v.into()));
     on!(on_set_limit, [v: i32], |m, p| {
         put(m, p, "volumeMax", v.into());

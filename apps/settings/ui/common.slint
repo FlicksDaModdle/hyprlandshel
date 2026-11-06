@@ -262,3 +262,80 @@ export component PillButton inherits Rectangle {
     }
     pta := TouchArea { enabled: root.active; mouse-cursor: root.active ? pointer : default; clicked => { root.clicked(); } }
 }
+
+// FillSlider.qml: a trough filled from the left, 0–1. `mark` draws a tick
+// (100 % on a scale that goes past it).
+export component FillBar inherits Rectangle {
+    in property <float> value;
+    in property <length> trough: 14px;
+    in property <color> fill: Theme.accent;
+    in property <float> mark: -1;
+    callback moved(float);
+    callback released(float);
+    height: 22px;
+    property <float> v: max(0, min(1, root.value));
+    Rectangle {
+        y: (parent.height - root.trough) / 2;
+        height: root.trough;
+        border-radius: Theme.r-sm;
+        background: Theme.ground;
+        border-width: 1px;
+        border-color: Theme.rule;
+        clip: true;
+        Rectangle { x: 0; width: root.v * parent.width; height: parent.height; background: root.fill; }
+    }
+    if root.mark > 0 && root.mark < 1: Rectangle {
+        x: root.width * root.mark - 1px;
+        y: (parent.height - root.trough) / 2 - 3px;
+        width: 2px;
+        height: root.trough + 6px;
+        background: Theme.ink3;
+        opacity: 0.6;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { root.moved(max(0, min(1, self.mouse-x / root.width))); }
+            if (e.kind == PointerEventKind.up) { root.released(max(0, min(1, self.mouse-x / root.width))); }
+        }
+        moved => { if (self.pressed) { root.moved(max(0, min(1, self.mouse-x / root.width))); } }
+    }
+}
+
+// SoundCenterSlider.qml: rest point in the middle (balance, fade); -1 to
+// 1, the fill growing out from the centre. A double-click centres it.
+export component CenterBar inherits Rectangle {
+    in property <float> value;
+    callback moved(float);
+    height: 22px;
+    property <float> v: max(-1, min(1, root.value));
+    Rectangle {
+        y: (parent.height - 14px) / 2;
+        height: 14px;
+        border-radius: Theme.r-sm;
+        background: Theme.ground;
+        clip: true;
+        Rectangle {
+            x: root.v < 0 ? parent.width / 2 + root.v * parent.width / 2 : parent.width / 2;
+            width: abs(root.v) * parent.width / 2;
+            height: parent.height;
+            background: Theme.accent;
+        }
+    }
+    Rectangle {
+        y: (parent.height - 14px) / 2;
+        height: 14px;
+        border-radius: Theme.r-sm;
+        border-width: 1px;
+        border-color: Theme.rule;
+    }
+    Rectangle { x: parent.width / 2 - 1px; y: (parent.height - 14px) / 2; width: 2px; height: 14px; background: Theme.ink3; }
+    TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { root.moved(max(-1, min(1, self.mouse-x / root.width * 2 - 1))); }
+        }
+        moved => { if (self.pressed) { root.moved(max(-1, min(1, self.mouse-x / root.width * 2 - 1))); } }
+        double-clicked => { root.moved(0); }
+    }
+}

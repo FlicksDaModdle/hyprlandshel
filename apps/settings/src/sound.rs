@@ -4,7 +4,7 @@
 
 use crate::daemon::Daemon;
 use crate::prefs::Prefs;
-use crate::{AppWindow, Snd, SndApp, SndDev, SndOpt};
+use crate::{AppWindow, Snd, SndApp, SndChan, SndDev, SndMix, SndOpt};
 use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
@@ -20,6 +20,9 @@ pub struct Node {
     pub active_port: String,
     pub props: Value,
     pub sink: bool,
+    /// Each channel's name ("front-left") and level, in order.
+    pub channels: Vec<String>,
+    pub volumes: Vec<f64>,
 }
 
 #[derive(Clone, Default)]
@@ -30,6 +33,171 @@ pub struct Stream {
     pub mute: bool,
     pub props: Value,
     pub playing: bool,
+    pub channels: Vec<String>,
+    pub volumes: Vec<f64>,
+}
+
+fn chans(v: &Value) -> (Vec<String>, Vec<f64>) {
+    (
+        v["channels"].as_array().into_iter().flatten().map(|c| c.as_str().unwrap_or("").to_string()).collect(),
+        v["volumes"].as_array().into_iter().flatten().map(|c| c.as_f64().unwrap_or(0.0)).collect(),
+    )
+}
+
+// ── balance, fade and each channel (Audio.qml's) ───────────────────────
+fn is_left(c: &str) -> bool {
+    matches!(c, "front-left" | "rear-left" | "side-left")
+}
+fn is_right(c: &str) -> bool {
+    matches!(c, "front-right" | "rear-right" | "side-right")
+}
+fn is_front(c: &str) -> bool {
+    matches!(c, "front-left" | "front-right" | "front-center")
+}
+fn is_rear(c: &str) -> bool {
+    matches!(c, "rear-left" | "rear-right" | "rear-center" | "side-left" | "side-right")
+}
+pub fn has_balance(ch: &[String]) -> bool {
+    ch.iter().any(|c| c == "front-left") && ch.iter().any(|c| c == "front-right")
+}
+pub fn has_fade(ch: &[String]) -> bool {
+    ch.iter().any(|c| is_rear(c)) && ch.iter().any(|c| is_front(c))
+}
+/// -1 (all left) to 1 (all right).
+pub fn balance(ch: &[String], v: &[f64]) -> f64 {
+    if !has_balance(ch) {
+        return 0.0;
+    }
+    let at = |n: &str| ch.iter().position(|c| c == n).and_then(|i| v.get(i)).copied().unwrap_or(0.0);
+    let (l, r) = (at("front-left"), at("front-right"));
+    let top = l.max(r);
+    if top <= 0.0001 {
+        0.0
+    } else if r >= l {
+        1.0 - l / top
+    } else {
+        -(1.0 - r / top)
+    }
+}
+/// -1 (all front) to 1 (all rear).
+pub fn fade(ch: &[String], v: &[f64]) -> f64 {
+    if !has_fade(ch) {
+        return 0.0;
+    }
+    let (mut f, mut r) = (0.0f64, 0.0f64);
+    for (c, x) in ch.iter().zip(v) {
+        if is_front(c) {
+            f = f.max(*x);
+        } else if is_rear(c) {
+            r = r.max(*x);
+        }
+    }
+    let top = f.max(r);
+    if top <= 0.0001 {
+        0.0
+    } else if r >= f {
+        1.0 - f / top
+    } else {
+        -(1.0 - r / top)
+    }
+}
+/// The levels for a balance, the loudest channel's level kept.
+pub fn with_balance(ch: &[String], v: &[f64], b: f64) -> Vec<f64> {
+    let b = if b.abs() < 0.03 { 0.0 } else { b.clamp(-1.0, 1.0) };
+    let level = v.iter().cloned().fold(0.0, f64::max);
+    ch.iter()
+        .map(|c| {
+            if is_left(c) {
+                level * if b > 0.0 { 1.0 - b } else { 1.0 }
+            } else if is_right(c) {
+                level * if b < 0.0 { 1.0 + b } else { 1.0 }
+            } else {
+                level
+            }
+        })
+        .collect()
+}
+pub fn with_fade(ch: &[String], v: &[f64], b: f64) -> Vec<f64> {
+    let b = if b.abs() < 0.03 { 0.0 } else { b.clamp(-1.0, 1.0) };
+    let level = v.iter().cloned().fold(0.0, f64::max);
+    ch.iter()
+        .map(|c| {
+            if is_front(c) {
+                level * if b > 0.0 { 1.0 - b } else { 1.0 }
+            } else if is_rear(c) {
+                level * if b < 0.0 { 1.0 + b } else { 1.0 }
+            } else {
+                level
+            }
+        })
+        .collect()
+}
+/// Audio.channelName.
+pub fn channel_name(c: &str) -> String {
+    match c {
+        "mono" => "Mono".into(),
+        "front-left" => "Front left".into(),
+        "front-right" => "Front right".into(),
+        "front-center" => "Centre".into(),
+        "lfe" => "Subwoofer".into(),
+        "rear-left" => "Rear left".into(),
+        "rear-right" => "Rear right".into(),
+        "rear-center" => "Rear centre".into(),
+        "side-left" => "Side left".into(),
+        "side-right" => "Side right".into(),
+        other => format!("Channel {other}"),
+    }
+}
+/// "Centre", or how far and which way.
+pub fn lean(b: f64, neg: &str, pos: &str) -> String {
+    if b.abs() < 0.01 {
+        "Centre".into()
+    } else {
+        format!("{} {}", (b.abs() * 100.0).round(), if b < 0.0 { neg } else { pos })
+    }
+}
+
+/// Apps.iconFor's hints: an app's glyph by what it's called.
+pub fn app_glyph(hint: &str) -> &'static str {
+    let h = hint.to_lowercase();
+    let any = |ks: &[&str]| ks.iter().any(|k| h.contains(k));
+    const HINTS: &[(&[&str], &str)] = &[
+        (&["hyprshell-rog"], "zap"),
+        (&["hyprshell-notes"], "stickyNote"),
+        (&["hyprshell-snapshots"], "rotateCw"),
+        (&["hyprshell-disks"], "drive"),
+        (&["hyprshell-keys"], "key"),
+        (&["hyprshell-docs"], "file"),
+        (&["hyprshell-music"], "music"),
+        (&["hyprshell-video"], "film"),
+        (&["hyprshell-recorder"], "mic"),
+        (&["hyprshell-chats"], "chat"),
+        (&["hyprshell-weather"], "cloudSun"),
+        (&["hyprshell-calendar"], "calendar"),
+        (&["hyprshell-fonts"], "font"),
+        (&["hyprshell-text"], "doc"),
+        (&["hyprshell-camera"], "camera"),
+        (&["hyprshell-software"], "package"),
+        (&["term", "foot", "kitty", "alacritty", "wezterm", "konsole", "tmux"], "terminal"),
+        (&["nautilus", "thunar", "dolphin", "nemo", "pcmanfm", "files", "ranger"], "folder"),
+        (&["firefox", "chrom", "brave", "epiphany", "zen", "browser", "webkit"], "globe"),
+        (&["code", "nvim", "neovide", "vim", "zed", "jetbrains", "emacs", "idea", "studio"], "code"),
+        (&["obsidian", "logseq", "notes", "texteditor", "gedit", "writer"], "stickyNote"),
+        (&["spotify", "music", "mpd", "ncmpcpp", "audacious", "amberol", "rhythmbox"], "music"),
+        (&["pavucontrol", "volume", "audio", "helvum", "easyeffects"], "sliders"),
+        (&["settings", "control", "config", "tweaks"], "settings"),
+        (&["image", "viewer", "loupe", "eog", "imv", "gwenview", "gimp", "inkscape"], "image"),
+        (&["video", "mpv", "vlc", "celluloid", "obs"], "monitor"),
+        (&["mail", "thunderbird", "evolution", "geary"], "mail"),
+        (&["discord", "telegram", "signal", "element", "slack", "whatsapp", "chat"], "chat"),
+        (&["steam", "game", "lutris", "heroic"], "gamepad"),
+        (&["bluetooth", "blueman"], "bluetooth"),
+        (&["network", "nm-", "wifi"], "wifi"),
+        (&["screenshot", "grim", "slurp", "capture", "flameshot"], "camera"),
+        (&["pkg", "package", "software", "discover", "store", "pamac"], "pkg"),
+        (&["monitor", "htop", "btop", "system", "resources", "task"], "cpu"),
+    ];
+    HINTS.iter().find(|(ks, _)| any(ks)).map(|x| x.1).unwrap_or("square")
 }
 
 #[derive(Default)]
@@ -67,6 +235,8 @@ fn node(v: &Value, sink: bool) -> Node {
         active_port: v["active_port"].as_str().unwrap_or("").into(),
         props: v["properties"].clone(),
         sink,
+        channels: chans(v).0,
+        volumes: chans(v).1,
     }
 }
 
@@ -133,6 +303,8 @@ impl Sound {
                 mute: v["mute"] == true,
                 props: v["properties"].clone(),
                 playing: true,
+                channels: chans(v).0,
+                volumes: chans(v).1,
             })
             .collect();
         streams.extend(ev["sourceOutputs"].as_array().into_iter().flatten().filter(|v| !monitor(&v["properties"])).map(|v| Stream {
@@ -142,6 +314,8 @@ impl Sound {
             mute: v["mute"] == true,
             props: v["properties"].clone(),
             playing: false,
+            channels: chans(v).0,
+            volumes: chans(v).1,
         }));
         self.streams = streams;
         self.cards = ev["cards"].as_array().cloned().unwrap_or_default();
@@ -289,7 +463,29 @@ impl Sound {
             .map(|x| format!("{}: {}", x.0, x.1))
             .collect::<Vec<_>>()
             .join("\n");
+            let ceiling = if out { max } else { 1.5 };
+            let mix = SndMix {
+                level: (n.volume / ceiling) as f32,
+                pct: (n.volume * 100.0).round() as i32,
+                loud: n.volume > 1.001,
+                muted: n.mute,
+                ceiling: ceiling as f32,
+                has_balance: has_balance(&n.channels),
+                balance: balance(&n.channels, &n.volumes) as f32,
+                balance_text: lean(balance(&n.channels, &n.volumes), "L", "R").into(),
+                has_fade: has_fade(&n.channels),
+                fade: fade(&n.channels, &n.volumes) as f32,
+                fade_text: lean(fade(&n.channels, &n.volumes), "F", "R").into(),
+                channels: ModelRc::new(VecModel::from(
+                    n.channels
+                        .iter()
+                        .zip(n.volumes.iter())
+                        .map(|(c, v)| SndChan { name: channel_name(c).into(), level: (v / ceiling) as f32, pct: (v * 100.0).round() as i32 })
+                        .collect::<Vec<_>>(),
+                )),
+            };
             if out {
+                s.set_io_mix(mix);
                 s.set_io_name(n.name.clone().into());
                 s.set_io_label(Self::display_name(p, n).into());
                 s.set_io_nick(nick.into());
@@ -302,6 +498,7 @@ impl Sound {
                 s.set_io_delay(latency as f32);
                 s.set_io_details(details.into());
             } else {
+                s.set_ii_mix(mix);
                 s.set_ii_name(n.name.clone().into());
                 s.set_ii_label(Self::display_name(p, n).into());
                 s.set_ii_nick(nick.into());
@@ -331,7 +528,17 @@ impl Sound {
             };
             let devs = if st.playing { &self.sinks } else { &self.sources };
             let target = devs.iter().position(|n| n.index == st.target).map(|i| i as i32).unwrap_or(-1);
+            let hint = pr["application.process.binary"].as_str().or(pr["application.icon-name"].as_str()).or(pr["application.name"].as_str()).unwrap_or("");
+            let device = devs.get(target.max(0) as usize).filter(|_| target >= 0).map(|n| Self::display_name(p, n)).unwrap_or_else(|| if st.playing { "Output".into() } else { "Input".into() });
+            let device = if device.chars().count() > 16 { format!("{}…", device.chars().take(15).collect::<String>()) } else { device };
             SndApp {
+                glyph: if st.playing { app_glyph(hint) } else { "mic" }.into(),
+                device: format!("{device}  ▾").into(),
+                multi: devs.len() > 1,
+                has_balance: has_balance(&st.channels),
+                balance: balance(&st.channels, &st.volumes) as f32,
+                balance_text: lean(balance(&st.channels, &st.volumes), "L", "R").into(),
+                key: format!("{}{}", if st.playing { "p" } else { "r" }, st.index).into(),
                 index: st.index as i32,
                 playing: st.playing,
                 name: name.into(),
@@ -349,6 +556,8 @@ impl Sound {
         s.set_recording(ModelRc::new(VecModel::from(recording)));
         s.set_sink_names(ModelRc::new(VecModel::from(self.sinks.iter().map(|n| SharedString::from(Self::display_name(p, n))).collect::<Vec<_>>())));
         s.set_source_names(ModelRc::new(VecModel::from(self.sources.iter().map(|n| SharedString::from(Self::display_name(p, n))).collect::<Vec<_>>())));
+        s.set_sink_glyphs(ModelRc::new(VecModel::from(self.sinks.iter().map(|n| SharedString::from(Self::glyph(n))).collect::<Vec<_>>())));
+        s.set_source_glyphs(ModelRc::new(VecModel::from(self.sources.iter().map(|n| SharedString::from(Self::glyph(n))).collect::<Vec<_>>())));
         // Options.
         s.set_step(p.i("volumeStep") as i32);
         s.set_limit(p.f("volumeMax").max(if p.b("volumeBoost") { 150.0 } else { 0.0 }) as i32);
@@ -375,6 +584,54 @@ impl Sound {
             }
         }
     }
+    /// Every channel's level at once (balance, fade, one channel moved).
+    pub fn set_levels(&mut self, p: &Prefs, name: &str, levels: Vec<f64>) {
+        let Some(n) = self.find(name).cloned() else { return };
+        let cap = if n.sink { Self::max_volume(p) } else { 1.5 };
+        let mut args: Vec<String> = vec![if n.sink { "set-sink-volume" } else { "set-source-volume" }.into(), n.name.clone()];
+        args.extend(levels.iter().map(|v| format!("{}%", (v.clamp(0.0, cap) * 100.0).round())));
+        pactl(&args);
+        for l in [&mut self.sinks, &mut self.sources] {
+            if let Some(x) = l.iter_mut().find(|x| x.name == name) {
+                x.volumes = levels.iter().map(|v| v.clamp(0.0, cap)).collect();
+                x.volume = x.volumes.iter().cloned().fold(0.0, f64::max);
+            }
+        }
+    }
+    pub fn set_balance(&mut self, p: &Prefs, name: &str, b: f64) {
+        let Some(n) = self.find(name).cloned() else { return };
+        if has_balance(&n.channels) {
+            self.set_levels(p, name, with_balance(&n.channels, &n.volumes, b));
+        }
+    }
+    pub fn set_fade(&mut self, p: &Prefs, name: &str, b: f64) {
+        let Some(n) = self.find(name).cloned() else { return };
+        if has_fade(&n.channels) {
+            self.set_levels(p, name, with_fade(&n.channels, &n.volumes, b));
+        }
+    }
+    pub fn set_channel(&mut self, p: &Prefs, name: &str, i: usize, v: f64) {
+        let Some(n) = self.find(name).cloned() else { return };
+        let mut levels = n.volumes.clone();
+        if let Some(x) = levels.get_mut(i) {
+            *x = v;
+            self.set_levels(p, name, levels);
+        }
+    }
+    /// An app's own balance.
+    pub fn stream_balance(&mut self, p: &Prefs, index: i32, playing: bool, b: f64) {
+        let Some(st) = self.streams.iter_mut().find(|s| s.index == index as i64 && s.playing == playing) else { return };
+        if !has_balance(&st.channels) {
+            return;
+        }
+        let cap = if playing { Self::max_volume(p) } else { 1.5 };
+        let levels = with_balance(&st.channels, &st.volumes, b);
+        let mut args: Vec<String> = vec![if playing { "set-sink-input-volume" } else { "set-source-output-volume" }.into(), index.to_string()];
+        args.extend(levels.iter().map(|v| format!("{}%", (v.clamp(0.0, cap) * 100.0).round())));
+        pactl(&args);
+        st.volumes = levels;
+    }
+
     pub fn set_mute(&mut self, name: &str, on: bool) {
         let Some(n) = self.find(name).cloned() else { return };
         pa(&[if n.sink { "set-sink-mute" } else { "set-source-mute" }, &n.name, if on { "1" } else { "0" }]);

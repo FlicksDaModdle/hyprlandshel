@@ -75,6 +75,14 @@ fn card_json(c: &CardInfo) -> Json {
     })
 }
 
+/// Each channel's name ("front-left") and level (1.0 = 100 %), in order,
+/// for Settings → Sound's balance, fade and channels.
+fn chans(map: &pulse::channelmap::Map, vol: &pulse::volume::ChannelVolumes) -> (Vec<String>, Vec<f64>) {
+    let names = map.get().iter().map(|p| pulse::channelmap::Position::to_string(*p).map(|c| c.to_string()).unwrap_or_default()).collect();
+    let levels = vol.get().iter().map(|v| v.0 as f64 / pulse::volume::Volume::NORMAL.0 as f64).collect();
+    (names, levels)
+}
+
 fn sink_json(s: &SinkInfo) -> Json {
     use pulse::def::SinkState::*;
     json!({
@@ -94,7 +102,9 @@ fn sink_json(s: &SinkInfo) -> Json {
         // For the Rust shell (rshell), which has no PipeWire binding of its
         // own to read these from: 1.0 is 100 %.
         "volume": s.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64,
-        "mute": s.mute
+        "mute": s.mute,
+        "channels": chans(&s.channel_map, &s.volume).0,
+        "volumes": chans(&s.channel_map, &s.volume).1
     })
 }
 
@@ -117,6 +127,8 @@ fn source_json(s: &SourceInfo) -> Json {
         // The microphone's level and mute, for rshell's control center.
         "volume": s.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64,
         "mute": s.mute,
+        "channels": chans(&s.channel_map, &s.volume).0,
+        "volumes": chans(&s.channel_map, &s.volume).1,
         "monitor": s.monitor_of_sink.is_some()
     })
 }
@@ -124,12 +136,16 @@ fn source_json(s: &SourceInfo) -> Json {
 // Each app's own level and mute too, for Settings' Apps tab (the Rust one
 // has no PipeWire binding to read them from): 1.0 is 100 %.
 fn input_json(i: &SinkInputInfo) -> Json {
+    let (channels, volumes) = chans(&i.channel_map, &i.volume);
     json!({ "index": i.index, "sink": i.sink, "properties": props(&i.proplist),
-            "volume": i.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64, "mute": i.mute })
+            "volume": i.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64, "mute": i.mute,
+            "channels": channels, "volumes": volumes })
 }
 fn output_json(o: &SourceOutputInfo) -> Json {
+    let (channels, volumes) = chans(&o.channel_map, &o.volume);
     json!({ "index": o.index, "source": o.source, "properties": props(&o.proplist),
-            "volume": o.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64, "mute": o.mute })
+            "volume": o.volume.avg().0 as f64 / pulse::volume::Volume::NORMAL.0 as f64, "mute": o.mute,
+            "channels": channels, "volumes": volumes })
 }
 
 /// The five lists, filled in by callbacks on PulseAudio's thread; the last
