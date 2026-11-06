@@ -13,7 +13,7 @@ use slint::{LogicalPosition, PhysicalSize};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
-    delegate_shm,
+    delegate_session_lock, delegate_shm,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
@@ -29,6 +29,7 @@ use smithay_client_toolkit::{
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
 use slint::platform::Key;
+use smithay_client_toolkit::session_lock::{SessionLock, SessionLockHandler, SessionLockState, SessionLockSurface, SessionLockSurfaceConfigure};
 use std::rc::Rc;
 use wayland_client::{
     globals::GlobalList,
@@ -51,8 +52,48 @@ pub struct Placement {
     pub keyboard: KeyboardInteractivity,
 }
 
+/// What a surface is to the compositor: a layer-shell surface (the bar,
+/// panels, the dock …) or a session-lock one (the lock screen, one per
+/// output, over everything and holding every key).
+pub enum Role {
+    Layer(LayerSurface),
+    Lock(SessionLockSurface),
+}
+
+impl Role {
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
+        match self {
+            Role::Layer(l) => l.wl_surface(),
+            Role::Lock(l) => l.wl_surface(),
+        }
+    }
+    pub fn commit(&self) {
+        self.wl_surface().commit();
+    }
+    fn set_layer(&self, layer: Layer) {
+        if let Role::Layer(l) = self {
+            l.set_layer(layer);
+        }
+    }
+    fn set_exclusive_zone(&self, z: i32) {
+        if let Role::Layer(l) = self {
+            l.set_exclusive_zone(z);
+        }
+    }
+    fn set_keyboard_interactivity(&self, k: KeyboardInteractivity) {
+        if let Role::Layer(l) = self {
+            l.set_keyboard_interactivity(k);
+        }
+    }
+    fn set_size(&self, w: u32, h: u32) {
+        if let Role::Layer(l) = self {
+            l.set_size(w, h);
+        }
+    }
+}
+
 pub struct ShellSurface {
-    pub layer: LayerSurface,
+    pub layer: Role,
     pub adapter: Rc<MinimalSoftwareWindow>,
     #[allow(dead_code)] // the dock and panels, per monitor, read it
     pub output: Option<wl_output::WlOutput>,
@@ -127,6 +168,20 @@ pub struct Shell {
     /// The key held down, what it types, and when it next repeats.
     held: Option<(u32, slint::SharedString, std::time::Instant)>,
     pub closed: bool,
+    session_lock: Option<SessionLockState>,
+    lock: Option<SessionLock>,
+    /// The session lock: asked for, held (the compositor said so), or
+    /// refused / ended.
+    pub lock_state: LockState,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum LockState {
+    Off,
+    Asking,
+    Locked,
+    /// The compositor turned it down, or ended it.
+    Finished,
 }
 
 impl Shell {
@@ -158,6 +213,9 @@ impl Shell {
             repeat: Some((std::time::Duration::from_millis(600), std::time::Duration::from_millis(40))),
             held: None,
             closed: false,
+            session_lock: Some(SessionLockState::new(globals, qh)),
+            lock: None,
+            lock_state: LockState::Off,
         })
     }
 
@@ -188,6 +246,7 @@ impl Shell {
         layer.set_exclusive_zone(p.exclusive);
         layer.set_keyboard_interactivity(p.keyboard);
         layer.commit();
+        let layer = Role::Layer(layer);
         // The output's integer scale until it says otherwise: right for a
         // whole-number scale, and only the first frame's guess for 5/3.
         let scale = output
@@ -221,6 +280,81 @@ impl Shell {
             self.surfaces.push(Some(s));
             self.surfaces.len() - 1
         }
+    }
+
+    /// Asks the compositor to lock the session. Lock surfaces are put up
+    /// with add_lock_window once it says it has (lock_state Locked); until
+    /// then nothing is hidden.
+    pub fn lock_session(&mut self, qh: &QueueHandle<Self>) -> bool {
+        if self.lock.is_some() {
+            return true;
+        }
+        let Some(state) = &self.session_lock else { return false };
+        match state.lock(qh) {
+            Ok(l) => {
+                self.lock = Some(l);
+                self.lock_state = LockState::Asking;
+                true
+            }
+            Err(e) => {
+                eprintln!("hyprshell-rs: no session lock ({e})");
+                false
+            }
+        }
+    }
+
+    /// A Slint window on a lock surface for `output`.
+    pub fn add_lock_window(&mut self, qh: &QueueHandle<Self>, adapter: Rc<MinimalSoftwareWindow>, output: &wl_output::WlOutput) -> Option<usize> {
+        let lock = self.lock.as_ref()?;
+        let surface = self.compositor.create_surface(qh);
+        let fractional = self.fractional.as_ref().map(|m| m.get_fractional_scale(&surface, qh, surface.id()));
+        let viewport = match (&self.fractional, &self.viewporter) {
+            (Some(_), Some(v)) => Some(v.get_viewport(&surface, qh, ())),
+            _ => None,
+        };
+        let role = Role::Lock(lock.create_lock_surface(surface, output, qh));
+        let scale = self.outputs.info(output).map(|i| i.scale_factor as f64).unwrap_or(1.0);
+        let s = ShellSurface {
+            layer: role,
+            adapter,
+            output: Some(output.clone()),
+            width: 0,
+            height: 0,
+            scale,
+            fractional,
+            viewport,
+            configured: false,
+            pool: None,
+            bufs: Vec::new(),
+            asked: (0, 0),
+            pixels: Vec::new(),
+            sized: (0, 0, 0.0),
+        };
+        Some(if let Some(free) = self.surfaces.iter().position(|s| s.is_none()) {
+            self.surfaces[free] = Some(s);
+            free
+        } else {
+            self.surfaces.push(Some(s));
+            self.surfaces.len() - 1
+        })
+    }
+
+    /// Lets the session go: the compositor shows the desktop again. The
+    /// lock surfaces are the caller's to remove.
+    pub fn unlock_session(&mut self) {
+        if let Some(l) = self.lock.take() {
+            l.unlock();
+        }
+        self.lock_state = LockState::Off;
+    }
+
+    /// The outputs there are, for a lock surface on each.
+    pub fn all_outputs(&self) -> Vec<wl_output::WlOutput> {
+        self.outputs.outputs().collect()
+    }
+    /// An output's name (eDP-1), as Hyprland calls it.
+    pub fn output_name(&self, o: &wl_output::WlOutput) -> String {
+        self.outputs.info(o).and_then(|i| i.name).unwrap_or_default()
     }
 
     /// A picture surface (see Picture); its index in `pictures`.
@@ -474,6 +608,26 @@ impl LayerShellHandler for Shell {
         if c.new_size.1 > 0 {
             s.height = c.new_size.1;
         }
+        s.configured = true;
+        s.adapter.request_redraw();
+    }
+}
+
+// ── the session lock ────────────────────────────────────────────────────────
+
+impl SessionLockHandler for Shell {
+    fn locked(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {
+        self.lock_state = LockState::Locked;
+    }
+    fn finished(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {
+        self.lock = None;
+        self.lock_state = LockState::Finished;
+    }
+    fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: SessionLockSurface, c: SessionLockSurfaceConfigure, _: u32) {
+        let Some(i) = self.index_of(surface.wl_surface()) else { return };
+        let s = self.at(i);
+        s.width = c.new_size.0;
+        s.height = c.new_size.1;
         s.configured = true;
         s.adapter.request_redraw();
     }
@@ -765,4 +919,5 @@ delegate_seat!(Shell);
 delegate_pointer!(Shell);
 delegate_keyboard!(Shell);
 delegate_layer!(Shell);
+delegate_session_lock!(Shell);
 delegate_registry!(Shell);

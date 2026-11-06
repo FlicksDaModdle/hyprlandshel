@@ -555,6 +555,11 @@ pub struct App {
     /// Panel surfaces to stop taking the pointer, at the next step.
     pending_input: Vec<usize>,
     wake: UnixStream,
+    /// The lock screen, and logind's word (lock, unlock, sleep, wake).
+    lock: crate::lock::Lock,
+    lock_wanted: bool,
+    logind: Receiver<&'static str>,
+    battery_now: Option<(i32, bool)>,
 }
 
 impl App {
@@ -818,6 +823,10 @@ impl App {
             last_tick: Instant::now() - Duration::from_secs(2),
             last_frame: Instant::now(),
             pending_input: Vec::new(),
+            lock: crate::lock::Lock::new(&wake),
+            lock_wanted: false,
+            logind: crate::lock::watch_logind(&wake),
+            battery_now: None,
             wake,
         };
         app.refresh_hypr();
@@ -847,6 +856,10 @@ impl App {
         }
         if let Some(t) = self.ident_until {
             d = d.min(t.saturating_duration_since(Instant::now()));
+        }
+        // The lock screen's springs, the face glyph, PAM's answers.
+        if self.lock.busy() {
+            d = d.min(Duration::from_millis(16));
         }
         d.max(Duration::from_millis(1))
     }
@@ -1101,6 +1114,7 @@ impl App {
         }
 
         self.step_docks(shell, dt);
+        self.step_lock(shell, qh, dt);
         self.step_ground(shell);
         self.step_polkit(shell, qh);
         self.step_switcher(shell, qh);
@@ -1442,6 +1456,7 @@ impl App {
     fn refresh_second(&mut self) {
         let (time, date) = clock(self.look.clock24);
         let battery = sys::battery();
+        self.battery_now = battery.as_ref().map(|b| (b.percent, b.charging));
         let timers = extras::timers();
         let soonest = timers.iter().filter(|t| t.running).min_by_key(|t| t.left);
         let timer_text = soonest.map(|t| extras::clock(t.left)).unwrap_or_else(|| "paused".into());
@@ -2354,15 +2369,11 @@ impl App {
     }
 
     fn power(&mut self, what: &str) {
-        let lock = if which("hyprlock") { "pidof hyprlock >/dev/null || hyprlock" } else { "loginctl lock-session" };
         match what {
-            "lock" => extras::sh(lock),
+            // The shell's own lock screen (lock.rs), at the next frame.
+            "lock" => self.lock_wanted = true,
             "suspend" => {
-                if which("hyprlock") {
-                    extras::sh("pidof hyprlock >/dev/null || hyprlock &");
-                } else {
-                    extras::sh("loginctl lock-session 2>/dev/null || true");
-                }
+                self.lock_wanted = true;
                 extras::sh("sleep 0.5; loginctl suspend 2>/dev/null || systemctl suspend");
             }
             "logout" => hypr::dispatch("hl.dsp.exit()", "exit"),
@@ -2564,6 +2575,45 @@ impl App {
 
     /// Each screen's wallpaper: drawn on a helper thread when the screen's
     /// size or the wallpaper changes, then put on its surface.
+    /// The lock screen: asked for, logind's word, and each frame of it.
+    fn step_lock(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, dt: f64) {
+        while let Ok(e) = self.logind.try_recv() {
+            match e {
+                "lock" => self.lock_wanted = true,
+                "unlock" => self.lock.release(&self.look.motion),
+                "sleep" => self.lock.sleep(true),
+                "wake" => self.lock.sleep(false),
+                _ => {}
+            }
+        }
+        if std::mem::take(&mut self.lock_wanted) && !self.lock.active {
+            self.close_panel();
+            if !self.lock.lock(shell, qh) {
+                // No session lock on this compositor: someone else's locker.
+                extras::sh(if which("hyprlock") { "pidof hyprlock >/dev/null || hyprlock" } else { "loginctl lock-session" });
+            }
+        }
+        if !self.lock.active && !self.lock.busy() {
+            return;
+        }
+        let look = self.look.clone();
+        let world = crate::lock::World {
+            look: &look,
+            ground: &self.ground_spec,
+            battery: self.battery_now,
+            net_label: if self.sound.wired && !self.sound.wifi_on { "Wired".into() } else { self.sound.net_label.clone() },
+            net_icon: self.sound.net_icon,
+            notes: self.notes.len(),
+        };
+        let new_view = |us: f32| -> Option<crate::LockView> {
+            let v = crate::LockView::new().ok()?;
+            theme_into!(v, &look, us);
+            Some(v)
+        };
+        let new_arrival = || crate::Arrival::new().ok();
+        self.lock.step(shell, qh, &world, dt, &new_view, &new_arrival);
+    }
+
     fn step_ground(&mut self, shell: &mut wl::Shell) {
         while let Ok((bar, spec, w, h, px)) = self.ground_rx.try_recv() {
             if let Some(b) = self.bars.get_mut(bar) {

@@ -1,0 +1,410 @@
+// The lock screen (modules/lock/Lock.qml, drawing common/LoginView.qml):
+// one of these on every output's session-lock surface. Over the desktop's
+// own wallpaper, a light clock high up, a frosted card with your picture,
+// name and the password field, and along the bottom the battery, network
+// and notifications, and sleep / restart / shut down. src/lock.rs says
+// what to show and checks the password.
+import { Theme } from "theme.slint";
+import { GlyphData } from "icons.slint";
+import { Glyph } from "glyph.slint";
+
+export struct LockGlyphs {
+    lock: GlyphData, eye: GlyphData, go: GlyphData, moon: GlyphData, restart: GlyphData, power: GlyphData,
+    battery: GlyphData, bell: GlyphData, net: GlyphData,
+}
+
+component PowerButton inherits Rectangle {
+    in property <GlyphData> glyph;
+    in property <string> label;
+    in property <color> ink;
+    in property <color> ink2;
+    in property <color> hover-fill;
+    callback clicked();
+    width: 40px * Theme.us;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: ta.has-hover ? root.hover-fill : transparent;
+    animate background { duration: 160ms; }
+    Glyph { data: root.glyph; size: 18px * Theme.us; ink: ta.has-hover ? root.ink : root.ink2; monochrome: true; }
+    // Its name, in a small pill above, while pointed at.
+    if ta.has-hover: Rectangle {
+        y: -self.height - 14px * Theme.us;
+        width: tip.preferred-width + 18px * Theme.us;
+        height: 26px * Theme.us;
+        border-radius: self.height / 2;
+        background: #0000008c;
+        tip := Text { text: root.label; font-size: Theme.fs(11.5); font-weight: 500; color: white; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component LockView inherits Window {
+    // ── the ground ──
+    in property <image> ground;
+    in property <image> frost;
+    in property <bool> vivid;
+    in property <image> scrim;
+    in property <color> ground-colour: #201e1d;
+    // ── what it says ──
+    in property <string> date;
+    in property <string> time;
+    in property <string> ampm;
+    in property <string> user-name;
+    in property <string> initial;
+    in property <image> picture;
+    in property <bool> has-picture;
+    in property <string> subtitle: "Locked";
+    in-out property <string> entered;
+    in property <string> status-text;
+    in property <bool> failed;
+    in property <bool> busy;
+    in property <bool> leaving;
+    in property <bool> face-first;
+    in property <string> face-state;
+    in property <image> face;
+    in property <bool> can-retry-face;
+    in property <bool> keyboard-missing;
+    in property <length> shake;
+    in property <bool> has-battery;
+    in property <string> battery-text;
+    in property <string> net-label;
+    in property <int> notes;
+    in property <LockGlyphs> glyphs;
+    callback submit();
+    callback edited(string);
+    callback escape();
+    callback power(string);
+    callback retry-face();
+    callback woke();
+
+    property <bool> reveal;
+    property <bool> started;
+    property <float> k: Theme.us;
+    // Ink for what sits straight on the wallpaper: white over a scrim on a
+    // picture, the theme's own over its gradient.
+    property <color> fg: root.vivid ? white : Theme.ink;
+    property <color> fg2: root.vivid ? #ffffffd6 : Theme.ink2;
+    property <color> fg3: root.vivid ? #ffffffa8 : Theme.ink3;
+    property <color> pill: root.vivid ? #0000004d : Theme.panel;
+    property <color> pill-hover: root.vivid ? #ffffff29 : Theme.sel;
+    property <color> pill-edge: root.vivid ? #ffffff21 : Theme.edge;
+    property <color> pill-ink: root.vivid ? white : Theme.ink;
+    property <color> pill-ink2: root.vivid ? #ffffffd1 : Theme.ink2;
+
+    // Coming in: a short rise and fade; going: all of it drifts towards
+    // you and fades, leaving the bare wallpaper.
+    property <float> shown: root.started ? 1 : 0;
+    animate shown { duration: 620ms; easing: cubic-bezier(0.34, 1.3, 0.64, 1); }
+    property <float> away: root.leaving ? 1 : 0;
+    animate away { duration: 420ms; easing: ease-out; }
+    init => {
+        root.started = true;
+        keys.focus();
+    }
+
+    background: root.ground-colour;
+    default-font-family: Theme.font;
+
+    Image { width: 100%; height: 100%; source: root.ground; image-fit: cover; }
+    // The scrim: a little darker at the top behind the clock, more at the
+    // bottom behind the corner line, clear between.
+    // (Drawn as a one-pixel-wide picture, stretched: a gradient with stops
+    // between shows a seam at each on the software renderer.)
+    Image {
+        width: 100%;
+        height: 100%;
+        opacity: 1 - root.away;
+        source: root.scrim;
+        image-fit: fill;
+        image-rendering: smooth;
+    }
+
+    // A click anywhere puts the keys back in the field; the pointer moving
+    // says you're back (the face is looked for again).
+    TouchArea {
+        clicked => { keys.focus(); }
+        moved => { root.woke(); }
+        pointer-event(e) => { if (e.kind == PointerEventKind.move) { root.woke(); } }
+    }
+
+    // Esc, and the keys the field doesn't use, come up through here.
+    FocusScope {
+    key-pressed(e) => {
+        if (e.text == Key.Escape) {
+            root.escape();
+            return accept;
+        }
+        reject
+    }
+    stage := Rectangle {
+        opacity: 1 - root.away;
+        visible: self.opacity > 0.002;
+        transform-scale: 1 + root.away * 0.07;
+        transform-origin: { x: self.width / 2, y: self.height * 0.42 };
+
+        // ── your face ──
+        if root.face-state != "": Image {
+            x: (parent.width - self.width) / 2;
+            y: max(14px * root.k, clock.y - self.height - 48px * root.k);
+            width: 58px * root.k;
+            height: self.width;
+            source: root.face;
+            TouchArea { enabled: root.can-retry-face; mouse-cursor: root.can-retry-face ? pointer : default; clicked => { root.retry-face(); keys.focus(); } }
+        }
+        if root.face-state == "failed": Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: max(14px * root.k, clock.y - 106px * root.k) + 66px * root.k;
+            width: missed.preferred-width + 24px * root.k;
+            height: 28px * root.k;
+            border-radius: self.height / 2;
+            background: mta.has-hover && root.can-retry-face ? #0000006b : #00000047;
+            border-width: 1px;
+            border-color: #ffffff1a;
+            missed := HorizontalLayout {
+                x: 12px * root.k;
+                width: self.preferred-width;
+                height: parent.height;
+                spacing: 8px * root.k;
+                VerticalLayout { alignment: center; Rectangle { width: 7px * root.k; height: self.width; border-radius: self.width / 2; background: #ff6b61; } }
+                Text { vertical-alignment: center; text: "Not recognised"; font-size: Theme.fs(12); font-weight: 600; color: root.fg; }
+                if root.can-retry-face: Text { vertical-alignment: center; text: "Tap to scan again"; font-size: Theme.fs(12); color: root.fg2; }
+            }
+            mta := TouchArea { enabled: root.can-retry-face; mouse-cursor: pointer; clicked => { root.retry-face(); keys.focus(); } }
+        }
+
+        // ── clock ──
+        property <bool> face-up: root.face-state != "";
+        clock := VerticalLayout {
+            property <length> rest-y: max((stage.face-up ? 124px : 16px) * root.k,
+                min(stage.height * 0.13 + (stage.face-up ? 66px * root.k : 0px), stage.height - 96px * root.k - card.height - 24px * root.k - self.preferred-height));
+            x: (parent.width - self.preferred-width) / 2;
+            width: self.preferred-width;
+            height: self.preferred-height;
+            y: self.rest-y + (1 - root.shown) * -14px * root.k;
+            opacity: root.shown;
+            Text { horizontal-alignment: center; text: root.date; font-size: Theme.fs(15) * root.k; font-weight: 600; letter-spacing: 2.2px; color: root.fg2; }
+            Text { horizontal-alignment: center; text: root.time; font-size: Theme.fs(132) * root.k; font-weight: 300; letter-spacing: -3px; color: root.fg; }
+            if root.ampm != "": Text { horizontal-alignment: center; text: root.ampm; font-size: Theme.fs(13) * root.k; font-weight: 600; letter-spacing: 2px; color: root.fg3; }
+        }
+
+        // ── the card ──
+        card := Rectangle {
+            width: 392px * root.k;
+            height: col.preferred-height + 52px * root.k;
+            x: (parent.width - self.width) / 2 + root.shake;
+            y: max(clock.rest-y + clock.preferred-height + 24px * root.k, (parent.height - self.height) / 2 + parent.height * 0.1) + (1 - root.shown) * 26px * root.k;
+            opacity: root.shown;
+            border-radius: Theme.r-cap * 1.3 * root.k;
+            clip: true;
+            // Frosted as the shell's panels are: the wallpaper behind it,
+            // blurred, under the panel's colour, with its hairline edge.
+            Image {
+                x: -card.x;
+                y: -card.y;
+                width: stage.width;
+                height: stage.height;
+                source: root.frost;
+                image-fit: cover;
+            }
+            Rectangle { background: Theme.panel; border-radius: parent.border-radius; border-width: 1px; border-color: Theme.edge; }
+
+            col := VerticalLayout {
+                x: (parent.width - 320px * root.k) / 2;
+                y: 26px * root.k;
+                width: 320px * root.k;
+                height: self.preferred-height;
+                spacing: 14px * root.k;
+
+                // Picture, in a ring of the accent, cut to a circle.
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 92px * root.k;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        border-width: 2.5px * root.k;
+                        border-color: Theme.accent;
+                        Rectangle {
+                            width: 80px * root.k;
+                            height: self.width;
+                            border-radius: self.width / 2;
+                            background: Theme.accent;
+                            clip: true;
+                            if !root.has-picture: Text { text: root.initial; font-size: Theme.fs(34) * root.k; font-weight: 600; color: Theme.ink-on-accent; }
+                            if root.has-picture: Image { width: 100%; height: 100%; source: root.picture; image-fit: cover; }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 3px * root.k;
+                    Text { horizontal-alignment: center; text: root.user-name; overflow: elide; font-size: Theme.fs(20) * root.k; font-weight: 600; color: Theme.ink; }
+                    if root.subtitle != "": HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px * root.k;
+                        VerticalLayout { alignment: center; Glyph { data: root.glyphs.lock; size: 12px * root.k; ink: Theme.ink3; monochrome: true; } }
+                        Text { vertical-alignment: center; text: root.subtitle; font-size: Theme.fs(12.5) * root.k; color: Theme.ink3; }
+                    }
+                }
+                Rectangle { height: 2px * root.k; }
+
+                // The field: a pill, with the accent's round button at its
+                // end. Face first: while your face is looked for and nothing
+                // is typed, it folds away; typing brings it back.
+                property <float> open: root.face-first && root.entered == "" ? 0 : 1;
+                animate open { duration: 420ms; easing: cubic-bezier(0.34, 1.4, 0.64, 1); }
+                field := Rectangle {
+                    height: 50px * root.k * max(0, col.open);
+                    opacity: min(1, col.open * 1.4);
+                    clip: true;
+                    border-radius: 25px * root.k;
+                    background: Theme.hover;
+                    border-width: 1.5px;
+                    border-color: root.failed ? Theme.accent : keys.has-focus && root.entered != "" ? Theme.accent.with-alpha(0.55) : Theme.edge;
+                    animate border-color { duration: 200ms; }
+                    keys := TextInput {
+                        x: 20px * root.k;
+                        width: parent.width - 20px * root.k - 36px * root.k - 52px * root.k;
+                        height: 50px * root.k;
+                        vertical-alignment: center;
+                        single-line: true;
+                        read-only: root.busy || root.leaving;
+                        input-type: root.reveal ? InputType.text : InputType.password;
+                        font-size: (root.reveal ? Theme.fs(14) : Theme.fs(18)) * root.k;
+                        letter-spacing: root.reveal ? 0px : 3px;
+                        color: Theme.ink;
+                        selection-background-color: Theme.accent.with-alpha(0.45);
+                        selection-foreground-color: Theme.ink;
+                        text-cursor-width: 2px;
+                        text <=> root.entered;
+                        edited => { root.edited(self.text); }
+                        accepted => { root.submit(); }
+                    }
+                    if root.entered == "": Text {
+                        x: 22px * root.k;
+                        vertical-alignment: center;
+                        text: root.busy ? "Checking…" : "Password";
+                        font-size: Theme.fs(13.5) * root.k;
+                        color: Theme.ink3;
+                    }
+                    // Show what was typed: a password typed blind is the
+                    // commonest way to be locked out by Caps Lock.
+                    Rectangle {
+                        x: parent.width - 6px * root.k - 38px * root.k - 2px * root.k - self.width;
+                        width: 36px * root.k;
+                        Glyph { data: root.glyphs.eye; size: 17px * root.k; ink: root.reveal ? Theme.accent : Theme.ink3; monochrome: true; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.reveal = !root.reveal; keys.focus(); } }
+                    }
+                    Rectangle {
+                        x: parent.width - 6px * root.k - self.width;
+                        y: (50px * root.k - self.height) / 2;
+                        width: 38px * root.k;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: Theme.accent;
+                        opacity: root.entered != "" && !root.busy ? 1 : 0.45;
+                        animate opacity { duration: 220ms; }
+                        if !root.busy: Glyph { data: root.glyphs.go; size: 18px * root.k; ink: Theme.ink-on-accent; monochrome: true; }
+                        // Checking: a ring going round where the arrow was.
+                        if root.busy: Rectangle {
+                            width: 16px * root.k;
+                            height: self.width;
+                            border-radius: self.width / 2;
+                            border-width: 2px;
+                            border-color: Theme.ink-on-accent;
+                            Rectangle {
+                                property <angle> a: (animation-tick() / 900ms) * 360deg;
+                                x: parent.width / 2 + cos(self.a) * parent.width / 2 - self.width / 2;
+                                y: parent.height / 2 + sin(self.a) * parent.height / 2 - self.height / 2;
+                                width: 6px * root.k;
+                                height: self.width;
+                                border-radius: self.width / 2;
+                                background: Theme.accent;
+                            }
+                        }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.submit(); keys.focus(); } }
+                    }
+                }
+                Text {
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                    min-height: 16px * root.k;
+                    text: root.keyboard-missing ? "Your keyboard isn't reaching this screen. Press Ctrl+Alt+F3, then Ctrl+Alt+F1, to hand it back." : root.status-text;
+                    font-size: Theme.fs(12) * root.k;
+                    color: root.failed || root.keyboard-missing ? Theme.accent : Theme.ink3;
+                }
+            }
+        }
+
+        // ── along the bottom ──
+        // The things worth knowing without unlocking.
+        HorizontalLayout {
+            x: 32px * root.k;
+            y: parent.height - 30px * root.k - self.preferred-height;
+            width: self.preferred-width;
+            height: self.preferred-height;
+            opacity: root.shown;
+            spacing: 18px * root.k;
+            if root.has-battery: HorizontalLayout {
+                spacing: 7px * root.k;
+                VerticalLayout { alignment: center; Glyph { data: root.glyphs.battery; size: 15px * root.k; ink: root.fg3; monochrome: true; } }
+                Text { vertical-alignment: center; text: root.battery-text; font-size: Theme.fs(12) * root.k; color: root.fg3; }
+            }
+            HorizontalLayout {
+                spacing: 7px * root.k;
+                VerticalLayout { alignment: center; Glyph { data: root.glyphs.net; size: 15px * root.k; ink: root.fg3; monochrome: true; } }
+                Text { vertical-alignment: center; text: root.net-label; font-size: Theme.fs(12) * root.k; color: root.fg3; }
+            }
+            if root.notes > 0: HorizontalLayout {
+                spacing: 7px * root.k;
+                VerticalLayout { alignment: center; Glyph { data: root.glyphs.bell; size: 15px * root.k; ink: root.fg3; monochrome: true; } }
+                Text { vertical-alignment: center; text: root.notes + (root.notes == 1 ? " notification" : " notifications"); font-size: Theme.fs(12) * root.k; color: root.fg3; }
+            }
+        }
+
+        // Sleep, restart, shut down: round buttons on a frosted pill.
+        ppill := Rectangle {
+            width: prow.preferred-width + 12px * root.k;
+            height: 52px * root.k;
+            x: parent.width - 26px * root.k - self.width;
+            y: parent.height - 22px * root.k - self.height;
+            opacity: root.shown;
+            border-radius: self.height / 2;
+            Rectangle {
+                width: parent.width;
+                height: parent.height;
+                border-radius: parent.border-radius - 1px;
+                clip: true;
+                Image { x: -ppill.x; y: -ppill.y; width: stage.width; height: stage.height; source: root.frost; image-fit: cover; }
+            }
+            Rectangle { border-radius: parent.border-radius; background: root.pill; border-width: 1px; border-color: root.pill-edge; }
+            prow := HorizontalLayout {
+                x: 6px * root.k;
+                y: (parent.height - self.preferred-height) / 2;
+                width: self.preferred-width;
+                height: self.preferred-height;
+                spacing: 4px * root.k;
+                PowerButton { glyph: root.glyphs.moon; label: "Sleep"; ink: root.pill-ink; ink2: root.pill-ink2; hover-fill: root.pill-hover; clicked => { root.power("suspend"); } }
+                PowerButton { glyph: root.glyphs.restart; label: "Restart"; ink: root.pill-ink; ink2: root.pill-ink2; hover-fill: root.pill-hover; clicked => { root.power("reboot"); } }
+                PowerButton { glyph: root.glyphs.power; label: "Shut down"; ink: root.pill-ink; ink2: root.pill-ink2; hover-fill: root.pill-hover; clicked => { root.power("poweroff"); } }
+            }
+        }
+    }
+
+    }
+}
+
+// The way back to the desktop after an unlock (modules/lock/Arrival.qml):
+// the same wallpaper, put up over the desktop while the lock is still there
+// and then faded, so the windows come up through it.
+export component Arrival inherits Window {
+    in property <image> ground;
+    in property <color> ground-colour;
+    in property <bool> fading;
+    background: transparent;
+    Rectangle {
+        background: root.ground-colour;
+        opacity: root.fading ? 0 : 1;
+        animate opacity { duration: 520ms; easing: cubic-bezier(0.33, 1, 0.68, 1); }
+        Image { width: 100%; height: 100%; source: root.ground; image-fit: cover; }
+    }
+}

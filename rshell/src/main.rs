@@ -24,8 +24,10 @@ mod hypr;
 mod icons;
 mod launch_ui;
 mod launcher;
+mod lock;
 mod mpris;
 mod notify;
+mod pam;
 mod platform;
 mod polkit;
 mod spring;
@@ -45,6 +47,11 @@ use wayland_client::{globals::registry_queue_init, Connection};
 slint::include_modules!();
 
 fn main() {
+    // A PAM attempt for the lock screen, in a process of its own (pam.rs).
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--pam-helper") {
+        pam::helper(args.get(2).map(String::as_str).unwrap_or("login"), args.get(3).map(String::as_str).unwrap_or(""));
+    }
     slint::platform::set_platform(Box::new(platform::ShellPlatform)).expect("the platform is set once");
 
     let conn = Connection::connect_to_env().unwrap_or_else(|e| {

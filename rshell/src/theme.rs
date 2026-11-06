@@ -30,6 +30,7 @@ fn hex(s: &str) -> Option<Rgba> {
 const PRESETS: [(&str, &str); 4] =
     [("#ec3013", "#ff563c"), ("#ae1800", "#e8452b"), ("#2d2b2b", "#d7d3d3"), ("#7c1405", "#c94b39")];
 
+#[derive(Clone)]
 pub struct Theme {
     pub dark: bool,
     /// "light", "dark" or "auto", as Settings has it.

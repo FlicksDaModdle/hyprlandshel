@@ -52,6 +52,22 @@ impl Spring {
         self.moving = true;
     }
 
+    /// Flung from where it is at `velocity` (per second), back to rest at
+    /// `to`: a shake.
+    pub fn kick(&mut self, velocity: f64, to: f64, response: f64, bounce: f64, m: &Motion) {
+        if m.speed <= 0.0 {
+            return;
+        }
+        self.to = to;
+        self.response = response;
+        self.bounce = bounce;
+        self.velocity = velocity;
+        let w = self.omega();
+        self.span = (to - self.value).abs().max(velocity.abs() / w);
+        self.fresh = true;
+        self.moving = true;
+    }
+
     fn omega(&self) -> f64 {
         2.0 * std::f64::consts::PI / (self.response / 1000.0).max(0.02)
     }
