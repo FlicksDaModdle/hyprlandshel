@@ -510,6 +510,9 @@ pub struct App {
     /// When the popup goes, and its springs: rise, fade, grow.
     osd_until: Option<Instant>,
     osd_springs: [Spring; 3],
+    /// Settings → Display's Identify: a number on each screen, until then.
+    ident: Vec<(crate::Identify, usize)>,
+    ident_until: Option<Instant>,
     /// The control center's list on screen ("", "wifi", "bluetooth"), the
     /// network asking for its password, the one being joined, the device
     /// being worked on, and a pairing question: (id, name, code).
@@ -734,6 +737,8 @@ impl App {
             osd_surface: None,
             osd_until: None,
             osd_springs: [Spring::new(24.0), Spring::new(0.0), Spring::new(0.86)],
+            ident: Vec::new(),
+            ident_until: None,
             launcher,
             prompt,
             prompt_window,
@@ -836,6 +841,9 @@ impl App {
         }
         if self.osd_until.is_some() || self.osd_springs.iter().any(|s| s.moving) {
             d = d.min(Duration::from_millis(7));
+        }
+        if let Some(t) = self.ident_until {
+            d = d.min(t.saturating_duration_since(Instant::now()));
         }
         d.max(Duration::from_millis(1))
     }
@@ -1089,6 +1097,12 @@ impl App {
         self.step_polkit(shell, qh);
         self.step_switcher(shell, qh);
         self.step_osd(shell, dt);
+        if self.ident_until.is_some_and(|t| Instant::now() >= t) {
+            self.ident_until = None;
+            for (_, id) in self.ident.drain(..) {
+                shell.remove(id);
+            }
+        }
 
         // The launcher: its springs, its icons, and its surface once it has
         // gone.
@@ -2656,6 +2670,37 @@ impl App {
         self.osd_until = Some(Instant::now() + Duration::from_millis(1600));
     }
 
+    /// Each screen's number on the screen itself for a moment
+    /// (MonitorMap.qml's Identify).
+    fn identify(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, order: &str) {
+        for (_, id) in self.ident.drain(..) {
+            shell.remove(id);
+        }
+        let names: Vec<&str> = order.split(',').map(str::trim).filter(|n| !n.is_empty()).collect();
+        let outs: Vec<(String, WlOutput)> = self.bars.iter().map(|b| (b.monitor.clone(), b.output.clone())).collect();
+        for (monitor, output) in outs {
+            let Ok(w) = crate::Identify::new() else { continue };
+            let Some(adapter) = crate::platform::take_adapter() else { continue };
+            theme_into!(w, &self.look, 1.0);
+            let n = names.iter().position(|x| *x == monitor).map(|i| (i + 1).to_string()).unwrap_or_else(|| "?".into());
+            w.set_number(n.into());
+            w.set_name(monitor.clone().into());
+            let id = shell.add_window(qh, adapter, Some(&output), &wl::Placement {
+                namespace: "quickshell:panel",
+                layer: Layer::Overlay,
+                anchor: Anchor::TOP | Anchor::LEFT,
+                width: 220,
+                height: 220,
+                exclusive: -1,
+                keyboard: KeyboardInteractivity::None,
+            });
+            shell.set_input_rect(id, None);
+            self.ident.push((w, id));
+        }
+        self.ident_until = Some(Instant::now() + Duration::from_millis(2500));
+        self.last_frame = Instant::now();
+    }
+
     fn step_osd(&mut self, shell: &mut wl::Shell, dt: f64) {
         let m = self.look.motion;
         if self.osd_until.is_some_and(|t| Instant::now() >= t) {
@@ -2713,6 +2758,9 @@ impl App {
                 }
                 self.set_cc_pane(if name == "showWifi" { "wifi" } else { "bluetooth" });
             }
+            // Settings → Display → Identify: "identify DP-1,eDP-1", the
+            // screens in the order its map numbers them.
+            "identify" => self.identify(shell, qh, arg),
             // The Settings app, on a page if one is named.
             "openSettings" => {
                 let mut argv = vec!["hyprshell-settings"];

@@ -1,0 +1,145 @@
+// MonitorMap.qml: drag your screens into the arrangement you actually have.
+//
+// Hyprland places outputs on one plane by top-left corner in logical
+// pixels. This draws the plane to scale, numbered, lets you move a screen
+// on it and writes the position back. It snaps while you drag — the
+// outline where it will land is drawn — and on release a screen lands
+// exactly flush against its neighbour, never over it (src/display.rs works
+// out where). Identify puts each screen's number on the screen itself.
+
+import { Theme } from "@kit";
+
+// x, y, w, h: logical pixels on the desktop.
+export struct MonBox { name: string, x: float, y: float, w: float, h: float, main: bool }
+
+export global MonMap {
+    in property <[MonBox]> monitors;
+    in property <string> selected;
+    // The plane, with room all round: x, y, w, h.
+    in property <float> bx;
+    in property <float> by;
+    in property <float> bw: 1;
+    in property <float> bh: 1;
+    // Where the one being dragged would land.
+    in property <string> dragging;
+    in property <float> lx;
+    in property <float> ly;
+    in property <float> lw;
+    in property <float> lh;
+    in property <bool> identifying;
+    // A screen is held: the pane's scrolling stands down (app.slint).
+    in-out property <bool> holding;
+    callback pick(string);
+    // (name, x, y): where it is now, on the desktop.
+    callback drag(string, float, float);
+    callback drop(string);
+    callback identify();
+}
+
+export component MonitorMap inherits Rectangle {
+    property <float> k: MonMap.bw <= 0 || MonMap.bh <= 0 ? 0.05 : min(self.width / 1px / MonMap.bw, (self.height / 1px - 8) / MonMap.bh);
+    // The plane centred in the box.
+    property <length> ox: (self.width - MonMap.bw * root.k * 1px) / 2;
+    property <length> oy: (self.height - MonMap.bh * root.k * 1px) / 2;
+    height: 240px;
+    border-radius: Theme.r;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.rule;
+    clip: true;
+
+    // The outline of where it will land.
+    if MonMap.dragging != "": Rectangle {
+        x: root.ox + (MonMap.lx - MonMap.bx) * root.k * 1px;
+        y: root.oy + (MonMap.ly - MonMap.by) * root.k * 1px;
+        width: MonMap.lw * root.k * 1px;
+        height: MonMap.lh * root.k * 1px;
+        border-radius: Theme.r-sm;
+        border-width: 2px;
+        border-color: Theme.accent;
+        opacity: 0.7;
+    }
+
+    for m[i] in MonMap.monitors: Rectangle {
+        property <bool> chosen: MonMap.selected == m.name;
+        property <bool> moving: ta.pressed && ta.went;
+        property <length> base-x: root.ox + (m.x - MonMap.bx) * root.k * 1px;
+        property <length> base-y: root.oy + (m.y - MonMap.by) * root.k * 1px;
+        x: self.base-x + (self.moving ? ta.dx : 0px);
+        y: self.base-y + (self.moving ? ta.dy : 0px);
+        width: max(24px, m.w * root.k * 1px);
+        height: max(18px, m.h * root.k * 1px);
+        border-radius: Theme.r-sm;
+        background: self.chosen ? Theme.sel : Theme.hover;
+        border-width: self.chosen ? 2px : 1px;
+        border-color: self.chosen ? Theme.accent : Theme.accent.with-alpha(Theme.dark ? 0.24 : 0.18);
+        opacity: self.moving ? 0.85 : 1;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                horizontal-alignment: center;
+                text: (i + 1) + (m.main ? " ★" : "");
+                font-size: Theme.fs(parent.height > 60px ? 20 : 13);
+                font-weight: 700;
+                color: chosen ? Theme.accent : Theme.ink;
+            }
+            if parent.height > 44px: Text { horizontal-alignment: center; text: m.name; font-size: Theme.fs(10.5); font-weight: 600; color: Theme.ink2; }
+            if parent.height > 62px: Text { horizontal-alignment: center; text: round(m.w) + " × " + round(m.h); font-size: Theme.fs(9.5); color: Theme.ink3; }
+        }
+        ta := TouchArea {
+            // The pointer, where it was pressed and how far it has gone,
+            // in the window: the screen moves under it, so not in its own.
+            property <length> start-x;
+            property <length> start-y;
+            property <length> dx;
+            property <length> dy;
+            property <bool> went;
+            mouse-cursor: self.pressed ? grabbing : grab;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    MonMap.holding = true;
+                    self.start-x = self.absolute-position.x + self.mouse-x;
+                    self.start-y = self.absolute-position.y + self.mouse-y;
+                    self.dx = 0px;
+                    self.dy = 0px;
+                    self.went = false;
+                }
+                // Picked on release, not press: picking draws the pane
+                // again, which would end a drag under way.
+                if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                    MonMap.holding = false;
+                }
+                if (e.kind == PointerEventKind.up) {
+                    if (self.went) { MonMap.drop(m.name); } else { MonMap.pick(m.name); }
+                    self.went = false;
+                }
+            }
+            moved => {
+                if (self.pressed && MonMap.monitors.length > 1) {
+                    // How far the pointer has gone since it was pressed.
+                    self.dx = self.absolute-position.x + self.mouse-x - self.start-x;
+                    self.dy = self.absolute-position.y + self.mouse-y - self.start-y;
+                    if (!self.went && abs(self.dx) + abs(self.dy) > 3px) { self.went = true; }
+                    if (self.went) {
+                        MonMap.drag(m.name, m.x + self.dx / 1px / root.k, m.y + self.dy / 1px / root.k);
+                    }
+                }
+            }
+        }
+    }
+
+    // Identify: each screen's number, on the screen itself.
+    Rectangle {
+        x: parent.width - self.width - 8px;
+        y: 8px;
+        width: idt.preferred-width + 22px;
+        height: 26px;
+        border-radius: self.height / 2;
+        background: ita.has-hover ? Theme.sel : Theme.hover;
+        border-width: 1px;
+        border-color: Theme.accent.with-alpha(Theme.dark ? 0.24 : 0.18);
+        idt := Text { text: MonMap.identifying ? "Showing…" : "Identify"; font-size: Theme.fs(11); font-weight: 600; color: Theme.ink; }
+        ita := TouchArea { mouse-cursor: pointer; clicked => { MonMap.identify(); } }
+    }
+}

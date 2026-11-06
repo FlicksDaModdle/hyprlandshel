@@ -146,7 +146,7 @@ fn calibrate_hdr(c: &mut Ctx, name: &str, caps: &Value) {
     remember_colour(c, name, patch);
 }
 
-fn main_display(c: &Ctx, mons: &[Value]) -> String {
+pub fn main_display(c: &Ctx, mons: &[Value]) -> String {
     let id = c.p.s("mainDisplayId");
     if !id.is_empty() {
         if let Some(m) = mons.iter().find(|m| m["description"].as_str().unwrap_or("").trim() == id) {
@@ -217,7 +217,10 @@ pub fn rows(c: &Ctx) -> Vec<Spec> {
     }
     let main = main_display(c, &mons);
     if mons.len() > 1 {
-        r.push(panel("monitors"));
+        let mut map = panel("monitors");
+        map.row.n = "Arrangement".into();
+        map.row.s = "Drag the screens to where they are on your desk; click one to set it up below".into();
+        r.push(map);
         let opts: Vec<(String, String)> = mons
             .iter()
             .map(|x| (format!("{}{}", x["name"].as_str().unwrap_or(""), if x["focused"] == true { " ·" } else { "" }), x["name"].as_str().unwrap_or("").to_string()))

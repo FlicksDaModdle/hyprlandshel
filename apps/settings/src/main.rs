@@ -19,6 +19,7 @@ mod daemon;
 mod display;
 mod net;
 mod hypr;
+mod monmap;
 mod prefs;
 mod rows;
 mod sound;
@@ -58,6 +59,9 @@ struct State {
     /// Updates was on screen at the last draw: it looks again each time
     /// it is opened, not each time it is drawn.
     upd_shown: bool,
+    /// Settings → Display → Arrangement: where the screen being dragged
+    /// would land.
+    landing: Option<(String, f64, f64)>,
     weak: slint::Weak<AppWindow>,
 }
 
@@ -130,6 +134,10 @@ fn show(ui: &AppWindow, st: &mut State) {
     let has = |k: &str| st.specs.iter().any(|r| r.row.kind == "panel" && r.row.panel == k);
     let (animated, live) = (has("animated"), has("gallery"));
     let (on_updates, on_focus) = (has("shellUpdates"), has("focus") || has("notifApps"));
+    if has("monitors") {
+        let sel = if st.c.ui.display_pick.is_empty() { monmap::monitors().first().map(|m| m.name.clone()).unwrap_or_default() } else { st.c.ui.display_pick.clone() };
+        monmap::publish(ui, &st.c, &sel);
+    }
     if animated && st.anim.is_none() {
         st.anim = Some(anim::Gallery::start(st.weak.clone()));
     }
@@ -334,6 +342,7 @@ fn main() {
         icons: focus::Icons::default(),
         upd: updates::Updates::default(),
         upd_shown: false,
+        landing: None,
         weak: ui.as_weak(),
     }));
     show(&ui, &mut st.borrow_mut());
@@ -1182,6 +1191,65 @@ fn wire_galleries(ui: &AppWindow, st: &Rc<RefCell<State>>, settle: Rc<dyn Fn()>)
     })]);
     focus_on!(on_set_rule, [app: SharedString, r: SharedString], |c| vec![focus::set_rule(&c.p, &app, &r)]);
     focus_on!(on_forget, [app: SharedString], |c| focus::forget(&c.p, &app));
+
+    // Display → Arrangement.
+    let mm = ui.global::<MonMap>();
+    {
+        let (st, settle) = (st.clone(), settle.clone());
+        mm.on_pick(move |n| {
+            st.borrow_mut().c.ui.display_pick = n.to_string();
+            settle();
+        });
+    }
+    {
+        let (st, weak) = (st.clone(), ui.as_weak());
+        mm.on_drag(move |n, x, y| {
+            let Some(ui) = weak.upgrade() else { return };
+            let g = ui.global::<MonMap>();
+            if let Some((lx, ly, lw, lh)) = monmap::landing(&monmap::monitors(), &n, x as f64, y as f64) {
+                g.set_dragging(n.clone());
+                g.set_lx(lx as f32);
+                g.set_ly(ly as f32);
+                g.set_lw(lw as f32);
+                g.set_lh(lh as f32);
+                st.borrow_mut().landing = Some((n.to_string(), lx, ly));
+            }
+        });
+    }
+    {
+        let (st, settle, weak) = (st.clone(), settle.clone(), ui.as_weak());
+        mm.on_drop(move |n| {
+            if let Some(ui) = weak.upgrade() {
+                ui.global::<MonMap>().set_dragging(SharedString::new());
+            }
+            let land = st.borrow_mut().landing.take();
+            if let Some((name, x, y)) = land.filter(|l| l.0 == n.as_str()) {
+                let moved = monmap::monitors().iter().find(|m| m.name == name).is_some_and(|m| m.x != x || m.y != y);
+                if moved {
+                    monmap::place(&mut st.borrow_mut().c, &name, x, y);
+                }
+            }
+            settle();
+        });
+    }
+    {
+        let (st, settle, weak) = (st.clone(), settle.clone(), ui.as_weak());
+        let timer = Rc::new(slint::Timer::default());
+        mm.on_identify(move || {
+            let names: Vec<String> = monmap::monitors().into_iter().map(|m| m.name).collect();
+            st.borrow_mut().c.ui.tell.push(format!("identify {}", names.join(",")));
+            if let Some(ui) = weak.upgrade() {
+                ui.global::<MonMap>().set_identifying(true);
+            }
+            let w2 = weak.clone();
+            timer.start(slint::TimerMode::SingleShot, Duration::from_millis(2500), move || {
+                if let Some(ui) = w2.upgrade() {
+                    ui.global::<MonMap>().set_identifying(false);
+                }
+            });
+            settle();
+        });
+    }
 
     // Updates.
     let u = ui.global::<Upd>();

@@ -476,6 +476,9 @@ export component Scroll inherits Rectangle {
     in-out property <length> viewport-y <=> f.content-y;
     out property <length> viewport-height: f.content-height;
     in property <length> pad: 0px;
+    // Off while something in it is being dragged (a screen on Settings'
+    // display map): else the scroll takes the drag over.
+    in property <bool> interactive: true;
     // As tall as it's given: its content can be shorter, and then it
     // shouldn't float in the middle of the space.
     max-height: 100000px;
@@ -484,6 +487,7 @@ export component Scroll inherits Rectangle {
     f := Flickable {
         width: parent.width;
         height: parent.height;
+        interactive: root.interactive;
         @children
     }
     if f.content-height > f.height: Rectangle {

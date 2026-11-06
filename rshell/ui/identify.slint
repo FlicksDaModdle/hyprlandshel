@@ -1,0 +1,26 @@
+// Settings → Display → Arrangement's Identify (MonitorMap.qml): each
+// screen's number on the screen itself, top left, for a moment. It never
+// takes the pointer.
+import { Theme } from "theme.slint";
+
+export component Identify inherits Window {
+    in property <string> number: "?";
+    in property <string> name;
+    background: transparent;
+    default-font-family: Theme.font;
+    Rectangle {
+        x: 40px;
+        y: 40px;
+        width: 180px;
+        height: 180px;
+        border-radius: Theme.r-cap * 2;
+        background: Theme.panel.with-alpha(1);
+        border-width: 2px;
+        border-color: Theme.accent;
+        VerticalLayout {
+            alignment: center;
+            Text { horizontal-alignment: center; text: root.number; font-size: 96px; font-weight: 700; color: Theme.accent; }
+            Text { horizontal-alignment: center; text: root.name; font-size: 14px; color: Theme.ink2; }
+        }
+    }
+}
