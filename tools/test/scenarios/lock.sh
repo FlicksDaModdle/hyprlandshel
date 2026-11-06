@@ -19,7 +19,7 @@ test_wrong_password_refused() {
     wait_for 5 in_log pam.log '^login$' || fail "no password check was started"
     sleep 1.5
     shot refused
-    check "a PAM attempt was left running" sh -c '! pgrep -f fakes/pam-helper'
+    check "a PAM attempt was left running" sh -c '! pgrep -f "[f]akes/pam-helper"'
     alive hyprshell-rs || fail "the shell went away"
 }
 
@@ -30,7 +30,7 @@ test_right_password_unlocks() {
     keys "testpw" enter
     sleep 2.5
     shot unlocked
-    check "a PAM attempt was left running" sh -c '! pgrep -f fakes/pam-helper'
+    check "a PAM attempt was left running" sh -c '! pgrep -f "[f]akes/pam-helper"'
 }
 
 test_escape_empties_field() {
