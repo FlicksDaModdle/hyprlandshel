@@ -1,0 +1,3 @@
+#!/bin/sh
+# A stand-in for the tests: what it was asked, in $TT_LOGS/pw-cli.log.
+echo "pw-cli $*" >> "${TT_LOGS:-/tmp}/pw-cli.log"

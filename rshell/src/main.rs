@@ -36,6 +36,7 @@ mod polkit;
 mod spring;
 mod switch_ui;
 mod sys;
+mod testhooks;
 mod theme;
 mod audiofx;
 mod tray;

@@ -140,6 +140,9 @@ fn full_name(user: &str) -> String {
 
 /// Face unlock is set up: the face-only service is there and readable.
 fn face_enabled() -> bool {
+    if let Some(on) = crate::testhooks::face() {
+        return on;
+    }
     std::fs::read_to_string("/etc/pam.d/hyprshell-lock").map(|t| t.contains("pam_howdy") || t.contains("pam_hyprshell_face")).unwrap_or(false)
 }
 
@@ -916,7 +919,7 @@ pub struct Now {
 pub fn chrono_now() -> Now {
     // SAFETY: localtime_r into our own struct.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    let t = unsafe { libc::time(std::ptr::null_mut()) };
+    let t = crate::testhooks::now();
     unsafe { libc::localtime_r(&t, &mut tm) };
     const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

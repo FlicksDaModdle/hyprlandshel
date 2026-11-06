@@ -318,7 +318,25 @@ Singleton {
     // Asked for again while it may be behind other windows: Settings.qml
     // brings its window forward.
     signal settingsOpenRequested()
+    // tools/hyprshell-dev's switch: `settings=rust` in ~/.config/hyprshell/
+    // engine opens the Rust Settings app (apps/settings) in place of this
+    // shell's own.
+    property bool rustSettings: false
+    FileView {
+        path: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/hyprshell/engine"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: root.rustSettings = /^settings=rust$/m.test(text())
+        onLoadFailed: root.rustSettings = false
+    }
     function openSettings(pane) {
+        if (rustSettings) {
+            closeAll();
+            const bin = (Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") + "/.local/share")) + "/hyprshell/rust/bin/hyprshell-settings";
+            Quickshell.execDetached(["sh", "-c", '[ -x "$1" ] && exec "$1" "$2"; exec hyprshell-settings "$2"', "sh", bin, pane || "Appearance"]);
+            return;
+        }
         closeAll();
         if (pane) settingsPane = pane;
         // Opens on whichever monitor you are on, unless it is already open

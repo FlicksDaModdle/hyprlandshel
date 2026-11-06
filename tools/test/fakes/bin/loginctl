@@ -1,0 +1,3 @@
+#!/bin/sh
+# A stand-in for the tests: what it was asked, in $TT_LOGS/loginctl.log.
+echo "loginctl $*" >> "${TT_LOGS:-/tmp}/loginctl.log"

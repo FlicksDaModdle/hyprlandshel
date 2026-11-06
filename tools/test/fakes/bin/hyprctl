@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+# A stand-in hyprctl for the tests (tools/test): monitors, devices,
+# workspaces and version answered as a laptop's would be; eval, reload and
+# setcursor logged to $TT_LOGS/hyprctl.log and answered "ok".
+# FAKE_SCREENS=2 adds an external monitor; FAKE_HDR=1 puts the panel in HDR.
+import json, os, sys
+log = os.path.join(os.environ.get("TT_LOGS", "/tmp"), "hyprctl.log")
+a = [x for x in sys.argv[1:] if x != "-j"]
+mon = [{"id": 0, "name": "eDP-1", "description": "Samsung Display Corp. ATNA40CU07-0", "width": 2560, "height": 1600,
+        "refreshRate": 120.0, "x": 0, "y": 0, "scale": 1.6, "focused": True, "vrr": False,
+        "availableModes": ["2560x1600@120.00Hz", "2560x1600@60.00Hz", "1920x1200@120.00Hz", "1920x1200@60.00Hz"],
+        "currentFormat": "XRGB8888", "colorManagementPreset": "srgb"}]
+# FAKE_SCREENS=2: an external screen beside it, its place kept in
+# monitors.json and moved by hl.monitor{ output, position } evals.
+import re
+state = os.path.join(os.environ.get("TT_LOGS", "/tmp"), "monitors.json")
+if os.environ.get("FAKE_SCREENS") == "2":
+    mon.append({"id": 1, "name": "DP-1", "description": "Dell Inc. DELL U2723QE", "width": 3840, "height": 2160,
+                "refreshRate": 60.0, "x": 1600, "y": 0, "scale": 2.0, "focused": False, "vrr": False,
+                "availableModes": ["3840x2160@60.00Hz"], "currentFormat": "XRGB8888", "colorManagementPreset": "srgb"})
+    try: pos = json.load(open(state))
+    except Exception: pos = {}
+    for m in mon:
+        if m["name"] in pos: m["x"], m["y"] = pos[m["name"]]
+    if len(sys.argv) > 2 and sys.argv[1] == "eval":
+        o = re.search(r'output\s*=\s*"([^"]+)"', sys.argv[2]); q = re.search(r'position\s*=\s*"(-?\d+)x(-?\d+)"', sys.argv[2])
+        if o and q:
+            pos[o.group(1)] = [int(q.group(1)), int(q.group(2))]; json.dump(pos, open(state, "w"))
+if os.environ.get("FAKE_HDR") == "1":
+    mon[0]["colorManagementPreset"] = "hdr"; mon[0]["currentFormat"] = "XRGB2101010"
+ans = {"monitors": mon, "version": {"tag": "v0.57.0"}, "workspaces": [{"id": 1}, {"id": 2}],
+       "activeworkspace": {"id": 1},
+       "devices": {"mice": [{"name": "asue120a:00-04f3:31fb-touchpad"}, {"name": "logitech-mx-master-3"}],
+                   "keyboards": [{"name": "at-kbd", "main": True, "active_keymap": "English (US)"}]}}
+if a and a[0] in ("eval", "reload", "setcursor"):
+    open(log, "a").write(" ".join(a) + "\n")
+    print("ok")
+elif a and a[0] in ans:
+    print(json.dumps(ans[a[0]]))

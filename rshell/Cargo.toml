@@ -28,6 +28,10 @@ regex = { version = "1", default-features = false, features = ["std", "unicode-c
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 resvg = { version = "0.48", default-features = false }
 
+[features]
+# The automated tests' stand-ins (src/testhooks.rs): never in a normal build.
+test-hooks = []
+
 [build-dependencies]
 slint-build = "1.18"
 

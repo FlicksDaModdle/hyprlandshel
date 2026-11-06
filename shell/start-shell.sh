@@ -52,8 +52,52 @@ case ";${QT_LOGGING_RULES:-};" in
     *) export QT_LOGGING_RULES="${QT_LOGGING_RULES:+$QT_LOGGING_RULES;}quickshell.io.socket.warning=false" ;;
 esac
 
-# --restart: the running shell goes first.
-if [ "${1:-}" = "--restart" ] && pkill -x qs 2>/dev/null; then sleep 0.4; fi
+# --restart: the running shell goes first (either of them).
+if [ "${1:-}" = "--restart" ]; then
+    stopped=0
+    pkill -x qs 2>/dev/null && stopped=1
+    pkill -x hyprshell-rs 2>/dev/null && stopped=1
+    [ "$stopped" = 1 ] && sleep 0.4
+fi
+
+# Which shell: the Quickshell one, or the Rust rewrite (rshell/), as
+# tools/hyprshell-dev sets it in ~/.config/hyprshell/engine:
+#
+#   shell=rust        this starts the Rust shell instead of Quickshell
+#   settings=rust     the Quickshell shell opens the Rust Settings app
+#
+# The Rust shell is restarted if it crashes; if it crashes three times in
+# two minutes, the Quickshell one takes over and a notification says so.
+ENGINE=${XDG_CONFIG_HOME:-$HOME/.config}/hyprshell/engine
+RUSTBIN=${XDG_DATA_HOME:-$HOME/.local/share}/hyprshell/rust/bin
+if grep -qs '^shell=rust$' "$ENGINE" && [ -x "$RUSTBIN/hyprshell-rs" ]; then
+    RLOG=${XDG_RUNTIME_DIR:-/tmp}/hyprshell-rs.log
+    [ -x "$RUSTBIN/hyprshell-daemon" ] && export HYPRSHELL_DAEMON="$RUSTBIN/hyprshell-daemon"
+    export PATH="$RUSTBIN:$PATH"
+    crashes=""
+    while :; do
+        : >"$RLOG"
+        start=$(date +%s)
+        "$RUSTBIN/hyprshell-rs" >>"$RLOG" 2>&1
+        code=$?
+        # Ended on purpose (switched back, or the session ending).
+        [ "$code" = 0 ] || [ "$code" = 143 ] || [ "$code" = 130 ] && exit 0
+        grep -qs '^shell=rust$' "$ENGINE" || break
+        now=$(date +%s)
+        crashes="$crashes $now"
+        recent=0
+        for t in $crashes; do [ $((now - t)) -lt 120 ] && recent=$((recent + 1)); done
+        if [ "$recent" -ge 3 ]; then
+            notify-send -u critical -a Hyprshell "The Rust shell keeps crashing: back to the Quickshell one" \
+                "$(tail -n 6 "$RLOG")
+
+The full log: $RLOG. Switch back with: tools/hyprshell-dev use rust" 2>/dev/null &
+            break
+        fi
+        # Crashed straight away: a moment before the next try.
+        [ $((now - start)) -lt 5 ] && sleep 2
+    done
+fi
 
 RT=${XDG_RUNTIME_DIR:-/tmp}
 CFG=${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/hyprshell

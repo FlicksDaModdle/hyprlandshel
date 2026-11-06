@@ -1,0 +1,3 @@
+#!/bin/sh
+# A stand-in for the tests: what it was asked, in $TT_LOGS/notify-send.log.
+echo "notify-send $*" >> "${TT_LOGS:-/tmp}/notify-send.log"

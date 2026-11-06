@@ -130,7 +130,7 @@ pub struct Attempt {
 impl Attempt {
     /// Starts one; `wake` is written to as each line comes, to wake the loop.
     pub fn start(service: &str, user: &str, wake: &std::os::unix::net::UnixStream) -> Option<Attempt> {
-        let exe = std::env::current_exe().ok()?;
+        let exe = crate::testhooks::pam_helper()?;
         let mut child = Command::new(exe)
             .args(["--pam-helper", service, user])
             .stdin(Stdio::piped())

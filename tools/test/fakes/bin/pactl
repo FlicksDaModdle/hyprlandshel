@@ -1,0 +1,3 @@
+#!/bin/sh
+# A stand-in pactl for the tests: what it was asked, in $TT_LOGS/pactl.log.
+echo "pactl $*" >> "${TT_LOGS:-/tmp}/pactl.log"

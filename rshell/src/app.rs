@@ -118,7 +118,7 @@ macro_rules! theme_into {
 fn now_tm() -> libc::tm {
     // SAFETY: localtime_r fills the tm it is given and keeps nothing.
     unsafe {
-        let t = libc::time(std::ptr::null_mut());
+        let t = crate::testhooks::now();
         let mut tm: libc::tm = std::mem::zeroed();
         libc::localtime_r(&t, &mut tm);
         tm

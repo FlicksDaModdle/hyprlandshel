@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+# A stand-in for the lock screen's PAM attempts (rshell/src/pam.rs), for the
+# tests: `pam-helper --pam-helper SERVICE USER`, speaking the same JSON lines.
+#   login            asks for a password; "testpw" is right
+#   hyprshell-lock   the face: $TT_FACE says how it goes — found, missed,
+#                    or slow (found after four seconds); found by default
+import json, os, sys, time
+args = sys.argv[1:]
+if args and args[0] == "--pam-helper":
+    args = args[1:]
+service = args[0] if args else "login"
+def say(o):
+    sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
+with open(os.path.join(os.environ.get("TT_LOGS", "/tmp"), "pam.log"), "a") as log:
+    log.write(service + "\n")
+if service == "login":
+    say({"ev": "prompt", "echo": False, "msg": "Password: "})
+    line = sys.stdin.readline()
+    ok = line.rstrip("\n") == "testpw"
+    time.sleep(0.4)
+    say({"ev": "done", "ok": ok, "code": 0 if ok else 7, "msg": "" if ok else "Authentication failure"})
+    sys.exit(0 if ok else 1)
+how = os.environ.get("TT_FACE", "found")
+say({"ev": "info", "msg": "\u200bLooking for you", "error": False})
+time.sleep(4 if how == "slow" else 1.5)
+ok = how != "missed"
+say({"ev": "done", "ok": ok, "code": 0 if ok else 7, "msg": ""})
+sys.exit(0 if ok else 1)

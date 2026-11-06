@@ -1,0 +1,3 @@
+#!/bin/sh
+# A stand-in for the tests: what it was asked, in $TT_LOGS/systemctl.log.
+echo "systemctl $*" >> "${TT_LOGS:-/tmp}/systemctl.log"

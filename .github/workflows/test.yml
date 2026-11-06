@@ -1,0 +1,46 @@
+# The Rust rewrite's automated tests (tools/test/run.sh) on every push: the
+# unit tests, and the lock screen, login screen, Settings and shell driven in
+# a headless sway. Screenshots are only compared on machines that keep
+# references (yours, after a first run); here the run checks what each test
+# checks besides, and the report and screenshots are kept as the run's
+# artifact either way.
+name: tests
+
+on:
+  push:
+    paths: ["rshell/**", "apps/**", "greeter/**", "tools/test/**", ".github/workflows/test.yml"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: What the tests and the builds need
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends sway grim python3 dbus pkg-config clang \
+            libxkbcommon-dev libpam0g-dev libfontconfig1-dev libfreetype-dev fonts-inter \
+            libseat-dev libudev-dev libgbm-dev libdrm-dev libinput-dev libwayland-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            rshell
+            apps
+            tools/test/harness
+          cache-directories: ~/.cache/hyprshell-test
+      - name: Run the tests
+        # The report goes to $XDG_RUNTIME_DIR/hyprshell-test: /tmp here.
+        env:
+          XDG_RUNTIME_DIR: /tmp
+        run: tools/test/run.sh --keep
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: /tmp/hyprshell-test
+          if-no-files-found: ignore

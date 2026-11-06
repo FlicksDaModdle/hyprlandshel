@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+# A stand-in hyprshell-daemon for the tests (tools/test): Wi-Fi networks and
+# saved profiles (joining "Home" works, "Cafe Guest" is refused), Bluetooth
+# devices, sound devices and apps with live levels, and an ASUS laptop's
+# asusd. Every command it's sent goes to $TT_LOGS/daemon.log.
+import json, os, sys
+log = open(os.path.join(os.environ.get("TT_LOGS", "/tmp"), "daemon.log"), "a")
+def emit(o):
+    sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
+state = {"wifi": True, "active": "Home", "full": False}
+# (ssid, signal, nmcli words, freq, Flags, WpaFlags, RsnFlags)
+aps = [("Home", 82, "WPA2 WPA3", 5180, 1, 0, 0x588), ("Cafe Guest", 64, "WPA2", 2437, 1, 0, 0x188), ("eduroam", 58, "WPA2 802.1X", 5200, 1, 0, 0x288),
+       ("Library", 40, "", 2412, 0, 0, 0), ("Neighbour 5G", 22, "WPA3", 5500, 1, 0, 0x488), ("Old Router", 30, "WEP", 2462, 1, 0, 0),
+       ("Airport Free", 50, "OWE", 2412, 1, 0, 0x888), ("Corp-192", 45, "WPA3 802.1X", 5745, 1, 0, 0x2088), ("Granny", 35, "WPA1 WPA2", 2437, 1, 0x144, 0x14c)]
+saved = [{"uuid": "u-home", "name": "Home", "ssid": "Home", "autoconnect": True, "keyMgmt": "wpa-psk", "eap": ""},
+         {"uuid": "u-edu", "name": "eduroam", "ssid": "eduroam", "autoconnect": True, "keyMgmt": "wpa-eap", "eap": "peap"},
+         {"uuid": "u-hotel", "name": "Hotel Lobby", "ssid": "Hotel Lobby", "autoconnect": False, "keyMgmt": "", "eap": ""}]
+def net():
+    act = state["active"]
+    ev = {"ev": "net", "available": True, "wifiEnabled": state["wifi"], "full": state["full"],
+          "active": [{"type": "802-11-wireless", "state": "activated", "uuid": "u-home", "name": act, "device": "wlan0"}] if act else [],
+          "wifi": {"device": "wlan0", "hw": "AA:BB:CC:DD:EE:FF", "ip4": "192.168.1.42/24", "gateway": "192.168.1.1",
+                   "dns": ["192.168.1.1"], "ip6": "fe80::1/64", "bitrate": 866000},
+          "aps": [{"ssid": s, "signal": g, "security": sec, "freq": f, "rate": "866 Mbit/s", "inUse": s == act,
+                   "flags": fl, "wpaFlags": wf, "rsnFlags": rf, "bssid": "12:34:56:78:9A:%02X" % g, "mode": 2}
+                  for (s, g, sec, f, fl, wf, rf) in (aps if state["full"] else [a for a in aps if a[0] == act])] if state["wifi"] else [],
+          "saved": saved}
+    emit(ev)
+bt = {"powered": True, "discovering": False}
+devs = [{"mac": "AA:11", "name": "WH-1000XM4", "named": True, "icon": "audio-headset", "connected": True, "paired": True, "battery": 80},
+        {"mac": "BB:22", "name": "MX Keys", "named": True, "icon": "input-keyboard", "connected": False, "paired": True},
+        {"mac": "CC:33", "name": "Pixel 8", "named": True, "icon": "phone", "connected": False, "paired": False},
+        {"mac": "DD:44", "name": "DD:44", "named": False, "icon": "", "connected": False, "paired": False}]
+def paev():
+    ports = lambda *a: [{"name": n, "description": d, "availability": "yes"} for n, d in a]
+    emit({"ev": "pa", "available": True,
+      "defaultSink": "alsa_output.pci.analog-stereo", "defaultSource": "alsa_input.pci.analog-stereo",
+      "sinks": [
+        {"index": 1, "name": "alsa_output.pci.analog-stereo", "description": "Speakers", "volume": 0.62, "mute": False, "card": 0, "channels": ["front-left", "front-right"], "volumes": [0.62, 0.5],
+         "ports": ports(("analog-output-speaker", "Speakers"), ("analog-output-headphones", "Headphones")), "active_port": "analog-output-speaker",
+         "properties": {"device.form_factor": "internal", "device.bus": "pci"}},
+        {"index": 2, "name": "alsa_output.hdmi", "description": "HDMI / DisplayPort", "volume": 1.0, "mute": True, "card": 1, "channels": ["front-left", "front-right", "rear-left", "rear-right"], "volumes": [1.0, 1.0, 0.7, 0.7],
+         "ports": ports(("hdmi-output-0", "HDMI")), "active_port": "hdmi-output-0", "properties": {"device.bus": "pci"}},
+        {"index": 3, "name": "bluez_output.AA", "description": "WH-1000XM4", "volume": 0.4, "mute": False, "card": 2,
+         "ports": [], "active_port": "", "properties": {"device.bus": "bluetooth", "device.form_factor": "headphone"}}],
+      "sources": [
+        {"index": 4, "name": "alsa_input.pci.analog-stereo", "description": "Internal Microphone", "volume": 0.8, "mute": False, "card": 0,
+         "ports": ports(("analog-input-mic", "Microphone")), "active_port": "analog-input-mic", "properties": {}},
+        {"index": 5, "name": "alsa_output.pci.analog-stereo.monitor", "monitor": True, "description": "Monitor of Speakers", "volume": 1, "card": 0, "ports": [], "properties": {}}],
+      "sinkInputs": [
+        {"index": 20, "sink": 1, "volume": 0.9, "mute": False, "channels": ["front-left", "front-right"], "volumes": [0.9, 0.9], "properties": {"application.name": "Firefox", "media.name": "A video - YouTube", "application.icon_name": "firefox"}},
+        {"index": 21, "sink": 1, "volume": 0.5, "mute": True, "properties": {"application.name": "Spotify", "media.name": "Some song"}}],
+      "sourceOutputs": [
+        {"index": 30, "source": 4, "volume": 1.0, "mute": False, "properties": {"application.name": "Discord", "media.name": "Voice"}}],
+      "cards": [
+        {"index": 0, "name": "alsa_card.pci", "active_profile": "output:analog-stereo+input:analog-stereo",
+         "profiles": [{"name": "output:analog-stereo+input:analog-stereo", "description": "Analog Stereo Duplex", "available": True}, {"name": "off", "description": "Off", "available": True}]},
+        {"index": 1, "name": "alsa_card.hdmi", "active_profile": "output:hdmi-stereo", "profiles": [{"name": "output:hdmi-stereo", "description": "Digital Stereo (HDMI)", "available": True}]},
+        {"index": 2, "name": "bluez_card.AA", "active_profile": "a2dp-sink", "profiles": [{"name": "a2dp-sink", "description": "High Fidelity Playback (A2DP Sink)", "available": True}, {"name": "headset-head-unit", "description": "Headset Head Unit (HSP/HFP)", "available": True}]}]})
+
+def btev():
+    emit({"ev": "bt", "available": True, "adapter": {"powered": bt["powered"], "discoverable": False, "discovering": bt["discovering"], "name": "g14"}, "devices": devs})
+import threading, time, math
+peaks = []
+lock = threading.Lock()
+def peaker():
+    t = 0
+    while True:
+        time.sleep(0.04); t += 0.04
+        for i, n in enumerate(list(peaks)):
+            emit({"ev": "pa-peak", "name": n, "peak": abs(math.sin(t * 2 + i)) * 0.9})
+threading.Thread(target=peaker, daemon=True).start()
+_emit = emit
+def emit(o):
+    with lock: _emit(o)
+emit({"ev": "ready", "modules": {"net": True, "agent": True, "pulse": True}})
+net()
+rog = {"ev": "rog", "available": True,
+       "platform": {"profile": 0, "choices": [0, 1, 2], "chargeLimit": 80},
+       "aura": [{"brightness": 2, "modes": [0, 1, 2, 3, 10, 11], "effect": {"mode": 0, "colour": "#ff563c", "colour2": "#000000", "speed": "Med", "direction": "Right"}}],
+       "attrs": {"panel_overdrive": {"value": 1, "possible": [0, 1]}, "boot_sound": {"value": 0, "possible": [0, 1]}, "mini_led_mode": {"value": 1, "possible": [0, 1, 2]}},
+       "gpu": {"mode": "hybrid", "pending": "", "choices": ["integrated", "hybrid", "ultimate"]}}
+# The keybinds' commands: lines added to $XDG_RUNTIME_DIR/hyprshell.cmd,
+# passed on as the real daemon does once it's asked (cmd-watch).
+def cmdwatch():
+    path = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "hyprshell.cmd")
+    if not os.path.exists(path):
+        open(path, "a").close()
+    f = open(path)
+    f.seek(0, 2)
+    while True:
+        line = f.readline()
+        if not line:
+            time.sleep(0.05)
+            continue
+        if line.strip():
+            emit({"ev": "cmd", "line": line.strip()})
+watching_cmds = False
+for line in sys.stdin:
+    log.write(line); log.flush()
+    try: c = json.loads(line)
+    except Exception: continue
+    k = c.get("cmd", "")
+    if k == "net-watch": state["full"] = bool(c.get("on")); net()
+    elif k in ("net-refresh", "net-scan"): net()
+    elif k == "net-wifi": state["wifi"] = bool(c.get("on")); net(); emit({"ev": "net-done", "id": c.get("id"), "ok": True})
+    elif k in ("net-join", "net-up", "net-enterprise"):
+        ssid = c.get("ssid") or next((p["ssid"] for p in saved if p["uuid"] == c.get("uuid")), "")
+        if ssid == "Cafe Guest":
+            emit({"ev": "net-done", "id": c.get("id"), "ok": False, "error": "Secrets were required, but not provided"})
+        else:
+            state["active"] = ssid; net(); emit({"ev": "net-done", "id": c.get("id"), "ok": True})
+    elif k == "net-profile":
+        emit({"ev": "net-profile", "uuid": c.get("uuid"), "eap": "peap", "phase2": "mschapv2", "identity": "student@uni.edu",
+              "anonymous": "", "domain": "radius.uni.edu", "ca": "", "systemCa": True,
+              "keyMgmt": "wpa-eap" if c.get("uuid") == "u-edu" else "wpa-psk", "clientCert": "", "privateKey": "", "peapVer": "", "pacFile": "", "fastProv": "",
+              "general": {"autoconnect": True, "metered": "no", "allUsers": True, "mac": "stable", "band": "", "hidden": False,
+                          "ipv4": {"method": "auto", "address": "", "gateway": "", "dns": "1.1.1.1", "ignoreAutoDns": True}, "ipv6": {"method": "auto"}}})
+    elif k == "net-edit":
+        emit({"ev": "net-done", "id": c.get("id"), "ok": True}); net()
+    elif k == "pa-peaks":
+        peaks[:] = c.get("sources") or []
+    elif k in ("pa-watch", "pa-snapshot"):
+        if k == "pa-snapshot" or c.get("on"): paev()
+    elif k == "cmd-watch":
+        if not watching_cmds:
+            watching_cmds = True
+            threading.Thread(target=cmdwatch, daemon=True).start()
+    elif k == "bt-hello": btev()
+    elif k == "rog-refresh": emit(rog)
+    elif k == "rog-profile": rog["platform"]["profile"] = c["profile"]; emit(rog)
+    elif k == "rog-charge": rog["platform"]["chargeLimit"] = c["limit"]; emit(rog)
+    elif k == "rog-kbd-brightness": rog["aura"][0]["brightness"] = c["level"]; emit(rog)
+    elif k == "rog-kbd-mode": rog["aura"][0]["effect"].update(mode=c["mode"], colour=c["colour"]); emit(rog)
+    elif k == "rog-attr": rog["attrs"][c["name"]]["value"] = c["value"]; emit(rog)
+    elif k == "rog-gpu": rog["gpu"]["pending"] = c["mode"] if c["mode"] != rog["gpu"]["mode"] else ""; emit(rog)
+    elif k == "rog-full-charge": emit({"ev": "rog-error", "message": "asusd: OneShotFullCharge isn't supported on this model"})
+    elif k == "bt-scan": bt["discovering"] = bool(c.get("on")); btev()
+    elif k == "bt-power": bt["powered"] = bool(c.get("on")); btev()
+    elif k == "bt-pair":
+        emit({"ev": "bt-busy", "mac": c["mac"], "op": "pair"})
+        emit({"ev": "bt-request", "id": 7, "kind": "confirm", "mac": c["mac"], "name": "Pixel 8", "passkey": "482913"})
+    elif k == "bt-reply":
+        emit({"ev": "bt-done", "mac": "CC:33"})
+        if c.get("accept"):
+            devs[2]["paired"] = True; devs[2]["connected"] = True
+        else:
+            emit({"ev": "bt-error", "mac": "CC:33", "error": "org.bluez.Error.AuthenticationCanceled", "message": ""})
+        btev()
+    elif k.startswith("net-"):
+        emit({"ev": "net-done", "id": c.get("id"), "ok": True}); net()

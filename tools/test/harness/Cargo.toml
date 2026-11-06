@@ -1,0 +1,17 @@
+[package]
+name = "hyprshell-test-harness"
+version = "0.1.0"
+edition = "2021"
+description = "What tools/test drives the shell with: a pointer, a keyboard, and a picture compared."
+publish = false
+
+[dependencies]
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
+xkbcommon = "0.8"
+libc = "0.2"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[profile.release]
+opt-level = 2

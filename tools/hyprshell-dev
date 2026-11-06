@@ -1,0 +1,130 @@
+#!/bin/bash
+# Hyprshell's Rust rewrite, switched on and off, and tested.
+#
+#   tools/hyprshell-dev status              which is in use: the Quickshell
+#                                           shell or the Rust one, for the
+#                                           shell, Settings and the login screen
+#   tools/hyprshell-dev use rust [PART…]    switch to the Rust rewrite
+#   tools/hyprshell-dev use quickshell [PART…]
+#                                           …and back
+#        PART: shell, settings, greeter, or all (the default: shell and
+#        settings; the login screen only when asked, as it needs sudo)
+#   tools/hyprshell-dev build               build the Rust parts and put them
+#                                           where the switch runs them from
+#   tools/hyprshell-dev test [AREA…] [--accept] [--keep]
+#                                           the automated tests (tools/test):
+#                                           unit lock greeter settings shell
+#   tools/hyprshell-dev logs                the Rust shell's log
+#
+# The switch lives in ~/.config/hyprshell/engine (shell=rust, settings=rust);
+# start-shell.sh reads it each time the shell starts, and the Rust shell, if
+# it keeps crashing, gives way to the Quickshell one by itself. The Rust
+# programs are kept in ~/.local/share/hyprshell/rust/bin, built from this
+# checkout — `build` again after pulling.
+set -u
+HERE=$(cd "$(dirname "$0")" && pwd)
+REPO=$(cd "$HERE/.." && pwd)
+CFG=${XDG_CONFIG_HOME:-$HOME/.config}
+DATA=${XDG_DATA_HOME:-$HOME/.local/share}
+ENGINE="$CFG/hyprshell/engine"
+RUSTBIN="$DATA/hyprshell/rust/bin"
+START="$DATA/hyprshell/start-shell.sh"
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'hyprshell-dev: %s\n' "$*" >&2; exit 1; }
+is_rust() { grep -qs "^$1=rust$" "$ENGINE"; }
+set_part() {
+    mkdir -p "${ENGINE%/*}"
+    touch "$ENGINE"
+    sed -i "/^$1=/d" "$ENGINE"
+    [ "$2" = rust ] && echo "$1=rust" >> "$ENGINE"
+    return 0
+}
+
+build() {
+    command -v cargo >/dev/null || die "cargo isn't installed: sudo pacman -S --needed rust"
+    say "Building the Rust shell…"
+    (cd "$REPO/rshell" && cargo build --release -q) || die "the Rust shell didn't build"
+    say "Building Settings…"
+    (cd "$REPO/apps" && cargo build --release -q -p hyprshell-settings) || die "Settings didn't build"
+    say "Building hyprshell-daemon…"
+    (cd "$REPO/shell/rust" && { cargo build --release -q -p hyprshell-daemon 2>/dev/null \
+        || cargo build --release -q -p hyprshell-daemon --no-default-features; }) || die "hyprshell-daemon didn't build"
+    mkdir -p "$RUSTBIN"
+    # Swapped in whole, so a running shell keeps the file it started from.
+    for f in "$REPO/rshell/target/release/hyprshell-rs" "$REPO/apps/target/release/hyprshell-settings" "$REPO/shell/rust/target/release/hyprshell-daemon"; do
+        install -m 755 "$f" "$RUSTBIN/.$(basename "$f").new" && mv -f "$RUSTBIN/.$(basename "$f").new" "$RUSTBIN/$(basename "$f")"
+    done
+    # The start script that knows the switch.
+    mkdir -p "${START%/*}"
+    install -m 755 "$REPO/shell/start-shell.sh" "$START"
+    say "Built, in $RUSTBIN (commit $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null))."
+}
+
+restart_shell() {
+    [ -n "${WAYLAND_DISPLAY:-}" ] || { say "Not in a graphical session: it takes effect at the next login."; return; }
+    say "Restarting the shell…"
+    setsid -f "$START" --restart >/dev/null 2>&1 < /dev/null
+}
+
+status() {
+    local s=quickshell t=quickshell running=""
+    is_rust shell && s=rust
+    is_rust settings && t=rust
+    pgrep -x hyprshell-rs >/dev/null && running="the Rust shell"
+    pgrep -x qs >/dev/null && running="${running:+$running and }the Quickshell shell"
+    say "shell:     $s${running:+   (running: $running)}"
+    say "settings:  $( [ "$s" = rust ] && echo "rust (the Rust shell always opens the Rust app)" || echo "$t")"
+    local g="quickshell"
+    grep -qs -- "hyprshell-rs --greeter" /etc/hyprshell-greeter/hyprland.lua && g=rust
+    [ -f /etc/hyprshell-greeter/hyprland.lua ] || g="not installed"
+    say "login:     $g"
+    if [ -x "$RUSTBIN/hyprshell-rs" ]; then
+        say "Rust build: $(date -r "$RUSTBIN/hyprshell-rs" '+%F %R'), in $RUSTBIN"
+    else
+        say "Rust build: none yet (tools/hyprshell-dev build)"
+    fi
+    if [ "$t" = rust ] && [ "$s" = quickshell ]; then
+        local ui="$CFG/quickshell/hyprshell/config/UiState.qml"
+        grep -qs rustSettings "$ui" || say "Note: the installed Quickshell shell is older than this switch; update it (shell/install.sh) for settings=rust to take effect."
+    fi
+}
+
+use() {
+    local to=$1; shift
+    local parts=("$@")
+    [ ${#parts[@]} -eq 0 ] && parts=(shell settings)
+    [ "${parts[0]}" = all ] && parts=(shell settings greeter)
+    case "$to" in rust|quickshell) ;; *) die "use rust, or use quickshell" ;; esac
+    if [ "$to" = rust ] && [ ! -x "$RUSTBIN/hyprshell-rs" ]; then build; fi
+    # The start script that reads the switch, whichever way it goes.
+    [ -f "$START" ] && grep -qs "hyprshell/engine" "$START" || install -Dm 755 "$REPO/shell/start-shell.sh" "$START"
+    local restart=0
+    for p in "${parts[@]}"; do
+        case "$p" in
+            shell) set_part shell "$to"; restart=1; say "shell: $to" ;;
+            settings) set_part settings "$to"; say "settings: $to" ;;
+            greeter)
+                if [ "$to" = rust ]; then
+                    [ -x "$REPO/rshell/target/release/hyprshell-rs" ] || build
+                    sudo "$REPO/greeter/install.sh" --rust || die "the login screen wasn't switched"
+                else
+                    sudo "$REPO/greeter/install.sh" || die "the login screen wasn't switched"
+                fi
+                say "login screen: $to (from the next boot)" ;;
+            *) die "no part called $p (shell, settings, greeter, all)" ;;
+        esac
+    done
+    [ "$restart" = 1 ] && restart_shell
+    return 0
+}
+
+case "${1:-status}" in
+    status) status ;;
+    use) shift; [ $# -ge 1 ] || die "use rust, or use quickshell"; use "$@" ;;
+    build) build ;;
+    test) shift; exec "$REPO/tools/test/run.sh" "$@" ;;
+    logs) less +G "${XDG_RUNTIME_DIR:-/tmp}/hyprshell-rs.log" ;;
+    -h|--help|help) sed -n '2,/^set -u/p' "$0" | sed '$d; s/^# \{0,1\}//' ;;
+    *) die "unknown command $1 (tools/hyprshell-dev --help)" ;;
+esac

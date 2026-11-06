@@ -307,7 +307,7 @@ impl Greeter {
             prompt: String::new(),
             prompt_echo: false,
             password_sent: false,
-            face_enabled: std::fs::read_to_string("/etc/pam.d/greetd").map(|t| t.contains("pam_howdy") || t.contains("pam_hyprshell_face")).unwrap_or(false),
+            face_enabled: crate::testhooks::face().unwrap_or_else(|| std::fs::read_to_string("/etc/pam.d/greetd").map(|t| t.contains("pam_howdy") || t.contains("pam_hyprshell_face")).unwrap_or(false)),
             info: String::new(),
             face_started: false,
             awaiting_password: false,
@@ -1078,4 +1078,50 @@ pub fn run() {
     // Out at once: greetd's Hyprland ends as soon as this does, and the
     // session waits on it; there's nothing here to tidy.
     std::process::exit(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exec_lines() {
+        assert_eq!(split_exec("Hyprland"), vec!["Hyprland"]);
+        assert_eq!(split_exec("/usr/bin/startplasma-wayland %U --x"), vec!["/usr/bin/startplasma-wayland", "--x"]);
+        assert_eq!(split_exec(r#"sh -c "a b" "" end"#), vec!["sh", "-c", "a b", "", "end"]);
+        assert_eq!(split_exec(r#""quoted \" mark""#), vec![r#"quoted " mark"#]);
+    }
+
+    #[test]
+    fn sessions_and_users() {
+        let d = std::env::temp_dir().join(format!("hyprshell-greeter-test-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("b.desktop"), "[Desktop Entry]\nName=Zed\nName[de]=Zett\nExec=zed %f\n\n[Desktop Action X]\nName=No\nExec=no\n").unwrap();
+        std::fs::write(d.join("a.desktop"), "[Desktop Entry]\nName=Alpha\nExec=alpha\nDesktopNames=A;B;\n").unwrap();
+        std::fs::write(d.join("h.desktop"), "[Desktop Entry]\nName=Hidden\nExec=h\nNoDisplay=true\n").unwrap();
+        std::fs::write(d.join("noexec.desktop"), "[Desktop Entry]\nName=Nothing\n").unwrap();
+        let s = read_sessions(d.to_str().unwrap());
+        assert_eq!(s.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), vec!["Alpha", "Zed"]);
+        assert_eq!(s[1].command, vec!["zed"]);
+        assert_eq!(s[0].desktop_names, "A;B;");
+        let p = d.join("passwd");
+        std::fs::write(&p, "root:x:0:0::/root:/bin/bash\nb:x:1001:1::/h:/bin/zsh\na:x:1000:1:Full Name,room:/h:/bin/bash\nn:x:1002:1::/:/usr/sbin/nologin\nbig:x:65534:1::/:/bin/sh\n").unwrap();
+        let u = read_users(p.to_str().unwrap());
+        assert_eq!(u.iter().map(|u| (u.name.as_str(), u.display.as_str())).collect::<Vec<_>>(), vec![("a", "Full Name"), ("b", "b")]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn screens_checked_before_use() {
+        let v: Value = serde_json::from_str(
+            r#"[{"name":"eDP-1","width":2560,"height":1600,"refreshRate":120,"x":0,"y":0,"scale":1.6667},
+                {"name":"DP-1\"; os.execute('x')","width":1920,"height":1080,"refreshRate":60,"scale":1},
+                {"name":"HDMI-A-1","width":1920,"height":1080,"refreshRate":60,"scale":99}]"#,
+        )
+        .unwrap();
+        let lua = monitor_lua(&v);
+        assert!(lua.contains(r#"output = "eDP-1", mode = "2560x1600@120", position = "0x0", scale = 1.6667"#));
+        assert!(!lua.contains("os.execute"));
+        assert!(!lua.contains("HDMI-A-1"));
+    }
 }
