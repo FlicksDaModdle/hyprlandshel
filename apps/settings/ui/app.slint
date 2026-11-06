@@ -9,8 +9,9 @@ import { WifiPanel, Wifi, WifiNet, KV, SavedNet } from "wifi.slint";
 import { BluetoothPanel, Blue, BtDev } from "bluetooth.slint";
 import { SoundPanel, Snd, SndDev, SndOpt, SndApp } from "sound.slint";
 import { AppearancePreview, Look } from "preview.slint";
+import { WallpaperGallery, AnimatedGallery, Gal, GalItem, AnimLook, AnimTile, PalChip } from "gallery.slint";
 
-export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev, Snd, SndDev, SndOpt, SndApp, Look }
+export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev, Snd, SndDev, SndOpt, SndApp, Look, Gal, GalItem, AnimLook, AnimTile, PalChip }
 
 export struct Btn { label: string, quiet: bool, enabled: bool }
 
@@ -668,7 +669,10 @@ component SettingsRow inherits Rectangle {
         if item.kind == "panel" && item.panel == "bluetooth": BluetoothPanel { horizontal-stretch: 1; }
         if item.kind == "panel" && item.panel == "sound": SoundPanel { horizontal-stretch: 1; }
         if item.kind == "panel" && item.panel == "preview": AppearancePreview { horizontal-stretch: 1; }
-        if item.kind == "panel" && item.panel != "wifi" && item.panel != "bluetooth" && item.panel != "sound" && item.panel != "preview": PanelCard {
+        if item.kind == "panel" && item.panel == "gallery": WallpaperGallery { horizontal-stretch: 1; }
+        if item.kind == "panel" && item.panel == "animated": AnimatedGallery { horizontal-stretch: 1; }
+        if item.kind == "panel" && item.panel != "wifi" && item.panel != "bluetooth" && item.panel != "sound" && item.panel != "preview"
+            && item.panel != "gallery" && item.panel != "animated": PanelCard {
             horizontal-stretch: 1;
             panel: item.panel;
             press(i) => { Prefs.press(root.index, i); }

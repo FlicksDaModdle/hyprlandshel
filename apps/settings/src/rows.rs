@@ -49,6 +49,9 @@ pub struct Ui {
     pub display_pick: String,
     pub mod_probe: String,
     pub wallpaper_mode: String,
+    /// Settings → Wallpaper → Live, each screen its own: the screen being
+    /// picked for ("" for all).
+    pub live_pick: String,
     pub adv_open: std::collections::HashSet<String>,
     /// A message for the toast.
     pub toast: Option<String>,
@@ -814,18 +817,170 @@ fn anim_rows(p: &Prefs) -> Vec<Spec> {
     r
 }
 
+/// WallMotion.others: other programs that draw a wallpaper, by the
+/// kernel's (15-character) process name.
+const OTHER_WALLPAPERS: [(&str, &str); 7] = [
+    ("hyprpaper", "hyprpaper"),
+    ("swww-daemon", "swww"),
+    ("awww-daemon", "awww"),
+    ("swaybg", "swaybg"),
+    ("wpaperd", "wpaperd"),
+    ("linux-wallpaper", "linux-wallpaperengine"),
+    ("mpvpaper", "mpvpaper"),
+];
+
+/// WallMotion.foreign: those running now (an mpvpaper is the shell's own
+/// while a Live wallpaper is on).
+fn foreign_wallpapers(p: &Prefs) -> Vec<(&'static str, &'static str)> {
+    let out = std::process::Command::new("ps").args(["-eo", "stat=,comm="]).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+    let running: Vec<String> = out
+        .lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            (f.len() >= 2 && !f[0].starts_with('Z')).then(|| f[1].to_string())
+        })
+        .collect();
+    let live = !p.s("liveWallpaper").is_empty();
+    OTHER_WALLPAPERS.iter().copied().filter(|(c, _)| running.iter().any(|r| r == c) && !(*c == "mpvpaper" && live)).collect()
+}
+
+/// WallMotion.anyReason: why the desktop is still while the previews move
+/// — "" when it moves on some screen.
+fn motion_reason(p: &Prefs) -> &'static str {
+    let bat = system::battery();
+    let on_battery = bat.as_ref().is_some_and(|b| b.state == "Discharging");
+    if on_battery && !p.b("animOnBattery") {
+        return "battery";
+    }
+    // PowerSaver.active.
+    let saver = match p.s("saverMode").as_str() {
+        "always" => true,
+        "never" => false,
+        "low" => on_battery && bat.as_ref().is_some_and(|b| b.percent * 100.0 <= p.f("saverBelow")),
+        _ => on_battery,
+    };
+    if saver {
+        return "saver";
+    }
+    // Covered: on every screen a tiled, maximised or fullscreen window
+    // fills what it shows.
+    if !p.b("animPauseCovered") {
+        return "";
+    }
+    let mons = hypr::json("monitors");
+    let clients = hypr::json("clients");
+    let mons = mons.as_array().cloned().unwrap_or_default();
+    if mons.is_empty() {
+        return "";
+    }
+    let covered = |m: &Value| {
+        let ws = m["activeWorkspace"]["id"].as_i64();
+        clients.as_array().into_iter().flatten().any(|c| {
+            c["workspace"]["id"].as_i64() == ws
+                && c["mapped"] != false
+                && !c["class"].as_str().unwrap_or("").to_lowercase().contains("quickshell")
+                && (c["floating"] != true || c["fullscreen"].as_i64().unwrap_or(0) > 0)
+        })
+    };
+    if mons.iter().all(covered) {
+        "covered"
+    } else {
+        ""
+    }
+}
+
 fn motion_rows(p: &Prefs) -> Vec<Spec> {
-    vec![
+    let mut r = vec![];
+    let foreign = foreign_wallpapers(p);
+    if !foreign.is_empty() {
+        let names = foreign.iter().map(|f| f.1).collect::<Vec<_>>().join(", ");
+        let comms: Vec<&'static str> = foreign.iter().map(|f| f.0).collect();
+        r.push(buttons(
+            &format!("Hidden by {names}"),
+            "Another wallpaper program is drawing over this one. Stop it here, and take it out of whatever starts it at login (an exec-once, or a systemd user service).",
+            vec![btn("Stop it", false, true, move |_| {
+                for c in &comms {
+                    let _ = std::process::Command::new("pkill").args(["-x", c]).status();
+                }
+                std::thread::sleep(std::time::Duration::from_millis(800));
+            })],
+        ));
+    } else {
+        match motion_reason(p) {
+            "battery" => r.push(buttons("Paused on battery", "It moves again on the charger", vec![btn("Keep moving", false, true, |c| c.set("animOnBattery", json!(true)))])),
+            "saver" => r.push(buttons(
+                "Paused by Battery saver",
+                "Settings → Power decides when that is on",
+                vec![btn("Power…", true, true, |c| c.ui.pane = "Power".into())],
+            )),
+            "covered" => r.push(buttons(
+                "Paused behind windows",
+                "A window fills the screen; it moves again when you can see it",
+                vec![btn("Keep moving", false, true, |c| c.set("animPauseCovered", json!(false)))],
+            )),
+            _ => {}
+        }
+    }
+    r.extend(vec![
         seg_with("Frame rate", "Smoother costs more power", &[("15", "15"), ("30", "30"), ("60", "60")], &p.i("animFps").to_string(), |c, v| {
             c.set("animFps", json!(v.parse::<i64>().unwrap_or(30)))
         }),
         toggle(p, "Hold still behind windows", "While a tiled, maximised or fullscreen window fills the screen", "animPauseCovered"),
         toggle(p, "Keep moving on battery", "Otherwise it holds still until the charger is in", "animOnBattery"),
-    ]
+    ]);
+    r
 }
 
 /// LiveWallpaper's folders (JSON list; ~/Videos/Wallpapers by default)
 /// and loose files, and the videos in them.
+/// LiveWallpaper.screenMap: a video per screen, for "each".
+pub fn live_screen_map(p: &Prefs) -> serde_json::Map<String, Value> {
+    serde_json::from_str::<Value>(&p.s("liveScreens")).ok().and_then(|v| v.as_object().cloned()).unwrap_or_default()
+}
+
+/// The screen being picked for, if the layout is "each" and it's there.
+pub fn live_pick_for(c: &Ctx) -> String {
+    if c.p.s("liveLayout") != "each" || c.ui.live_pick.is_empty() {
+        return String::new();
+    }
+    let screens: Vec<String> = hypr::json("monitors").as_array().into_iter().flatten().filter_map(|m| m["name"].as_str().map(str::to_string)).collect();
+    if screens.len() > 1 && screens.contains(&c.ui.live_pick) {
+        c.ui.live_pick.clone()
+    } else {
+        String::new()
+    }
+}
+
+/// The video the gallery ticks: the screen's own, or the one on.
+pub fn live_current(c: &Ctx) -> String {
+    let pick_for = live_pick_for(c);
+    if !pick_for.is_empty() {
+        return live_screen_map(&c.p).get(&pick_for).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    }
+    c.p.s("liveWallpaper")
+}
+
+/// A video clicked in the gallery (LiveWallpaper.choose / chooseFor).
+pub fn live_pick(c: &mut Ctx, dir: &str) {
+    let pick_for = live_pick_for(c);
+    if pick_for.is_empty() {
+        c.set("liveWallpaper", json!(dir));
+        return;
+    }
+    let mut m = live_screen_map(&c.p);
+    if m.get(&pick_for).and_then(|v| v.as_str()) == Some(dir) {
+        m.remove(&pick_for);
+    } else {
+        m.insert(pick_for, json!(dir));
+    }
+    c.set("liveScreens", json!(Value::Object(m).to_string()));
+}
+
+pub fn live_sources_pub(p: &Prefs) -> (Vec<String>, Vec<String>) {
+    let (f, x, _) = live_sources(p);
+    (f, x)
+}
+
 fn live_sources(p: &Prefs) -> (Vec<String>, Vec<String>, Vec<String>) {
     let home = hyprshell_kit::home().display().to_string();
     let folders: Vec<String> = serde_json::from_str::<Vec<String>>(&p.s("liveFolders"))
@@ -835,17 +990,32 @@ fn live_sources(p: &Prefs) -> (Vec<String>, Vec<String>, Vec<String>) {
     let files: Vec<String> = serde_json::from_str::<Vec<String>>(&p.s("liveFiles")).unwrap_or_default();
     let is_video = |n: &str| {
         let l = n.to_lowercase();
-        [".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".gif"].iter().any(|e| l.ends_with(e))
+        [".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".ogv", ".gif"].iter().any(|e| l.ends_with(e))
     };
-    let mut videos: Vec<String> = vec![];
-    for f in &folders {
-        if let Ok(rd) = std::fs::read_dir(f) {
-            let mut v: Vec<String> = rd.flatten().map(|e| e.path().display().to_string()).filter(|n| is_video(n)).collect();
-            v.sort();
-            videos.extend(v);
+    // As LiveWallpaper's scan: each folder and one level under it, then
+    // the files; one of each, by title.
+    fn walk(dir: &std::path::Path, depth: u32, out: &mut Vec<String>, ok: &dyn Fn(&str) -> bool) {
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if depth > 1 {
+                    walk(&p, depth - 1, out, ok);
+                }
+            } else if ok(&p.display().to_string()) {
+                out.push(p.display().to_string());
+            }
         }
     }
-    videos.extend(files.iter().filter(|f| std::path::Path::new(f).exists()).cloned());
+    let mut videos: Vec<String> = vec![];
+    for f in &folders {
+        walk(std::path::Path::new(f), 2, &mut videos, &is_video);
+    }
+    videos.extend(files.iter().filter(|f| std::path::Path::new(f).is_file()).cloned());
+    let mut seen = std::collections::HashSet::new();
+    videos.retain(|v| seen.insert(v.clone()));
+    let title = |v: &String| v.rsplit('/').next().unwrap_or(v).rsplit_once('.').map(|x| x.0).unwrap_or("").replace('_', " ").to_lowercase();
+    videos.sort_by_key(title);
     (folders, files, videos)
 }
 
@@ -865,7 +1035,9 @@ fn live_rows(c: &Ctx) -> Vec<Spec> {
     let (folders, files, videos) = live_sources(p);
     let live = p.s("liveWallpaper");
     let on = !live.is_empty();
-    let title = live.rsplit('/').next().unwrap_or(&live).rsplit_once('.').map(|x| x.0).unwrap_or("").to_string();
+    // The gallery's title for it (underscores as spaces) when it's there.
+    let stem = live.rsplit('/').next().unwrap_or(&live).rsplit_once('.').map(|x| x.0).unwrap_or("").to_string();
+    let title = if videos.contains(&live) { stem.replace('_', " ") } else { stem };
     let vids = videos.clone();
     r.push(buttons(
         if on { &title } else { "None on" },
@@ -880,9 +1052,17 @@ fn live_rows(c: &Ctx) -> Vec<Spec> {
         },
         if on {
             vec![
+                // LiveWallpaper.next: in order, or shuffled.
                 btn("Next", true, videos.len() > 1, move |c| {
                     let now = c.p.s("liveWallpaper");
-                    let i = vids.iter().position(|v| *v == now).map(|i| (i + 1) % vids.len()).unwrap_or(0);
+                    let mut i = vids.iter().position(|v| *v == now).map(|i| (i + 1) % vids.len()).unwrap_or(0);
+                    if c.p.s("liveOrder") == "random" && vids.len() > 1 {
+                        let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos() as usize).unwrap_or(0);
+                        i = seed % vids.len();
+                        if vids[i] == now {
+                            i = (i + 1) % vids.len();
+                        }
+                    }
                     if let Some(v) = vids.get(i) {
                         c.set("liveWallpaper", json!(v));
                     }
@@ -896,6 +1076,28 @@ fn live_rows(c: &Ctx) -> Vec<Spec> {
     let screens: Vec<String> = hypr::json("monitors").as_array().into_iter().flatten().filter_map(|m| m["name"].as_str().map(str::to_string)).collect();
     if screens.len() > 1 {
         r.push(seg(p, "Screens", "", &[("Same", "same"), ("Each its own", "each")], "liveLayout"));
+        // Each its own: which screen is being picked for, as buttons
+        // rather than a menu, since there are only a few.
+        if p.s("liveLayout") == "each" {
+            let pick_for = live_pick_for(c);
+            let map = live_screen_map(p);
+            let mut opts: Vec<(String, String)> = vec![("All".into(), String::new())];
+            opts.extend(screens.iter().map(|n| (n.clone(), n.clone())));
+            let o: Vec<(&str, &str)> = opts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+            r.push(seg_with(
+                "Picking for",
+                if pick_for.is_empty() {
+                    "Every screen without its own"
+                } else if map.get(&pick_for).is_some_and(|v| v.as_str().is_some_and(|v| !v.is_empty())) {
+                    "Click its video again to share the main one"
+                } else {
+                    ""
+                },
+                &o,
+                &pick_for,
+                |c, v| c.ui.live_pick = v,
+            ));
+        }
     }
     let tidy = |f: &str| f.replace(&home, "~");
     if videos.is_empty() {

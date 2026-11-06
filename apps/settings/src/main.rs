@@ -11,7 +11,9 @@
 //!                               binds.lua) and exit; the shell runs this at
 //!                               login, as Quickshell's Devices.qml did
 
+mod anim;
 mod bt;
+mod gallery;
 mod daemon;
 mod display;
 mod net;
@@ -46,6 +48,10 @@ struct State {
     net: net::Net,
     bt: bt::Bt,
     snd: sound::Sound,
+    /// The animated styles' live previews, drawn on a thread of their own.
+    anim: Option<anim::Gallery>,
+    videos: gallery::Videos,
+    weak: slint::Weak<AppWindow>,
 }
 
 impl State {
@@ -113,6 +119,22 @@ fn show(ui: &AppWindow, st: &mut State) {
     g.set_shorts(ModelRc::new(VecModel::from(specs.iter().map(|r| SharedString::from(short(&r.row.s))).collect::<Vec<_>>())));
     g.set_rows(ModelRc::new(VecModel::from(specs.iter().map(|r| r.row.clone()).collect::<Vec<_>>())));
     st.specs = specs;
+    // The galleries, kept up only while they're on screen.
+    let has = |k: &str| st.specs.iter().any(|r| r.row.kind == "panel" && r.row.panel == k);
+    let (animated, live) = (has("animated"), has("gallery"));
+    if animated && st.anim.is_none() {
+        st.anim = Some(anim::Gallery::start(st.weak.clone()));
+    }
+    if let Some(a) = &st.anim {
+        a.show(ui, &st.c.p, animated);
+    }
+    if live {
+        if !st.videos.scanned && !st.videos.scanning {
+            scan_videos(st);
+        }
+        let cur = rows::live_current(&st.c);
+        st.videos.publish(ui, &cur);
+    }
     // The Appearance preview's own two numbers (kit's Theme has the rest).
     let look = ui.global::<Look>();
     look.set_t((st.c.p.f("translucency").clamp(0.0, 100.0) / 100.0) as f32);
@@ -289,6 +311,9 @@ fn main() {
         net: net::Net::default(),
         bt: bt::Bt::default(),
         snd: sound::Sound::default(),
+        anim: None,
+        videos: gallery::Videos::default(),
+        weak: ui.as_weak(),
     }));
     show(&ui, &mut st.borrow_mut());
 
@@ -609,6 +634,7 @@ fn main() {
     wire_wifi(&ui, &st);
     wire_bt(&ui, &st);
     wire_sound(&ui, &st);
+    wire_galleries(&ui, &st, settle.clone());
 
     // Edits made elsewhere: shown within a second.
     let poll = slint::Timer::default();
@@ -985,4 +1011,88 @@ fn enterprise_extra(ui: &AppWindow, key: &str, general: Option<serde_json::Value
         x["general"] = g;
     }
     x
+}
+
+/// The live wallpapers and their stills, off the window's thread; the
+/// stills still to make are made after, and then looked for again.
+fn scan_videos(st: &mut State) {
+    st.videos.scanning = true;
+    let (folders, files) = rows::live_sources_pub(&st.c.p);
+    let weak = st.weak.clone();
+    std::thread::spawn(move || {
+        let (list, todo, ff) = gallery::scan(&folders, &files);
+        let made = ff && !todo.is_empty();
+        let (f2, x2, w2) = (folders.clone(), files.clone(), weak.clone());
+        let _ = weak.upgrade_in_event_loop(move |ui| deliver_videos(&ui, list, ff));
+        if made && gallery::make_thumbs(&todo) {
+            let (list, _, ff) = gallery::scan(&f2, &x2);
+            let _ = w2.upgrade_in_event_loop(move |ui| deliver_videos(&ui, list, ff));
+        }
+    });
+}
+
+thread_local! {
+    static STATE: RefCell<Option<std::rc::Weak<RefCell<State>>>> = const { RefCell::new(None) };
+}
+
+fn deliver_videos(ui: &AppWindow, list: Vec<gallery::Video>, ff: bool) {
+    STATE.with(|s| {
+        let Some(st) = s.borrow().as_ref().and_then(|w| w.upgrade()) else { return };
+        let mut st = st.borrow_mut();
+        st.videos.list = list;
+        st.videos.ffmpeg = ff;
+        st.videos.scanned = true;
+        st.videos.scanning = false;
+        let cur = rows::live_current(&st.c);
+        st.videos.publish(ui, &cur);
+    });
+}
+
+/// The galleries' own clicks.
+fn wire_galleries(ui: &AppWindow, st: &Rc<RefCell<State>>, settle: Rc<dyn Fn()>) {
+    STATE.with(|s| *s.borrow_mut() = Some(Rc::downgrade(st)));
+    let a = ui.global::<AnimLook>();
+    {
+        let (st, settle) = (st.clone(), settle.clone());
+        a.on_pick_style(move |k| {
+            {
+                let c = &mut st.borrow_mut().c;
+                c.set("wallpaperStyle", serde_json::json!(k.as_str()));
+                c.set("animLastStyle", serde_json::json!(k.as_str()));
+                if k == "topo" {
+                    c.set("topoDrift", serde_json::json!(true));
+                }
+            }
+            settle();
+        });
+    }
+    {
+        let (st, settle) = (st.clone(), settle.clone());
+        a.on_pick_palette(move |k| {
+            {
+                let c = &mut st.borrow_mut().c;
+                for (key, v) in anim::choose_palette(&c.p, &k) {
+                    c.set(key, v);
+                }
+            }
+            settle();
+        });
+    }
+    let g = ui.global::<Gal>();
+    {
+        let (st, settle) = (st.clone(), settle.clone());
+        g.on_pick(move |dir| {
+            rows::live_pick(&mut st.borrow_mut().c, &dir);
+            settle();
+        });
+    }
+    {
+        let (st, weak) = (st.clone(), ui.as_weak());
+        g.on_search(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut s = st.borrow_mut();
+            let cur = rows::live_current(&s.c);
+            s.videos.publish(&ui, &cur);
+        });
+    }
 }

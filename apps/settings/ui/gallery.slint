@@ -1,0 +1,241 @@
+// WallpaperGallery.qml and AnimatedGallery.qml: the live wallpapers as a
+// still from each, and the animated styles as small live previews with the
+// palettes as strips of their five colours.
+
+import { Theme, Icon } from "@kit";
+
+export struct GalItem { dir: string, title: string, img: image, has-img: bool, badge: string, current: bool }
+
+// The live wallpapers (src/gallery.rs).
+export global Gal {
+    in property <[GalItem]> items;
+    in property <int> total;
+    in-out property <string> query;
+    callback pick(string);
+    callback search();
+}
+
+export struct AnimTile { key: string, name: string, chosen: bool, img: image }
+export struct PalChip { key: string, name: string, chosen: bool, colours: [color] }
+
+// The animated styles and palettes (src/anim.rs).
+export global AnimLook {
+    in property <[AnimTile]> tiles;
+    in property <[PalChip]> palettes;
+    callback pick-style(string);
+    callback pick-palette(string);
+}
+
+// The videos you have, small enough that a library of them fits without a
+// long scroll. Click one to put it on the desktop; the one on it is ringed
+// in the accent and ticked. A search field above, once there are enough to
+// need one.
+export component WallpaperGallery inherits VerticalLayout {
+    property <length> gap: 10px;
+    // As many columns of at least 118px as fit.
+    property <int> columns: max(3, floor((self.width + root.gap) / (118px + root.gap)));
+    property <length> tile-w: (self.width - root.gap * (root.columns - 1)) / root.columns;
+    property <length> thumb-h: round(root.tile-w * 9 / 16 / 1px) * 1px;
+    property <int> rows: ceil(Gal.items.length / root.columns);
+    spacing: 12px;
+
+    // ── search, once there are enough to need one ─────────────────────
+    if Gal.total > 8: Rectangle {
+        height: 32px;
+        border-radius: Theme.r-sm;
+        background: Theme.ground;
+        border-width: search.has-focus ? 2px : 1px;
+        border-color: search.has-focus ? Theme.accent : Theme.rule;
+        search := TextInput {
+            x: 11px;
+            width: parent.width - 41px;
+            vertical-alignment: center;
+            single-line: true;
+            text <=> Gal.query;
+            font-size: Theme.fs(12);
+            color: Theme.ink;
+            edited => { Gal.search(); }
+        }
+        if Gal.query == "": Text {
+            x: 11px;
+            vertical-alignment: center;
+            text: "Search " + Gal.total + (Gal.total == 1 ? " wallpaper" : " wallpapers");
+            font-size: Theme.fs(12);
+            color: Theme.ink3;
+        }
+        // Clear.
+        if Gal.query != "": Text {
+            x: parent.width - self.width - 10px;
+            vertical-alignment: center;
+            text: "×";
+            font-size: Theme.fs(16);
+            color: cl.has-hover ? Theme.ink : Theme.ink3;
+            cl := TouchArea { mouse-cursor: pointer; clicked => { Gal.query = ""; Gal.search(); } }
+        }
+    }
+
+    // ── the pictures ──────────────────────────────────────────────────
+    Rectangle {
+        height: root.rows > 0 ? root.rows * (root.thumb-h + 24px) + (root.rows - 1) * root.gap : 0px;
+        for w[i] in Gal.items: Rectangle {
+            x: mod(i, root.columns) * (root.tile-w + root.gap);
+            y: floor(i / root.columns) * (root.thumb-h + 24px + root.gap);
+            width: root.tile-w;
+            height: root.thumb-h + 24px;
+            thumb := Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: root.thumb-h;
+                border-radius: Theme.r-sm;
+                background: Theme.surface;
+                clip: true;
+                // Nothing to show yet — its still is being made, or there
+                // is no ffmpeg to make one.
+                if !w.has-img: Text { text: "▶"; font-size: Theme.fs(18); color: Theme.ink3; }
+                if w.has-img: Image { width: parent.width; height: parent.height; source: w.img; image-fit: cover; }
+            }
+            // Over the picture rather than as its border, so the ring is
+            // not cut by the clipping.
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: thumb.width;
+                height: thumb.height;
+                border-radius: thumb.border-radius;
+                border-width: w.current ? 2px : 1px;
+                border-color: w.current ? Theme.accent : ta.has-hover ? Theme.ink3.with-alpha(0.5) : Theme.rule;
+            }
+            // A word on the picture, when the item has one.
+            if w.badge != "": Rectangle {
+                x: 5px;
+                y: thumb.height - 21px;
+                width: bt.preferred-width + 10px;
+                height: 16px;
+                border-radius: 8px;
+                background: #0000008c;
+                bt := Text { text: w.badge; font-size: Theme.fs(10); font-weight: 600; color: white; }
+            }
+            // The one on the desktop.
+            if w.current: Rectangle {
+                x: thumb.width - 23px;
+                y: 5px;
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: Theme.accent;
+                Text { text: "✓"; font-size: Theme.fs(11); font-weight: 700; color: Theme.ink-on-accent; }
+            }
+            Text {
+                x: 0;
+                y: thumb.height + 5px;
+                width: parent.width;
+                overflow: elide;
+                text: w.title;
+                font-size: Theme.fs(11);
+                font-weight: w.current ? 600 : 500;
+                color: w.current ? Theme.accent : Theme.ink;
+            }
+            ta := TouchArea { mouse-cursor: pointer; clicked => { Gal.pick(w.dir); } }
+        }
+    }
+
+    // Nothing matched what was typed.
+    if Gal.items.length == 0 && Gal.total > 0: Text {
+        text: "Nothing called “" + Gal.query + "”";
+        font-size: Theme.fs(12);
+        color: Theme.ink3;
+    }
+}
+
+// Every style as a small live preview to pick from, and the palettes as
+// strips of their five colours. Choosing a palette while the topographic
+// map is up gives the map those colours.
+export component AnimatedGallery inherits VerticalLayout {
+    property <int> cols: self.width > 620px ? 4 : 3;
+    property <length> tile-w: (self.width - (root.cols - 1) * 10px) / root.cols;
+    property <length> tile-h: round(root.tile-w * 10 / 16 / 1px) * 1px;
+    property <int> rows: ceil(AnimLook.tiles.length / root.cols);
+    property <int> chip-cols: max(1, floor((self.width + 8px) / 82px));
+    property <int> chip-rows: ceil(AnimLook.palettes.length / root.chip-cols);
+    spacing: 14px;
+
+    Rectangle {
+        height: root.rows * (root.tile-h + 23px) + (root.rows - 1) * 10px;
+        for t[i] in AnimLook.tiles: Rectangle {
+            x: mod(i, root.cols) * (root.tile-w + 10px);
+            y: floor(i / root.cols) * (root.tile-h + 23px + 10px);
+            width: root.tile-w;
+            height: root.tile-h + 23px;
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: root.tile-h;
+                border-radius: Theme.r-sm;
+                clip: true;
+                Image { width: parent.width; height: parent.height; source: t.img; image-fit: fill; }
+            }
+            // The frame, over the preview.
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: root.tile-h;
+                border-radius: Theme.r-sm;
+                border-width: t.chosen ? 2px : 1px;
+                border-color: t.chosen ? Theme.accent : Theme.edge;
+                TouchArea { mouse-cursor: pointer; clicked => { AnimLook.pick-style(t.key); } }
+            }
+            Text {
+                x: 0;
+                y: root.tile-h + 5px;
+                text: t.name;
+                font-size: Theme.fs(12);
+                font-weight: t.chosen ? 600 : 400;
+                color: t.chosen ? Theme.ink : Theme.ink2;
+            }
+        }
+    }
+
+    Text { text: "Palette"; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+
+    Rectangle {
+        height: root.chip-rows * 50px + (root.chip-rows - 1) * 8px;
+        for c[i] in AnimLook.palettes: Rectangle {
+            x: mod(i, root.chip-cols) * 82px;
+            y: floor(i / root.chip-cols) * 58px;
+            width: 74px;
+            height: 50px;
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: 74px;
+                height: 30px;
+                border-radius: 8px;
+                border-width: c.chosen ? 2px : 1px;
+                border-color: c.chosen ? Theme.accent : Theme.edge;
+                property <length> m: c.chosen ? 3px : 2px;
+                for col[k] in c.colours: Rectangle {
+                    x: parent.m + k * (74px - 2 * parent.m) / 5;
+                    y: parent.m;
+                    width: (74px - 2 * parent.m) / 5;
+                    height: 30px - 2 * parent.m;
+                    background: col;
+                    border-top-left-radius: k == 0 ? 5px : 0px;
+                    border-bottom-left-radius: k == 0 ? 5px : 0px;
+                    border-top-right-radius: k == 4 ? 5px : 0px;
+                    border-bottom-right-radius: k == 4 ? 5px : 0px;
+                }
+                TouchArea { mouse-cursor: pointer; clicked => { AnimLook.pick-palette(c.key); } }
+            }
+            Text {
+                x: 0;
+                y: 34px;
+                text: c.name;
+                font-size: Theme.fs(10.5);
+                color: c.chosen ? Theme.ink : Theme.ink3;
+            }
+        }
+    }
+}
