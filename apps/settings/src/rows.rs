@@ -61,6 +61,9 @@ pub struct Ui {
     pub pick: Option<(bool, String, String)>,
     /// A display change on trial (Settings → Display).
     pub trial: Option<crate::display::Trial>,
+    /// HDR calibration's full-screen windows to open: (output, the test
+    /// pattern rather than Calibrate).
+    pub hdr: Option<(String, bool)>,
 }
 
 pub struct Ctx {

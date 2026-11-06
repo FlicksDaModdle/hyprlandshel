@@ -15,6 +15,7 @@ mod anim;
 mod bt;
 mod focus;
 mod gallery;
+mod hdrcal;
 mod daemon;
 mod display;
 mod net;
@@ -357,10 +358,13 @@ fn main() {
         let tt = toast_timer.clone();
         Rc::new(move || {
             let Some(ui) = weak.upgrade() else { return };
-            let (toast, tell, pick) = {
+            let (toast, tell, pick, hdr) = {
                 let mut s = st.borrow_mut();
-                (s.c.ui.toast.take(), std::mem::take(&mut s.c.ui.tell), s.c.ui.pick.take())
+                (s.c.ui.toast.take(), std::mem::take(&mut s.c.ui.tell), s.c.ui.pick.take(), s.c.ui.hdr.take())
             };
+            if let Some((output, pattern)) = hdr {
+                open_hdr(&st, &output, pattern);
+            }
             for line in tell {
                 if let Err(e) = tell_shell(&line) {
                     st.borrow_mut().c.ui.toast = Some(format!("Couldn't reach the shell: {e}"));
@@ -1297,4 +1301,192 @@ fn wire_galleries(ui: &AppWindow, st: &Rc<RefCell<State>>, settle: Rc<dyn Fn()>)
             s.videos.publish(&ui, &cur);
         });
     }
+}
+
+// ── HDR calibration's full-screen windows ──────────────────────────────
+/// Full screen, asked again once the window is up: winit makes the window
+/// on the event loop's next turn, and a request before that is lost.
+fn fullscreen_soon(w: slint::Weak<impl slint::ComponentHandle + 'static>) {
+    slint::Timer::single_shot(Duration::from_millis(120), move || {
+        if let Some(w) = w.upgrade() {
+            w.window().set_fullscreen(true);
+        }
+    });
+}
+
+thread_local! {
+    static HDR: RefCell<(Option<(HdrCal, hdrcal::Cal)>, Option<HdrPat>)> = const { RefCell::new((None, None)) };
+    static HDR_SHOW: slint::Timer = slint::Timer::default();
+}
+
+/// The calibration's state into its window.
+fn hdr_publish(w: &HdrCal, c: &hdrcal::Cal) {
+    w.set_output(c.output.clone().into());
+    w.set_step(c.step);
+    w.set_last(hdrcal::LAST);
+    w.set_heading(hdrcal::TITLES[c.step as usize].into());
+    w.set_body(c.body().into());
+    w.set_grey(c.grey() as f32);
+    w.set_frac(c.frac() as f32);
+    w.set_value_text(c.value_text().into());
+    w.set_summary(c.summary().into());
+    w.set_show_before(c.show_before);
+}
+
+/// What the display is told, once the slider settles (200 ms).
+fn hdr_show_soon(st: &Rc<RefCell<State>>) {
+    let st = Rc::downgrade(st);
+    HDR_SHOW.with(|t| {
+        t.start(slint::TimerMode::SingleShot, Duration::from_millis(200), move || {
+            let Some(st) = st.upgrade() else { return };
+            HDR.with(|h| {
+                if let Some((_, c)) = h.borrow().0.as_ref() {
+                    c.show(&st.borrow().c.p);
+                }
+            });
+        })
+    });
+}
+
+fn hdr_close() {
+    HDR_SHOW.with(|t| t.stop());
+    HDR.with(|h| {
+        if let Some((w, _)) = h.borrow_mut().0.take() {
+            let _ = w.hide();
+        }
+    });
+}
+
+/// Opens Calibrate or the test pattern on `output`: Hyprland is asked to
+/// focus that screen, so the window opens there, full screen.
+fn open_hdr(st: &Rc<RefCell<State>>, output: &str, pattern: bool) {
+    hypr::focus_monitor(output);
+    if pattern {
+        let Ok(w) = HdrPat::new() else { return };
+        w.on_done(|| {
+            HDR.with(|h| {
+                if let Some(p) = h.borrow_mut().1.take() {
+                    let _ = p.hide();
+                }
+            })
+        });
+        let _ = w.show();
+        fullscreen_soon(w.as_weak());
+        HDR.with(|h| h.borrow_mut().1 = Some(w));
+        return;
+    }
+    hdr_close();
+    let Ok(w) = HdrCal::new() else { return };
+    let cal = hdrcal::Cal::new(&st.borrow().c.p, output);
+    hdr_publish(&w, &cal);
+    // with(f): the calibration and its window, changed, drawn again.
+    let with = {
+        let st = st.clone();
+        move |f: &dyn Fn(&mut hdrcal::Cal, &mut State) -> bool| {
+            let close = HDR.with(|h| {
+                let mut h = h.borrow_mut();
+                let Some((w, c)) = h.0.as_mut() else { return false };
+                let close = f(c, &mut st.borrow_mut());
+                hdr_publish(w, c);
+                close
+            });
+            if close {
+                hdr_close();
+            }
+        }
+    };
+    let with = Rc::new(with);
+    {
+        let (with, st) = (with.clone(), st.clone());
+        w.on_next(move || {
+            let st2 = st.clone();
+            with(&|c, s| {
+                if c.step < hdrcal::LAST {
+                    c.step += 1;
+                    c.show_before = false;
+                    hdr_show_soon(&st2);
+                    false
+                } else {
+                    c.save(&mut s.c.p);
+                    true
+                }
+            })
+        });
+    }
+    {
+        let (with, st) = (with.clone(), st.clone());
+        w.on_back(move || {
+            let st2 = st.clone();
+            with(&|c, _| {
+                if c.step > 0 {
+                    c.step -= 1;
+                    c.show_before = false;
+                    hdr_show_soon(&st2);
+                }
+                false
+            })
+        });
+    }
+    {
+        let with = with.clone();
+        w.on_cancel(move || {
+            with(&|c, s| {
+                c.cancel(&s.c.p);
+                true
+            })
+        });
+    }
+    {
+        let (with, st) = (with.clone(), st.clone());
+        w.on_set_frac(move |f| {
+            let st2 = st.clone();
+            with(&|c, _| {
+                c.set_frac(f as f64);
+                // Saturation is a setting of the display, not of the
+                // pattern: sent once the slider settles.
+                if c.step == 4 {
+                    hdr_show_soon(&st2);
+                }
+                false
+            })
+        });
+    }
+    {
+        let (with, st) = (with.clone(), st.clone());
+        w.on_nudge(move |d| {
+            let st2 = st.clone();
+            with(&|c, _| {
+                c.nudge(d);
+                if c.step == 4 {
+                    hdr_show_soon(&st2);
+                }
+                false
+            })
+        });
+    }
+    {
+        let (with, st) = (with.clone(), st.clone());
+        w.on_before(move |b| {
+            let st2 = st.clone();
+            with(&|c, _| {
+                c.show_before = b;
+                hdr_show_soon(&st2);
+                false
+            })
+        });
+    }
+    // Closed some other way: as Cancel.
+    {
+        let with = with.clone();
+        w.window().on_close_requested(move || {
+            with(&|c, s| {
+                c.cancel(&s.c.p);
+                true
+            });
+            slint::CloseRequestResponse::HideWindow
+        });
+    }
+    let _ = w.show();
+    fullscreen_soon(w.as_weak());
+    HDR.with(|h| h.borrow_mut().0 = Some((w, cal)));
 }

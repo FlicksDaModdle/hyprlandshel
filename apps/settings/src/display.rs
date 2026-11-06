@@ -79,7 +79,7 @@ fn remember_colour(c: &mut Ctx, name: &str, patch: Value) {
 }
 
 /// scripts/edid-caps.py: what each panel says it can do.
-fn edid_caps() -> Map<String, Value> {
+pub fn edid_caps() -> Map<String, Value> {
     let script = hyprshell_kit::config_dir().join("quickshell/hyprshell/scripts/edid-caps.py");
     std::process::Command::new("python3")
         .arg(script)
@@ -504,9 +504,15 @@ pub fn rows(c: &Ctx) -> Vec<Spec> {
                 if max_lum > 0.0 { format!("its {}-nit peak", max_lum.round()) } else { "its peak".into() }
             ),
             vec![
-                btn("Calibrate", false, false, |_| {}),
+                {
+                    let n = name.clone();
+                    btn("Calibrate", false, true, move |c| c.ui.hdr = Some((n.clone(), false)))
+                },
                 btn("Quick set up", true, true, move |c| calibrate_hdr(c, &n2, &cp)),
-                btn("Test pattern", true, false, |_| {}),
+                {
+                    let n = name.clone();
+                    btn("Test pattern", true, true, move |c| c.ui.hdr = Some((n.clone(), true)))
+                },
             ],
         ));
         let curve = saved["sdr_eotf"].as_str().unwrap_or("default").to_string();

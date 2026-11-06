@@ -1,0 +1,237 @@
+// HdrCalibration.qml and HdrPattern.qml: Settings → Display → HDR
+// calibration's two full-screen windows, on the display being set up.
+// The steps' sums and what the display is told are src/hdrcal.rs.
+
+import { Theme } from "@kit";
+
+// The test pattern (PatternGrid.qml): a checkerboard of the test level on
+// its ground. When the two are the same light, as when the panel clips
+// both, it is a plain square: the pattern "isn't visible".
+component PatternGrid inherits Rectangle {
+    in property <int> cells: 5;
+    in property <color> ground: black;
+    in property <color> ink: white;
+    background: root.ground;
+    for i in root.cells * root.cells: Rectangle {
+        x: mod(i, root.cells) * root.width / root.cells;
+        y: floor(i / root.cells) * root.height / root.cells;
+        width: root.width / root.cells;
+        height: root.height / root.cells;
+        background: mod(floor(i / root.cells) + mod(i, root.cells), 2) == 0 ? root.ink : root.ground;
+    }
+}
+
+// CalButton.qml: plain and dim on its black ground, so it doesn't light
+// the area being judged.
+component CalButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary;
+    callback clicked();
+    width: t.preferred-width + 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: root.primary ? Theme.accent : (ta.has-hover ? rgb(56, 56, 56) : rgb(36, 36, 36));
+    t := Text { text: root.label; font-size: 14px; color: root.primary ? Theme.ink-on-accent : rgb(204, 204, 204); }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// FillSlider: a thick trough, filled from the left.
+component FillSlider inherits Rectangle {
+    in property <float> value;
+    callback moved(float);
+    height: 14px;
+    border-radius: 7px;
+    background: rgb(41, 41, 41);
+    Rectangle {
+        x: 0;
+        width: max(0, min(1, root.value)) * root.width;
+        border-radius: 7px;
+        background: Theme.accent;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { root.moved(self.mouse-x / root.width); }
+        }
+        moved => { if (self.pressed) { root.moved(self.mouse-x / root.width); } }
+    }
+}
+
+export component HdrCal inherits Window {
+    in property <string> output;
+    in property <int> step;
+    in property <int> last: 5;
+    in property <string> heading;
+    in property <string> body;
+    // The pattern's grey (0–1), and its ground: black for the minimum,
+    // full white (clipped to the panel's peak) for the others.
+    in property <float> grey;
+    in property <float> frac;
+    in property <string> value-text;
+    in property <string> summary;
+    in property <bool> show-before;
+    callback next();
+    callback back();
+    callback cancel();
+    callback set-frac(float);
+    callback nudge(int);
+    callback before(bool);
+    title: "HDR Calibration";
+    full-screen: true;
+    background: black;
+    default-font-family: Theme.font-family;
+    property <color> ground: root.step == 1 ? black : white;
+    property <color> ink: rgb(root.grey * 255, root.grey * 255, root.grey * 255);
+    property <color> dim: rgb(140, 140, 140);
+    property <color> words: rgb(209, 209, 209);
+
+    // ── full frame: the whole screen is the test ─────────────────────
+    if root.step == 3: PatternGrid { width: root.width; height: root.height; cells: 9; ground: root.ground; ink: root.ink; }
+
+    fs := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.Escape) { root.cancel(); return accept; }
+            if (e.text == Key.LeftArrow || e.text == Key.DownArrow) { root.nudge(-1); return accept; }
+            if (e.text == Key.RightArrow || e.text == Key.UpArrow) { root.nudge(1); return accept; }
+            if (e.text == Key.Return) { root.next(); return accept; }
+            if (e.text == Key.Backspace && root.step > 0) { root.back(); return accept; }
+            reject
+        }
+    }
+    init => { fs.focus(); }
+
+    // The card the words and controls sit on: dark and small, so it
+    // lights as little of the screen as it can.
+    card := Rectangle {
+        width: min(root.width - 48px, 760px);
+        height: col.preferred-height + 48px;
+        x: (root.width - self.width) / 2;
+        y: root.step == 0 || root.step == root.last ? (root.height - self.height) / 2 : root.height - self.height - 48px;
+        border-radius: 14px;
+        background: rgb(15, 15, 15);
+        border-width: 1px;
+        border-color: rgb(36, 36, 36);
+        col := VerticalLayout {
+            x: 24px;
+            y: 24px;
+            width: parent.width - 48px;
+            height: self.preferred-height;
+            spacing: 16px;
+            Text {
+                text: (root.step > 0 && root.step < root.last ? "Step " + root.step + " of " + (root.last - 1) + "   " : "") + root.heading;
+                font-size: 22px;
+                font-weight: 600;
+                color: root.words;
+            }
+            Text { text: root.body; wrap: word-wrap; font-size: 14px; color: root.dim; }
+            // The test pattern, for the two in a box.
+            if root.step == 1 || root.step == 2: HorizontalLayout {
+                alignment: center;
+                PatternGrid { width: 300px; height: 300px; cells: 5; ground: root.ground; ink: root.ink; }
+            }
+            // The saturation preview.
+            if root.step >= 4: HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 96px * 6 + 8px * 5;
+                    height: 64px * 2 + 8px;
+                    for c[i] in [#f1c27d, #e0ac69, #c68642, #8d5524, #87ceeb, #4f7942, #d62828, #2a9d3f, #1d4ed8, #f2c94c, #22b8cf, #c2185b]: Rectangle {
+                        x: mod(i, 6) * 104px;
+                        y: floor(i / 6) * 72px;
+                        width: 96px;
+                        height: 64px;
+                        border-radius: 6px;
+                        background: c;
+                    }
+                }
+            }
+            if root.step >= 4: HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 96px * 6 + 8px * 5;
+                    height: 22px;
+                    border-radius: 6px;
+                    background: @linear-gradient(90deg, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%);
+                }
+            }
+            // The slider.
+            if root.step >= 1 && root.step <= 4: VerticalLayout {
+                spacing: 8px;
+                Text { horizontal-alignment: center; font-size: 15px; color: root.words; text: root.value-text; }
+                FillSlider { value: root.frac; moved(v) => { root.set-frac(v); } }
+            }
+            // Before / after.
+            if root.step == root.last: HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                CalButton { label: "Before"; primary: root.show-before; clicked => { root.before(true); } }
+                CalButton { label: "After"; primary: !root.show-before; clicked => { root.before(false); } }
+            }
+            if root.step == root.last: Text { horizontal-alignment: center; wrap: word-wrap; font-size: 13px; color: root.dim; text: root.summary; }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+                CalButton { label: "Cancel"; clicked => { root.cancel(); } }
+                if root.step > 0: CalButton { label: "Back"; clicked => { root.back(); } }
+                CalButton {
+                    primary: true;
+                    label: root.step == 0 ? "Get started" : root.step == root.last ? "Save" : "Next";
+                    clicked => { root.next(); }
+                }
+            }
+        }
+    }
+}
+
+// HdrPattern.qml: grey steps just above black, and a white for reference.
+// The black level is right when the 0% square is black and the 1% one can
+// just be told from it; set too high, they all look grey (washed out). A
+// click or Esc closes it.
+export component HdrPat inherits Window {
+    callback done();
+    title: "HDR test pattern";
+    full-screen: true;
+    background: black;
+    default-font-family: Theme.font-family;
+    property <[float]> steps: [0, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2];
+    // Linear light to sRGB-encoded grey, so 1% is 1% of white.
+    pure function enc(v: float) -> float { return v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1 / 2.4) - 0.055; }
+    TouchArea { clicked => { root.done(); } }
+    fs := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.Escape) { root.done(); return accept; }
+            reject
+        }
+    }
+    init => { fs.focus(); }
+    VerticalLayout {
+        alignment: center;
+        spacing: 34px;
+        HorizontalLayout {
+            alignment: center;
+            spacing: 18px;
+            for s in root.steps: VerticalLayout {
+                spacing: 10px;
+                Rectangle {
+                    width: 110px;
+                    height: 110px;
+                    background: rgb(root.enc(s) * 255, root.enc(s) * 255, root.enc(s) * 255);
+                    border-width: s == 0 ? 1px : 0px;
+                    border-color: rgb(20, 20, 20);
+                }
+                Text { horizontal-alignment: center; text: round(s * 1000) / 10 + "%"; font-size: 13px; color: rgb(115, 115, 115); }
+            }
+            VerticalLayout {
+                spacing: 10px;
+                Rectangle { width: 110px; height: 110px; background: white; }
+                Text { horizontal-alignment: center; text: "white"; font-size: 13px; color: rgb(115, 115, 115); }
+            }
+        }
+        Text {
+            horizontal-alignment: center;
+            text: "0% should be black, and 1% just visible beside it. All grey: the black level is too high.\nChange it in Settings → Display → HDR calibration. Click or press Esc to close.";
+            font-size: 14px;
+            color: rgb(140, 140, 140);
+        }
+    }
+}

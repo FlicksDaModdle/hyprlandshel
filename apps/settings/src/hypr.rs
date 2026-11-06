@@ -251,8 +251,37 @@ const MONITOR_FIELDS: &[&str] = &[
 ];
 
 pub fn apply_display(p: &Prefs, name: &str) {
+    if let Some(spec) = display_spec(p, name) {
+        eval(&format!("hl.monitor({})", lua_table(&spec)));
+    }
+}
+
+/// Devices.showColour: the display shown with these colour values for now,
+/// nothing saved (HDR calibration's steps).
+pub fn show_colour(p: &Prefs, name: &str, values: &Map<String, Value>) {
+    if let Some(mut spec) = display_spec(p, name) {
+        for (k, v) in values {
+            spec.insert(k.clone(), v.clone());
+        }
+        eval(&format!("hl.monitor({})", lua_table(&spec)));
+    }
+}
+
+/// Devices.focusMonitor: where the next window opens (Lua first, then the
+/// old dispatcher).
+pub fn focus_monitor(name: &str) {
+    let lua = format!("hl.dsp.focus({{ monitor = {} }})", lua_string(name));
+    let ok = std::process::Command::new("hyprctl").args(["dispatch", &lua]).output().map(|o| String::from_utf8_lossy(&o.stdout).trim() == "ok").unwrap_or(false);
+    if !ok {
+        let _ = std::process::Command::new("hyprctl").args(["dispatch", "focusmonitor", name]).output();
+    }
+}
+
+/// Devices.displaySpec: the table for hl.monitor, from the saved entry and
+/// what the output is doing now.
+pub fn display_spec(p: &Prefs, name: &str) -> Option<Map<String, Value>> {
     let mons = json("monitors");
-    let Some(live) = mons.as_array().and_then(|a| a.iter().find(|m| m["name"] == name)).cloned() else { return };
+    let live = mons.as_array().and_then(|a| a.iter().find(|m| m["name"] == name)).cloned()?;
     let want = display_map(p).get(name).cloned().unwrap_or(json!({}));
     let mode = want["mode"].as_str().map(str::to_string).unwrap_or_else(|| {
         format!(
@@ -274,7 +303,7 @@ pub fn apply_display(p: &Prefs, name: &str) {
     if !spec.contains_key("position") {
         spec.insert("position".into(), json!(format!("{}x{}", live["x"].as_i64().unwrap_or(0), live["y"].as_i64().unwrap_or(0))));
     }
-    eval(&format!("hl.monitor({})", lua_table(&spec)));
+    Some(spec)
 }
 
 pub fn apply_displays(p: &Prefs) {
