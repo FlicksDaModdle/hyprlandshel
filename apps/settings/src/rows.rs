@@ -64,6 +64,11 @@ pub struct Ui {
     /// HDR calibration's full-screen windows to open: (output, the test
     /// pattern rather than Calibrate).
     pub hdr: Option<(String, bool)>,
+    /// Settings → Laptop: asusd's state as the daemon last sent it (its
+    /// "rog" event), what went wrong last, and commands for the daemon.
+    pub rog: Value,
+    pub rog_error: String,
+    pub daemon: Vec<Value>,
 }
 
 pub struct Ctx {
@@ -348,7 +353,7 @@ pub fn rows_for(pane: &str, c: &Ctx) -> Vec<Spec> {
         "Network" => network(),
         "Bluetooth" => vec![panel("bluetooth")],
         "Sound" => vec![panel("sound")],
-        "Laptop" => vec![panel("laptop")],
+        "Laptop" => laptop(c),
         "Power" => power(p),
         "Hyprland" => hyprland(p),
         "Keyboard" => keyboard(p),
@@ -2233,4 +2238,153 @@ pub fn rank<'a>(q: &str, idx: &'a [Entry], limit: usize) -> Vec<&'a Entry> {
     }
     hits.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.n.len().cmp(&b.1.n.len())));
     hits.into_iter().take(limit).map(|h| h.1).collect()
+}
+
+
+// ── Laptop (Settings.qml's "Laptop", services/Rog.qml) ──────────────────
+const PROFILE_NAMES: [(i64, &str); 5] = [(0, "Balanced"), (1, "Performance"), (2, "Quiet"), (3, "Low power"), (4, "Custom")];
+const KBD_MODES: [(i64, &str); 12] = [
+    (0, "Static"), (1, "Breathe"), (2, "Rainbow"), (3, "Wave"), (4, "Star"), (5, "Rain"),
+    (6, "Highlight"), (7, "Laser"), (8, "Ripple"), (10, "Pulse"), (11, "Comet"), (12, "Flash"),
+];
+const GPU: [(&str, &str, &str); 3] = [
+    ("integrated", "Integrated", "Only the built-in graphics; the NVIDIA GPU is off. Longest battery life."),
+    ("hybrid", "Hybrid", "The built-in graphics, with the NVIDIA GPU for what asks for it."),
+    ("ultimate", "Ultimate", "The NVIDIA GPU drives the screen directly. Fastest, most power."),
+];
+/// The firmware switches worth a toggle, with what they are called.
+const ATTRS: [(&str, &str, &str); 6] = [
+    ("panel_overdrive", "Panel overdrive", "Faster pixel response; can show faint ghosting"),
+    ("mini_led_mode", "MiniLED dimming", "Local dimming on a MiniLED panel"),
+    ("boot_sound", "Boot sound", "The chime at power on"),
+    ("mcu_powersave", "Low-power standby", "Less battery drain while suspended or off"),
+    ("screen_auto_brightness", "Automatic panel brightness", "The panel's own ambient adjustment"),
+    ("panel_hd_mode", "Panel HD mode", "The panel's high-resolution mode"),
+];
+
+/// Rog.setKbdMode: the effect, keeping its other settings.
+pub fn kbd_mode_cmd(rog: &Value, mode: i64, colour: &str) -> Value {
+    let e = &rog["aura"][0]["effect"];
+    let or = |k: &str, d: &str| e[k].as_str().unwrap_or(d).to_string();
+    json!({
+        "cmd": "rog-kbd-mode", "mode": mode,
+        "colour": if colour.is_empty() { or("colour", "#ffffff") } else { colour.to_string() },
+        "colour2": or("colour2", "#000000"), "speed": or("speed", "Med"), "direction": or("direction", "Right"),
+    })
+}
+
+/// The shell's accent, as #rrggbb.
+pub fn accent_hex() -> String {
+    let a = hyprshell_kit::theme::Palette::load().accent;
+    format!("#{:02x}{:02x}{:02x}", a.red(), a.green(), a.blue())
+}
+
+fn laptop(c: &Ctx) -> Vec<Spec> {
+    let r = &c.ui.rog;
+    if r["available"] != true {
+        return vec![header(
+            if r.is_null() { "Looking for asusd…" } else { "Not available" },
+            if r.is_null() {
+                "Asking asusd what this laptop has."
+            } else {
+                "No asusd on this machine. On an ASUS ROG or TUF laptop, install asusctl and start asusd (systemctl enable --now asusd), and this fills in."
+            },
+        )];
+    }
+    let mut rows = vec![];
+    if !c.ui.rog_error.is_empty() {
+        rows.push(info("Couldn't do that", &c.ui.rog_error, ""));
+    }
+    let pf = &r["platform"];
+    let choices: Vec<i64> = pf["choices"].as_array().into_iter().flatten().filter_map(|x| x.as_i64()).collect();
+    if !choices.is_empty() {
+        rows.push(header("Performance", "The firmware's fan and power limits. Also in the control center."));
+        // Quiet, Balanced, Performance — the order people think in, not asusd's.
+        let order: Vec<(String, String)> = [3, 2, 0, 1, 4]
+            .iter()
+            .filter(|p| choices.contains(p))
+            .map(|p| (PROFILE_NAMES.iter().find(|x| x.0 == *p).map(|x| x.1.to_string()).unwrap_or(format!("Profile {p}")), p.to_string()))
+            .collect();
+        let opts: Vec<(&str, &str)> = order.iter().map(|o| (o.0.as_str(), o.1.as_str())).collect();
+        let cur = pf["profile"].as_i64().map(|p| p.to_string()).unwrap_or_default();
+        rows.push(seg_with("Profile", "Quiet keeps the fans down; Performance lets the CPU and GPU draw the most", &opts, &cur, |c, v| {
+            c.ui.daemon.push(json!({ "cmd": "rog-profile", "profile": v.parse::<i64>().unwrap_or(0) }))
+        }));
+    }
+    if let Some(limit) = pf["chargeLimit"].as_f64() {
+        rows.push(header("Battery", "A battery kept below full lasts years longer. 80% suits a laptop that is mostly plugged in."));
+        rows.push(slider_with("Charge limit", "Charging stops here", 20.0, 100.0, 1.0, "%", limit, |c, v| {
+            c.ui.daemon.push(json!({ "cmd": "rog-charge", "limit": v.round() as i64 }))
+        }));
+        rows.push(action("Charge to full once", "To 100% this time — for a trip — then back to the limit", "Charge", |c| {
+            c.ui.daemon.push(json!({ "cmd": "rog-full-charge" }))
+        }));
+    }
+    let kbd = &r["aura"][0];
+    if kbd.is_object() {
+        rows.push(header("Keyboard light", ""));
+        let lvl = kbd["brightness"].as_i64().map(|l| l.to_string()).unwrap_or_default();
+        rows.push(seg_with("Brightness", "Also in the control center", &[("Off", "0"), ("Low", "1"), ("Medium", "2"), ("High", "3")], &lvl, |c, v| {
+            c.ui.daemon.push(json!({ "cmd": "rog-kbd-brightness", "level": v.parse::<i64>().unwrap_or(0) }))
+        }));
+        let modes: Vec<i64> = kbd["modes"].as_array().into_iter().flatten().filter_map(|m| m.as_i64()).filter(|m| [0, 1, 2, 3, 10].contains(m)).collect();
+        if modes.len() > 1 {
+            let names: Vec<(String, String)> = modes.iter().map(|m| (KBD_MODES.iter().find(|x| x.0 == *m).map(|x| x.1.to_string()).unwrap_or(format!("Mode {m}")), m.to_string())).collect();
+            let opts: Vec<(&str, &str)> = names.iter().map(|o| (o.0.as_str(), o.1.as_str())).collect();
+            let cur = kbd["effect"]["mode"].as_i64().map(|m| m.to_string()).unwrap_or_default();
+            let follow = c.p.b("rogKbdAccent");
+            rows.push(seg_with("Effect", "Static and Breathe use the colour below", &opts, &cur, move |c, v| {
+                let cmd = kbd_mode_cmd(&c.ui.rog, v.parse().unwrap_or(0), &if follow { accent_hex() } else { String::new() });
+                c.ui.daemon.push(cmd)
+            }));
+        }
+        let now = kbd["effect"]["colour"].as_str().map(|x| format!(" · now {}", x.to_uppercase())).unwrap_or_default();
+        rows.push(toggle_with(
+            "In the accent colour",
+            &format!("The keyboard follows the shell's accent — a new swatch, the wallpaper's colour, light or dark{now}"),
+            c.p.b("rogKbdAccent"),
+            |c, v| {
+                c.set("rogKbdAccent", json!(v));
+                if v {
+                    // Breathe kept; otherwise Static.
+                    let m = if c.ui.rog["aura"][0]["effect"]["mode"] == 1 { 1 } else { 0 };
+                    let cmd = kbd_mode_cmd(&c.ui.rog, m, &accent_hex());
+                    c.ui.daemon.push(cmd);
+                }
+            },
+        ));
+    }
+    let gpu = &r["gpu"];
+    let mode = gpu["mode"].as_str().unwrap_or("");
+    if !mode.is_empty() {
+        let pending = gpu["pending"].as_str().unwrap_or("");
+        let name = |k: &str| GPU.iter().find(|g| g.0 == k).map(|g| g.1).unwrap_or(k).to_string();
+        rows.push(header(
+            "Graphics",
+            &if pending.is_empty() { "Takes effect at the next restart".to_string() } else { format!("Switching to {} at the next restart", name(pending)) },
+        ));
+        let cur = if pending.is_empty() { mode } else { pending };
+        let ch: Vec<(String, String)> = gpu["choices"].as_array().into_iter().flatten().filter_map(|x| x.as_str()).map(|k| (name(k), k.to_string())).collect();
+        let opts: Vec<(&str, &str)> = ch.iter().map(|o| (o.0.as_str(), o.1.as_str())).collect();
+        let note = GPU.iter().find(|g| g.0 == cur).map(|g| g.2).unwrap_or("");
+        rows.push(seg_with("GPU mode", note, &opts, cur, |c, v| c.ui.daemon.push(json!({ "cmd": "rog-gpu", "mode": v }))));
+    }
+    let attrs = &r["attrs"];
+    let toggles: Vec<_> = ATTRS
+        .iter()
+        .filter(|(k, _, _)| {
+            let a = &attrs[*k];
+            a.is_object() && !a["value"].is_null() && a["possible"].as_array().map(|p| p.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")) == Some("0,1".into())
+        })
+        .collect();
+    if !toggles.is_empty() {
+        rows.push(header("Panel and firmware", ""));
+        for (k, n, s) in toggles {
+            let key = k.to_string();
+            rows.push(toggle_with(n, s, attrs[*k]["value"] == 1, move |c, v| {
+                c.ui.daemon.push(json!({ "cmd": "rog-attr", "name": key, "value": if v { 1 } else { 0 } }))
+            }));
+        }
+    }
+    rows
 }

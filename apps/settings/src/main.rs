@@ -67,6 +67,8 @@ struct State {
     /// The shell's fx.json as last drawn, and the equalizer's live gains.
     fx_seen: String,
     live: eq::Live,
+    rog_asked: bool,
+    rog_error_at: Option<std::time::Instant>,
     weak: slint::Weak<AppWindow>,
 }
 
@@ -171,6 +173,11 @@ fn show(ui: &AppWindow, st: &mut State) {
     look.set_t((st.c.p.f("translucency").clamp(0.0, 100.0) / 100.0) as f32);
     look.set_bar_h(st.c.p.f("barHeight") as f32);
     // The live panels: what they show, kept up only while they're up.
+    // Laptop: the daemon asked what asusd has, once.
+    if pane == "Laptop" && st.c.ui.rog.is_null() && !st.rog_asked {
+        st.rog_asked = true;
+        st.daemon().send(serde_json::json!({ "cmd": "rog-refresh" }));
+    }
     let (on_net, on_bt, on_snd) = (pane == "Network", pane == "Bluetooth", pane == "Sound");
     if on_net || on_bt || on_snd || st.daemon.is_some() {
         let (mut net, mut bt, mut snd) = (std::mem::take(&mut st.net), std::mem::take(&mut st.bt), std::mem::take(&mut st.snd));
@@ -360,6 +367,8 @@ fn main() {
         upd_shown: false,
         landing: None,
         fx_seen: String::new(),
+        rog_asked: false,
+        rog_error_at: None,
         live: eq::Live::default(),
         weak: ui.as_weak(),
     }));
@@ -377,6 +386,10 @@ fn main() {
             let Some(ui) = weak.upgrade() else { return };
             let (toast, tell, pick, hdr) = {
                 let mut s = st.borrow_mut();
+                // Commands a row left for the daemon (Settings → Laptop).
+                for cmd in std::mem::take(&mut s.c.ui.daemon) {
+                    s.daemon().send(cmd);
+                }
                 (s.c.ui.toast.take(), std::mem::take(&mut s.c.ui.tell), s.c.ui.pick.take(), s.c.ui.hdr.take())
             };
             if let Some((output, pattern)) = hdr {
@@ -663,6 +676,22 @@ fn main() {
             if evs.is_empty() {
                 return;
             }
+            // Settings → Laptop: asusd's state, and what it refused.
+            let mut rog = false;
+            for ev in &evs {
+                if ev["ev"] == "rog" {
+                    s.c.ui.rog = ev.clone();
+                    s.c.ui.rog_error.clear();
+                    rog = true;
+                } else if ev["ev"] == "rog-error" {
+                    s.c.ui.rog_error = ev["message"].as_str().unwrap_or("").to_string();
+                    s.rog_error_at = Some(std::time::Instant::now());
+                    rog = true;
+                }
+            }
+            if rog && s.c.ui.pane == "Laptop" {
+                show(&ui, &mut s);
+            }
             let (mut net, mut bt) = (std::mem::take(&mut s.net), std::mem::take(&mut s.bt));
             let (mut cn, mut cb) = (false, false);
             for ev in &evs {
@@ -736,6 +765,16 @@ fn main() {
                     s.upd.publish(&ui);
                 } else if hyprshell_kit::now() - since > 1800 {
                     s.upd.waiting = None;
+                }
+            }
+            // Laptop: what asusd refused, shown for eight seconds.
+            let stale = st.borrow().rog_error_at.is_some_and(|t| t.elapsed() > Duration::from_secs(8));
+            if stale {
+                let mut s = st.borrow_mut();
+                s.rog_error_at = None;
+                s.c.ui.rog_error.clear();
+                if s.c.ui.pane == "Laptop" {
+                    show(&ui, &mut s);
                 }
             }
             // The shell's word on the equalizer and noise suppression.
