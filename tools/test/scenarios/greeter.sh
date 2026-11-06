@@ -25,7 +25,7 @@ test_password_then_code_logs_in() {
     wait_for 5 gone hyprshell-rs || fail "the greeter didn't finish"
     in_log greetd.log '"cmd": \["Hyprland"\]' || fail "no session was started"
     in_log greetd.log 'XDG_CURRENT_DESKTOP=Hyprland' || fail "the session's desktop wasn't said"
-    check "the choice wasn't remembered" grep -q '"session":"hyprland"' "$TT_ROOT/greeter/cache/state.json"
+    check "the choice wasn't remembered" grep -q '"session":"hyprland"' "$TT_ROOT/greeter-state/cache/state.json"
 }
 
 test_other_session_with_tab() {
@@ -39,7 +39,7 @@ test_other_session_with_tab() {
     wait_for 5 gone hyprshell-rs || fail "the greeter didn't finish"
     in_log greetd.log 'startplasma-wayland' || fail "Plasma wasn't the session started"
     in_log greetd.log 'XDG_CURRENT_DESKTOP=KDE' || fail "Plasma's desktop name wasn't passed"
-    check "the choice wasn't remembered" grep -q '"session":"plasma"' "$TT_ROOT/greeter/cache/state.json"
+    check "the choice wasn't remembered" grep -q '"session":"plasma"' "$TT_ROOT/greeter-state/cache/state.json"
 }
 
 test_down_picks_next_person() {
@@ -50,8 +50,8 @@ test_down_picks_next_person() {
 }
 
 test_face_logs_in() {
-    mkdir -p "$TT_ROOT/greeter/cache"
-    echo '{"user":"facetest","session":"hyprland"}' > "$TT_ROOT/greeter/cache/state.json"
+    mkdir -p "$TT_ROOT/greeter-state/cache"
+    echo '{"user":"facetest","session":"hyprland"}' > "$TT_ROOT/greeter-state/cache/state.json"
     start_greeter 1
     wait_for 3 in_log greetd.log '"username": "facetest"' || fail "the face wasn't looked for"
     wait_for 8 gone hyprshell-rs || fail "the greeter didn't let them in"

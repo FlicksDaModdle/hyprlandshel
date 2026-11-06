@@ -151,7 +151,7 @@ tt_run() {
     TT_WHY=""
     tt_stop_all
     # Each test from the same start: the fixture theme, no remembered state.
-    rm -rf "${XDG_CONFIG_HOME:?}/quickshell/hyprshell" "$TT_LOGS"/*.log "${TT_ROOT:?}/greeter"
+    rm -rf "${XDG_CONFIG_HOME:?}/quickshell/hyprshell" "$TT_LOGS"/*.log "${TT_ROOT:?}/greeter-state"
     unset HYPRSHELL_TEST_FACE TT_FACE FAKE_SCREENS FAKE_HDR
     mkdir -p "$XDG_CONFIG_HOME/quickshell/hyprshell"
     cp "$REPO/tools/test/fixtures/theme.json" "$XDG_CONFIG_HOME/quickshell/hyprshell/theme.json"
@@ -159,6 +159,8 @@ tt_run() {
     ( set +e; "$t" ) > "$TT_DIR/out.txt" 2>&1
     local why
     why=$(cat "$TT_DIR/why" 2>/dev/null)
+    # A test that couldn't even keep its own record didn't pass.
+    [ -f "$TT_DIR/out.txt" ] || why="the test's own folder went missing (it can't be judged)"
     # Whatever crashed along the way fails it too.
     local crash
     crash=$(grep -h -m1 -E "panicked at|SIGSEGV|core dumped" "$TT_LOGS"/*.log "$TT_DIR/out.txt" 2>/dev/null | head -n1)
@@ -247,7 +249,7 @@ start_settings() {
 }
 # The login screen against the fake greetd, with its people and sessions.
 start_greeter() {
-    local g="$TT_ROOT/greeter"
+    local g="$TT_ROOT/greeter-state"
     mkdir -p "$g/sessions" "$g/users" "$g/cache"
     cp "$REPO/tools/test/fixtures/passwd" "$g/passwd"
     cp "$REPO"/tools/test/fixtures/sessions/*.desktop "$g/sessions/"
