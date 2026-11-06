@@ -12,10 +12,11 @@ import { AppearancePreview, Look } from "preview.slint";
 import { FocusPanel, NotifAppsPanel, FocusLook, FocusSch, NotifApp } from "focus.slint";
 import { MonitorMap, MonMap, MonBox } from "monmap.slint";
 import { HdrCal, HdrPat } from "hdrcal.slint";
+import { EqLook, EqCurve, EqTick, EqHandle, EqBandChip, EqPreset, EqApp, EqChipRow, EqPresetGroup } from "eq.slint";
 import { ShellUpdatesPanel, Upd, UpPart, UpCommit } from "updates.slint";
 import { WallpaperGallery, AnimatedGallery, Gal, GalItem, AnimLook, AnimTile, PalChip } from "gallery.slint";
 
-export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev, Snd, SndDev, SndOpt, SndApp, Look, Gal, GalItem, AnimLook, AnimTile, PalChip, FocusLook, FocusSch, NotifApp, Upd, UpPart, UpCommit, MonMap, MonBox, HdrCal, HdrPat, SndMix, SndChan, Meters }
+export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev, Snd, SndDev, SndOpt, SndApp, Look, Gal, GalItem, AnimLook, AnimTile, PalChip, FocusLook, FocusSch, NotifApp, Upd, UpPart, UpCommit, MonMap, MonBox, HdrCal, HdrPat, SndMix, SndChan, Meters, EqLook, EqCurve, EqTick, EqHandle, EqBandChip, EqPreset, EqApp, EqChipRow, EqPresetGroup }
 
 export struct Btn { label: string, quiet: bool, enabled: bool }
 
@@ -889,7 +890,7 @@ export component AppWindow inherits KitWindow {
 
     // ── pane ────────────────────────────────────────────────────────────
     pane := Scroll {
-        interactive: !MonMap.holding;
+        interactive: !MonMap.holding && !EqLook.holding;
         x: 212px;
         y: 40px;
         width: parent.width - 212px;

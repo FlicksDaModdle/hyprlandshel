@@ -18,6 +18,7 @@ mod gallery;
 mod hdrcal;
 mod daemon;
 mod display;
+mod eq;
 mod net;
 mod hypr;
 mod monmap;
@@ -63,6 +64,9 @@ struct State {
     /// Settings → Display → Arrangement: where the screen being dragged
     /// would land.
     landing: Option<(String, f64, f64)>,
+    /// The shell's fx.json as last drawn, and the equalizer's live gains.
+    fx_seen: String,
+    live: eq::Live,
     weak: slint::Weak<AppWindow>,
 }
 
@@ -174,7 +178,16 @@ fn show(ui: &AppWindow, st: &mut State) {
         bt.watch(st.daemon(), on_bt);
         snd.watch(st.daemon(), on_snd);
         if on_snd {
+            snd.resolve(&st.c.p);
             snd.publish(ui, &st.c.p);
+            // A band picked whenever there are bands, so the strip below
+            // the graph always has something to show.
+            let g = ui.global::<EqLook>();
+            if !eq::bands(&st.c.p).iter().any(|b| b.id as i32 == g.get_selected()) {
+                g.set_selected(eq::first_id(&st.c.p));
+            }
+            eq::publish(ui, &st.c.p, &snd);
+            st.fx_seen = eq::status_text();
             let State { daemon, c, .. } = st;
             snd.sync_peaks(daemon.get_or_insert_with(daemon::Daemon::start), &c.p);
         }
@@ -346,6 +359,8 @@ fn main() {
         upd: updates::Updates::default(),
         upd_shown: false,
         landing: None,
+        fx_seen: String::new(),
+        live: eq::Live::default(),
         weak: ui.as_weak(),
     }));
     show(&ui, &mut st.borrow_mut());
@@ -671,7 +686,10 @@ fn main() {
                 s.snd.publish_meters(&ui);
             }
             if evs.iter().fold(false, |a, ev| s.snd.event(ev) || a) && s.c.ui.pane == "Sound" {
-                s.snd.publish(&ui, &s.c.p);
+                let State { snd, c, .. } = &mut *s;
+                snd.resolve(&c.p);
+                snd.publish(&ui, &c.p);
+                eq::publish(&ui, &c.p, snd);
                 // The device in use may have changed: its level, then.
                 let State { daemon, c, snd, .. } = &mut *s;
                 if let Some(d) = daemon.as_mut() {
@@ -685,6 +703,7 @@ fn main() {
     wire_wifi(&ui, &st);
     wire_bt(&ui, &st);
     wire_sound(&ui, &st);
+    wire_eq(&ui, &st);
     wire_galleries(&ui, &st, settle.clone());
 
     // Edits made elsewhere: shown within a second.
@@ -717,6 +736,17 @@ fn main() {
                     s.upd.publish(&ui);
                 } else if hyprshell_kit::now() - since > 1800 {
                     s.upd.waiting = None;
+                }
+            }
+            // The shell's word on the equalizer and noise suppression.
+            if st.borrow().c.ui.pane == "Sound" {
+                let now = eq::status_text();
+                let mut s = st.borrow_mut();
+                if now != s.fx_seen {
+                    s.fx_seen = now;
+                    let State { snd, c, .. } = &mut *s;
+                    snd.publish(&ui, &c.p);
+                    eq::publish(&ui, &c.p, snd);
                 }
             }
             let changed = mtime() != st.borrow().seen;
@@ -962,6 +992,7 @@ fn wire_sound(ui: &AppWindow, st: &Rc<RefCell<State>>) {
             let mut s = st.borrow_mut();
             let mut m = std::mem::take(&mut s.snd);
             f(&mut m, &mut s.c.p);
+            m.resolve(&s.c.p);
             m.publish(&ui, &s.c.p);
             // A device picked, meters switched: the levels wanted change.
             let State { daemon, c, .. } = &mut *s;
@@ -999,7 +1030,16 @@ fn wire_sound(ui: &AppWindow, st: &Rc<RefCell<State>>) {
     });
     on!(on_volume, [n: SharedString, v: f32], |m, p| m.set_volume(p, &n, v as f64));
     on!(on_mute, [n: SharedString, v: bool], |m, _p| m.set_mute(&n, v));
-    on!(on_use, [n: SharedString], |m, _p| m.set_default(&n));
+    on!(on_use, [n: SharedString], |m, p| {
+        // With an effect in the way, the device it feeds is what changes.
+        let sink = m.sinks.iter().any(|x| x.name == n.as_str());
+        if sink && m.eq_active() {
+            put(m, p, "eqTarget", n.as_str().into());
+        } else if !sink && m.ns_active() {
+            put(m, p, "nsTarget", n.as_str().into());
+        }
+        m.set_default(&n)
+    });
     on!(on_pick, [out: bool, n: SharedString], |m, _p| if out { m.picked_out = n.to_string() } else { m.picked_in = n.to_string() });
     on!(on_toggle_hidden_list, [], |m, _p| m.show_hidden = !m.show_hidden);
     on!(on_set_port, [n: SharedString, port: SharedString], |m, _p| m.set_port(&n, &port));
@@ -1052,6 +1092,168 @@ fn wire_sound(ui: &AppWindow, st: &Rc<RefCell<State>>) {
             None => m.last_error = "No mixer app is installed (pavucontrol or pwvucontrol).".into(),
         }
     });
+}
+
+/// Settings → Sound's equalizer and microphone effects: SoundEq.qml's
+/// and EqGraph.qml's handlers. Each change is written to theme.json (the
+/// shell rebuilds the chain from it when its make-up changes) and, when only
+/// frequency, gain or Q moved, sent straight to the running filter.
+fn wire_eq(ui: &AppWindow, st: &Rc<RefCell<State>>) {
+    let g = ui.global::<EqLook>();
+    let with = {
+        let weak = ui.as_weak();
+        let st = st.clone();
+        Rc::new(move |f: &dyn Fn(&prefs::Prefs, &EqLook) -> Vec<(&'static str, serde_json::Value)>| {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut s = st.borrow_mut();
+            let g = ui.global::<EqLook>();
+            let before = eq::bands(&s.c.p);
+            let changes = f(&s.c.p, &g);
+            let wrote = !changes.is_empty();
+            for (k, v) in changes {
+                if let Err(e) = s.c.p.set(k, v) {
+                    s.snd.last_error = format!("Couldn't save the setting: {e}");
+                }
+            }
+            // Ours: not an edit from elsewhere to draw the pane again for.
+            s.seen = mtime();
+            let after = eq::bands(&s.c.p);
+            if wrote && hyprshell_kit::eqmath::structure(&before) == hyprshell_kit::eqmath::structure(&after) && !s.snd.eq_node.is_empty() {
+                s.live.push(&s.snd.eq_node, eq::gains(&s.c.p));
+            }
+            if !after.iter().any(|b| b.id as i32 == g.get_selected()) && g.get_selected() >= 0 {
+                g.set_selected(eq::first_id(&s.c.p));
+            }
+            let State { snd, c, .. } = &mut *s;
+            snd.publish(&ui, &c.p);
+            eq::publish(&ui, &c.p, snd);
+        })
+    };
+    macro_rules! on {
+        ($name:ident, [$($a:ident : $t:ty),*], |$p:ident, $g:ident| $body:expr) => {{
+            let with = with.clone();
+            g.$name(move |$($a: $t),*| {
+                with(&|$p: &prefs::Prefs, $g: &EqLook| {
+                    let _ = (&$p, &$g);
+                    $body
+                })
+            });
+        }};
+    }
+    let tell = |line: String| {
+        let _ = tell_shell(&line);
+    };
+    use serde_json::json;
+    on!(on_set_enabled, [v: bool], |_p, _g| {
+        if v {
+            tell("fxRetry eq".into());
+        }
+        vec![("eqEnabled", json!(v))]
+    });
+    on!(on_retry, [], |_p, _g| {
+        tell("fxRetry eq".into());
+        vec![]
+    });
+    on!(on_set_scope, [apps: bool], |_p, _g| vec![("eqScope", json!(if apps { "apps" } else { "all" }))]);
+    on!(on_toggle_app, [key: SharedString, on: bool], |p, _g| eq::set_app(p, &key, on));
+    on!(on_apply_preset, [name: SharedString, user: bool], |p, g| {
+        let out = eq::apply_preset(p, &name, user);
+        // The first band of the new set picked.
+        let first = out.iter().find(|x| x.0 == "peqBands").map(|x| hyprshell_kit::eqmath::parse(x.1.as_str().unwrap_or("[]"))).and_then(|l| l.first().map(|b| b.id as i32)).unwrap_or(-1);
+        g.set_selected(first);
+        out
+    });
+    on!(on_delete_preset, [name: SharedString], |p, _g| eq::delete_preset(p, &name));
+    on!(on_save, [], |p, g| {
+        let out = eq::save_preset(p, &g.get_save_name());
+        if !out.is_empty() {
+            g.set_saving(false);
+        }
+        out
+    });
+    {
+        let st = st.clone();
+        g.on_exists(move |name| {
+            let Ok(s) = st.try_borrow() else { return false };
+            eq::user_names(&s.c.p).iter().any(|n| n == name.trim())
+        });
+    }
+    on!(on_reset, [], |_p, g| {
+        g.set_selected(-1);
+        eq::reset()
+    });
+    on!(on_pick, [_id: i32], |_p, _g| vec![]);
+    on!(on_resized, [], |_p, _g| vec![]);
+    on!(on_drag, [id: i32, x: f32, y: f32], |p, _g| eq::drag(p, id, x as f64, y as f64));
+    on!(on_add_at, [x: f32, y: f32], |p, g| {
+        let (f, gain) = eq::at(p, x as f64, y as f64);
+        let (id, out) = eq::add_band(p, f, gain);
+        if let Some(id) = id {
+            g.set_selected(id);
+        }
+        out
+    });
+    on!(on_add_gap, [], |p, g| {
+        let (id, out) = eq::add_in_gap(p);
+        if let Some(id) = id {
+            g.set_selected(id);
+        }
+        out
+    });
+    on!(on_flatten, [id: i32], |p, _g| eq::set_band(p, id, &json!({ "gain": 0 })));
+    on!(on_toggle, [id: i32], |p, _g| eq::toggle_band(p, id));
+    on!(on_q_steps, [id: i32, n: i32], |p, _g| eq::q_steps(p, id, n));
+    on!(on_remove, [], |p, g| eq::remove_band(p, g.get_selected()));
+    on!(on_set_type, [i: i32], |p, g| match hyprshell_kit::eqmath::TYPES.get(i.max(0) as usize) {
+        Some(t) => eq::set_band(p, g.get_selected(), &json!({ "type": t.0 })),
+        None => vec![],
+    });
+    on!(on_set_on, [v: bool], |p, g| eq::set_band(p, g.get_selected(), &json!({ "on": v })));
+    on!(on_set_slope, [i: i32], |p, g| match hyprshell_kit::eqmath::SLOPES.get(i.max(0) as usize) {
+        Some(s) => eq::set_band(p, g.get_selected(), &json!({ "slope": s })),
+        None => vec![],
+    });
+    on!(on_nudge, [which: i32, n: i32, fine: bool], |p, g| eq::nudge(p, g.get_selected(), which, n, fine));
+    on!(on_typed, [which: i32, text: SharedString], |p, g| eq::typed(p, g.get_selected(), which, &text));
+    on!(on_set_preamp, [db: f32], |_p, _g| eq::set_preamp(db as f64));
+    on!(on_auto, [], |p, _g| eq::auto_preamp(p));
+    on!(on_set_range, [r: i32], |_p, _g| vec![("eqRange", json!(r))]);
+    on!(on_set_ns, [v: bool], |_p, _g| {
+        if v {
+            tell("fxRetry ns".into());
+        }
+        vec![("nsEnabled", json!(v))]
+    });
+    {
+        let weak = ui.as_weak();
+        let st = st.clone();
+        g.on_set_ns_threshold(move |v| {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut s = st.borrow_mut();
+            let v = (v as f64).clamp(0.0, 99.0).round();
+            if (s.c.p.f("nsThreshold") - v).abs() < 0.5 {
+                return;
+            }
+            let _ = s.c.p.set("nsThreshold", json!(v));
+            s.seen = mtime();
+            if !s.snd.ns_node.is_empty() {
+                s.live.push(&s.snd.ns_node, eq::ns_params(&s.c.p));
+            }
+            let State { snd, c, .. } = &mut *s;
+            eq::publish(&ui, &c.p, snd);
+        });
+    }
+    on!(on_ns_retry, [], |_p, _g| {
+        tell("fxRetry ns".into());
+        vec![]
+    });
+    {
+        let st = st.clone();
+        g.on_listen(move |on| {
+            let src = st.borrow().snd.inspected_name(false);
+            let _ = tell_shell(&if on && !src.is_empty() { format!("fxListen {src}") } else { "fxListen".into() });
+        });
+    }
 }
 
 /// The enterprise form's server check, method and inner method.

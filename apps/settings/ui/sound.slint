@@ -5,6 +5,7 @@
 
 import { Theme, Icon, Switch, Slider } from "@kit";
 import { Segmented, NetButton, NetField, Caption, Line, Card, Link, FillBar, CenterBar } from "common.slint";
+import { SoundEq, MicEffects } from "eq.slint";
 
 export struct SndDev { name: string, label: string, sub: string, glyph: string, in-use: bool, picked: bool, muted: bool, level: float, pct: int, loud: bool, dim: bool }
 export struct SndOpt { value: string, label: string }
@@ -86,6 +87,9 @@ export global Snd {
     in property <bool> names-any;
     in property <string> last-error;
     in property <bool> pactl: true;
+    // The glance's word on the effects: "Equalizer on", "Noise suppression on".
+    in property <string> out-fx;
+    in property <string> in-fx;
     callback set-tab(int);
     callback default-volume(bool, float);
     callback default-mute(bool);
@@ -218,6 +222,12 @@ component Glance inherits VerticalLayout {
             font-weight: 600;
             color: Theme.ink;
         }
+    }
+    if (root.out ? Snd.out-fx : Snd.in-fx) != "": Text {
+        text: root.out ? Snd.out-fx : Snd.in-fx;
+        overflow: elide;
+        font-size: Theme.fs(11);
+        color: Theme.accent;
     }
     // What the microphone hears; what the output plays.
     if Snd.meters && root.has: HorizontalLayout {
@@ -662,7 +672,7 @@ export component SoundPanel inherits VerticalLayout {
 
     // ══ at a glance ══════════════════════════════════════════════════
     Card {
-        height: 118px;
+        height: Snd.out-fx != "" || Snd.in-fx != "" ? 136px : 118px;
         HorizontalLayout {
             x: 16px;
             y: 14px;
@@ -690,6 +700,8 @@ export component SoundPanel inherits VerticalLayout {
         Caption { text: "OUTPUTS"; }
         DeviceList { out: true; list: Snd.outputs; }
         if Snd.io-name != "": Inspector { out: true; nick: Snd.io-nick; }
+        Caption { text: "EQUALIZER"; }
+        SoundEq { }
     }
     // ── input ──
     if Snd.tab == 1: VerticalLayout {
@@ -697,6 +709,8 @@ export component SoundPanel inherits VerticalLayout {
         Caption { text: "INPUTS"; }
         DeviceList { out: false; list: Snd.inputs; }
         if Snd.ii-name != "": Inspector { out: false; nick: Snd.ii-nick; }
+        Caption { text: "MICROPHONE EFFECTS"; }
+        MicEffects { }
     }
     // ── apps ──
     if Snd.tab == 2: VerticalLayout {

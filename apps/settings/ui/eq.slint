@@ -1,0 +1,798 @@
+// Settings → Sound's equalizer (SoundEq.qml, EqGraph.qml, EqValue.qml) and
+// the microphone effects (SoundPanel.qml's noise suppression and listen
+// cards). What they show comes from src/eq.rs; the shell runs the chains.
+
+import { Theme, Icon, Switch } from "@kit";
+import { Segmented, NetButton, NetField, Line, Card, FillBar, CenterBar } from "common.slint";
+
+// Path coordinates are the plot's own pixels (EqLook.vw × vh).
+export struct EqCurve { fill: string, stroke: string, color: color, sel: bool, on: bool }
+export struct EqTick { at: float, major: bool, label: string }
+export struct EqHandle { id: int, n: int, x: float, y: float, gainy: bool, on: bool, color: color, tip: string }
+export struct EqBandChip { id: int, label: string, color: color, on: bool, add: bool }
+export struct EqPreset { name: string, user: bool, current: bool }
+export struct EqApp { key: string, label: string, glyph: string, chosen: bool, live: bool }
+export struct EqChipRow { presets: [EqPreset], bands: [EqBandChip], apps: [EqApp] }
+export struct EqPresetGroup { name: string, rows: [EqChipRow] }
+
+export global EqLook {
+    in property <bool> enabled;
+    in property <bool> shell;
+    in property <bool> available: true;
+    in property <bool> failed;
+    in property <string> error;
+    in property <string> sub;
+    in property <bool> per-app;
+    in property <[EqChipRow]> app-rows;
+    in property <bool> no-apps;
+    in property <string> preset;
+    in property <float> preamp;
+    in property <string> preamp-text;
+    in property <float> range: 12;
+    in property <bool> can-add: true;
+    in property <[EqPresetGroup]> preset-groups;
+    in property <[string]> user-names;
+    in property <[EqCurve]> curves;
+    in property <string> total;
+    in property <[float]> clips;
+    in property <[EqTick]> grid;
+    in property <[EqTick]> flabels;
+    in property <[EqTick]> dlabels;
+    in property <[EqHandle]> handles;
+    in property <[EqChipRow]> band-rows;
+    in property <[string]> types;
+    in property <[string]> slopes;
+    in property <bool> has-sel;
+    in property <int> sel-type;
+    in property <bool> sel-on;
+    in property <bool> sel-gainy;
+    in property <bool> sel-cut;
+    in property <int> sel-slope;
+    in property <string> sel-freq;
+    in property <string> sel-gain;
+    in property <string> sel-q;
+    in-out property <int> selected: -1;
+    in-out property <bool> presets-open;
+    in-out property <bool> saving;
+    in-out property <string> save-name;
+    // A handle or a value is held: the pane's scrolling stands down.
+    in-out property <bool> holding;
+    // The plot's size, in pixels: the paths are drawn to it (a Path keeps
+    // its viewbox's shape, so the viewbox is the plot's own).
+    in-out property <float> vw: 1000;
+    in-out property <float> vh: 250;
+    callback resized();
+    // Noise suppression and listening.
+    in property <bool> ns-enabled;
+    in property <bool> ns-available: true;
+    in property <bool> ns-failed;
+    in property <string> ns-error;
+    in property <string> ns-sub;
+    in property <int> ns-threshold;
+    in property <bool> listening;
+    in property <bool> can-listen;
+    in property <string> listen-sub;
+
+    callback set-enabled(bool);
+    callback retry();
+    callback set-scope(bool);
+    callback toggle-app(string, bool);
+    callback apply-preset(string, bool);
+    callback delete-preset(string);
+    callback save();
+    pure callback exists(string) -> bool;
+    callback reset();
+    // A band picked (-1: none); then the handles' moves, in 0–1 of the plot.
+    callback pick(int);
+    callback drag(int, float, float);
+    callback add-at(float, float);
+    callback add-gap();
+    callback flatten(int);
+    callback toggle(int);
+    callback q-steps(int, int);
+    callback remove();
+    callback set-type(int);
+    callback set-on(bool);
+    callback set-slope(int);
+    // EqValue: 0 frequency, 1 gain, 2 Q; nudged n notches (fine: Shift).
+    callback nudge(int, int, bool);
+    callback typed(int, string);
+    callback set-preamp(float);
+    callback auto();
+    callback set-range(int);
+    callback set-ns(bool);
+    callback set-ns-threshold(float);
+    callback ns-retry();
+    callback listen(bool);
+}
+
+// The round badge at the head of each card.
+component Badge inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> lit;
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
+    background: root.lit ? Theme.accent : Theme.sel;
+    Icon { name: root.glyph; size: 19px; ink: root.lit ? Theme.ink-on-accent : Theme.ink2; acc: root.lit ? Theme.ink-on-accent : Theme.ink2; }
+}
+
+component Head inherits HorizontalLayout {
+    in property <string> glyph;
+    in property <bool> lit;
+    in property <string> title;
+    in property <string> sub;
+    in property <bool> on;
+    in property <bool> can: true;
+    callback toggled(bool);
+    spacing: 12px;
+    height: 40px;
+    Badge { glyph: root.glyph; lit: root.lit; }
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        horizontal-stretch: 1;
+        Text { text: root.title; font-size: Theme.fs(15); font-weight: 600; color: Theme.ink; }
+        Text { text: root.sub; overflow: elide; font-size: Theme.fs(12); color: Theme.ink3; }
+    }
+    VerticalLayout {
+        alignment: center;
+        Switch { on: root.on; enabled: root.can; toggled(v) => { root.toggled(v); } }
+    }
+}
+
+// A chip in a row of them: a preset, a band, an app.
+component Chip inherits Rectangle {
+    in property <string> label;
+    in property <bool> current;
+    in property <bool> bold: true;
+    callback clicked();
+    height: 30px;
+    border-radius: Theme.r-sm;
+    background: root.current ? Theme.accent : (cta.has-hover ? Theme.sel : Theme.ground);
+    border-width: root.current ? 0px : 1px;
+    border-color: Theme.rule;
+    cta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    @children
+}
+
+// EqValue.qml: a number set the way a mixing desk's is — drag up or down
+// on it, scroll on it, or double-click and type. Shift makes either finer.
+component EqValue inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <string> unit;
+    in property <int> which;
+    property <bool> editing;
+    property <length> last-y;
+    property <float> acc;
+    property <length> swipe;
+    width: 112px;
+    height: 46px;
+    border-radius: Theme.r-sm;
+    background: ta.has-hover || root.editing ? Theme.sel : Theme.ground;
+    border-width: root.editing ? 2px : 1px;
+    border-color: root.editing ? Theme.accent : Theme.rule;
+    Text { x: 10px; y: 6px; text: root.label; font-size: Theme.fs(10); font-weight: 600; color: Theme.ink3; }
+    if !root.editing: Text {
+        x: 10px;
+        y: parent.height - self.height - 6px;
+        text: root.value + (root.unit != "" ? " " + root.unit : "");
+        font-size: Theme.fs(14);
+        font-weight: 600;
+        color: Theme.ink;
+    }
+    ta := TouchArea {
+        enabled: !root.editing;
+        mouse-cursor: ns-resize;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.last-y = self.mouse-y;
+                root.acc = 0;
+                EqLook.holding = true;
+            }
+            if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { EqLook.holding = false; }
+            if (e.kind == PointerEventKind.move && self.pressed) {
+                root.acc += (root.last-y - self.mouse-y) / 6px;
+                root.last-y = self.mouse-y;
+                if (root.acc >= 1 || root.acc <= -1) {
+                    let n = root.acc > 0 ? floor(root.acc) : ceil(root.acc);
+                    root.acc -= n;
+                    EqLook.nudge(root.which, n, e.modifiers.shift);
+                }
+            }
+        }
+        double-clicked => {
+            root.editing = true;
+            fi.text = root.value;
+            fi.focus();
+            fi.select-all();
+        }
+        // A notch of a mouse wheel is a step; a trackpad, one for every so
+        // far it travels.
+        scroll-event(e) => {
+            if (abs(e.delta-y) >= 30px) {
+                EqLook.nudge(root.which, e.delta-y > 0 ? 1 : -1, e.modifiers.shift);
+                return accept;
+            }
+            root.swipe += e.delta-y;
+            if (abs(root.swipe) >= 24px) {
+                EqLook.nudge(root.which, root.swipe > 0 ? 1 : -1, e.modifiers.shift);
+                root.swipe = 0;
+            }
+            accept
+        }
+    }
+    fi := TextInput {
+        visible: root.editing;
+        enabled: root.editing;
+        x: 10px;
+        y: parent.height - 6px - self.height;
+        width: parent.width - 20px;
+        single-line: true;
+        font-size: Theme.fs(14);
+        font-weight: 600;
+        color: Theme.ink;
+        selection-background-color: Theme.accent;
+        selection-foreground-color: Theme.ink-on-accent;
+        // "1.2k" is a frequency as people write one.
+        accepted => {
+            EqLook.typed(root.which, self.text);
+            root.editing = false;
+        }
+        changed has-focus => { if (!self.has-focus) { root.editing = false; } }
+    }
+}
+
+// EqGraph.qml: the response on a log axis from 20 Hz to 20 kHz, each band's
+// own shape in its colour under the sum, and a handle for each band.
+//
+//   drag a handle            frequency across, gain up and down (Shift: fine)
+//   scroll on a handle       Q — narrower or wider
+//   double-click a handle    its gain back to 0
+//   right-click a handle     bypass it, or bring it back
+//   double-click the graph   a new band there
+component EqGraph inherits Rectangle {
+    property <length> pad-l: 34px;
+    property <length> pad-r: 10px;
+    property <length> pad-t: 10px;
+    property <length> pad-b: 22px;
+    property <length> pw: self.width - self.pad-l - self.pad-r;
+    property <length> ph: self.height - self.pad-t - self.pad-b;
+    border-radius: Theme.r-sm;
+    background: Theme.ground;
+    border-width: 1px;
+    border-color: Theme.rule;
+
+    // Adding: under the handles.
+    TouchArea {
+        clicked => { EqLook.selected = -1; EqLook.pick(-1); }
+        double-clicked => {
+            if (self.mouse-x >= root.pad-l && self.mouse-y <= root.pad-t + root.ph) {
+                EqLook.add-at((self.mouse-x - root.pad-l) / root.pw, (self.mouse-y - root.pad-t) / root.ph);
+            }
+        }
+    }
+
+    changed pw => { root.tell-size(); }
+    changed ph => { root.tell-size(); }
+    init => { root.tell-size(); }
+    function tell-size() {
+        if (root.pw > 0 && root.ph > 0 && (abs(EqLook.vw - root.pw / 1px) > 0.5 || abs(EqLook.vh - root.ph / 1px) > 0.5)) {
+            EqLook.vw = root.pw / 1px;
+            EqLook.vh = root.ph / 1px;
+            EqLook.resized();
+        }
+    }
+
+    plot := Rectangle {
+        x: root.pad-l;
+        y: root.pad-t;
+        width: root.pw;
+        height: root.ph;
+        clip: true;
+        // Grid: decades bold, the rest faint; dB every quarter.
+        for t in EqLook.grid: Rectangle {
+            x: floor(t.at * parent.width / 1px) * 1px;
+            width: 1px;
+            background: t.major ? Theme.edge : Theme.rule;
+        }
+        for k in 9: Rectangle {
+            y: floor(k / 8 * parent.height / 1px) * 1px;
+            height: k == 4 ? 1.2px : 1px;
+            background: k == 4 ? Theme.edge : Theme.rule;
+        }
+        // Each band's own shape, filled from 0 dB in its colour; the one
+        // selected stronger, one switched off barely there.
+        for c in EqLook.curves: Rectangle {
+            Path {
+                width: 100%;
+                height: 100%;
+                viewbox-width: EqLook.vw;
+                viewbox-height: EqLook.vh;
+                commands: c.fill;
+                fill: c.color.with-alpha(!c.on ? 0.04 : c.sel ? 0.26 : 0.11);
+            }
+            if c.sel || c.on: Path {
+                width: 100%;
+                height: 100%;
+                viewbox-width: EqLook.vw;
+                viewbox-height: EqLook.vh;
+                commands: c.stroke;
+                stroke: c.color.with-alpha(!c.on ? 0.25 : c.sel ? 0.95 : 0.45);
+                stroke-width: c.sel ? 1.6px : 1px;
+            }
+        }
+        // The sum, with the preamp: what is heard.
+        if EqLook.total != "": Path {
+            width: 100%;
+            height: 100%;
+            viewbox-width: EqLook.vw;
+            viewbox-height: EqLook.vh;
+            commands: EqLook.total;
+            stroke: Theme.ink;
+            stroke-width: 2.2px;
+        }
+        // Above 0 dB, loud passages clip: marked along the top.
+        for c in EqLook.clips: Rectangle {
+            x: c * parent.width - 1.5px;
+            y: 0;
+            width: 3px;
+            height: 3px;
+            background: rgba(230, 60, 40, 0.85);
+        }
+    }
+    // Labels: frequencies under, dB to the left.
+    for t in EqLook.flabels: Text {
+        x: root.pad-l + max(8px, min(root.pw - 10px, t.at * root.pw)) - self.width / 2;
+        y: root.pad-t + root.ph + 6px;
+        text: t.label;
+        font-size: Theme.fs(9.5);
+        color: Theme.ink3;
+    }
+    for t in EqLook.dlabels: Text {
+        x: root.pad-l - 6px - self.width;
+        y: root.pad-t + t.at * root.ph - self.height / 2;
+        text: t.label;
+        font-size: Theme.fs(9.5);
+        color: Theme.ink3;
+    }
+    if EqLook.handles.length == 0: Text {
+        text: "Double-click anywhere on the graph to add a band, or pick a preset";
+        font-size: Theme.fs(12);
+        color: Theme.ink3;
+    }
+
+    // The handles. While one is dragged it follows the pointer; the band
+    // follows it through the settings, a step behind.
+    for h in EqLook.handles: Rectangle {
+        property <bool> sel: h.id == EqLook.selected;
+        property <length> cx: root.pad-l + (ta.pressed ? ta.drag-x : h.x * root.pw);
+        property <length> cy: root.pad-t + (ta.pressed ? ta.drag-y : h.y * root.ph);
+        width: 22px;
+        height: 22px;
+        x: self.cx - 11px;
+        y: self.cy - 11px;
+        dot := Rectangle {
+            width: sel ? 18px : 14px;
+            height: self.width;
+            border-radius: self.width / 2;
+            animate width { duration: Theme.t(140); easing: ease-out; }
+            background: h.on ? h.color : Theme.ground;
+            border-width: sel ? 2.5px : 1.5px;
+            border-color: h.on ? (sel ? Theme.ink : h.color.darker(0.4)) : h.color;
+            Text {
+                text: h.n;
+                font-size: Theme.fs(sel ? 9.5 : 8.5);
+                font-weight: 700;
+                color: h.on ? #1b1918 : h.color;
+            }
+        }
+        ta := TouchArea {
+            x: -4px;
+            y: -4px;
+            width: parent.width + 8px;
+            height: parent.height + 8px;
+            mouse-cursor: self.pressed ? grabbing : grab;
+            property <length> start-x;
+            property <length> start-y;
+            property <length> ox;
+            property <length> oy;
+            in-out property <length> drag-x;
+            in-out property <length> drag-y;
+            property <length> swipe;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    EqLook.selected = h.id;
+                    EqLook.pick(h.id);
+                    if (e.button == PointerEventButton.right) {
+                        EqLook.toggle(h.id);
+                        return;
+                    }
+                    EqLook.holding = true;
+                    // Where the pointer starts is taken at its first move:
+                    // mouse-x isn't always up to date on the press.
+                    self.started = false;
+                    self.ox = h.x * root.pw;
+                    self.oy = h.y * root.ph;
+                    self.drag-x = self.ox;
+                    self.drag-y = self.oy;
+                }
+                if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { EqLook.holding = false; }
+                self.fine = e.modifiers.shift;
+            }
+            property <bool> fine;
+            property <bool> started;
+            // The pointer in the window, not in the handle: the handle
+            // moves under it.
+            moved => {
+                if (self.pressed && EqLook.holding && !self.started) {
+                    self.started = true;
+                    self.start-x = self.absolute-position.x + self.mouse-x;
+                    self.start-y = self.absolute-position.y + self.mouse-y;
+                } else if (self.pressed && EqLook.holding) {
+                    let k = self.fine ? 0.2 : 1;
+                    let nx = max(0px, min(root.pw, self.ox + (self.absolute-position.x + self.mouse-x - self.start-x) * k));
+                    let ny = max(0px, min(root.ph, self.oy + (self.absolute-position.y + self.mouse-y - self.start-y) * k));
+                    self.drag-x = nx;
+                    self.drag-y = h.gainy ? ny : self.oy;
+                    EqLook.drag(h.id, nx / root.pw, ny / root.ph);
+                }
+            }
+            double-clicked => { if (h.gainy) { EqLook.flatten(h.id); } }
+            scroll-event(e) => {
+                if (abs(e.delta-y) >= 30px) {
+                    EqLook.q-steps(h.id, e.delta-y > 0 ? 1 : -1);
+                    return accept;
+                }
+                self.swipe += e.delta-y;
+                if (abs(self.swipe) >= 24px) {
+                    EqLook.q-steps(h.id, self.swipe > 0 ? 1 : -1);
+                    self.swipe = 0;
+                }
+                accept
+            }
+        }
+        // What it is set to, beside it while the pointer is on it.
+        if ta.has-hover || ta.pressed: Rectangle {
+            x: parent.cx > root.width - 170px ? -self.width - 6px : parent.width + 6px;
+            y: parent.cy < 40px ? parent.height : -self.height;
+            width: tip.preferred-width + 16px;
+            height: tip.preferred-height + 10px;
+            border-radius: Theme.r-sm;
+            background: Theme.dialog;
+            border-width: 1px;
+            border-color: Theme.edge;
+            tip := Text { text: h.tip; font-size: Theme.fs(11); font-weight: 600; color: Theme.ink; }
+        }
+    }
+}
+
+// SoundEq.qml: the parametric equalizer, its presets and bands.
+export component SoundEq inherits Rectangle {
+    border-radius: Theme.r;
+    background: Theme.hover;
+    border-width: 1px;
+    border-color: EqLook.failed ? #d93a2b : Theme.rule;
+    height: col.preferred-height + 32px;
+    col := VerticalLayout {
+        x: 16px;
+        y: 16px;
+        width: parent.width - 32px;
+        height: self.preferred-height;
+        spacing: 14px;
+
+        // ── on or off ──
+        Head {
+            glyph: "sliders";
+            lit: EqLook.enabled;
+            title: "Parametric equalizer";
+            sub: EqLook.sub;
+            on: EqLook.enabled;
+            can: EqLook.available;
+            toggled(v) => { EqLook.set-enabled(v); }
+        }
+        if EqLook.failed: Line { text: EqLook.error; color: #d93a2b; }
+        if EqLook.failed: HorizontalLayout { alignment: start; NetButton { label: "Try again"; clicked => { EqLook.retry(); } } }
+
+        // ── what it applies to ──
+        HorizontalLayout {
+            height: 32px;
+            Text { vertical-alignment: center; text: "Applies to"; font-size: Theme.fs(12.5); font-weight: 500; color: Theme.ink2; horizontal-stretch: 1; }
+            VerticalLayout {
+                alignment: center;
+                Segmented { options: ["Everything", "Chosen apps"]; current: EqLook.per-app ? 1 : 0; picked(i) => { EqLook.set-scope(i == 1); } }
+            }
+        }
+        // The apps, as chips: those playing now, and those chosen before
+        // that aren't. A tap puts one through the equalizer or takes it out.
+        if EqLook.per-app: VerticalLayout {
+            spacing: 6px;
+            for r in EqLook.app-rows: HorizontalLayout {
+                alignment: start;
+                spacing: 6px;
+                for a in r.apps: Rectangle {
+                    height: 30px;
+                    width: arow.preferred-width + 20px;
+                    border-radius: 15px;
+                    opacity: a.live ? 1 : 0.7;
+                    background: a.chosen ? Theme.accent.with-alpha(0.16) : (ata.has-hover ? Theme.sel : Theme.ground);
+                    border-width: 1px;
+                    border-color: a.chosen ? Theme.accent : Theme.rule;
+                    arow := HorizontalLayout {
+                        x: 10px;
+                        width: self.preferred-width;
+                        spacing: 6px;
+                        VerticalLayout { alignment: center; Icon { name: a.glyph; size: 14px; ink: a.chosen ? Theme.accent : Theme.ink2; } }
+                        Text { vertical-alignment: center; text: a.label; font-size: Theme.fs(12); font-weight: a.chosen ? 600 : 400; color: a.chosen ? Theme.ink : Theme.ink2; }
+                        VerticalLayout { alignment: center; Icon { name: a.chosen ? "check" : "plus"; size: 12px; ink: a.chosen ? Theme.accent : Theme.ink3; acc: a.chosen ? Theme.accent : Theme.ink3; } }
+                    }
+                    ata := TouchArea { mouse-cursor: pointer; clicked => { EqLook.toggle-app(a.key, !a.chosen); } }
+                }
+            }
+            if EqLook.no-apps: Line { text: "Start something playing and it shows here, to choose."; }
+        }
+
+        // ── presets ──
+        HorizontalLayout {
+            spacing: 8px;
+            height: 32px;
+            Rectangle {
+                width: prow.preferred-width + 24px;
+                border-radius: Theme.r-sm;
+                background: EqLook.presets-open || pta.has-hover ? Theme.sel : Theme.ground;
+                border-width: 1px;
+                border-color: Theme.rule;
+                prow := HorizontalLayout {
+                    x: 12px;
+                    width: self.preferred-width;
+                    spacing: 8px;
+                    Text { vertical-alignment: center; text: "Preset"; font-size: Theme.fs(11.5); color: Theme.ink3; }
+                    Text { vertical-alignment: center; text: EqLook.preset; font-size: Theme.fs(12.5); font-weight: 600; color: Theme.ink; }
+                    VerticalLayout { alignment: center; Icon { name: "chevronDown"; size: 14px; ink: Theme.ink2; acc: Theme.ink2; transform-rotation: EqLook.presets-open ? 180deg : 0deg; } }
+                }
+                pta := TouchArea { mouse-cursor: pointer; clicked => { EqLook.presets-open = !EqLook.presets-open; EqLook.saving = false; } }
+            }
+            VerticalLayout {
+                alignment: center;
+                NetButton {
+                    label: "Save as…";
+                    clicked => {
+                        EqLook.saving = !EqLook.saving;
+                        EqLook.presets-open = false;
+                        EqLook.save-name = EqLook.preset == "Custom" ? "" : EqLook.preset;
+                    }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            VerticalLayout { alignment: center; NetButton { label: "Reset"; clicked => { EqLook.reset(); } } }
+        }
+
+        // Saving: a name, and the bands and preamp as they are go under it.
+        if EqLook.saving: HorizontalLayout {
+            spacing: 8px;
+            NetField {
+                cap: 2000px;
+                horizontal-stretch: 1;
+                placeholder: "Name this preset";
+                text <=> EqLook.save-name;
+                accepted => { EqLook.save(); }
+            }
+            VerticalLayout { alignment: end; NetButton { label: EqLook.exists(EqLook.save-name) ? "Replace" : "Save"; primary: true; clicked => { EqLook.save(); } } }
+            VerticalLayout { alignment: end; NetButton { label: "Cancel"; clicked => { EqLook.saving = false; } } }
+        }
+
+        // The presets, by what they are for; yours last.
+        if EqLook.presets-open: VerticalLayout {
+            spacing: 10px;
+            for g in EqLook.preset-groups: VerticalLayout {
+                spacing: 6px;
+                Text { text: g.name; font-size: Theme.fs(11); font-weight: 600; color: Theme.ink3; }
+                for r in g.rows: HorizontalLayout {
+                    alignment: start;
+                    spacing: 6px;
+                    for p in r.presets: Chip {
+                        current: p.current;
+                        width: crow.preferred-width + 22px;
+                        clicked => { EqLook.apply-preset(p.name, p.user); }
+                        crow := HorizontalLayout {
+                            x: 11px;
+                            width: self.preferred-width;
+                            spacing: 6px;
+                            Text { vertical-alignment: center; text: p.name; font-size: Theme.fs(12); font-weight: 600; color: p.current ? Theme.ink-on-accent : Theme.ink; }
+                            // Yours can go.
+                            if p.user: VerticalLayout {
+                                alignment: center;
+                                Icon {
+                                    name: "x";
+                                    size: 12px;
+                                    ink: p.current ? Theme.ink-on-accent : Theme.ink3;
+                                    acc: self.ink;
+                                    TouchArea { mouse-cursor: pointer; clicked => { EqLook.delete-preset(p.name); } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── the graph ──
+        EqGraph { height: 260px; opacity: EqLook.enabled ? 1 : 0.7; }
+
+        // ── the bands, in order of frequency ──
+        VerticalLayout {
+            spacing: 6px;
+            for r in EqLook.band-rows: HorizontalLayout {
+                alignment: start;
+                spacing: 6px;
+                for b in r.bands: Rectangle {
+                    property <bool> picked: !b.add && b.id == EqLook.selected;
+                    height: 30px;
+                    width: brow.preferred-width + 20px;
+                    border-radius: Theme.r-sm;
+                    opacity: b.on ? 1 : 0.55;
+                    background: b.add ? (bta.has-hover ? Theme.sel : transparent) : (self.picked || bta.has-hover ? Theme.sel : Theme.ground);
+                    border-width: self.picked ? 2px : 1px;
+                    border-color: self.picked ? b.color : Theme.rule;
+                    brow := HorizontalLayout {
+                        x: 10px;
+                        width: self.preferred-width;
+                        spacing: 7px;
+                        if b.add: VerticalLayout { alignment: center; Icon { name: "plus"; size: 13px; ink: Theme.ink2; acc: Theme.ink2; } }
+                        if !b.add: VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 9px;
+                                height: 9px;
+                                border-radius: 4.5px;
+                                background: b.on ? b.color : transparent;
+                                border-width: 1.5px;
+                                border-color: b.color;
+                            }
+                        }
+                        Text { vertical-alignment: center; text: b.label; font-size: Theme.fs(11.5); font-weight: 600; color: b.add ? Theme.ink2 : Theme.ink; }
+                    }
+                    bta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            if (b.add) {
+                                EqLook.add-gap();
+                            } else {
+                                EqLook.selected = b.id;
+                                EqLook.pick(b.id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── the band picked ──
+        if EqLook.has-sel: Rectangle {
+            border-radius: Theme.r-sm;
+            background: Theme.ground;
+            border-width: 1px;
+            border-color: Theme.rule;
+            height: ins.preferred-height + 24px;
+            ins := VerticalLayout {
+                x: 12px;
+                y: 12px;
+                width: parent.width - 24px;
+                height: self.preferred-height;
+                spacing: 12px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout { alignment: center; Segmented { options: EqLook.types; current: EqLook.sel-type; picked(i) => { EqLook.set-type(i); } } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text { vertical-alignment: center; text: EqLook.sel-on ? "On" : "Bypassed"; font-size: Theme.fs(11.5); color: Theme.ink3; }
+                    VerticalLayout { alignment: center; Switch { on: EqLook.sel-on; toggled(v) => { EqLook.set-on(v); } } }
+                    VerticalLayout { alignment: center; NetButton { label: "Remove"; danger: true; clicked => { EqLook.remove(); } } }
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 8px;
+                    EqValue { label: "FREQUENCY"; value: EqLook.sel-freq; unit: "Hz"; which: 0; }
+                    if EqLook.sel-gainy: EqValue { label: "GAIN"; value: EqLook.sel-gain; unit: "dB"; which: 1; }
+                    EqValue { label: EqLook.sel-cut ? "RESONANCE" : "Q"; value: EqLook.sel-q; which: 2; }
+                    if EqLook.sel-cut: VerticalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        Text { text: "SLOPE"; font-size: Theme.fs(10); font-weight: 600; color: Theme.ink3; }
+                        Segmented { options: EqLook.slopes; current: EqLook.sel-slope; picked(i) => { EqLook.set-slope(i); } }
+                    }
+                }
+            }
+        }
+
+        // ── preamp and scale ──
+        HorizontalLayout {
+            height: 34px;
+            spacing: 10px;
+            Text { vertical-alignment: center; text: "Preamp"; font-size: Theme.fs(12.5); font-weight: 600; color: Theme.ink; }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                CenterBar { value: EqLook.preamp / 24; moved(v) => { EqLook.set-preamp(round(v * 48) / 2); } }
+            }
+            Text { width: 64px; horizontal-alignment: right; vertical-alignment: center; text: EqLook.preamp-text; font-size: Theme.fs(12); font-weight: 600; color: Theme.ink; }
+            VerticalLayout { alignment: center; NetButton { label: "Auto"; clicked => { EqLook.auto(); } } }
+            VerticalLayout {
+                alignment: center;
+                Segmented {
+                    options: ["±6", "±12", "±24"];
+                    current: EqLook.range == 6 ? 0 : EqLook.range == 24 ? 2 : EqLook.range == 12 ? 1 : -1;
+                    picked(i) => { EqLook.set-range(i == 0 ? 6 : i == 1 ? 12 : 24); }
+                }
+            }
+        }
+
+        Line {
+            text: "Drag a point to move a band, scroll on it for Q, double-click it to flatten it and right-click to bypass it; double-click the graph to add one. Shift makes any drag finer. Red marks along the top are where the curve rises above 0 dB and loud passages would clip — Auto lowers the preamp just enough. Frequency, gain and Q are heard as they change; a new band, or a change of type or slope, rebuilds the equalizer, which drops the sound for a moment.";
+        }
+    }
+}
+
+// SoundPanel.qml's "Microphone effects": noise suppression, and hearing
+// yourself.
+export component MicEffects inherits VerticalLayout {
+    spacing: 14px;
+    Card {
+        border-color: EqLook.ns-failed ? #d93a2b : Theme.rule;
+        height: ns.preferred-height + 32px;
+        ns := VerticalLayout {
+            x: 16px;
+            y: 16px;
+            width: parent.width - 32px;
+            height: self.preferred-height;
+            spacing: 12px;
+            Head {
+                glyph: "mic";
+                lit: EqLook.ns-enabled;
+                title: "Noise suppression";
+                sub: EqLook.ns-sub;
+                on: EqLook.ns-enabled;
+                can: EqLook.ns-available;
+                toggled(v) => { EqLook.set-ns(v); }
+            }
+            if EqLook.ns-available: HorizontalLayout {
+                spacing: 10px;
+                height: 22px;
+                Text { width: 96px; vertical-alignment: center; text: "Strictness"; font-size: Theme.fs(12); color: Theme.ink2; }
+                FillBar {
+                    horizontal-stretch: 1;
+                    trough: 12px;
+                    value: EqLook.ns-threshold / 99;
+                    moved(v) => { EqLook.set-ns-threshold(v * 99); }
+                }
+                Text { width: 46px; horizontal-alignment: right; vertical-alignment: center; text: EqLook.ns-threshold + "%"; font-size: Theme.fs(12); color: Theme.ink; }
+            }
+            Line {
+                text: EqLook.ns-failed ? EqLook.ns-error
+                    : "How sure it has to be that it hears a voice before letting sound through. Higher cuts more noise and, past a point, the start of words. Apps hear a new input, “Microphone (noise suppressed)”, which becomes the default.";
+                color: EqLook.ns-failed ? #d93a2b : Theme.ink3;
+            }
+            if EqLook.ns-failed: HorizontalLayout { alignment: start; NetButton { label: "Try again"; clicked => { EqLook.ns-retry(); } } }
+        }
+    }
+    Card {
+        height: ls.preferred-height + 32px;
+        ls := VerticalLayout {
+            x: 16px;
+            y: 16px;
+            width: parent.width - 32px;
+            height: self.preferred-height;
+            spacing: 10px;
+            Head {
+                glyph: "headphones";
+                lit: EqLook.listening;
+                title: "Listen to this microphone";
+                sub: EqLook.listen-sub;
+                on: EqLook.listening;
+                can: EqLook.can-listen;
+                toggled(v) => { EqLook.listen(v); }
+            }
+            Line { text: "Use headphones: through speakers it feeds back. Switches itself off when the shell restarts."; }
+        }
+    }
+}

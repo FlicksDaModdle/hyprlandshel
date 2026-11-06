@@ -222,6 +222,16 @@ pub struct Sound {
     pub watching: bool,
     pub restarting: bool,
     pub last_error: String,
+    /// The defaults as PipeWire has them: the equalizer's sink or the noise
+    /// suppressor's source while one is in the way (Audio.qml's rawSink).
+    pub raw_sink: String,
+    pub raw_source: String,
+    /// Their nodes' ids, for pw-cli; and the streams that carry them on to
+    /// the device, to move when another device is picked.
+    pub eq_node: String,
+    pub ns_node: String,
+    pub eq_out: i64,
+    pub ns_in: i64,
 }
 
 fn node(v: &Value, sink: bool) -> Node {
@@ -357,7 +367,15 @@ impl Sound {
             return true;
         }
         self.up = true;
-        let ours = |n: &Node| n.name.starts_with("hyprshell-") || n.props["node.name"].as_str().unwrap_or("").starts_with("hyprshell");
+        // The shell's own (Audio.isOurs): the effects' devices and streams.
+        let ours_p = |p: &Value| p["node.name"].as_str().unwrap_or("").starts_with("hyprshell_") || p["application.name"].as_str().unwrap_or("").starts_with("hyprshell-");
+        let ours = |n: &Node| n.name.starts_with("hyprshell_") || n.name.starts_with("hyprshell-") || ours_p(&n.props);
+        let id_of = |v: &Value| v["properties"]["object.id"].as_str().map(str::to_string).or_else(|| v["properties"]["object.id"].as_i64().map(|i| i.to_string())).unwrap_or_else(|| v["index"].as_i64().unwrap_or(-1).to_string());
+        let find = |k: &str, name: &str| ev[k].as_array().into_iter().flatten().find(|v| v["name"] == name || v["properties"]["node.name"] == name).cloned();
+        self.eq_node = find("sinks", "hyprshell_eq").map(|v| id_of(&v)).unwrap_or_default();
+        self.ns_node = find("sources", "hyprshell_ns").map(|v| id_of(&v)).unwrap_or_default();
+        self.eq_out = find("sinkInputs", "hyprshell_eq_out").and_then(|v| v["index"].as_i64()).unwrap_or(-1);
+        self.ns_in = find("sourceOutputs", "hyprshell_ns_in").and_then(|v| v["index"].as_i64()).unwrap_or(-1);
         self.sinks = ev["sinks"].as_array().into_iter().flatten().map(|v| node(v, true)).filter(|n| !ours(n)).collect();
         self.sources = ev["sources"]
             .as_array()
@@ -372,7 +390,7 @@ impl Sound {
             .as_array()
             .into_iter()
             .flatten()
-            .filter(|v| !monitor(&v["properties"]))
+            .filter(|v| !monitor(&v["properties"]) && !ours_p(&v["properties"]))
             .map(|v| Stream {
                 index: v["index"].as_i64().unwrap_or(-1),
                 target: v["sink"].as_i64().unwrap_or(-1),
@@ -384,7 +402,7 @@ impl Sound {
                 volumes: chans(v).1,
             })
             .collect();
-        streams.extend(ev["sourceOutputs"].as_array().into_iter().flatten().filter(|v| !monitor(&v["properties"])).map(|v| Stream {
+        streams.extend(ev["sourceOutputs"].as_array().into_iter().flatten().filter(|v| !monitor(&v["properties"]) && !ours_p(&v["properties"])).map(|v| Stream {
             index: v["index"].as_i64().unwrap_or(-1),
             target: v["source"].as_i64().unwrap_or(-1),
             volume: v["volume"].as_f64().unwrap_or(1.0),
@@ -396,9 +414,58 @@ impl Sound {
         }));
         self.streams = streams;
         self.cards = ev["cards"].as_array().cloned().unwrap_or_default();
-        self.default_sink = ev["defaultSink"].as_str().unwrap_or("").into();
-        self.default_source = ev["defaultSource"].as_str().unwrap_or("").into();
+        self.raw_sink = ev["defaultSink"].as_str().unwrap_or("").into();
+        self.raw_source = ev["defaultSource"].as_str().unwrap_or("").into();
+        self.default_sink = self.raw_sink.clone();
+        self.default_source = self.raw_source.clone();
         true
+    }
+
+    pub fn eq_active(&self) -> bool {
+        self.raw_sink == "hyprshell_eq"
+    }
+    pub fn ns_active(&self) -> bool {
+        self.raw_source == "hyprshell_ns"
+    }
+    /// With an effect in the way, the device in use is the one it feeds
+    /// (Audio.sink / Audio.source): eqTarget, nsTarget.
+    pub fn resolve(&mut self, p: &Prefs) {
+        if self.eq_active() {
+            let t = p.s("eqTarget");
+            self.default_sink = self.sinks.iter().find(|n| n.name == t).or(self.sinks.first()).map(|n| n.name.clone()).unwrap_or_default();
+        }
+        if self.ns_active() {
+            let t = p.s("nsTarget");
+            self.default_source = self.sources.iter().find(|n| n.name == t).or(self.sources.first()).map(|n| n.name.clone()).unwrap_or_default();
+        }
+    }
+    pub fn inspected_name(&self, out: bool) -> String {
+        self.inspected(out).map(|n| n.name.clone()).unwrap_or_default()
+    }
+    /// A device's name as the panel shows it.
+    pub fn label(&self, p: &Prefs, name: &str) -> String {
+        self.find(name).map(|n| Self::display_name(p, n)).unwrap_or_default()
+    }
+    /// The apps for the equalizer's "Chosen apps": those playing now, then
+    /// those chosen before that aren't — (key, label, glyph, live).
+    pub fn eq_apps(&self, chosen: &[String]) -> Vec<(String, String, String, bool)> {
+        let mut out: Vec<(String, String, String, bool)> = vec![];
+        for s in self.streams.iter().filter(|s| s.playing) {
+            let pr = &s.props;
+            let key = pr["application.process.binary"].as_str().or(pr["application.name"].as_str()).or(pr["node.name"].as_str()).unwrap_or("").to_string();
+            if key.is_empty() || out.iter().any(|x| x.0 == key) {
+                continue;
+            }
+            let label = pr["application.name"].as_str().or(pr["application.process.binary"].as_str()).unwrap_or(&key).to_string();
+            let hint = pr["application.process.binary"].as_str().or(pr["application.icon-name"].as_str()).or(pr["application.name"].as_str()).unwrap_or("");
+            out.push((key.clone(), label, app_glyph(hint).into(), true));
+        }
+        for k in chosen {
+            if !out.iter().any(|x| &x.0 == k) {
+                out.push((k.clone(), k.clone(), app_glyph(k).into(), false));
+            }
+        }
+        out
     }
 
     fn display_name(p: &Prefs, n: &Node) -> String {
@@ -439,6 +506,16 @@ impl Sound {
     pub fn publish(&self, ui: &AppWindow, p: &Prefs) {
         let s = ui.global::<Snd>();
         s.set_up(self.up || !self.seen);
+        let listening = crate::eq::status()["listen"]["module"].as_i64().unwrap_or(-1) >= 0;
+        s.set_out_fx(if self.eq_active() { "Equalizer on".into() } else { SharedString::new() });
+        s.set_in_fx(
+            [if self.ns_active() { "Noise suppression on" } else { "" }, if listening { "Listening through the output" } else { "" }]
+                .into_iter()
+                .filter(|x| !x.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ")
+                .into(),
+        );
         s.set_restarting(self.restarting);
         let tab = p.s("soundTab");
         s.set_tab(match tab.as_str() {
@@ -456,6 +533,8 @@ impl Sound {
             let unplugged = port.is_some_and(|x| !x.2);
             let sub: Vec<String> = [
                 if in_use { "In use".to_string() } else { String::new() },
+                if in_use && out && self.eq_active() { "through the equalizer".into() } else { String::new() },
+                if in_use && !out && self.ns_active() { "noise suppressed".into() } else { String::new() },
                 port.filter(|x| x.1 != name).map(|x| x.1.clone()).unwrap_or_default(),
                 if unplugged { "unplugged".into() } else { String::new() },
                 if hidden.contains(&n.name) { "hidden".into() } else { String::new() },
@@ -720,6 +799,23 @@ impl Sound {
     }
     pub fn set_default(&mut self, name: &str) {
         let Some(n) = self.find(name).cloned() else { return };
+        // With the equalizer or noise suppression in the way, "use this
+        // device" points the effect at it and leaves the effect the default
+        // (Audio.setDefaultSink); the shell keeps eqTarget from then on.
+        if n.sink && self.eq_active() {
+            if self.eq_out >= 0 {
+                pa(&["move-sink-input", &self.eq_out.to_string(), &n.name]);
+            }
+            self.default_sink = n.name;
+            return;
+        }
+        if !n.sink && self.ns_active() {
+            if self.ns_in >= 0 {
+                pa(&["move-source-output", &self.ns_in.to_string(), &n.name]);
+            }
+            self.default_source = n.name;
+            return;
+        }
         pa(&[if n.sink { "set-default-sink" } else { "set-default-source" }, &n.name]);
         if n.sink {
             self.default_sink = n.name;
