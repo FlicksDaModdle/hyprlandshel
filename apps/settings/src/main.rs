@@ -13,6 +13,7 @@
 
 mod anim;
 mod bt;
+mod focus;
 mod gallery;
 mod daemon;
 mod display;
@@ -22,6 +23,7 @@ mod prefs;
 mod rows;
 mod sound;
 mod system;
+mod updates;
 
 use hyprshell_kit as kit;
 use rows::{Ctx, Entry, Spec, Ui, Val};
@@ -51,6 +53,11 @@ struct State {
     /// The animated styles' live previews, drawn on a thread of their own.
     anim: Option<anim::Gallery>,
     videos: gallery::Videos,
+    icons: focus::Icons,
+    upd: updates::Updates,
+    /// Updates was on screen at the last draw: it looks again each time
+    /// it is opened, not each time it is drawn.
+    upd_shown: bool,
     weak: slint::Weak<AppWindow>,
 }
 
@@ -122,11 +129,22 @@ fn show(ui: &AppWindow, st: &mut State) {
     // The galleries, kept up only while they're on screen.
     let has = |k: &str| st.specs.iter().any(|r| r.row.kind == "panel" && r.row.panel == k);
     let (animated, live) = (has("animated"), has("gallery"));
+    let (on_updates, on_focus) = (has("shellUpdates"), has("focus") || has("notifApps"));
     if animated && st.anim.is_none() {
         st.anim = Some(anim::Gallery::start(st.weak.clone()));
     }
     if let Some(a) = &st.anim {
         a.show(ui, &st.c.p, animated);
+    }
+    if on_updates && !st.upd_shown {
+        check_updates(st);
+    }
+    st.upd_shown = on_updates;
+    if on_updates {
+        st.upd.publish(ui);
+    }
+    if on_focus {
+        focus::publish(ui, &st.c.p, &mut st.icons);
     }
     if live {
         if !st.videos.scanned && !st.videos.scanning {
@@ -313,6 +331,9 @@ fn main() {
         snd: sound::Sound::default(),
         anim: None,
         videos: gallery::Videos::default(),
+        icons: focus::Icons::default(),
+        upd: updates::Updates::default(),
+        upd_shown: false,
         weak: ui.as_weak(),
     }));
     show(&ui, &mut st.borrow_mut());
@@ -654,6 +675,19 @@ fn main() {
                     show(&ui, &mut s);
                 }
                 return;
+            }
+            // An update started from here: its terminal writes a file when
+            // it's done, and then it's looked at again (half an hour at most).
+            let waiting = st.borrow().upd.waiting.clone();
+            if let Some((before, since)) = waiting {
+                let mut s = st.borrow_mut();
+                if updates::done_text() != before {
+                    s.upd.waiting = None;
+                    check_updates(&mut s);
+                    s.upd.publish(&ui);
+                } else if hyprshell_kit::now() - since > 1800 {
+                    s.upd.waiting = None;
+                }
             }
             let changed = mtime() != st.borrow().seen;
             if changed {
@@ -1048,6 +1082,26 @@ fn deliver_videos(ui: &AppWindow, list: Vec<gallery::Video>, ff: bool) {
     });
 }
 
+/// Settings → Updates' check, off the window's thread (it fetches).
+fn check_updates(st: &mut State) {
+    if st.upd.checking {
+        return;
+    }
+    st.upd.checking = true;
+    let weak = st.weak.clone();
+    std::thread::spawn(move || {
+        let r = updates::run_check();
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            STATE.with(|s| {
+                let Some(st) = s.borrow().as_ref().and_then(|w| w.upgrade()) else { return };
+                let mut st = st.borrow_mut();
+                st.upd.take(r);
+                st.upd.publish(&ui);
+            });
+        });
+    });
+}
+
 /// The galleries' own clicks.
 fn wire_galleries(ui: &AppWindow, st: &Rc<RefCell<State>>, settle: Rc<dyn Fn()>) {
     STATE.with(|s| *s.borrow_mut() = Some(Rc::downgrade(st)));
@@ -1078,6 +1132,86 @@ fn wire_galleries(ui: &AppWindow, st: &Rc<RefCell<State>>, settle: Rc<dyn Fn()>)
             settle();
         });
     }
+    // Notifications → Focus and Apps.
+    let f = ui.global::<FocusLook>();
+    let put = {
+        let (st, settle) = (st.clone(), settle.clone());
+        Rc::new(move |change: &dyn Fn(&rows::Ctx) -> Vec<(&'static str, serde_json::Value)>| {
+            {
+                let c = &mut st.borrow_mut().c;
+                for (k, v) in change(c) {
+                    c.set(k, v);
+                }
+            }
+            settle();
+        })
+    };
+    macro_rules! focus_on {
+        ($name:ident, [$($a:ident : $t:ty),*], |$c:ident| $body:expr) => {{
+            let put = put.clone();
+            f.$name(move |$($a: $t),*| put(&|$c: &rows::Ctx| $body));
+        }};
+    }
+    focus_on!(on_add, [], |c| vec![focus::add(&c.p)]);
+    focus_on!(on_remove, [id: i32], |c| vec![focus::remove(&c.p, id)]);
+    focus_on!(on_rename, [id: i32, name: SharedString], |c| {
+        let n = name.trim().to_string();
+        vec![focus::update(&c.p, id, |o| {
+            o.insert("name".into(), serde_json::json!(if n.is_empty() { "Focus" } else { n.as_str() }));
+        })]
+    });
+    focus_on!(on_set_on, [id: i32, on: bool], |c| vec![focus::update(&c.p, id, |o| {
+        o.insert("on".into(), serde_json::json!(on));
+    })]);
+    focus_on!(on_step, [id: i32, from: bool, d: i32], |c| vec![focus::update(&c.p, id, |o| {
+        let k = if from { "from" } else { "to" };
+        let now = o.get(k).and_then(|v| v.as_str()).unwrap_or("00:00").to_string();
+        o.insert(k.into(), serde_json::json!(focus::bump(&now, d)));
+    })]);
+    focus_on!(on_day, [id: i32, chip: i32], |c| vec![focus::update(&c.p, id, |o| {
+        // Chips are Monday first; the days are 0 = Sunday.
+        let day = ((chip + 1) % 7) as i64;
+        let mut days: Vec<i64> = o.get("days").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|v| v.as_i64()).collect();
+        if days.contains(&day) {
+            days.retain(|d| *d != day);
+        } else {
+            days.push(day);
+            days.sort();
+        }
+        o.insert("days".into(), serde_json::json!(days));
+    })]);
+    focus_on!(on_set_rule, [app: SharedString, r: SharedString], |c| vec![focus::set_rule(&c.p, &app, &r)]);
+    focus_on!(on_forget, [app: SharedString], |c| focus::forget(&c.p, &app));
+
+    // Updates.
+    let u = ui.global::<Upd>();
+    {
+        let (st, weak) = (st.clone(), ui.as_weak());
+        u.on_check(move || {
+            let mut s = st.borrow_mut();
+            check_updates(&mut s);
+            if let Some(ui) = weak.upgrade() {
+                s.upd.publish(&ui);
+            }
+        });
+    }
+    {
+        let st = st.clone();
+        u.on_update(move |id| st.borrow_mut().upd.update(&id));
+    }
+    {
+        let (st, weak) = (st.clone(), ui.as_weak());
+        u.on_toggle(move |id| {
+            let mut s = st.borrow_mut();
+            if !s.upd.open.remove(id.as_str()) {
+                s.upd.open.insert(id.to_string());
+            }
+            if let Some(ui) = weak.upgrade() {
+                s.upd.publish(&ui);
+            }
+        });
+    }
+
     let g = ui.global::<Gal>();
     {
         let (st, settle) = (st.clone(), settle.clone());

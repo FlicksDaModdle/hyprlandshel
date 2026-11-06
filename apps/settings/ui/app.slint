@@ -9,9 +9,11 @@ import { WifiPanel, Wifi, WifiNet, KV, SavedNet } from "wifi.slint";
 import { BluetoothPanel, Blue, BtDev } from "bluetooth.slint";
 import { SoundPanel, Snd, SndDev, SndOpt, SndApp } from "sound.slint";
 import { AppearancePreview, Look } from "preview.slint";
+import { FocusPanel, NotifAppsPanel, FocusLook, FocusSch, NotifApp } from "focus.slint";
+import { ShellUpdatesPanel, Upd, UpPart, UpCommit } from "updates.slint";
 import { WallpaperGallery, AnimatedGallery, Gal, GalItem, AnimLook, AnimTile, PalChip } from "gallery.slint";
 
-export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev, Snd, SndDev, SndOpt, SndApp, Look, Gal, GalItem, AnimLook, AnimTile, PalChip }
+export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev, Snd, SndDev, SndOpt, SndApp, Look, Gal, GalItem, AnimLook, AnimTile, PalChip, FocusLook, FocusSch, NotifApp, Upd, UpPart, UpCommit }
 
 export struct Btn { label: string, quiet: bool, enabled: bool }
 
@@ -670,9 +672,13 @@ component SettingsRow inherits Rectangle {
         if item.kind == "panel" && item.panel == "sound": SoundPanel { horizontal-stretch: 1; }
         if item.kind == "panel" && item.panel == "preview": AppearancePreview { horizontal-stretch: 1; }
         if item.kind == "panel" && item.panel == "gallery": WallpaperGallery { horizontal-stretch: 1; }
+        if item.kind == "panel" && item.panel == "focus": FocusPanel { horizontal-stretch: 1; }
+        if item.kind == "panel" && item.panel == "shellUpdates": ShellUpdatesPanel { horizontal-stretch: 1; }
+        if item.kind == "panel" && item.panel == "notifApps": NotifAppsPanel { horizontal-stretch: 1; }
         if item.kind == "panel" && item.panel == "animated": AnimatedGallery { horizontal-stretch: 1; }
         if item.kind == "panel" && item.panel != "wifi" && item.panel != "bluetooth" && item.panel != "sound" && item.panel != "preview"
-            && item.panel != "gallery" && item.panel != "animated": PanelCard {
+            && item.panel != "gallery" && item.panel != "animated" && item.panel != "focus" && item.panel != "notifApps"
+            && item.panel != "shellUpdates": PanelCard {
             horizontal-stretch: 1;
             panel: item.panel;
             press(i) => { Prefs.press(root.index, i); }

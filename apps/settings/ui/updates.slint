@@ -1,0 +1,128 @@
+// ShellUpdatesPanel.qml: Settings → Updates. Each installed part of
+// Hyprshell, whether GitHub has anything new for it, what, and a button
+// that puts it in — in a terminal, since installers ask for your password.
+// Looked at when the pane opens and when asked; nothing updates by itself.
+// What it shows comes from src/updates.rs.
+
+import { Theme, Icon } from "@kit";
+import { PillButton } from "common.slint";
+
+export struct UpCommit { subject: string, when: string }
+export struct UpPart { id: string, name: string, sub: string, behind: bool, open: bool, root: bool, commits: [UpCommit], more: int }
+
+export global Upd {
+    in property <string> title;
+    in property <string> sub;
+    in property <string> icon: "check";
+    in property <bool> failed;
+    in property <bool> checking;
+    in property <int> pending;
+    in property <string> local-line;
+    in property <[UpPart]> parts;
+    callback check();
+    callback update(string);
+    callback toggle(string);
+}
+
+export component ShellUpdatesPanel inherits VerticalLayout {
+    spacing: 12px;
+
+    // ── where it stands ───────────────────────────────────────────────
+    Rectangle {
+        height: 64px;
+        border-radius: Theme.r;
+        background: Theme.hover;
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 12px;
+            spacing: 12px;
+            VerticalLayout { alignment: center; Icon { name: Upd.icon; size: 22px; ink: Upd.failed ? Theme.ink2 : Theme.ink; acc: Theme.accent; } }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 2px;
+                Text { text: Upd.title; overflow: elide; font-size: Theme.fs(13.5); font-weight: 600; color: Theme.ink; }
+                if Upd.sub != "": Text { text: Upd.sub; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
+            }
+            VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    spacing: 8px;
+                    PillButton { label: Upd.checking ? "Looking…" : "Check now"; icon: "refresh"; active: !Upd.checking; clicked => { Upd.check(); } }
+                    if Upd.pending > 1: PillButton { label: "Update all"; icon: "download"; primary: true; clicked => { Upd.update("all"); } }
+                }
+            }
+        }
+    }
+
+    if Upd.local-line != "": Text {
+        x: 4px;
+        wrap: word-wrap;
+        text: Upd.local-line;
+        font-size: Theme.fs(11.5);
+        color: Theme.ink3;
+    }
+
+    // ── each part ─────────────────────────────────────────────────────
+    if Upd.parts.length > 0: Rectangle {
+        border-radius: Theme.r;
+        background: Theme.hover;
+        height: partCol.preferred-height;
+        partCol := VerticalLayout {
+            for p[i] in Upd.parts: Rectangle {
+                height: head.height + (p.open && p.behind ? commits.preferred-height + 12px : 0px);
+                clip: true;
+                animate height { duration: 180ms; easing: cubic-bezier(0.33, 1, 0.68, 1); }
+                if i > 0: Rectangle { x: 16px; y: 0; width: parent.width - 32px; height: 1px; background: Theme.rule; }
+                head := HorizontalLayout {
+                    y: 0;
+                    height: 60px;
+                    padding-left: 18px;
+                    padding-right: 12px;
+                    spacing: 14px;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle { width: 8px; height: 8px; border-radius: 4px; background: p.behind ? Theme.accent : Theme.ink3; opacity: p.behind ? 1 : 0.5; }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text { text: p.name; overflow: elide; font-size: Theme.fs(13); font-weight: 500; color: Theme.ink; }
+                        Text { text: p.sub; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
+                    }
+                    if p.behind: VerticalLayout {
+                        alignment: center;
+                        HorizontalLayout {
+                            spacing: 6px;
+                            PillButton { label: p.open ? "Less" : "What's new"; clicked => { Upd.toggle(p.id); } }
+                            PillButton { label: p.root ? "Update (asks for your password)" : "Update"; icon: "download"; primary: true; clicked => { Upd.update(p.id); } }
+                        }
+                    }
+                }
+                // The changes, newest first.
+                commits := VerticalLayout {
+                    x: 40px;
+                    y: head.height;
+                    width: parent.width - 56px;
+                    height: self.preferred-height;
+                    spacing: 6px;
+                    for c in p.commits: HorizontalLayout {
+                        spacing: 8px;
+                        Text { horizontal-stretch: 1; overflow: elide; text: "• " + c.subject; font-size: Theme.fs(11.5); color: Theme.ink2; }
+                        Text { text: c.when; font-size: Theme.fs(11); color: Theme.ink3; }
+                    }
+                    if p.more > 0: Text { text: "and " + p.more + " more"; font-size: Theme.fs(11); color: Theme.ink3; }
+                }
+            }
+        }
+    }
+
+    Text {
+        x: 4px;
+        wrap: word-wrap;
+        text: "Updating pulls the hyprshell folder from GitHub and runs that part's installer in a terminal, where it can ask for your password. Nothing updates by itself.";
+        font-size: Theme.fs(11);
+        color: Theme.ink3;
+    }
+}

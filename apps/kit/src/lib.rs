@@ -8,6 +8,8 @@
 //! [`setup!`] macro, which runs in the app's own scope.
 
 pub mod icons;
+/// Icons from the freedesktop icon theme (a copy of the Rust shell's lookup).
+pub mod themeicons;
 pub mod portal;
 pub mod mpris;
 pub mod theme;

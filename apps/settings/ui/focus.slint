@@ -1,0 +1,216 @@
+// FocusPanel.qml and NotifAppsPanel.qml: Settings → Notifications' quiet
+// hours on a schedule, and how each app may interrupt. What they show
+// comes from src/focus.rs.
+
+import { Theme, Icon, Switch } from "@kit";
+import { Segmented } from "common.slint";
+
+// days: Monday first.
+export struct FocusSch { id: int, name: string, on: bool, from: string, to: string, days: [bool] }
+export struct NotifApp { name: string, rule: string, allowed: bool, sub: string, icon: image, has-icon: bool, initial: string }
+
+export global FocusLook {
+    in property <string> now-line;
+    in property <bool> quiet;
+    in property <[FocusSch]> schedules;
+    in property <[NotifApp]> apps;
+    callback rename(int, string);
+    callback set-on(int, bool);
+    callback remove(int);
+    // (schedule, from? else to, -1 or 1)
+    callback step(int, bool, int);
+    // (schedule, chip 0–6, Monday first)
+    callback day(int, int);
+    callback add();
+    callback set-rule(string, string);
+    callback forget(string);
+}
+
+component Round inherits Rectangle {
+    in property <string> icon;
+    callback clicked();
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    background: rta.has-hover ? Theme.sel : Theme.hover;
+    Icon { x: 6px; y: 6px; name: root.icon; size: 12px; ink: Theme.ink; }
+    rta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// A time of day, a quarter of an hour a step.
+component TimeStep inherits HorizontalLayout {
+    in property <string> value;
+    callback bump(int);
+    spacing: 4px;
+    VerticalLayout { alignment: center; Round { icon: "minus"; clicked => { root.bump(-1); } } }
+    Text {
+        width: 44px;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        text: root.value;
+        font-size: Theme.fs(13);
+        font-weight: 600;
+        color: Theme.ink;
+    }
+    VerticalLayout { alignment: center; Round { icon: "plus"; clicked => { root.bump(1); } } }
+}
+
+export component FocusPanel inherits VerticalLayout {
+    spacing: 10px;
+
+    // ── now ───────────────────────────────────────────────────────────
+    Text {
+        wrap: word-wrap;
+        text: FocusLook.now-line;
+        font-size: Theme.fs(12);
+        color: FocusLook.quiet ? Theme.accent : Theme.ink3;
+    }
+
+    // ── quiet hours ───────────────────────────────────────────────────
+    for s in FocusLook.schedules: Rectangle {
+        border-radius: Theme.r-sm;
+        background: Theme.hover;
+        height: col.preferred-height + 20px;
+        col := VerticalLayout {
+            x: 12px;
+            y: 10px;
+            width: parent.width - 24px;
+            height: self.preferred-height;
+            spacing: 8px;
+            HorizontalLayout {
+                height: 28px;
+                spacing: 8px;
+                name := TextInput {
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    single-line: true;
+                    text: s.name;
+                    font-size: Theme.fs(13);
+                    font-weight: 600;
+                    color: Theme.ink;
+                    accepted => { FocusLook.rename(s.id, self.text); }
+                    changed has-focus => { if (!self.has-focus && self.text != s.name) { FocusLook.rename(s.id, self.text); } }
+                }
+                VerticalLayout { alignment: center; Round { icon: "trash"; clicked => { FocusLook.remove(s.id); } } }
+                VerticalLayout { alignment: center; Switch { on: s.on; toggled(v) => { FocusLook.set-on(s.id, v); } } }
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: 10px;
+                Text { vertical-alignment: center; text: "From"; font-size: Theme.fs(12); color: Theme.ink3; }
+                TimeStep { value: s.from; bump(d) => { FocusLook.step(s.id, true, d); } }
+                Text { vertical-alignment: center; text: "to"; font-size: Theme.fs(12); color: Theme.ink3; }
+                TimeStep { value: s.to; bump(d) => { FocusLook.step(s.id, false, d); } }
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: 4px;
+                for on[i] in s.days: Rectangle {
+                    width: 34px;
+                    height: 26px;
+                    border-radius: 13px;
+                    background: on ? Theme.accent : (dta.has-hover ? Theme.hover : Theme.sel);
+                    Text {
+                        text: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"][i];
+                        font-size: Theme.fs(11);
+                        font-weight: 600;
+                        color: on ? Theme.ink-on-accent : Theme.ink2;
+                    }
+                    dta := TouchArea { mouse-cursor: pointer; clicked => { FocusLook.day(s.id, i); } }
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        alignment: start;
+        Rectangle {
+            width: addRow.preferred-width + 28px;
+            height: 30px;
+            border-radius: 15px;
+            background: ata.has-hover ? Theme.sel : Theme.hover;
+            addRow := HorizontalLayout {
+                x: 14px;
+                width: self.preferred-width;
+                spacing: 6px;
+                VerticalLayout { alignment: center; Icon { name: "plus"; size: 13px; ink: Theme.ink; } }
+                Text { vertical-alignment: center; text: "Add quiet hours"; font-size: Theme.fs(12); font-weight: 600; color: Theme.ink; }
+            }
+            ata := TouchArea { mouse-cursor: pointer; clicked => { FocusLook.add(); } }
+        }
+    }
+}
+
+// Every app that has sent a notification, each with a switch. Off blocks
+// it outright; on, it can be let through even while quiet (Always), or
+// kept to the center without a banner (Silent).
+export component NotifAppsPanel inherits VerticalLayout {
+    spacing: 10px;
+
+    if FocusLook.apps.length == 0: Text {
+        x: 4px;
+        wrap: word-wrap;
+        text: "Apps show up here once they have sent a notification.";
+        font-size: Theme.fs(12);
+        color: Theme.ink3;
+    }
+
+    if FocusLook.apps.length > 0: Rectangle {
+        border-radius: Theme.r;
+        background: Theme.hover;
+        height: FocusLook.apps.length * 56px;
+        for a[i] in FocusLook.apps: Rectangle {
+            y: i * 56px;
+            height: 56px;
+            hov := TouchArea { }
+            if i > 0: Rectangle { x: 16px; y: 0; width: parent.width - 32px; height: 1px; background: Theme.rule; }
+            // Its icon, or its initial on a tile.
+            Rectangle {
+                x: 14px;
+                y: 13px;
+                width: 30px;
+                height: 30px;
+                border-radius: 8px;
+                background: a.has-icon ? transparent : Theme.sel;
+                opacity: a.allowed ? 1 : 0.45;
+                if a.has-icon: Image { width: parent.width; height: parent.height; source: a.icon; image-fit: contain; }
+                if !a.has-icon: Text { text: a.initial; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink2; }
+            }
+            HorizontalLayout {
+                x: 56px;
+                width: parent.width - 56px - 10px;
+                spacing: 12px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 1px;
+                    Text { text: a.name; overflow: elide; font-size: Theme.fs(12.5); font-weight: 500; color: a.allowed ? Theme.ink : Theme.ink3; }
+                    Text { text: a.sub; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
+                }
+                // How, while allowed.
+                if a.allowed: VerticalLayout {
+                    alignment: center;
+                    Segmented {
+                        options: ["Always", "Normal", "Silent"];
+                        current: a.rule == "always" ? 0 : a.rule == "silent" ? 2 : 1;
+                        picked(k) => { FocusLook.set-rule(a.name, k == 0 ? "always" : k == 2 ? "silent" : "normal"); }
+                    }
+                }
+                VerticalLayout { alignment: center; Switch { on: a.allowed; toggled(v) => { FocusLook.set-rule(a.name, v ? "normal" : "block"); } } }
+                // Off the list (it comes back with its next notification).
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 24px;
+                        height: 24px;
+                        border-radius: 12px;
+                        opacity: hov.has-hover || fta.has-hover ? 1 : 0;
+                        background: fta.has-hover ? Theme.sel : Theme.hover;
+                        Icon { x: 6px; y: 6px; name: "x"; size: 12px; ink: Theme.ink; }
+                        fta := TouchArea { mouse-cursor: pointer; clicked => { FocusLook.forget(a.name); } }
+                    }
+                }
+            }
+        }
+    }
+}

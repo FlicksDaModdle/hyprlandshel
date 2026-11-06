@@ -234,3 +234,31 @@ export component Labeled inherits VerticalLayout {
     HorizontalLayout { alignment: start; @children }
     if root.hint != "": Text { text: root.hint; wrap: word-wrap; font-size: Theme.fs(11); color: Theme.ink3; }
 }
+
+// SettingsPillButton.qml: a rounded button for the panels, quiet or in the
+// accent, with an icon if it has one.
+export component PillButton inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <bool> primary;
+    in property <bool> active: true;
+    callback clicked();
+    width: prow.preferred-width + 24px;
+    height: 32px;
+    border-radius: self.height / 2;
+    opacity: root.active ? 1 : 0.5;
+    background: root.primary ? (pta.has-hover ? Theme.accent.brighter(0.08) : Theme.accent) : (pta.has-hover ? Theme.sel : Theme.hover);
+    border-width: root.primary ? 0px : 1px;
+    border-color: Theme.rule;
+    prow := HorizontalLayout {
+        x: 12px;
+        width: self.preferred-width;
+        spacing: 6px;
+        if root.icon != "": VerticalLayout {
+            alignment: center;
+            Icon { name: root.icon; size: 14px; ink: root.primary ? Theme.ink-on-accent : Theme.ink; acc: root.primary ? Theme.ink-on-accent : Theme.accent; }
+        }
+        Text { vertical-alignment: center; text: root.label; font-size: Theme.fs(12); font-weight: 600; color: root.primary ? Theme.ink-on-accent : Theme.ink; }
+    }
+    pta := TouchArea { enabled: root.active; mouse-cursor: root.active ? pointer : default; clicked => { root.clicked(); } }
+}

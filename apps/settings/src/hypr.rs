@@ -444,7 +444,7 @@ fn hypr_dir() -> std::path::PathBuf {
     std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()).map(std::path::PathBuf::from).unwrap_or_else(|| hyprshell_kit::home().join(".config")).join("hypr")
 }
 
-const TERM: &str = "command -v hyprshell-term >/dev/null 2>&1 && exec hyprshell-term \"$@\"; for d in \"$HOME/.local/bin\" /usr/local/bin /usr/bin; do [ -x \"$d/hyprshell-term\" ] && exec \"$d/hyprshell-term\" \"$@\"; done; for t in kitty foot alacritty wezterm xterm; do command -v \"$t\" >/dev/null 2>&1 && exec \"$t\" \"$@\"; done; notify-send \"Terminal\" \"no terminal is installed\" 2>/dev/null; exit 127";
+pub const TERM: &str = "command -v hyprshell-term >/dev/null 2>&1 && exec hyprshell-term \"$@\"; for d in \"$HOME/.local/bin\" /usr/local/bin /usr/bin; do [ -x \"$d/hyprshell-term\" ] && exec \"$d/hyprshell-term\" \"$@\"; done; for t in kitty foot alacritty wezterm xterm; do command -v \"$t\" >/dev/null 2>&1 && exec \"$t\" \"$@\"; done; notify-send \"Terminal\" \"no terminal is installed\" 2>/dev/null; exit 127";
 const FILES: &str = "command -v hyprshell-files >/dev/null 2>&1 && exec hyprshell-files \"$@\"; for d in \"$HOME/.local/bin\" /usr/local/bin /usr/bin; do [ -x \"$d/hyprshell-files\" ] && exec \"$d/hyprshell-files\" \"$@\"; done; notify-send \"Files\" \"hyprshell-files is not installed\" 2>/dev/null; exit 127";
 const WEB: &str = "command -v hyprshell-browser >/dev/null 2>&1 && exec hyprshell-browser \"$@\"; [ -x \"$HOME/.local/bin/hyprshell-browser\" ] && exec \"$HOME/.local/bin/hyprshell-browser\" \"$@\"; for b in firefox chromium google-chrome-stable brave; do command -v \"$b\" >/dev/null 2>&1 && exec \"$b\" \"$@\"; done; notify-send \"Web\" \"no browser is installed\" 2>/dev/null; exit 127";
 
