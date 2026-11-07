@@ -73,7 +73,19 @@ pub struct State {
     pub volume: f64,
     pub muted: bool,
     pub sink: String,
+    /// The output's own name, and the apps playing (the volume mixer's rows).
+    pub sink_desc: String,
+    pub streams: Vec<Stream>,
     pub have_audio: bool,
+}
+
+#[derive(Clone, Default)]
+pub struct Stream {
+    pub index: i64,
+    pub app: String,
+    pub media: String,
+    pub volume: f64,
+    pub mute: bool,
 }
 
 fn find() -> Option<std::path::PathBuf> {
@@ -215,8 +227,32 @@ pub fn apply(s: &mut State, ev: &Value) -> bool {
                 s.volume = d["volume"].as_f64().unwrap_or(0.0);
                 s.muted = d["mute"].as_bool().unwrap_or(false);
                 s.sink = d["name"].as_str().unwrap_or("").to_string();
+                s.sink_desc = d["description"].as_str().unwrap_or("").to_string();
                 s.have_audio = true;
             }
+            // Apps playing: not the shell's own, nor a monitor (Audio.qml's streams).
+            s.streams = ev["sinkInputs"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|v| {
+                    let p = &v["properties"];
+                    p["stream.monitor"] != "true"
+                        && p["media.category"] != "Monitor"
+                        && p["application.name"] != "Quickshell Peak Detect"
+                        && !p["application.name"].as_str().unwrap_or("").starts_with("hyprshell-")
+                })
+                .map(|v| {
+                    let p = &v["properties"];
+                    Stream {
+                        index: v["index"].as_i64().unwrap_or(-1),
+                        app: p["application.name"].as_str().filter(|x| !x.is_empty()).or(p["application.process.binary"].as_str()).unwrap_or("App").to_string(),
+                        media: p["media.name"].as_str().unwrap_or("").to_string(),
+                        volume: v["volume"].as_f64().unwrap_or(1.0),
+                        mute: v["mute"] == true,
+                    }
+                })
+                .collect();
             let source = ev["defaultSource"].as_str().unwrap_or("");
             let sources = ev["sources"].as_array().cloned().unwrap_or_default();
             // Likewise the noise suppression's source and the microphone behind it.

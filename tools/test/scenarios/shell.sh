@@ -311,3 +311,27 @@ PY
     sleep 0.5
     shot retraced
 }
+
+# The password prompt (polkit): the password typed into it and Return pressed
+# answers it. (A single-line field keeps Return from a parent's key handler,
+# which is how this once did nothing at all.) polkit itself is stood in for:
+# `testpw` is the right word.
+test_polkit_prompt_return() {
+    export HYPRSHELL_TEST_POLKIT="$TT_LOGS/polkit.log"
+    start_shell
+    sleep 1
+    cmd polkitTest
+    sleep 1
+    shot prompt
+    keys "wrong"
+    keys "" enter
+    wait_for 5 grep -q refused "$HYPRSHELL_TEST_POLKIT" || fail "Return didn't send the password (wrong word)"
+    sleep 0.5
+    shot refused
+    # The field keeps what it had? It was cleared; the right word now.
+    keys "testpw"
+    keys "" enter
+    wait_for 5 grep -q ' ok' "$HYPRSHELL_TEST_POLKIT" || fail "Return didn't send the right password"
+    sleep 1
+    shot answered
+}

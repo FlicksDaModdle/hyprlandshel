@@ -118,6 +118,7 @@ export component Toggle inherits Rectangle {
 // clicked anywhere along it.
 export component FillSlider inherits Rectangle {
     in property <float> value;
+    in property <length> trough: 20px;
     callback moved(float);
     property <float> shown: touch.pressed ? self.dragged : root.value;
     property <float> dragged;
@@ -125,8 +126,8 @@ export component FillSlider inherits Rectangle {
     // (ClippingRectangle in FillSlider.qml). A rounded clip doesn't round what
     // is inside it here, so the shape is drawn.
     property <float> w: root.width / 1px * clamp(root.shown, 0, 1);
-    height: 20px;
-    border-radius: 10px;
+    height: root.trough;
+    border-radius: root.trough / 2;
     // The track is the hover tint, as QML's trackColor.
     background: Theme.hover;
     // The whole pill in the accent, cut off where the value is by a square
@@ -135,11 +136,11 @@ export component FillSlider inherits Rectangle {
     if root.w > 0.5: Rectangle {
         x: 0;
         width: root.w * 1px;
-        height: 20px;
+        height: root.trough;
         clip: true;
-        Rectangle { x: 0; width: 20px; height: 20px; border-radius: 10px; background: Theme.accent; }
-        Rectangle { x: 10px; width: max(0px, root.width - 20px); height: 20px; background: Theme.accent; }
-        Rectangle { x: root.width - 20px; width: 20px; height: 20px; border-radius: 10px; background: Theme.accent; }
+        Rectangle { x: 0; width: root.trough; height: root.trough; border-radius: root.trough / 2; background: Theme.accent; }
+        Rectangle { x: root.trough / 2; width: max(0px, root.width - root.trough); height: root.trough; background: Theme.accent; }
+        Rectangle { x: root.width - root.trough; width: root.trough; height: root.trough; border-radius: root.trough / 2; background: Theme.accent; }
     }
     touch := TouchArea {
         mouse-cursor: pointer;

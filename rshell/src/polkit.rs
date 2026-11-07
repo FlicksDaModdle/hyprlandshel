@@ -199,6 +199,17 @@ fn unescape(s: &str) -> String {
 /// One attempt: the user, the cookie and the password to polkit's helper;
 /// what it says comes back over `tx`. Runs on a thread of its own.
 pub fn attempt(user: String, cookie: String, password: String, tx: Sender<Said>, mut wake: UnixStream) {
+    // Tests (a build with test-hooks, HYPRSHELL_TEST_POLKIT set): the answer
+    // without polkit, which a headless compositor has none of. The word
+    // `testpw` is right, and what was tried is written where the test reads it.
+    #[cfg(feature = "test-hooks")]
+    if let Some(log) = std::env::var_os("HYPRSHELL_TEST_POLKIT") {
+        let ok = password == "testpw";
+        let _ = std::fs::OpenOptions::new().create(true).append(true).open(&log).and_then(|mut f| writeln!(f, "{} {}", user, if ok { "ok" } else { "refused" }));
+        let _ = tx.send(if ok { Said::Success } else { Said::Failure("Authentication failed".into()) });
+        let _ = wake.write_all(b"!");
+        return;
+    }
     std::thread::spawn(move || {
         let said = |s: Said, wake: &mut UnixStream| {
             let _ = tx.send(s);

@@ -100,9 +100,10 @@ export component PolkitPrompt inherits Window {
                     FocusScope {
                         x: 12px;
                         width: parent.width - 24px;
-                        key-pressed(e) => {
+                        // Escape before the field sees it; Return is the field's own
+                        // `accepted` (a single-line TextInput keeps it from a parent's key-pressed).
+                        capture-key-pressed(e) => {
                             if (e.text == Key.Escape) { root.cancel(); return accept; }
-                            if (e.text == Key.Return && !root.busy) { root.submit(); return accept; }
                             reject
                         }
                         field := TextInput {
@@ -113,6 +114,7 @@ export component PolkitPrompt inherits Window {
                             text <=> root.password;
                             font-size: Theme.fs(13);
                             color: Theme.ink;
+                            accepted => { if (!root.busy) { root.submit(); } }
                         }
                     }
                 }

@@ -50,6 +50,8 @@ pub enum Action {
     HistForget(i32),
     HistClear,
     NcView(String),
+    MixSet(i32, f32),
+    MixMute(i32),
     DriveOpen(String),
     DriveMount(String),
     DriveEject(String),
@@ -1987,6 +1989,11 @@ impl App {
                 on: s.kbd_level > 0,
             });
         }
+        let mixer: Vec<crate::MixRow> = s
+            .streams
+            .iter()
+            .map(|m| crate::MixRow { index: m.index as i32, title: m.app.clone().into(), sub: m.media.clone().into(), vol: m.volume.clamp(0.0, 1.0) as f32, muted: m.mute, pct: if m.mute { "muted".into() } else { format!("{}%", (m.volume * 100.0).round() as i32).into() } })
+            .collect();
         for b in &self.bars {
             b.bar.set_net_label(s.net_label.clone().into());
             b.bar.set_net_icon(s.net_icon.into());
@@ -1994,6 +2001,10 @@ impl App {
             b.bar.set_volume_icon(vol_icon.into());
             let p = &b.panels;
             p.set_tiles(model(tiles.clone()));
+            p.set_mixer(model(mixer.clone()));
+            p.set_mixer_device(if s.sink_desc.is_empty() { "Output".into() } else { s.sink_desc.clone().into() });
+            p.set_mixer_sub(match s.streams.len() { 0 => "Nothing is playing".to_string(), 1 => "1 app playing".to_string(), n => format!("{n} apps playing") }.into());
+            p.set_mixer_chip(if s.streams.is_empty() { "Apps".to_string() } else { format!("Apps · {}", s.streams.len()) }.into());
             p.set_volume(s.volume as f32);
             p.set_muted(s.muted);
             p.set_has_brightness(s.brightness.is_some());
@@ -2659,6 +2670,23 @@ impl App {
                     }
                 }
                 self.refresh_notes(shell, qh);
+            }
+            // The volume mixer: one app's level, through pactl (the stream's index).
+            Action::MixSet(index, v) => {
+                let pct = (v.clamp(0.0, 1.0) * 100.0).round() as i32;
+                extras::spawn(&["pactl", "set-sink-input-volume", &index.to_string(), &format!("{pct}%")]);
+                if let Some(st) = self.sound.streams.iter_mut().find(|x| x.index == index as i64) {
+                    st.volume = v as f64;
+                }
+                self.refresh_sound();
+            }
+            Action::MixMute(index) => {
+                let now = self.sound.streams.iter().find(|x| x.index == index as i64).is_some_and(|x| x.mute);
+                extras::spawn(&["pactl", "set-sink-input-mute", &index.to_string(), if now { "0" } else { "1" }]);
+                if let Some(st) = self.sound.streams.iter_mut().find(|x| x.index == index as i64) {
+                    st.mute = !now;
+                }
+                self.refresh_sound();
             }
             Action::HistSearch(q) => {
                 self.hist_query = q;
@@ -3572,6 +3600,16 @@ impl App {
                 }
                 extras::spawn(&argv);
             }
+            // Tests: a polkit request out of nothing, to type a password into.
+            #[cfg(feature = "test-hooks")]
+            "polkitTest" => {
+                self.auth_queue.push(crate::polkit::Request {
+                    cookie: "test-cookie".into(),
+                    action: "org.example.test".into(),
+                    message: "Authentication is needed to run a test".into(),
+                    users: vec![(user_name(), 1000)],
+                });
+            }
             "iconMaker" => {
                 self.open_maker(shell, qh);
                 if !arg.is_empty() {
@@ -3711,6 +3749,9 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_hist_search, |q| Action::HistSearch(q.to_string()));
     on!(on_hist_forget, |id| Action::HistForget(id));
     on!(on_hist_clear, | | Action::HistClear);
+    on!(on_mix_set, |i, v| Action::MixSet(i, v));
+    on!(on_mix_mute, |i| Action::MixMute(i));
+    on!(on_open_sound_settings, | | Action::OpenSettingsPane("Sound".into()));
     on!(on_nc_view_changed, |v| Action::NcView(v.to_string()));
     on!(on_media_prev, | | Action::Media(mpris::Cmd::Prev));
     on!(on_media_toggle, | | Action::Media(mpris::Cmd::Toggle));
