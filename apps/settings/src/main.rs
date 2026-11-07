@@ -13,6 +13,7 @@
 
 mod anim;
 mod bt;
+mod face;
 mod focus;
 mod gallery;
 mod hdrcal;
@@ -58,6 +59,9 @@ struct State {
     videos: gallery::Videos,
     icons: focus::Icons,
     upd: updates::Updates,
+    /// Settings → Login screen: face unlock; looked at when the pane is first opened.
+    face: face::Face,
+    face_started: bool,
     /// Updates was on screen at the last draw: it looks again each time
     /// it is opened, not each time it is drawn.
     upd_shown: bool,
@@ -110,6 +114,18 @@ fn show(ui: &AppWindow, st: &mut State) {
     st.seen = mtime();
     let pane = st.c.ui.pane.clone();
     let open = st.c.ui.adv_open.contains(&pane);
+    if pane == "Login screen" {
+        if !st.face_started {
+            st.face_started = true;
+            let notify = face_notify(st.weak.clone());
+            st.face.start(notify);
+        }
+        st.c.ui.face = st.face.snapshot();
+        st.c.ui.face_pending = st.face.pending_count();
+    } else if st.face_started && !st.c.ui.face.busy {
+        // Not left looking through the camera with nobody on the page.
+        st.face.stop_preview();
+    }
     let mut specs = rows::shown_rows(&pane, rows::rows_for(&pane, &st.c), open);
     rows::card_positions(&mut specs);
     if let Some(want) = st.flash.take() {
@@ -137,6 +153,9 @@ fn show(ui: &AppWindow, st: &mut State) {
     g.set_shorts(ModelRc::new(VecModel::from(specs.iter().map(|r| SharedString::from(short(&r.row.s))).collect::<Vec<_>>())));
     g.set_rows(ModelRc::new(VecModel::from(specs.iter().map(|r| r.row.clone()).collect::<Vec<_>>())));
     st.specs = specs;
+    if pane == "Login screen" {
+        publish_face(ui, st);
+    }
     // The galleries, kept up only while they're on screen.
     let has = |k: &str| st.specs.iter().any(|r| r.row.kind == "panel" && r.row.panel == k);
     let (animated, live) = (has("animated"), has("gallery"));
@@ -364,6 +383,8 @@ fn main() {
         videos: gallery::Videos::default(),
         icons: focus::Icons::default(),
         upd: updates::Updates::default(),
+        face: face::Face::default(),
+        face_started: false,
         upd_shown: false,
         landing: None,
         fx_seen: String::new(),
@@ -389,6 +410,10 @@ fn main() {
                 // Commands a row left for the daemon (Settings → Laptop).
                 for cmd in std::mem::take(&mut s.c.ui.daemon) {
                     s.daemon().send(cmd);
+                }
+                // Settings → Login screen: what its rows asked of face unlock.
+                for cmd in std::mem::take(&mut s.c.ui.face_cmds) {
+                    s.face.command(cmd);
                 }
                 (s.c.ui.toast.take(), std::mem::take(&mut s.c.ui.tell), s.c.ui.pick.take(), s.c.ui.hdr.take())
             };
@@ -731,6 +756,7 @@ fn main() {
     }
     wire_wifi(&ui, &st);
     wire_bt(&ui, &st);
+    wire_face(&ui, &st);
     wire_sound(&ui, &st);
     wire_eq(&ui, &st);
     wire_galleries(&ui, &st, settle.clone());
@@ -1346,6 +1372,145 @@ fn scan_videos(st: &mut State) {
 
 thread_local! {
     static STATE: RefCell<Option<std::rc::Weak<RefCell<State>>>> = const { RefCell::new(None) };
+}
+
+/// What face unlock's threads say, delivered on the window's own thread.
+fn face_notify(weak: slint::Weak<AppWindow>) -> face::Notify {
+    std::sync::Arc::new(move |m| {
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            STATE.with(|s| {
+                let Some(st) = s.borrow().as_ref().and_then(|w| w.upgrade()) else { return };
+                let mut st = st.borrow_mut();
+                let redraw = st.face.on_msg(m);
+                if st.c.ui.pane != "Login screen" {
+                    return;
+                }
+                if redraw {
+                    show(&ui, &mut st);
+                } else {
+                    // Another frame of the webcam: only the picture.
+                    publish_face_frame(&ui, &mut st.face);
+                }
+            });
+        });
+    })
+}
+
+const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+fn publish_face_frame(ui: &AppWindow, face: &mut face::Face) {
+    if !face.frame_new {
+        return;
+    }
+    face.frame_new = false;
+    let g = ui.global::<FaceUi>();
+    match &face.frame {
+        Some(f) if f.len() == face::FRAME_W * face::FRAME_H * 3 => {
+            let buf = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::clone_from_slice(f, face::FRAME_W as u32, face::FRAME_H as u32);
+            g.set_frame(slint::Image::from_rgb8(buf));
+            g.set_seeing(true);
+        }
+        _ => g.set_seeing(false),
+    }
+}
+
+/// The face panel: what it says and does, from face unlock's state.
+fn publish_face(ui: &AppWindow, st: &mut State) {
+    let f = st.face.snapshot();
+    let g = ui.global::<FaceUi>();
+    let faces = f.faces();
+    let busy_adding = f.adding || f.just_added;
+    g.set_state(if f.just_added { "found" } else if f.add_failed { "failed" } else if f.adding { "looking" } else { "idle" }.into());
+    g.set_headline(
+        if f.just_added {
+            "All set"
+        } else if f.add_failed {
+            "Howdy didn't get a good look"
+        } else if f.adding {
+            "Keep looking at the camera"
+        } else if faces > 0 {
+            "Howdy knows your face"
+        } else {
+            "Set up your face"
+        }
+        .into(),
+    );
+    let seeing = st.face.picture();
+    g.set_detail(
+        if f.add_failed {
+            f.status.clone()
+        } else if f.adding {
+            if f.adding_alone {
+                "The infrared camera is learning your face. The webcam can't run beside it on this laptop".to_string()
+            } else if !seeing && !f.preview_error.is_empty() {
+                f.preview_error.clone()
+            } else if f.recording {
+                "The infrared camera is learning your face. Hold still, an arm's length away".to_string()
+            } else if seeing {
+                "Centre your face in the circle".to_string()
+            } else {
+                "Starting the webcam…".to_string()
+            }
+        } else if faces > 0 {
+            "It unlocks for you at a glance. Wear glasses sometimes? Add that as an alternative look".to_string()
+        } else {
+            "Add your face and Howdy unlocks for you at a glance".to_string()
+        }
+        .into(),
+    );
+    g.set_add_label(if f.adding { "Adding…" } else if faces > 0 { "Add my face again" } else { "Add my face" }.into());
+    let can = !f.busy && !busy_adding;
+    g.set_can_add(can);
+    g.set_can_alt(can && faces != 0);
+    g.set_can_remove(can);
+    let looks: Vec<FaceLook> = f
+        .looks
+        .iter()
+        .flatten()
+        .map(|l| {
+            let (y, mo, d, h, mi, _) = hyprshell_kit::local(l.time);
+            let sub = format!(
+                "Added {d} {} {y}, {h:02}:{mi:02}{}",
+                MONTHS[(mo as usize).saturating_sub(1).min(11)],
+                if !f.webcam_check { "" } else if l.webcam { " · infrared and webcam" } else { " · infrared only: add it again for the webcam" }
+            );
+            FaceLook { id: l.id as i32, label: l.label.clone().into(), sub: sub.into() }
+        })
+        .collect();
+    g.set_looks(ModelRc::new(VecModel::from(looks)));
+    g.set_foot(
+        format!(
+            "{}An alternative look is another set of pictures of you that Howdy checks too, and it unlocks for whichever you match: add one with glasses or without, in a cap, with a beard, in daylight and in lamplight.",
+            if f.looks.is_none() && faces != 0 { "Howdy keeps your looks where only root can read them, so they can't be listed here. " } else { "" }
+        )
+        .into(),
+    );
+    st.face.frame_new = true;
+    publish_face_frame(ui, &mut st.face);
+    g.set_seeing(seeing);
+}
+
+/// The panel's own buttons.
+fn wire_face(ui: &AppWindow, st: &Rc<RefCell<State>>) {
+    let g = ui.global::<FaceUi>();
+    {
+        let (st, weak) = (st.clone(), ui.as_weak());
+        g.on_add(move |alt| {
+            st.borrow_mut().face.command(face::Cmd::AddFace(alt));
+            if let Some(ui) = weak.upgrade() {
+                show(&ui, &mut st.borrow_mut());
+            }
+        });
+    }
+    {
+        let (st, weak) = (st.clone(), ui.as_weak());
+        g.on_remove(move |id| {
+            st.borrow_mut().face.command(face::Cmd::RemoveLook(id as i64));
+            if let Some(ui) = weak.upgrade() {
+                show(&ui, &mut st.borrow_mut());
+            }
+        });
+    }
 }
 
 fn deliver_videos(ui: &AppWindow, list: Vec<gallery::Video>, ff: bool) {

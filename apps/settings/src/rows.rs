@@ -53,6 +53,12 @@ pub struct Ui {
     /// picked for ("" for all).
     pub live_pick: String,
     pub adv_open: std::collections::HashSet<String>,
+    /// Settings → Login screen: what face unlock is, as last looked at, and
+    /// what the rows asked of it.
+    pub face: crate::face::Snap,
+    pub face_cmds: Vec<crate::face::Cmd>,
+    /// Howdy's settings waiting for the password.
+    pub face_pending: usize,
     /// A message for the toast.
     pub toast: Option<String>,
     /// A line for the shell's hyprshell.cmd.
@@ -334,10 +340,7 @@ pub fn rows_for(pane: &str, c: &Ctx) -> Vec<Spec> {
     match pane {
         "Appearance" => appearance(p),
         "Wallpaper" => wallpaper(c),
-        "Login screen" => vec![
-            header("Face unlock", "Your face, through the IR camera, at the lock screen and when you log in."),
-            panel("face"),
-        ],
+        "Login screen" => login(c),
         "Icons" => icons(p),
         "App theming" => app_theming(p),
         "Bar" => bar(p),
@@ -2387,4 +2390,286 @@ fn laptop(c: &Ctx) -> Vec<Spec> {
         }
     }
     rows
+}
+
+
+// ── Settings → Login screen (Settings.qml's loginRows) ─────────────────────
+
+fn face_cmd(c: &mut Ctx, cmd: crate::face::Cmd) {
+    c.ui.face_cmds.push(cmd);
+}
+
+fn login(c: &Ctx) -> Vec<Spec> {
+    use crate::face::Cmd;
+    let f = &c.ui.face;
+    let mut r = vec![header(
+        "Face unlock",
+        &format!(
+            "Your face, through the IR camera, at the lock screen and when you log in — {}",
+            if f.engine_is_service() {
+                if f.howdy_off || !f.howdy { "with Hyprshell's own face recognition" } else { "with Hyprshell's own face recognition, and Howdy as a fallback" }
+            } else {
+                "with Howdy"
+            }
+        ),
+    )];
+    if !f.probed {
+        r.push(info("Looking…", "What is there: Howdy, the cameras, the lock screen's PAM file", ""));
+        return r;
+    }
+    if !f.installed() {
+        r.push(buttons(
+            "Howdy isn't installed",
+            "Install it, then check again: paru -S howdy-git — and linux-enable-ir-emitter if the camera's infrared light doesn't come on (sudo linux-enable-ir-emitter configure)",
+            vec![btn("Check again", false, true, |c| face_cmd(c, Cmd::Refresh))],
+        ));
+        return r;
+    }
+    // One password for a while of changes.
+    r.push(if f.unlocked {
+        buttons(
+            "Unlocked for changes",
+            "Changes on this page don't ask for your password again, until you lock it or five minutes pass without one",
+            vec![btn("Lock", true, true, |c| face_cmd(c, Cmd::Lock))],
+        )
+    } else {
+        info("Changes ask for your password once", "The first change asks; the ones after it go straight through, for as long as you keep making them", "Locked")
+    });
+    r.push(toggle_with(
+        "Unlock with my face",
+        if f.lock_on && f.greeter_on {
+            "At the lock screen and when you log in; the password always works too"
+        } else if f.lock_on {
+            "At the lock screen (the login screen isn't set up: is greetd installed?)"
+        } else {
+            "Off: your password only. Turning it on asks for your password"
+        },
+        f.on(),
+        |c, v| face_cmd(c, if v { Cmd::Enable } else { Cmd::Disable }),
+    ));
+    if f.engine_is_service() && f.howdy {
+        r.push(toggle_with(
+            "Use Howdy as a fallback",
+            if f.howdy_off {
+                "Off: Hyprshell's own face recognition alone. New faces are added to it only"
+            } else {
+                "When Hyprshell's face service can't answer (stopped, or no face of yours in it), Howdy looks instead. Off, it's Hyprshell's own recognition alone"
+            },
+            !f.howdy_off,
+            |c, v| face_cmd(c, Cmd::SetHowdy(v)),
+        ));
+    }
+    if !f.cameras.is_empty() {
+        let labels: Vec<String> = f.cameras.iter().map(|k| k.label()).collect();
+        let cur = f.cameras.iter().find(|k| k.path == f.camera);
+        let paths: Vec<String> = f.cameras.iter().map(|k| k.path.clone()).collect();
+        let labs = labels.clone();
+        r.push(menu_with(
+            "Camera",
+            match cur {
+                Some(k) if k.ir => "The infrared camera: works in the dark, and isn't fooled by a photo",
+                Some(_) => "Not an infrared camera: pick the IR one if there is one",
+                None => "Which camera Howdy looks through",
+            },
+            labels,
+            &cur.map(|k| k.label()).unwrap_or_default(),
+            move |c, v| {
+                if let Some(i) = labs.iter().position(|l| *l == v) {
+                    face_cmd(c, Cmd::SetCamera(paths[i].clone()));
+                }
+            },
+        ));
+    }
+    if f.has_webcam {
+        let ids = f.looks.as_ref().map(|l| l.iter().filter(|k| k.webcam).count()).unwrap_or(0);
+        r.push(toggle_with(
+            "Check with the webcam too",
+            if !f.webcam_check {
+                "Off: the infrared camera decides alone. On, both cameras have to recognise you — a photo that fools one rarely fools the other"
+            } else if ids == 0 {
+                "On, but the webcam has no pictures of you yet: add your face again below"
+            } else {
+                "Both cameras have to recognise you. In low light, or with the webcam in use elsewhere, the infrared camera decides alone. The webcam's light comes on as you unlock"
+            },
+            f.webcam_check,
+            |c, v| face_cmd(c, Cmd::SetWebcamCheck(v)),
+        ));
+    }
+    r.push(header("Your face", "Howdy learns your face through the infrared camera while the webcam shows you, and the looks it knows you by"));
+    r.push(panel("face"));
+    if f.faces() != 0 {
+        r.push(buttons("Forget my faces", "Every look Howdy knows you by; your password still works", vec![btn("Remove all", true, !f.busy && !f.adding, |c| face_cmd(c, Cmd::ClearFaces))]));
+    }
+    if f.lock_on {
+        r.push(buttons(
+            "Try it",
+            if f.testing { "Look at the camera…" } else { "Checks your face the way the lock screen does" },
+            vec![btn(if f.testing { "Looking…" } else { "Try it" }, false, !f.testing && !f.busy, |c| face_cmd(c, Cmd::Test))],
+        ));
+    }
+    // Not while a face is being added: the panel says how that's going.
+    if !f.adding && !f.just_added && !f.status.is_empty() {
+        r.push(info(if f.busy { "Working…" } else if f.failed { "That didn't work" } else { "Done" }, &f.status, ""));
+    }
+    r.extend(face_service_rows(f));
+    r.extend(howdy_rows(c));
+    r.push(header("Login screen", ""));
+    r.push(info(
+        "Hyprshell's login screen",
+        if f.greeter_installed { "Installed; it follows your theme, wallpaper, screens and pointer" } else { "Not installed: sudo greeter/install.sh in Hyprshell's folder" },
+        if f.greeter_installed { "Installed" } else { "Not installed" },
+    ));
+    r
+}
+
+fn face_service_rows(f: &crate::face::Snap) -> Vec<Spec> {
+    use crate::face::Cmd;
+    if !f.engine_is_service() {
+        return vec![
+            header("Faster face unlock", ""),
+            info(
+                "Hyprshell's face service",
+                if f.service.is_some() {
+                    "Installed but not answering: sudo systemctl restart hyprshell-faced"
+                } else {
+                    "Keeps the face models loaded, so unlocking starts at the camera, not at loading them: sudo shell/face/install.sh in Hyprshell's folder. Howdy stays as its fallback"
+                },
+                if f.service.is_some() { "Not running" } else { "Not installed" },
+            ),
+        ];
+    }
+    let s = f.service.clone().unwrap_or_default();
+    let num = |k: &str, d: f64| s[k].as_f64().unwrap_or(d);
+    let set = |key: &'static str, fmt: fn(f64) -> String| move |c: &mut Ctx, v: f64| face_cmd(c, Cmd::SetService(key.into(), fmt(v)));
+    let mut r = vec![
+        header("Face service", "Hyprshell's own: the models stay loaded, and it decides first. Changes apply at the next unlock"),
+        info(
+            "Running",
+            &format!(
+                "{}Each unlock, and how long it took: journalctl -u hyprshell-faced",
+                if f.looks.as_ref().is_some_and(|l| l.is_empty()) { "No face of yours added to it yet: add it below. Until then Howdy answers. " } else { "" }
+            ),
+            "Ready",
+        ),
+        slider_with("How alike your face has to be", "Higher is stricter: harder to fool, but it may take a second look. 0.45 suits most people", 0.3, 0.7, 0.01, "", num("threshold", 0.45), set("threshold", |v| format!("{v:.2}"))),
+        slider_with("Give up after", "How long it looks for you before the password is asked for", 1.0, 10.0, 0.5, "s", num("timeout", 4.0), set("timeout", |v| format!("{v:.1}"))),
+        seg_with(
+            "Frames that have to know you",
+            "In a row, before it unlocks: more is harder to fool with one lucky frame, a little slower",
+            &[("1", "1"), ("2", "2"), ("3", "3")],
+            &format!("{}", num("confirm_frames", 2.0) as i64),
+            |c, v| face_cmd(c, Cmd::SetService("confirm_frames".into(), v)),
+        ),
+        toggle_with(
+            "Only when you face the camera",
+            "A head turned away doesn't unlock it: someone can't hold the laptop up to you while you look elsewhere",
+            s["require_facing"] != false,
+            |c, v| face_cmd(c, Cmd::SetService("require_facing".into(), v.to_string())),
+        ),
+        toggle_with(
+            "Only when you're looking at the screen",
+            "Stricter: your head straight on to the screen, not glancing past it or down. It goes by where your head points, not your eyes",
+            s["require_attention"] == true,
+            |c, v| face_cmd(c, Cmd::SetService("require_attention".into(), v.to_string())),
+        ),
+        seg_with(
+            "After faces that aren't yours",
+            &format!("That many in a row, and face unlock steps aside for {} minutes: the password is needed. Not seeing anyone doesn't count", s["lockout_minutes"].as_i64().unwrap_or(10)),
+            &[("Off", "0"), ("3", "3"), ("5", "5"), ("10", "10")],
+            &format!("{}", s["lockout_after"].as_i64().unwrap_or(5)),
+            |c, v| face_cmd(c, Cmd::SetService("lockout_after".into(), v)),
+        ),
+    ];
+    if f.webcam_check {
+        r.push(slider_with("Webcam: how alike", "For the webcam check; colour pictures vary more with the light", 0.3, 0.7, 0.01, "", num("webcam_threshold", 0.4), set("webcam_threshold", |v| format!("{v:.2}"))));
+        r.push(slider_with(
+            "Webcam: too dark below",
+            "Average brightness (0–255) under which the webcam is left out and infrared decides alone",
+            5.0,
+            150.0,
+            1.0,
+            "",
+            num("min_light", 45.0),
+            set("min_light", |v| format!("{}", v.round() as i64)),
+        ));
+    }
+    r
+}
+
+fn howdy_rows(c: &Ctx) -> Vec<Spec> {
+    use crate::face::Cmd;
+    let f = &c.ui.face;
+    let mut r = vec![header(
+        if f.engine_is_service() { "Howdy (the fallback)" } else { "Howdy" },
+        if f.engine_is_service() { "Used only when the face service can't answer: it isn't running, or has no face of yours" } else { "Howdy's own settings, changed as you change them" },
+    )];
+    if f.config.is_empty() {
+        r.push(info("Howdy's settings", "Its config.ini wasn't found, or can't be read: sudo howdy config edits it by hand", "Not readable"));
+        return r;
+    }
+    let n = if f.busy { 0 } else { c.ui.face_pending };
+    let waiting = |busy: bool, n: usize| {
+        buttons(
+            &if n == 1 { "1 change not made yet".to_string() } else { format!("{n} changes not made yet") },
+            "Your password is needed for them",
+            vec![btn(if busy { "Applying…" } else { "Apply" }, false, !busy, |c| face_cmd(c, Cmd::ApplyConfig)), btn("Discard", true, !busy, |c| face_cmd(c, Cmd::DiscardConfig))],
+        )
+    };
+    if n > 0 {
+        r.push(waiting(f.busy, n));
+    }
+    let cfg = |k: &'static str| move |c: &mut Ctx, v: String| face_cmd(c, Cmd::SetCfg(k.into(), v));
+    let numv = |k: &'static str, round: bool| move |c: &mut Ctx, v: f64| face_cmd(c, Cmd::SetCfg(k.into(), if round { format!("{}", v.round() as i64) } else { format!("{v:.1}") }));
+    let flag = |k: &'static str| move |c: &mut Ctx, v: bool| face_cmd(c, Cmd::SetCfg(k.into(), v.to_string()));
+    r.push(slider_with("How close a match has to be", "Lower is stricter: harder to fool, but it may take you a second try. Howdy's default is 3.5; above 5 isn't recommended", 1.0, 6.0, 0.1, "", f.cfg_num("video.certainty", 3.5), numv("video.certainty", false)));
+    r.push(slider_with("Give up after", "How long it looks for you before the password is asked for", 1.0, 15.0, 1.0, "s", f.cfg_num("video.timeout", 4.0), numv("video.timeout", true)));
+    r.push(slider_with(
+        "Dark frames",
+        "How dark a frame can be and still be used (the IR light flashes, so some are black). Raise it if Howdy says all frames were too dark",
+        0.0,
+        100.0,
+        1.0,
+        "%",
+        f.cfg_num("video.dark_threshold", 60.0),
+        numv("video.dark_threshold", true),
+    ));
+    r.push(seg_with("Picture size for matching", "Smaller is faster; larger can be more precise", &[("240", "240"), ("320", "320"), ("480", "480"), ("720", "720")], &format!("{}", f.cfg_num("video.max_height", 320.0) as i64), cfg("video.max_height")));
+    r.push(toggle_with("More accurate face finding (CNN)", "Much slower without a GPU to run it on", f.cfg_bool("core.use_cnn", false), flag("core.use_cnn")));
+    r.push(toggle_with("Not with the lid closed", "Skip Howdy when the laptop is shut (an external screen, say)", f.cfg_bool("core.abort_if_lid_closed", true), flag("core.abort_if_lid_closed")));
+    r.push(toggle_with("Not over SSH", "Skip Howdy for logins from another computer", f.cfg_bool("core.abort_if_ssh", true), flag("core.abort_if_ssh")));
+    if f.webcam_check {
+        r.push(slider_with("Webcam: how close a match has to be", "For the webcam check. Lower is stricter; colour pictures vary more with the light than infrared", 2.0, 6.0, 0.1, "", f.cfg_num("webcam.certainty", 4.5), numv("webcam.certainty", false)));
+        r.push(slider_with("Webcam: too dark below", "Average brightness (0–255) under which the webcam is left out and infrared decides alone", 5.0, 150.0, 1.0, "", f.cfg_num("webcam.min_light", 45.0), numv("webcam.min_light", true)));
+    }
+    r.push(header("Howdy's camera and messages", ""));
+    r.push(seg_with("Recorder", "How frames are read. FFmpeg can help with grey or garbled pictures", &[("OpenCV", "opencv"), ("FFmpeg", "ffmpeg"), ("pyv4l2", "pyv4l2")], &f.cfg("video.recording_plugin", "opencv"), cfg("video.recording_plugin")));
+    r.push(toggle_with("Force Motion JPEG", "OpenCV only: fixes some cameras' broken raw frames", f.cfg_bool("video.force_mjpeg", false), flag("video.force_mjpeg")));
+    r.push(slider_with(
+        "Frame rate",
+        "Some IR emitters only light at one rate. 0 leaves it to the camera",
+        0.0,
+        60.0,
+        1.0,
+        "fps",
+        f.cfg_num("video.device_fps", -1.0).max(0.0),
+        |c, v| face_cmd(c, Cmd::SetCfg("video.device_fps".into(), if v.round() as i64 == 0 { "-1".into() } else { format!("{}", v.round() as i64) })),
+    ));
+    r.push(seg_with("Orientation", "For a camera mounted sideways", &[("Landscape", "0"), ("Both", "1"), ("Portrait", "2")], &f.cfg("video.rotate", "0"), cfg("video.rotate")));
+    r.push(toggle_with("Keep pictures of failed attempts", "In /var/log/howdy/snapshots, to see who tried", f.cfg_bool("snapshots.save_failed", false), flag("snapshots.save_failed")));
+    r.push(toggle_with("Keep pictures of successful ones too", "Same folder", f.cfg_bool("snapshots.save_successful", false), flag("snapshots.save_successful")));
+    r.push(toggle_with("In the terminal: say when it's looking", "For sudo and other password prompts in a terminal", f.cfg_bool("core.detection_notice", false), flag("core.detection_notice")));
+    r.push(toggle_with("In the terminal: say when it gives up", "", f.cfg_bool("core.timeout_notice", true), flag("core.timeout_notice")));
+    r.push(toggle_with("In the terminal: say when it recognises you", "", !f.cfg_bool("core.no_confirmation", false), |c, v| face_cmd(c, Cmd::SetCfg("core.no_confirmation".into(), (!v).to_string()))));
+    r.push(seg_with(
+        "In the terminal: face and password together",
+        "Off: press Enter after Howdy gives up. Input: it presses Enter for you. Native: stops the prompt itself (can be unstable)",
+        &[("Off", "off"), ("Input", "input"), ("Native", "native")],
+        &f.cfg("core.workaround", "off"),
+        cfg("core.workaround"),
+    ));
+    r.push(toggle_with("Timing report", "Howdy prints how long each step took (in a terminal; can upset some apps)", f.cfg_bool("debug.end_report", false), flag("debug.end_report")));
+    if n > 0 {
+        r.push(waiting(f.busy, n));
+    }
+    r
 }

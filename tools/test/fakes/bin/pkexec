@@ -1,0 +1,3 @@
+#!/bin/sh
+# A stand-in for polkit's pkexec: the helper it would start as root, started as is.
+exec "$@"

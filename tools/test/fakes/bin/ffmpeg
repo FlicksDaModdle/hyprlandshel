@@ -1,0 +1,12 @@
+#!/bin/sh
+# A stand-in for ffmpeg, so the tests never open a real camera.
+#   as the face preview: raw 640x480 rgb frames, grey, ten a second
+#   as the converter of one frame (-frames:v): a file with something in it
+for a; do last=$a; done
+case " $* " in
+    *" -frames:v "*) cat >/dev/null; echo jpeg > "$last"; exit 0 ;;
+esac
+while :; do
+    head -c 921600 /dev/zero | tr '\0' '\100' || exit 0
+    sleep 0.1
+done

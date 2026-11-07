@@ -1,0 +1,138 @@
+// FacePanel.qml: Settings → Login screen → Your face. A dark stage with
+// the webcam in a circle while a face is being added, what is happening in
+// words, the buttons that add one, and the looks Howdy knows you by.
+// What it shows comes from src/face.rs.
+
+import { Theme, Icon } from "@kit";
+import { PillButton } from "common.slint";
+
+export struct FaceLook { id: int, label: string, sub: string }
+
+export global FaceUi {
+    in property <image> frame;
+    // The webcam's first picture is in.
+    in property <bool> seeing;
+    // idle, looking, found, failed.
+    in property <string> state: "idle";
+    in property <string> headline;
+    in property <string> detail;
+    in property <string> add-label: "Add my face";
+    in property <bool> can-add: true;
+    in property <bool> can-alt;
+    in property <[FaceLook]> looks;
+    in property <bool> can-remove: true;
+    in property <string> foot;
+    callback add(bool);
+    callback remove(int);
+}
+
+component Corner inherits Rectangle {
+    in property <color> ink;
+    in property <bool> right;
+    in property <bool> bottom;
+    width: 26px;
+    height: 26px;
+    Rectangle { x: root.right ? parent.width - 3px : 0px; y: 0; width: 3px; height: parent.height; background: root.ink; border-radius: 2px; }
+    Rectangle { x: 0; y: root.bottom ? parent.height - 3px : 0px; width: parent.width; height: 3px; background: root.ink; border-radius: 2px; }
+}
+
+export component FacePanel inherits VerticalLayout {
+    spacing: 14px;
+
+    stage := Rectangle {
+        height: 318px;
+        border-radius: Theme.r;
+        background: #0d0c0c;
+        clip: true;
+        property <length> d: 196px;
+        property <color> tone: FaceUi.state == "found" ? #4cc38a : FaceUi.state == "failed" ? #ff6b61 : FaceUi.state == "looking" ? Theme.accent : #ffffff59;
+
+        circle := Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: 34px;
+            width: stage.d;
+            height: stage.d;
+            border-radius: stage.d / 2;
+            background: #191817;
+            clip: true;
+            // The middle square of the picture, rounded by the image itself (a
+            // rounded clip doesn't round what is inside it here).
+            if FaceUi.seeing: Image {
+                width: stage.d;
+                height: stage.d;
+                source: FaceUi.frame;
+                source-clip-x: 80;
+                source-clip-y: 0;
+                source-clip-width: 480;
+                source-clip-height: 480;
+                image-fit: fill;
+            }
+            // A ring of the stage's own colour over the square's corners.
+            Rectangle {
+                x: -48px;
+                y: -48px;
+                width: stage.d + 96px;
+                height: stage.d + 96px;
+                border-radius: self.width / 2;
+                border-width: 48px;
+                border-color: #0d0c0c;
+                background: transparent;
+            }
+            if !FaceUi.seeing: Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; name: "user"; size: 64px; ink: #ffffff40; acc: #ffffff40; }
+        }
+        // The ring and the four corners of the scan.
+        Rectangle {
+            x: circle.x - 8px;
+            y: circle.y - 8px;
+            width: stage.d + 16px;
+            height: stage.d + 16px;
+            border-radius: self.width / 2;
+            border-width: 3px;
+            border-color: stage.tone;
+            background: transparent;
+        }
+        Corner { x: circle.x - 22px; y: circle.y - 22px; ink: stage.tone; }
+        Corner { x: circle.x + stage.d - 4px; y: circle.y - 22px; ink: stage.tone; right: true; }
+        Corner { x: circle.x - 22px; y: circle.y + stage.d - 4px; ink: stage.tone; bottom: true; }
+        Corner { x: circle.x + stage.d - 4px; y: circle.y + stage.d - 4px; ink: stage.tone; right: true; bottom: true; }
+
+        VerticalLayout {
+            x: 24px;
+            y: circle.y + stage.d + 26px;
+            width: parent.width - 48px;
+            height: stage.height - self.y - 8px;
+            alignment: start;
+            spacing: 4px;
+            Text { horizontal-alignment: center; text: FaceUi.headline; font-size: Theme.fs(16); font-weight: 600; color: white; }
+            Text { horizontal-alignment: center; text: FaceUi.detail; wrap: word-wrap; font-size: Theme.fs(12); color: #ffffffb3; }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        PillButton { label: FaceUi.add-label; primary: true; active: FaceUi.can-add; clicked => { FaceUi.add(false); } }
+        PillButton { label: "Add an alternative look"; active: FaceUi.can-alt; clicked => { FaceUi.add(true); } }
+    }
+
+    for look[i] in FaceUi.looks: Rectangle {
+        height: 44px;
+        border-radius: Theme.r-sm;
+        background: Theme.hover;
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 8px;
+            spacing: 10px;
+            VerticalLayout { alignment: center; Icon { name: "user"; size: 22px; ink: Theme.ink2; acc: Theme.ink2; } }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Text { text: look.label; overflow: elide; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+                Text { text: look.sub; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
+            }
+            VerticalLayout { alignment: center; PillButton { label: "Remove"; active: FaceUi.can-remove; clicked => { FaceUi.remove(look.id); } } }
+        }
+    }
+
+    Text { text: FaceUi.foot; wrap: word-wrap; font-size: Theme.fs(12); color: Theme.ink3; }
+}
