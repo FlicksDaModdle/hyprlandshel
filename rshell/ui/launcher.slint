@@ -37,6 +37,8 @@ export component Launcher inherits Window {
     in property <length> panel-max: 1000px;
     in property <length> near-edge: 80px;
     in property <float> zoom: 1.45;
+    in property <float> title-size: 13;
+    in property <float> meta-size: 11;
     in property <bool> grows: true;
     in property <float> morph: 1;
     in property <float> morph-y: 1;
@@ -159,7 +161,7 @@ export component Launcher inherits Window {
                                 vertical-alignment: center;
                                 width: parent.width;
                                 text <=> root.query;
-                                font-size: Theme.fs(round(13 * root.zoom));
+                                font-size: Theme.fs(round(root.title-size * root.zoom));
                                 color: Theme.ink;
                                 selection-background-color: Theme.accent;
                                 selection-foreground-color: Theme.ink-on-accent;
@@ -170,7 +172,7 @@ export component Launcher inherits Window {
                                 x: 0;
                                 y: (parent.height - self.height) / 2;
                                 text: "Search apps and commands";
-                                font-size: Theme.fs(round(13 * root.zoom));
+                                font-size: Theme.fs(round(root.title-size * root.zoom));
                                 font-weight: 400;
                                 color: Theme.ink3;
                             }
@@ -187,7 +189,7 @@ export component Launcher inherits Window {
                             x: 8px;
                             y: (parent.height - self.height) / 2;
                             text: "ESC";
-                            font-size: Theme.fs(round(10 * root.zoom));
+                            font-size: Theme.fs(round((root.meta-size - 1) * root.zoom));
                             font-weight: 600;
                             color: Theme.ink3;
                         }
@@ -216,7 +218,7 @@ export component Launcher inherits Window {
                                 Text {
                                     vertical-alignment: center;
                                     text: "All apps";
-                                    font-size: Theme.fs(round(11 * root.zoom));
+                                    font-size: Theme.fs(round(root.meta-size * root.zoom));
                                     font-weight: 600;
                                     color: all-touch.has-hover ? Theme.ink-on-accent : Theme.ink2;
                                 }
@@ -264,7 +266,7 @@ export component Launcher inherits Window {
                                     horizontal-alignment: center;
                                     text: item.label;
                                     overflow: elide;
-                                    font-size: Theme.fs(round(11 * root.zoom));
+                                    font-size: Theme.fs(round(root.meta-size * root.zoom));
                                     color: Theme.ink;
                                 }
                             }
@@ -300,7 +302,7 @@ export component Launcher inherits Window {
                             x: parent.width - self.width - sz(10);
                             y: (parent.height - self.height) / 2;
                             text: "recent";
-                            font-size: Theme.fs(round(11 * root.zoom));
+                            font-size: Theme.fs(round(root.meta-size * root.zoom));
                             color: Theme.ink3;
                         }
                     }
@@ -337,8 +339,8 @@ export component Launcher inherits Window {
                                 VerticalLayout {
                                     alignment: center;
                                     spacing: sz(1);
-                                    Text { text: f.name; overflow: elide; font-size: Theme.fs(round(11 * root.zoom)); color: Theme.ink; }
-                                    Text { text: f.when; overflow: elide; font-size: Theme.fs(round(10 * root.zoom)); font-weight: 400; color: Theme.ink3; }
+                                    Text { text: f.name; overflow: elide; font-size: Theme.fs(round(root.meta-size * root.zoom)); color: Theme.ink; }
+                                    Text { text: f.when; overflow: elide; font-size: Theme.fs(round((root.meta-size - 1) * root.zoom)); font-weight: 400; color: Theme.ink3; }
                                 }
                             }
                             rt := TouchArea { mouse-cursor: pointer; clicked => { root.open-recent(i); } }
@@ -357,7 +359,7 @@ export component Launcher inherits Window {
                             x: sz(16);
                             y: (parent.height - self.height) / 2;
                             text: root.list-title;
-                            font-size: Theme.fs(round(13 * root.zoom));
+                            font-size: Theme.fs(round(root.title-size * root.zoom));
                             font-weight: 600;
                             color: Theme.ink;
                         }
@@ -376,7 +378,7 @@ export component Launcher inherits Window {
                                 Text {
                                     vertical-alignment: center;
                                     text: "Back to pinned";
-                                    font-size: Theme.fs(round(11 * root.zoom));
+                                    font-size: Theme.fs(round(root.meta-size * root.zoom));
                                     font-weight: 600;
                                     color: Theme.ink2;
                                 }
@@ -443,14 +445,14 @@ export component Launcher inherits Window {
                                     Text {
                                         text: r.label;
                                         overflow: elide;
-                                        font-size: Theme.fs(round(12 * root.zoom));
+                                        font-size: Theme.fs(round((root.title-size - 1) * root.zoom));
                                         font-weight: 600;
                                         color: row.on ? Theme.ink-on-accent : Theme.ink;
                                     }
                                     Text {
                                         text: r.about;
                                         overflow: elide;
-                                        font-size: Theme.fs(round(10 * root.zoom));
+                                        font-size: Theme.fs(round((root.meta-size - 1) * root.zoom));
                                         font-weight: 400;
                                         opacity: row.on ? 0.8 : 1;
                                         color: row.on ? Theme.ink-on-accent : Theme.ink3;
@@ -460,7 +462,7 @@ export component Launcher inherits Window {
                                     horizontal-stretch: 0;
                                     vertical-alignment: center;
                                     text: row.on ? "return" : "";
-                                    font-size: Theme.fs(round(11 * root.zoom));
+                                    font-size: Theme.fs(round(root.meta-size * root.zoom));
                                     font-weight: 600;
                                     color: Theme.ink-on-accent;
                                 }
@@ -477,7 +479,7 @@ export component Launcher inherits Window {
                             width: parent.width - sz(16);
                             wrap: word-wrap;
                             text: "No matches — press enter to run “" + root.query + "” as a command";
-                            font-size: Theme.fs(round(13 * root.zoom));
+                            font-size: Theme.fs(round(root.title-size * root.zoom));
                             color: Theme.ink3;
                         }
                     }

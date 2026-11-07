@@ -161,6 +161,8 @@ impl Host {
         ui.set_panel_max((720.0 * zoom * tall).round() as f32);
         ui.set_columns(cols);
         ui.set_tile((60.0 * zoom).round() as f32);
+        ui.set_title_size(num("launcherTitleSize", 13.0) as f32);
+        ui.set_meta_size(num("launcherMetaSize", 11.0) as f32);
         ui.set_icon_size(((22.0 * zoom).round() * stretch("launcherIconScale")).round() as f32);
         ui.set_near_edge(near as f32);
         ui.set_user(user.into());
