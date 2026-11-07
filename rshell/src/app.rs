@@ -63,6 +63,8 @@ pub enum Action {
     DockMiddle(usize, usize),
     DockHover(usize, bool),
     AppMenu(String),
+    IconQuery(String),
+    IconPick(String),
     CcPane(String),
     Wifi(bool),
     Bt(bool),
@@ -544,6 +546,9 @@ pub struct App {
     net_id: u64,
     /// The dock tile a menu is open for: (monitor, tile).
     menu_for: Option<(usize, usize)>,
+    /// Where the dock menu was opened (its x), and the tile the icon picker is for: (bar, key, x).
+    menu_x: f32,
+    icon_for: Option<(usize, String, f32)>,
     /// The polkit agent: its prompt, the request on it and those waiting,
     /// and where it tells the agent how each ended.
     prompt: crate::PolkitPrompt,
@@ -798,6 +803,8 @@ impl App {
             pinned: Vec::new(),
             dock_labels: HashMap::new(),
             menu_for: None,
+            menu_x: 0.0,
+            icon_for: None,
             cc_pane: String::new(),
             asking: String::new(),
             joining: String::new(),
@@ -1519,11 +1526,11 @@ impl App {
             danger,
         };
         let (heading, rows) = match &tile {
-            Tile::Pin { index, windows } => {
+            Tile::Pin { index, .. } => {
                 let p = &self.pinned[*index];
                 let mut r = Vec::new();
                 if crate::dock::command_for(p).is_some() {
-                    r.push(row("open", if windows.is_empty() { "Open" } else { "Open new window" }, "plus", false, false));
+                    r.push(row("open", "Open new window", "plus", false, false));
                 }
                 if *index > 0 {
                     r.push(row("left", "Move left", "chevronLeft", !r.is_empty(), false));
@@ -1531,7 +1538,11 @@ impl App {
                 if *index + 1 < self.pinned.len() {
                     r.push(row("right", "Move right", "chevronRight", !r.is_empty() && *index == 0, false));
                 }
-                r.push(row("unpin", "Unpin from dock", "minus", !r.is_empty(), false));
+                r.push(row("icon", "Change icon…", "palette", !r.is_empty(), false));
+                if !matches!(p.key.as_str(), "appSettings" | "appFiles" | "appTerm" | "appMusic") {
+                    r.push(row("choose", "Choose application…", "grid", false, false));
+                }
+                r.push(row("unpin", "Unpin from dock", "minus", false, false));
                 r.push(row("settings", "Dock settings", "settings", true, false));
                 (p.label.clone(), r)
             }
@@ -1551,13 +1562,48 @@ impl App {
         b.panels.set_app_menu(model(rows));
         b.panels.set_dock_gap(g.breadth + g.edge + 10.0);
         self.menu_for = Some((bar, t));
+        self.menu_x = x;
         self.toggle_panel(shell, qh, bar, "appmenu", x);
     }
 
-    fn app_menu(&mut self, key: &str) {
+    /// The icon picker's cells for a search: every glyph whose name has the
+    /// text in it, the current one marked by the panel.
+    fn icon_cells(&mut self, query: &str) {
+        let q = query.trim().to_lowercase();
+        let cells: Vec<crate::IconCell> = crate::iconpick::all_names()
+            .into_iter()
+            .filter(|n| q.is_empty() || n.to_lowercase().contains(&q))
+            .map(|n| crate::IconCell { glyph: crate::glyphs::glyph(&n), name: n.into() })
+            .collect();
+        for b in &self.bars {
+            b.panels.set_icon_cells(model(cells.clone()));
+        }
+    }
+
+    fn app_menu(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, key: &str) {
         use crate::dock::Tile;
+        let Some((bar, t)) = self.menu_for else { return };
+        // Change icon… swaps this panel for the picker, in place.
+        if key == "icon" {
+            let Some(Tile::Pin { index, .. }) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned() else { return };
+            let p = self.pinned[index].clone();
+            self.menu_for = None;
+            self.icon_for = Some((bar, p.key.clone(), self.menu_x));
+            if let Some(b) = self.bars.get(bar) {
+                b.panels.set_icon_title(format!("Icon for {}", p.label).into());
+                b.panels.set_icon_current(p.icon.clone().into());
+                b.panels.set_icon_query("".into());
+            }
+            self.icon_cells("");
+            let x = self.menu_x;
+            self.open_panel(shell, qh, bar, "iconpick", x);
+            if let Some(b) = self.bars.get(bar) {
+                b.panels.invoke_focus_icons();
+            }
+            return;
+        }
+        self.menu_for = None;
         self.close_panel();
-        let Some((bar, t)) = self.menu_for.take() else { return };
         let Some(tile) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned() else { return };
         let raw = theme::raw();
         match (&tile, key) {
@@ -1575,6 +1621,12 @@ impl App {
             }
             (Tile::App { class, .. }, "pin") => crate::dock::pin_class(&raw, class),
             (_, "settings") => extras::spawn(&["hyprshell-settings", "Dock"]),
+            (Tile::Pin { index, .. }, "choose") => {
+                self.launcher.picking = Some(self.pinned[*index].key.clone());
+                if !self.launcher.is_open() {
+                    self.toggle_launcher(shell, qh);
+                }
+            }
             _ => {}
         }
         // A pin or an unpin changed theme.json: the tiles now.
@@ -2435,7 +2487,15 @@ impl App {
                     }
                 }
             }
-            Action::AppMenu(k) => self.app_menu(&k),
+            Action::AppMenu(k) => self.app_menu(shell, qh, &k),
+            Action::IconQuery(q) => self.icon_cells(&q),
+            Action::IconPick(n) => {
+                if let Some((_, key, _)) = self.icon_for.take() {
+                    crate::dock::set_icon(&theme::raw(), &key, &n);
+                }
+                self.close_panel();
+                self.dock_tiles();
+            }
             Action::CcPane(p) => self.set_cc_pane(&p),
             Action::Wifi(on) => self.daemon.send(json!({ "cmd": "net-wifi", "on": on })),
             Action::Bt(on) => self.daemon.send(json!({ "cmd": "bt-power", "on": on })),
@@ -3298,6 +3358,8 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_menu_pick, |id, sub| Action::MenuPick(id, sub));
     on!(on_menu_back, | | Action::MenuBack);
     on!(on_app_menu_pick, |k| Action::AppMenu(k.to_string()));
+    on!(on_icon_edited, |q| Action::IconQuery(q.to_string()));
+    on!(on_icon_pick, |n| Action::IconPick(n.to_string()));
     on!(on_show_pane, |k| Action::CcPane(k.to_string()));
     on!(on_wifi, |v| Action::Wifi(v));
     on!(on_bt, |v| Action::Bt(v));

@@ -207,3 +207,31 @@ pub fn move_pin(raw: &Value, key: &str, by: i32) {
         launcher::save_pinned(&list);
     }
 }
+
+/// Re-points a tile at another application, keeping its slot (Apps.assign).
+/// What it runs stays unless something new is given.
+pub fn assign(raw: &Value, key: &str, label: &str, exec: Vec<String>, icon: &str, cls: &str) {
+    let mut list = launcher::pinned(raw);
+    let Some(p) = list.iter_mut().find(|p| p.key == key) else { return };
+    let source = if !cls.is_empty() { cls.to_string() } else { exec.first().cloned().unwrap_or_default() };
+    if !label.is_empty() {
+        p.label = label.to_string();
+    }
+    if !icon.is_empty() {
+        p.icon = icon.to_string();
+    }
+    if !exec.is_empty() {
+        p.exec = exec;
+    }
+    p.matcher = if source.is_empty() { "$^".into() } else { format!("^{}$", regex::escape(&source)) };
+    launcher::save_pinned(&list);
+}
+
+/// Just the picture on a tile (Apps.setIcon).
+pub fn set_icon(raw: &Value, key: &str, icon: &str) {
+    let mut list = launcher::pinned(raw);
+    if let Some(p) = list.iter_mut().find(|p| p.key == key) {
+        p.icon = icon.to_string();
+        launcher::save_pinned(&list);
+    }
+}

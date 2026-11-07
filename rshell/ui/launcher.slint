@@ -57,6 +57,7 @@ export component Launcher inherits Window {
     in property <[RecentFile]> recent;
     in property <[LaunchItem]> results;
     in property <string> list-title;
+    in property <bool> picking;
     in property <string> user;
     in property <bool> power-open;
 
@@ -171,7 +172,7 @@ export component Launcher inherits Window {
                             if root.query == "": Text {
                                 x: 0;
                                 y: (parent.height - self.height) / 2;
-                                text: "Search apps and commands";
+                                text: root.picking ? "Choose an application for this dock slot" : "Search apps and commands";
                                 font-size: Theme.fs(round(root.title-size * root.zoom));
                                 font-weight: 400;
                                 color: Theme.ink3;

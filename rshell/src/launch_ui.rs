@@ -2,6 +2,7 @@
 //! what each key and click does. launcher.rs knows the apps; this is the
 //! part that drives ui/launcher.slint.
 
+use crate::theme;
 use crate::launcher::{self, Entry, Pinned, Recent};
 use crate::spring::{Motion, Spring};
 use crate::{extras, glyphs, LaunchItem, Launcher, RecentFile};
@@ -66,6 +67,8 @@ pub struct Host {
     per_page: usize,
     pub query_id: u64,
     pub wants_icons: bool,
+    /// Picker mode: the pinned tile an entry chosen here replaces.
+    pub picking: Option<String>,
 }
 
 fn model<T: Clone + 'static>(v: Vec<T>) -> ModelRc<T> {
@@ -137,6 +140,7 @@ impl Host {
             per_page: 9,
             query_id: 0,
             wants_icons: false,
+            picking: None,
         }
     }
 
@@ -183,6 +187,7 @@ impl Host {
         self.files.clear();
         self.ui.set_query("".into());
         self.ui.set_power_open(false);
+        self.ui.set_picking(self.picking.is_some());
         self.ui.set_grows(grows && m.springy && m.speed > 0.0);
         self.refresh();
         self.closing = false;
@@ -202,6 +207,7 @@ impl Host {
             return;
         }
         self.closing = true;
+        self.picking = None;
         self.morph.go(0.0, 300.0, 0.0, m);
         self.morph_y.go(0.0, 320.0, 0.0, m);
         self.fade.go(0.0, 140.0, 0.0, m);
@@ -333,7 +339,9 @@ impl Host {
         let listing = !q.is_empty() || self.show_all;
         let count = if listing { rows.len() } else { page.len() } as i32;
         self.selected = self.selected.clamp(0, (count - 1).max(0));
-        let title = if !q.is_empty() {
+        let title = if self.picking.is_some() {
+            "Pick an app — it replaces the tile you right-clicked".to_string()
+        } else if !q.is_empty() {
             format!("{} result{}", rows.len(), if rows.len() == 1 { "" } else { "s" })
         } else {
             "All apps".into()
@@ -373,8 +381,33 @@ impl Host {
         !self.query.trim().is_empty() || self.show_all
     }
 
+    /// Picker mode: the chosen entry takes the tile's slot (Launcher.qml's
+    /// assignToSlot) instead of starting.
+    fn assign(&mut self, label: &str, exec: Vec<String>, icon: &str, cls: &str) -> Wants {
+        if let Some(key) = self.picking.take() {
+            crate::dock::assign(&theme::raw(), &key, label, exec, icon, cls);
+        }
+        Wants::Close
+    }
+
     fn run_hit(&mut self, i: usize) -> Wants {
         let Some(h) = self.hits.get(i).cloned() else { return Wants::Nothing };
+        if self.picking.is_some() {
+            return match h {
+                Hit::App(i) => {
+                    let e = self.entries[i].clone();
+                    let cls = e.class.clone();
+                    let cls = if cls.is_empty() { e.id.trim_end_matches(".desktop").to_string() } else { cls };
+                    let icon = launcher::glyph_for_class(&cls).to_string();
+                    self.assign(&e.name, e.exec.clone(), &icon, &cls)
+                }
+                Hit::Command(k) => {
+                    let c = launcher::all_commands().find(|c| c.0 == k).expect("a listed command");
+                    self.assign(c.1, Vec::new(), c.2, "")
+                }
+                _ => Wants::Nothing,
+            };
+        }
         match h {
             Hit::App(i) => launcher::launch_entry(&self.entries[i]),
             Hit::Command(k) => return Wants::Command(k),
@@ -393,6 +426,18 @@ impl Host {
 
     fn run_pinned(&mut self, i: usize) -> Wants {
         let at = self.page as usize * self.per_page + i;
+        if self.picking.is_some() {
+            return match self.pinned.get(at).cloned() {
+                Some(p) => {
+                    let cls = p.exec.first().cloned().unwrap_or_default();
+                    self.assign(&p.label, p.exec.clone(), &p.icon, &cls)
+                }
+                None => match launcher::COMMANDS.get(at - self.pinned.len()) {
+                    Some(c) => self.assign(c.1, Vec::new(), c.2, ""),
+                    None => Wants::Nothing,
+                },
+            };
+        }
         if at >= self.pinned.len() {
             return match launcher::COMMANDS.get(at - self.pinned.len()) {
                 Some(c) => Wants::Command(c.0),
@@ -417,7 +462,7 @@ impl Host {
                 self.files.clear();
                 self.query_id += 1;
                 let q = self.query.trim().to_string();
-                if !q.is_empty() {
+                if !q.is_empty() && self.picking.is_none() {
                     daemon.send(serde_json::json!({ "cmd": "calc", "id": self.query_id, "query": q }));
                     daemon.send(serde_json::json!({ "cmd": "fs-search", "id": self.query_id, "query": self.query, "limit": 6 }));
                 }

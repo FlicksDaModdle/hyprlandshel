@@ -184,3 +184,41 @@ test_screenshot_screen() {
     cmd "screenshot screen"
     wait_for 5 sh -c 'ls "$HOME"/Pictures/Screenshots/Screenshot_*.png' >/dev/null 2>&1 || fail "no screenshot was saved: $(tail -n 3 "$TT_LOGS/shell.log")"
 }
+
+# Right-click a dock tile: its menu; Change icon… opens the icon picker, which
+# takes what is typed, and a click on a glyph changes the tile.
+test_dock_menu_icon_picker() {
+    start_shell
+    sleep 1
+    click 701 918 right
+    sleep 0.8
+    shot menu
+    click 668 781
+    sleep 0.8
+    keys "cam"
+    sleep 0.5
+    shot picker
+    # The first glyph found for "cam" is the one Return takes.
+    keys "" enter
+    sleep 0.6
+    shot changed
+    grep -q '"icon": *"camera"\|\\"icon\\":\\"camera' "$XDG_CONFIG_HOME/quickshell/hyprshell/theme.json" || fail "the tile didn't take the icon"
+}
+
+# Choose application… opens the launcher as a chooser; what is picked takes
+# the tile's slot instead of starting.
+test_dock_menu_choose_app() {
+    start_shell
+    sleep 1
+    click 746 918 right
+    sleep 0.8
+    click 732 781
+    sleep 1
+    shot chooser
+    keys "task"
+    sleep 0.5
+    keys "" enter
+    sleep 0.8
+    grep -q 'Task Manager' "$XDG_CONFIG_HOME/quickshell/hyprshell/theme.json" || fail "the tile didn't take the chosen entry"
+    shot chosen
+}

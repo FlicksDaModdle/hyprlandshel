@@ -20,6 +20,7 @@ mod daemon;
 mod dock;
 mod extras;
 mod glyphs;
+mod iconpick;
 mod greetd;
 mod greeter;
 mod ground;

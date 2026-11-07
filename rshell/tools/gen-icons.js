@@ -46,6 +46,6 @@ for (const name of Object.keys(icons)) {
     rs += `        ${q(k)} => g(${q(g.ink)}, ${q(g.acc)}, ${q(g.inkW)}, ${q(g.accW)}, ${q(g.fill)}, ${q(g.fillInk)}, `
         + `${d ? Number(d.cx).toFixed(3) : "0.0"}, ${d ? Number(d.cy).toFixed(3) : "0.0"}, ${d ? Number(d.r).toFixed(3) : "0.0"}, ${d && d.c === "acc" ? "true" : "false"}),\n`;
 }
-rs += "        _ => g(\"\", \"\", \"\", \"\", \"\", \"\", 12.0, 12.0, 2.0, false),\n    }\n}\n";
+rs += "        _ => crate::iconpick::user_glyph(name),\n    }\n}\n";
 fs.writeFileSync(path.join(__dirname, "../src/glyphs.rs"), rs);
 console.log(seen.size + " glyphs → rshell/ui/icons.slint");

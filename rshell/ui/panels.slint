@@ -1251,6 +1251,92 @@ component TrayMenu inherits PanelSurface {
     }
 }
 
+export struct IconCell { name: string, glyph: GlyphData }
+
+// Every glyph the shell has, to put one on a dock tile (IconPicker.qml).
+component IconPicker inherits PanelSurface {
+    in property <string> title;
+    in property <string> current;
+    in property <[IconCell]> cells;
+    in-out property <string> query;
+    callback edited(string);
+    callback pick(string);
+    public function focus-field() { field.focus(); }
+    property <int> columns: 8;
+    property <length> cell: 46px;
+    property <length> grid-h: min(6 * root.cell, max(root.cell, ceil(root.cells.length / root.columns) * root.cell));
+    preferred-width: root.columns * root.cell + 28px;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 10px;
+        Text {
+            height: 18px;
+            text: root.title;
+            overflow: elide;
+            font-size: Theme.fs(13);
+            font-weight: 600;
+            color: Theme.ink;
+        }
+        Rectangle {
+            height: 32px;
+            border-radius: Theme.r-sm;
+            background: Theme.sel;
+            border-width: 1px;
+            border-color: field.has-focus ? Theme.accent : Theme.edge;
+            Glyph { x: 10px; y: (parent.height - self.height) / 2; data: Icons.search; size: 14px; monochrome: true; ink: field.has-focus ? Theme.accent : Theme.ink3; }
+            FocusScope {
+                x: 32px;
+                width: parent.width - 42px;
+                capture-key-pressed(e) => {
+                    if (e.text == Key.Return && root.cells.length > 0) { root.pick(root.cells[0].name); return accept; }
+                    reject
+                }
+                field := TextInput {
+                    height: parent.height;
+                    vertical-alignment: center;
+                    text <=> root.query;
+                    font-size: Theme.fs(12);
+                    color: Theme.ink;
+                    selection-background-color: Theme.accent;
+                    selection-foreground-color: Theme.ink-on-accent;
+                    single-line: true;
+                    edited => { root.edited(self.text); }
+                }
+                if root.query == "": Text {
+                    y: (parent.height - self.height) / 2;
+                    text: "Search icons";
+                    font-size: Theme.fs(12);
+                    color: Theme.ink3;
+                }
+            }
+        }
+        Flickable {
+            height: root.grid-h;
+            content-height: ceil(root.cells.length / root.columns) * root.cell;
+            interactive: self.content-height > self.height;
+            for c[i] in root.cells: Rectangle {
+                x: mod(i, root.columns) * root.cell;
+                y: floor(i / root.columns) * root.cell;
+                width: root.cell;
+                height: root.cell;
+                border-radius: Theme.r-sm;
+                background: c.name == root.current ? Theme.sel : (ta.has-hover ? Theme.hover : transparent);
+                if c.name == root.current: Rectangle { border-radius: Theme.r-sm; border-width: 1px; border-color: Theme.accent; }
+                Glyph { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; data: c.glyph; size: 22px; ink: Theme.ink2; }
+                ta := TouchArea { mouse-cursor: pointer; clicked => { root.pick(c.name); } }
+            }
+        }
+        if root.cells.length == 0: Text {
+            height: 30px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            text: "No icon called that";
+            font-size: Theme.fs(12);
+            color: Theme.ink3;
+        }
+    }
+}
+
 export struct AppMenuRow { key: string, label: string, glyph: GlyphData, rule: bool, danger: bool }
 
 // The dock's menu for a tile (AppMenu.qml with Apps.menuFor's rows).
@@ -1376,6 +1462,14 @@ export component Panels inherits Window {
     in property <[AppMenuRow]> app-menu;
     in property <length> dock-gap: 80px;
     callback app-menu-pick(string);
+    // the icon picker
+    in property <string> icon-title;
+    in property <string> icon-current;
+    in property <[IconCell]> icon-cells;
+    in-out property <string> icon-query;
+    callback icon-edited(string);
+    callback icon-pick(string);
+    public function focus-icons() { icons.focus-field(); }
 
     background: transparent;
     default-font-family: Theme.font;
@@ -1482,6 +1576,16 @@ export component Panels inherits Window {
         anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner;
         panel-width: 230px;
         AppMenu { heading: root.app-menu-heading; rows: root.app-menu; pick(k) => { root.app-menu-pick(k); } }
+    }
+    Drop {
+        shown: root.which == "iconpick"; seam: false; from-bottom: true; bottom: root.dock-gap; screen-height: root.height;
+        anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner;
+        panel-width: 396px;
+        icons := IconPicker {
+            title: root.icon-title; current: root.icon-current; cells: root.icon-cells; query <=> root.icon-query;
+            edited(q) => { root.icon-edited(q); }
+            pick(n) => { root.icon-pick(n); }
+        }
     }
     Drop {
         shown: root.which == "tray"; seam: false; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 240px;
