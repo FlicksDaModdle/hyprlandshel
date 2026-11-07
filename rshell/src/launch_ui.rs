@@ -266,7 +266,7 @@ impl Host {
         let mut hits: Vec<Hit> = Vec::new();
         if q.is_empty() {
             let mut all: Vec<(String, Hit)> = self.entries.iter().enumerate().map(|(i, e)| (e.name.to_lowercase(), Hit::App(i))).collect();
-            all.extend(launcher::COMMANDS.iter().map(|c| (c.1.to_lowercase(), Hit::Command(c.0))));
+            all.extend(launcher::all_commands().map(|c| (c.1.to_lowercase(), Hit::Command(c.0))));
             all.sort_by(|a, b| a.0.cmp(&b.0));
             hits = all.into_iter().map(|(_, h)| h).collect();
         } else {
@@ -279,7 +279,7 @@ impl Host {
                     scored.push((s, e.name.to_lowercase(), Hit::App(i)));
                 }
             }
-            for c in launcher::COMMANDS.iter() {
+            for c in launcher::all_commands() {
                 if let Some(s) = launcher::score(c.1, c.3, &q) {
                     scored.push((s, c.1.to_lowercase(), Hit::Command(c.0)));
                 }
@@ -297,7 +297,7 @@ impl Host {
                     self.item(&e.name, &e.about, glyph, self.icons.get(&e.id))
                 }
                 Hit::Command(k) => {
-                    let c = launcher::COMMANDS.iter().find(|c| c.0 == *k).expect("a listed command");
+                    let c = launcher::all_commands().find(|c| c.0 == *k).expect("a listed command");
                     self.item(c.1, c.3, c.2, None)
                 }
                 Hit::File { path, dir } => {
@@ -314,12 +314,16 @@ impl Host {
                 ),
             })
             .collect();
-        let pages = self.pinned.len().div_ceil(self.per_page).max(1) as i32;
+        // The pinned apps, then the commands (Launcher.qml's pinnedItems).
+        let total = self.tile_total();
+        let pages = total.div_ceil(self.per_page).max(1) as i32;
         self.page = self.page.clamp(0, pages - 1);
-        let start = self.page as usize * self.per_page;
-        let page: Vec<LaunchItem> = self.pinned[start.min(self.pinned.len())..(start + self.per_page).min(self.pinned.len())]
-            .iter()
-            .map(|p| self.item(&p.label, "", &p.icon, None))
+        let start = (self.page as usize * self.per_page).min(total);
+        let page: Vec<LaunchItem> = (start..(start + self.per_page).min(total))
+            .map(|i| {
+                let (label, icon) = self.tile_look(i);
+                self.item(&label, "", &icon, None)
+            })
             .collect();
         let recent: Vec<RecentFile> = self
             .recent
@@ -346,9 +350,23 @@ impl Host {
         ui.set_selected(self.selected);
     }
 
+    fn tile_total(&self) -> usize {
+        self.pinned.len() + launcher::COMMANDS.len()
+    }
+
+    fn tile_look(&self, i: usize) -> (String, String) {
+        match self.pinned.get(i) {
+            Some(p) => (p.label.clone(), p.icon.clone()),
+            None => {
+                let c = &launcher::COMMANDS[i - self.pinned.len()];
+                (c.1.to_string(), c.2.to_string())
+            }
+        }
+    }
+
     fn page_items(&self) -> usize {
         let start = self.page as usize * self.per_page;
-        self.pinned.len().saturating_sub(start).min(self.per_page)
+        self.tile_total().saturating_sub(start).min(self.per_page)
     }
 
     fn listing(&self) -> bool {
@@ -374,7 +392,14 @@ impl Host {
     }
 
     fn run_pinned(&mut self, i: usize) -> Wants {
-        let Some(p) = self.pinned.get(self.page as usize * self.per_page + i).cloned() else { return Wants::Nothing };
+        let at = self.page as usize * self.per_page + i;
+        if at >= self.pinned.len() {
+            return match launcher::COMMANDS.get(at - self.pinned.len()) {
+                Some(c) => Wants::Command(c.0),
+                None => Wants::Nothing,
+            };
+        }
+        let Some(p) = self.pinned.get(at).cloned() else { return Wants::Nothing };
         let argv = if p.exec.is_empty() { launcher::tile_command(&p.key) } else { Some(p.exec.clone()) };
         if let Some(a) = argv {
             launcher::launch(&a, "");
@@ -411,11 +436,6 @@ impl Host {
                 if key_is(k, Key::Escape) {
                     if self.ui.get_power_open() {
                         self.ui.set_power_open(false);
-                    } else if !self.query.is_empty() {
-                        self.ui.set_query("".into());
-                        return self.act(Act::Edited(String::new()), daemon);
-                    } else if self.show_all {
-                        return self.act(Act::ShowAll(false), daemon);
                     } else {
                         return Wants::Close;
                     }

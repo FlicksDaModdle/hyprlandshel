@@ -265,17 +265,41 @@ pub fn files_command(path: &str) -> Vec<String> {
 
 /// The commands the launcher lists (config/Commands.qml), those this shell
 /// can do so far.
-pub const COMMANDS: [(&str, &str, &str, &str); 9] = [
+pub const COMMANDS: [(&str, &str, &str, &str); 22] = [
+    ("overview", "Overview", "panelsTopLeft", "Command · workspaces"),
+    ("settings", "Settings", "settings", "System · shell and device"),
     ("theme", "Theme", "palette", "Command · switch light / dark"),
+    ("capture", "Screenshot", "camera", "Command · region, window or screen — or a recording"),
+    ("record", "Record screen", "monitor", "Command · start or stop a screen recording"),
+    ("ocr", "Text from screen", "font", "Command · copy the words in a region"),
+    ("displays", "Displays", "monitor", "System · monitors and scaling"),
     ("tasks", "Task Manager", "cpu", "System · processes, performance, services, startup apps"),
     ("updates", "Updates", "package", "System · pending package updates"),
     ("timers", "Timers", "timer", "Command · timer, pomodoro, alarms"),
+    ("clipboard", "Clipboard history", "clipboard", "System · what you copied, to paste again"),
+    ("sound", "Sound", "volume", "System · output and input"),
+    ("network", "Network", "wifi", "System · wireless"),
+    ("bluetooth", "Bluetooth", "bluetooth", "System · paired devices"),
+    ("keybinds", "Keybinds", "keyboard", "Command · cheatsheet"),
+    ("osk", "On-screen keyboard", "keyboard", "Command · type without a keyboard"),
+    ("iconmaker", "Icon Maker", "palette", "Command · draw a shell icon"),
+    ("wallpaper", "Wallpaper", "image", "Command · change the ground"),
+    ("reload", "Reload shell", "refresh", "Command · re-read the QML tree"),
     ("lock", "Lock", "lock", "Session · lock the screen"),
     ("logout", "Log out", "logOut", "Session · end this session"),
     ("suspend", "Suspend", "moon", "Session · sleep"),
+];
+
+/// Searchable only, not tiles in the grid (Commands.qml has no tile for it).
+pub const SEARCH_ONLY: [(&str, &str, &str, &str); 2] = [
     ("reboot", "Restart", "reboot", "Session · restart"),
     ("poweroff", "Shut down", "power", "Session · shut down"),
 ];
+
+/// Every command the search can find.
+pub fn all_commands() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str, &'static str)> {
+    COMMANDS.iter().chain(SEARCH_ONLY.iter())
+}
 
 #[derive(Clone)]
 pub struct Recent {

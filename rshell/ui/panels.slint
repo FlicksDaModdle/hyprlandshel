@@ -1260,16 +1260,6 @@ component AppMenu inherits PanelSurface {
     callback pick(string);
     VerticalLayout {
         padding: 6px;
-        Text {
-            x: 11px;
-            height: 28px;
-            vertical-alignment: center;
-            text: root.heading;
-            overflow: elide;
-            font-size: Theme.fs(12);
-            font-weight: 700;
-            color: Theme.ink;
-        }
         for r in root.rows: VerticalLayout {
             if r.rule: Rectangle { height: 5px; Rule { y: 2px; } }
             MenuRow {
@@ -1277,7 +1267,7 @@ component AppMenu inherits PanelSurface {
                 icon: r.glyph;
                 has-icon: true;
                 danger: r.danger;
-                row-height: 32px;
+                row-height: 36px;
                 activated => { root.pick(r.key); }
             }
         }

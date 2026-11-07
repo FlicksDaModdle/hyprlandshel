@@ -1532,18 +1532,15 @@ impl App {
                     r.push(row("right", "Move right", "chevronRight", !r.is_empty() && *index == 0, false));
                 }
                 r.push(row("unpin", "Unpin from dock", "minus", !r.is_empty(), false));
-                if !windows.is_empty() {
-                    let n = windows.len();
-                    r.push(row("close", if n == 1 { "Close window" } else { "Close all windows" }, "x", true, true));
-                }
+                r.push(row("settings", "Dock settings", "settings", true, false));
                 (p.label.clone(), r)
             }
-            Tile::App { class, windows } => {
-                let mut r = vec![row("open", "Open new window", "plus", false, false), row("pin", "Pin to dock", "plus", true, false)];
-                if !windows.is_empty() {
-                    let n = windows.len();
-                    r.push(row("close", if n == 1 { "Close window" } else { "Close all windows" }, "x", true, true));
-                }
+            Tile::App { class, .. } => {
+                let r = vec![
+                    row("open", "Open new window", "plus", false, false),
+                    row("pin", "Pin to dock", "plus", true, false),
+                    row("settings", "Dock settings", "settings", true, false),
+                ];
                 (self.dock_labels.get(class).cloned().unwrap_or_else(|| class.clone()), r)
             }
             _ => return,
@@ -1577,11 +1574,7 @@ impl App {
                 crate::launcher::launch(&argv, "");
             }
             (Tile::App { class, .. }, "pin") => crate::dock::pin_class(&raw, class),
-            (Tile::Pin { windows, .. } | Tile::App { windows, .. }, "close") => {
-                for w in windows {
-                    crate::dock::close(w);
-                }
-            }
+            (_, "settings") => extras::spawn(&["hyprshell-settings", "Dock"]),
             _ => {}
         }
         // A pin or an unpin changed theme.json: the tiles now.
@@ -2651,7 +2644,17 @@ impl App {
                         "command -v hyprshell-tasks >/dev/null 2>&1 && exec hyprshell-tasks; \
                          for d in \"$HOME/.local/bin\" /usr/local/bin /usr/bin; do [ -x \"$d/hyprshell-tasks\" ] && exec \"$d/hyprshell-tasks\"; done",
                     ),
-                    other => self.power(other),
+                    "settings" => self.command(shell, qh, "openSettings"),
+                    "displays" => self.command(shell, qh, "openSettings Displays"),
+                    "sound" => self.command(shell, qh, "openSettings Sound"),
+                    "network" => self.command(shell, qh, "openSettings Network"),
+                    "bluetooth" => self.command(shell, qh, "openSettings Bluetooth"),
+                    "keybinds" => self.command(shell, qh, "openSettings Keybinds"),
+                    "wallpaper" => self.command(shell, qh, "openSettings Wallpaper"),
+                    "capture" => self.command(shell, qh, "toggleCapture"),
+                    "ocr" => self.command(shell, qh, "ocr"),
+                    "lock" | "logout" | "suspend" | "reboot" | "poweroff" => self.power(k),
+                    other => eprintln!("hyprshell-rs: the \"{other}\" command isn't in the Rust shell yet"),
                 }
             }
         }
