@@ -554,6 +554,8 @@ pub struct App {
     prompt: crate::PolkitPrompt,
     prompt_window: Rc<MinimalSoftwareWindow>,
     prompt_surface: Option<usize>,
+    /// The icon maker; its drawing is kept while the window is closed.
+    maker: crate::maker::Host,
     auth: Option<crate::polkit::Request>,
     auth_queue: Vec<crate::polkit::Request>,
     auth_user: usize,
@@ -784,6 +786,7 @@ impl App {
             prompt,
             prompt_window,
             prompt_surface: None,
+            maker: crate::maker::Host::new(),
             auth: None,
             auth_queue: Vec::new(),
             auth_user: 0,
@@ -1120,6 +1123,9 @@ impl App {
 
         // Esc on a panel.
         for (id, _) in std::mem::take(&mut shell.keys) {
+            if self.maker.surface == Some(id) {
+                self.close_maker(shell);
+            }
             if self.bars.iter().any(|b| b.panel_surface == Some(id)) {
                 self.close_panel();
             }
@@ -1659,6 +1665,7 @@ impl App {
         theme_into!(self.switcher.ui, &self.look, 1.0);
         theme_into!(self.osd, &self.look, 1.0);
         theme_into!(self.prompt, &self.look, 1.0);
+        theme_into!(self.maker.ui, &self.look, 1.0);
         let us = self.bars.get(self.focused_bar_cached).map(|b| self.look.screen_scale(&b.monitor)).unwrap_or(1.0);
         theme_into!(self.launcher.ui, &self.look, us);
         self.launcher.configure(&theme::raw(), us, &user_name());
@@ -2220,6 +2227,18 @@ impl App {
         if !self.prompt_acts.borrow().is_empty() {
             self.step_polkit(shell, qh);
         }
+        self.maker.poll();
+        if !self.maker.acts.borrow().is_empty() {
+            let acts: Vec<crate::maker::Act> = std::mem::take(&mut *self.maker.acts.borrow_mut());
+            for a in acts {
+                if self.maker.act(a) {
+                    self.close_maker(shell);
+                }
+                if let Some(kind) = self.maker.want.take() {
+                    self.maker.spawn_import(&kind, self.wake.try_clone().expect("wake"));
+                }
+            }
+        }
         if !self.snip_acts.borrow().is_empty() {
             self.step_capture(shell, qh);
         }
@@ -2704,6 +2723,7 @@ impl App {
                         "command -v hyprshell-tasks >/dev/null 2>&1 && exec hyprshell-tasks; \
                          for d in \"$HOME/.local/bin\" /usr/local/bin /usr/bin; do [ -x \"$d/hyprshell-tasks\" ] && exec \"$d/hyprshell-tasks\"; done",
                     ),
+                    "iconmaker" => self.open_maker(shell, qh),
                     "settings" => self.command(shell, qh, "openSettings"),
                     "displays" => self.command(shell, qh, "openSettings Displays"),
                     "sound" => self.command(shell, qh, "openSettings Sound"),
@@ -2799,6 +2819,33 @@ impl App {
                 }));
             }
             self.prompt.invoke_take_keys();
+        }
+    }
+
+    fn open_maker(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        if self.maker.surface.is_some() {
+            return;
+        }
+        theme_into!(self.maker.ui, &self.look, 1.0);
+        self.maker.refresh();
+        let bar = self.focused_bar();
+        let output = self.bars.get(bar).map(|b| b.output.clone());
+        self.maker.surface = Some(shell.add_window(qh, self.maker.window.clone(), output.as_ref(), &wl::Placement {
+            namespace: "quickshell:iconmaker",
+            layer: Layer::Overlay,
+            anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+            width: 0,
+            height: 0,
+            exclusive: -1,
+            keyboard: KeyboardInteractivity::Exclusive,
+        }));
+        self.maker.ui.invoke_focus_keys();
+    }
+
+    /// Takes the window down; the drawing stays for the next opening.
+    fn close_maker(&mut self, shell: &mut wl::Shell) {
+        if let Some(id) = self.maker.surface.take() {
+            shell.remove(id);
         }
     }
 
@@ -3217,6 +3264,12 @@ impl App {
                     argv.push(arg);
                 }
                 extras::spawn(&argv);
+            }
+            "iconMaker" => {
+                self.open_maker(shell, qh);
+                if !arg.is_empty() {
+                    self.maker.import_path(arg);
+                }
             }
             "toggleDnd" => self.act(shell, qh, Action::ToggleDnd),
             "volumeUp" => {

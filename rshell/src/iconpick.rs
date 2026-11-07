@@ -21,7 +21,7 @@ pub const NAMES: &[&str] = &[
     "pen", "chat", "mail", "calendar",
 ];
 
-fn path() -> std::path::PathBuf {
+pub fn path() -> std::path::PathBuf {
     let cfg = std::env::var_os("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"));

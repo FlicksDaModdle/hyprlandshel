@@ -222,3 +222,92 @@ test_dock_menu_choose_app() {
     grep -q 'Task Manager' "$XDG_CONFIG_HOME/quickshell/hyprshell/theme.json" || fail "the tile didn't take the chosen entry"
     shot chosen
 }
+
+# The icon maker: draw a circle on the grid, name it, save it; it lands in
+# icons.json with its shapes, ready for the picker and the dock.
+test_icon_maker_saves() {
+    start_shell
+    sleep 1
+    cmd iconMaker
+    sleep 1
+    shot open
+    click 412 338
+    drag 702 462 822 462
+    sleep 0.3
+    click 600 188
+    keys "testicon"
+    sleep 0.3
+    shot drawn
+    click 786 188
+    sleep 0.6
+    shot saved
+    grep -q '"testicon"' "$XDG_CONFIG_HOME/quickshell/hyprshell/icons.json" || fail "the icon wasn't saved"
+    grep -q '"kind": "circle"' "$XDG_CONFIG_HOME/quickshell/hyprshell/icons.json" || fail "the icon was saved without its shapes"
+}
+
+# The maker's extras: keys, a flip, undo, loading a saved icon, deleting it.
+test_icon_maker_extras() {
+    start_shell
+    sleep 1
+    cmd iconMaker
+    sleep 1
+    # Line tool by key, drawn from the top left towards the right.
+    keys "l"
+    drag 502 262 622 262
+    sleep 0.3
+    keys "v"
+    # Flip across the middle: it ends up on the right.
+    click 412 590
+    sleep 0.3
+    shot flipped
+    click 600 188
+    keys "linetest"
+    click 786 188
+    sleep 0.5
+    # The Delete key takes the selected shape away.
+    click 702 262
+    keys "" delete
+    sleep 0.3
+    shot deleted
+    tt-kbd "" >/dev/null 2>&1
+}
+
+# Importing a picture: an SVG from the clipboard or a file is read as the curves it is,
+# a bitmap is traced; either becomes editable shapes in the drawing.
+test_icon_maker_import() {
+    start_shell
+    sleep 1
+    cmd iconMaker
+    sleep 1
+    printf '%s' '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M50 5a45 45 0 1 0 0 90a45 45 0 1 0 0-90zM50 25a25 25 0 1 1 0 50a25 25 0 1 1 0-50z"/><rect x="42" y="42" width="16" height="16" rx="4"/></svg>' > "$TT_ROOT/ring.svg"
+    echo "$TT_ROOT/ring.svg" > "$XDG_RUNTIME_DIR/maker-test-picture"
+    click 1115 488
+    sleep 1
+    shot svg
+    # A bitmap is traced: a white disc with a hole on transparent, as a PNG.
+    python3 - "$TT_ROOT/ring.png" <<'PY'
+import struct, sys, zlib
+w = h = 120
+rows = b""
+for y in range(h):
+    rows += b"\x00"
+    for x in range(w):
+        d = ((x - 60) ** 2 + (y - 60) ** 2) ** 0.5
+        on = 18 < d < 50
+        rows += bytes((0, 0, 0, 255 if on else 0))
+def chunk(t, d):
+    c = struct.pack(">I", len(d)) + t + d
+    return c + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+open(sys.argv[1], "wb").write(png)
+PY
+    echo "$TT_ROOT/ring.png" > "$XDG_RUNTIME_DIR/maker-test-picture"
+    click 1051 188
+    click 1115 488
+    sleep 1
+    shot bitmap
+    # The Threshold and Detail steppers retrace in place.
+    click 1135 520
+    sleep 0.5
+    shot retraced
+}

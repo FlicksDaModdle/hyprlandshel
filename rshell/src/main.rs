@@ -28,6 +28,8 @@ mod hypr;
 mod icons;
 mod launch_ui;
 mod launcher;
+mod maker;
+mod tracing;
 mod lock;
 mod mpris;
 mod notify;

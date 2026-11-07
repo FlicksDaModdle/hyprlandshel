@@ -259,6 +259,17 @@ pub fn tile_command(key: &str) -> Option<Vec<String>> {
     })
 }
 
+/// The Files app run for one dialog: the chosen path on stdout (nothing and
+/// exit 1 if cancelled). `filters` are "Name:*.a *.b".
+pub fn files_pick_command(filters: &[&str]) -> Vec<String> {
+    let mut c: Vec<String> = vec!["sh".into(), "-c".into(), FILES_FINDER.into(), "pick-files".into(), "--pick".into()];
+    for f in filters {
+        c.push("--filter".into());
+        c.push((*f).into());
+    }
+    c
+}
+
 pub fn files_command(path: &str) -> Vec<String> {
     vec!["sh".into(), "-c".into(), FILES_FINDER.into(), "open-files".into(), path.into()]
 }

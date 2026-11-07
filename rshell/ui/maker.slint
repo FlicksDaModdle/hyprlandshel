@@ -1,0 +1,317 @@
+// The icon maker (modules/iconmaker/IconMaker.qml): a card in the middle of
+// a dimmed screen, a 24-unit grid to draw on, the shapes' controls beside it
+// and the glyph at the sizes it will be seen at.
+import { Icons, GlyphData } from "icons.slint";
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+
+export struct MakerShape { glyph: GlyphData, selected: bool }
+
+component Btn inherits Rectangle {
+    in property <string> label;
+    in property <bool> on;
+    in property <bool> active: true;
+    in property <bool> primary;
+    callback clicked();
+    height: 28px;
+    width: max(28px, l.preferred-width + 20px);
+    border-radius: Theme.r-sm;
+    background: primary ? Theme.accent : (on ? Theme.sel : (t.has-hover && active ? Theme.sel : Theme.hover));
+    border-width: on && !primary ? 1px : 0px;
+    border-color: Theme.accent;
+    opacity: active ? 1 : 0.45;
+    l := Text {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        text: root.label;
+        font-size: Theme.fs(12);
+        font-weight: 600;
+        color: root.primary ? Theme.ink-on-accent : Theme.ink;
+    }
+    t := TouchArea { enabled: root.active; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component Stepper inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    callback minus();
+    callback plus();
+    spacing: 6px;
+    Text { width: 70px; vertical-alignment: center; text: root.label; font-size: Theme.fs(12); color: Theme.ink2; }
+    Btn { label: "−"; clicked => { root.minus(); } }
+    Text { width: 44px; horizontal-alignment: center; vertical-alignment: center; text: root.value; font-size: Theme.fs(12); color: Theme.ink; }
+    Btn { label: "+"; clicked => { root.plus(); } }
+}
+
+export component IconMakerWin inherits Window {
+    in property <[MakerShape]> shapes;
+    in property <string> tool: "select";
+    in property <bool> next-acc;
+    in property <bool> next-fill;
+    in property <bool> loaded;
+    in property <bool> dirty;
+    in property <bool> bitmap;
+    in property <bool> busy;
+    in property <string> thr;
+    in property <string> det;
+    in property <int> next-sw: 2;
+    in property <bool> can-undo;
+    in property <bool> can-redo;
+    in property <bool> has-sel;
+    in property <string> sel-kind;
+    in property <bool> sel-acc;
+    in property <int> sel-sw;
+    in property <bool> sel-fill;
+    in property <string> sel-rot;
+    in property <string> sel-r;
+    in property <string> sel-a0;
+    in property <string> sel-a1;
+    in property <float> bx;
+    in property <float> by;
+    in property <float> bw;
+    in property <float> bh;
+    in property <string> problem;
+    in property <string> status;
+    in property <[string]> saved;
+    in-out property <string> name;
+    callback pointer(int, float, float);
+    callback tool-set(string);
+    callback colour(bool);
+    callback weight(int);
+    callback sel-colour(bool);
+    callback sel-weight(int);
+    callback fill-toggle();
+    callback step(string, int);
+    callback act(string);
+    callback load(string);
+    callback save();
+    callback done();
+    callback name-edited();
+    callback key(string, bool, bool);
+    callback next-fill-toggle();
+    callback import-act(string);
+    callback import-step(string, int);
+    public function focus-name() { field.focus(); }
+    public function focus-keys() { kb.focus(); }
+
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-weight: 500;
+    default-font-size: Theme.fs(12);
+
+    property <length> cell: 20px;
+    property <length> canvas: 24 * root.cell;
+
+    Rectangle { background: #0000004d; }
+    TouchArea {}
+
+    kb := FocusScope {
+    capture-key-pressed(e) => {
+        if (e.modifiers.control || !field.has-focus) {
+            root.key(e.text, e.modifiers.control, e.modifiers.shift);
+            if (e.modifiers.control || e.text == Key.Delete || e.text == Key.Backspace || e.text == Key.UpArrow || e.text == Key.DownArrow || e.text == Key.LeftArrow || e.text == Key.RightArrow) { return accept; }
+        }
+        reject
+    }
+    card := Rectangle {
+        width: 820px;
+        height: 640px;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: Theme.r-cap;
+        // Opaque: this is not one of the namespaces the compositor blurs, and a
+        // translucent card with nothing blurred behind it can't be read.
+        background: Theme.panel.with-alpha(1.0);
+        border-width: 1px;
+        border-color: Theme.edge;
+
+        // Header: the name, Save, close.
+        Text { x: 20px; y: 18px; text: root.dirty ? "Icon maker •" : "Icon maker"; font-size: Theme.fs(14); font-weight: 700; color: Theme.ink; }
+        Rectangle {
+            x: 150px;
+            y: 12px;
+            width: 240px;
+            height: 32px;
+            border-radius: Theme.r-sm;
+            background: Theme.hover;
+            border-width: field.has-focus ? 2px : 1px;
+            border-color: field.has-focus ? Theme.accent : Theme.edge;
+            FocusScope {
+                x: 10px;
+                width: parent.width - 20px;
+                field := TextInput {
+                    height: parent.height;
+                    vertical-alignment: center;
+                    text <=> root.name;
+                    font-size: Theme.fs(12.5);
+                    color: Theme.ink;
+                    single-line: true;
+                    edited => { root.name-edited(); }
+                }
+                if root.name == "": Text { y: (parent.height - self.height) / 2; text: "Name"; font-size: Theme.fs(12.5); color: Theme.ink3; }
+            }
+        }
+        Btn { x: 400px; y: 14px; label: "Save"; primary: true; active: root.problem == ""; clicked => { root.save(); } }
+        Text {
+            x: 470px;
+            y: 20px;
+            width: 160px;
+            text: root.status != "" ? root.status : root.problem;
+            overflow: elide;
+            font-size: Theme.fs(11.5);
+            color: root.status != "" ? Theme.accent : Theme.ink3;
+        }
+        Btn { x: parent.width - self.width - 16px; y: 14px; label: "Close"; clicked => { root.done(); } }
+        Btn { x: parent.width - 150px; y: 14px; label: "New"; clicked => { root.act("new"); } }
+        if root.loaded: Btn { x: parent.width - 210px; y: 14px; label: "Delete icon"; clicked => { root.act("delete-saved"); } }
+
+        // Tools.
+        VerticalLayout {
+            x: 16px;
+            y: 62px;
+            width: 76px;
+            alignment: start;
+            spacing: 6px;
+            for t in ["select", "line", "rect", "circle", "ellipse", "arc", "dot"]: Btn {
+                label: t == "select" ? "Select" : (t == "rect" ? "Box" : (t == "line" ? "Line" : (t == "circle" ? "Circle" : (t == "ellipse" ? "Ellipse" : (t == "arc" ? "Arc" : "Dot")))));
+                on: root.tool == t;
+                clicked => { root.tool-set(t); }
+            }
+            Rectangle { height: 8px; }
+            Btn { label: "Undo"; active: root.can-undo; clicked => { root.act("undo"); } }
+            Btn { label: "Redo"; active: root.can-redo; clicked => { root.act("redo"); } }
+            Btn { label: "Clear"; clicked => { root.act("clear"); } }
+            Btn { label: "Flip ↔"; clicked => { root.act("flipx"); } }
+            Btn { label: "Flip ↕"; clicked => { root.act("flipy"); } }
+        }
+
+        // The canvas: the grid, the shapes, the selection.
+        board := Rectangle {
+            x: 104px;
+            y: 62px;
+            width: root.canvas;
+            height: root.canvas;
+            border-radius: 6px;
+            background: Theme.hover;
+            border-width: 1px;
+            border-color: Theme.edge;
+            clip: true;
+            for i in 25: Rectangle {
+                x: i * root.cell;
+                y: 0;
+                width: 1px;
+                height: root.canvas;
+                background: i == 12 ? Theme.edge : (mod(i, 4) == 0 ? Theme.sel : Theme.hover);
+            }
+            for i in 25: Rectangle {
+                x: 0;
+                y: i * root.cell;
+                width: root.canvas;
+                height: 1px;
+                background: i == 12 ? Theme.edge : (mod(i, 4) == 0 ? Theme.sel : Theme.hover);
+            }
+            for s in root.shapes: Glyph { x: 0; y: 0; data: s.glyph; size: root.canvas; }
+            if root.has-sel: Rectangle {
+                x: root.bx * root.cell - 3px;
+                y: root.by * root.cell - 3px;
+                width: root.bw * root.cell + 6px;
+                height: root.bh * root.cell + 6px;
+                border-width: 1px;
+                border-color: Theme.accent;
+                background: transparent;
+            }
+            ta := TouchArea {
+                mouse-cursor: root.tool == "select" ? MouseCursor.default : MouseCursor.crosshair;
+                pointer-event(e) => {
+                    if (e.button == PointerEventButton.left) {
+                        if (e.kind == PointerEventKind.down) { root.pointer(0, self.mouse-x / root.cell, self.mouse-y / root.cell); }
+                        if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { root.pointer(2, self.mouse-x / root.cell, self.mouse-y / root.cell); }
+                    }
+                }
+                moved => { root.pointer(1, self.mouse-x / root.cell, self.mouse-y / root.cell); }
+            }
+        }
+
+        // The inspector.
+        VerticalLayout {
+            x: 104px + root.canvas + 18px;
+            y: 62px;
+            width: parent.width - self.x - 16px;
+            alignment: start;
+            spacing: 8px;
+            Text { text: "NEXT SHAPE"; font-size: Theme.fs(11); font-weight: 600; letter-spacing: 0.9px; color: Theme.ink2; }
+            HorizontalLayout {
+                spacing: 6px;
+                Btn { label: "Ink"; on: !root.next-acc; clicked => { root.colour(false); } }
+                Btn { label: "Accent"; on: root.next-acc; clicked => { root.colour(true); } }
+                Btn { label: "2"; on: root.next-sw == 2; clicked => { root.weight(2); } }
+                Btn { label: "3"; on: root.next-sw == 3; clicked => { root.weight(3); } }
+            }
+            Btn { label: "Filled"; on: root.next-fill; clicked => { root.next-fill-toggle(); } }
+            Rectangle { height: 4px; }
+            Text { text: root.has-sel ? "SELECTED · " + root.sel-kind : "SELECTED"; font-size: Theme.fs(11); font-weight: 600; letter-spacing: 0.9px; color: Theme.ink2; }
+            if root.has-sel: VerticalLayout {
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    Btn { label: "Ink"; on: !root.sel-acc; clicked => { root.sel-colour(false); } }
+                    Btn { label: "Accent"; on: root.sel-acc; clicked => { root.sel-colour(true); } }
+                    Btn { label: "2"; on: root.sel-sw == 2; clicked => { root.sel-weight(2); } }
+                    Btn { label: "3"; on: root.sel-sw == 3; clicked => { root.sel-weight(3); } }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Btn { label: "Filled"; on: root.sel-fill; clicked => { root.fill-toggle(); } }
+                    Btn { label: "Copy"; clicked => { root.act("duplicate"); } }
+                    Btn { label: "Delete"; clicked => { root.act("delete"); } }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Btn { label: "Forward"; clicked => { root.act("forward"); } }
+                    Btn { label: "Back"; clicked => { root.act("back"); } }
+                }
+                Stepper { label: "Turn"; value: root.sel-rot + "°"; minus => { root.step("rot", -1); } plus => { root.step("rot", 1); } }
+                if root.sel-kind == "rect": Stepper { label: "Corners"; value: root.sel-r; minus => { root.step("r", -1); } plus => { root.step("r", 1); } }
+                if root.sel-kind == "arc": Stepper { label: "From"; value: root.sel-a0 + "°"; minus => { root.step("a0", -1); } plus => { root.step("a0", 1); } }
+                if root.sel-kind == "arc": Stepper { label: "To"; value: root.sel-a1 + "°"; minus => { root.step("a1", -1); } plus => { root.step("a1", 1); } }
+            }
+            Rectangle { height: 4px; }
+            Text { text: "PREVIEW"; font-size: Theme.fs(11); font-weight: 600; letter-spacing: 0.9px; color: Theme.ink2; }
+            HorizontalLayout {
+                spacing: 18px;
+                alignment: start;
+                for sz in [16, 22, 32, 48]: Rectangle {
+                    width: sz * 1px;
+                    height: 48px;
+                    for s in root.shapes: Glyph { x: 0; y: (48px - sz * 1px) / 2; data: s.glyph; size: sz * 1px; }
+                }
+            }
+            Rectangle { height: 4px; }
+            Text { text: root.busy ? "IMPORT · working…" : "IMPORT A PICTURE"; font-size: Theme.fs(11); font-weight: 600; letter-spacing: 0.9px; color: Theme.ink2; }
+            HorizontalLayout {
+                spacing: 6px;
+                Btn { label: "Image or SVG…"; active: !root.busy; clicked => { root.import-act("browse"); } }
+                Btn { label: "Clipboard"; active: !root.busy; clicked => { root.import-act("clipboard"); } }
+            }
+            if root.bitmap: Stepper { label: "Threshold"; value: root.thr; minus => { root.import-step("thr", -1); } plus => { root.import-step("thr", 1); } }
+            if root.bitmap: Stepper { label: "Detail"; value: root.det; minus => { root.import-step("det", -1); } plus => { root.import-step("det", 1); } }
+        }
+
+        // The icons already made.
+        Text { x: 20px; y: 62px + root.canvas + 14px; text: "YOURS"; font-size: Theme.fs(11); font-weight: 600; letter-spacing: 0.9px; color: Theme.ink2; }
+        Flickable {
+            x: 20px;
+            y: 62px + root.canvas + 34px;
+            width: parent.width - 40px;
+            height: 34px;
+            interactive: false;
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for n in root.saved: Btn { label: n; on: n == root.name; clicked => { root.load(n); } }
+                if root.saved.length == 0: Text { vertical-alignment: center; text: "Nothing saved yet"; font-size: Theme.fs(12); color: Theme.ink3; }
+            }
+        }
+    }
+    }
+}
