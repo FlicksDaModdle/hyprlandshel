@@ -136,3 +136,51 @@ test_screen_corners() {
     sleep 0.8
     shot three
 }
+
+# Super+Shift+S: the screen freezes, a rectangle dragged over it is saved
+# to ~/Pictures/Screenshots at its own size, put on the clipboard and
+# announced, and the frozen screen goes.
+test_screenshot_region() {
+    start_shell
+    rm -rf "${HOME:?}/Pictures/Screenshots"
+    cmd "screenshot region"
+    sleep 1.2
+    tt-ptr 100 100 hover 0.4 >/dev/null 2>&1
+    tt-ptr 300 250 hover 0.6 >/dev/null 2>&1
+    shot frozen
+    drag 200 200 600 500
+    wait_for 5 sh -c 'ls "$HOME"/Pictures/Screenshots/Screenshot_*.png' >/dev/null 2>&1 || fail "no screenshot was saved: $(tail -n 3 "$TT_LOGS/shell.log")"
+    local f
+    f=$(ls "$HOME"/Pictures/Screenshots/Screenshot_*.png 2>/dev/null | head -n 1)
+    [ -n "$f" ] || return
+    local size
+    size=$(python3 -c 'import struct,sys; d=open(sys.argv[1],"rb").read(24); print("%dx%d" % struct.unpack(">II", d[16:24]))' "$f")
+    [ "$size" = 400x300 ] || fail "the screenshot is $size, not the 400x300 dragged"
+    wait_for 3 in_log wl-copy.log 'image/png' || fail "the screenshot wasn't put on the clipboard"
+    wait_for 3 in_log notify-send.log 'Screenshot saved' || fail "the screenshot wasn't announced"
+    sleep 0.5
+    shot after
+}
+
+# Esc puts everything back, and nothing is saved.
+test_screenshot_cancel() {
+    start_shell
+    rm -rf "${HOME:?}/Pictures/Screenshots"
+    cmd "screenshot region"
+    sleep 1.2
+    # Letting go of Super+Shift+S is a Super release: no launcher for it.
+    cmd toggleLauncher
+    keys "" esc
+    sleep 0.6
+    shot cancelled
+    ! ls "$HOME"/Pictures/Screenshots/Screenshot_*.png >/dev/null 2>&1 || fail "a cancelled screenshot was saved"
+    alive hyprshell-rs || fail "the shell went away"
+}
+
+# Shift+Print: the whole screen, at once.
+test_screenshot_screen() {
+    start_shell
+    rm -rf "${HOME:?}/Pictures/Screenshots"
+    cmd "screenshot screen"
+    wait_for 5 sh -c 'ls "$HOME"/Pictures/Screenshots/Screenshot_*.png' >/dev/null 2>&1 || fail "no screenshot was saved: $(tail -n 3 "$TT_LOGS/shell.log")"
+}

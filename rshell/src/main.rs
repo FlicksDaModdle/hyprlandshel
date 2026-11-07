@@ -39,6 +39,7 @@ mod sys;
 mod testhooks;
 mod theme;
 mod audiofx;
+mod capture;
 mod tray;
 mod wl;
 

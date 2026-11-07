@@ -1,0 +1,4 @@
+#!/bin/sh
+# A stand-in for the tests: what was put on the clipboard, and how.
+echo "wl-copy $*" >> "${TT_LOGS:-/tmp}/wl-copy.log"
+cat > "${TT_LOGS:-/tmp}/clipboard"

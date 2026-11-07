@@ -477,6 +477,12 @@ pub struct App {
     look_stamp: Option<SystemTime>,
     /// theme.json changed (theme::watch): looked at now, not at the next tick.
     look_changed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Screenshots (capture.rs) and the frozen screen's surfaces.
+    capture: crate::capture::Capture,
+    snips: Vec<SnipWin>,
+    snip_mode: String,
+    snip_kind: crate::capture::Kind,
+    snip_acts: Rc<RefCell<Vec<SnipAct>>>,
     sound: daemon::State,
     daemon: daemon::Daemon,
     /// The equalizer, noise suppression and listening (AudioFx.qml).
@@ -852,6 +858,11 @@ impl App {
             lock_wanted: false,
             logind: crate::lock::watch_logind(&wake),
             battery_now: None,
+            capture: crate::capture::Capture::new(&wake),
+            snips: Vec::new(),
+            snip_mode: "region".into(),
+            snip_kind: crate::capture::Kind::Shot,
+            snip_acts: Rc::new(RefCell::new(Vec::new())),
             wake,
         };
         app.refresh_hypr();
@@ -1148,6 +1159,7 @@ impl App {
         self.step_ground(shell);
         self.step_polkit(shell, qh);
         self.step_switcher(shell, qh);
+        self.step_capture(shell, qh);
         self.step_osd(shell, dt);
         if self.ident_until.is_some_and(|t| Instant::now() >= t) {
             self.ident_until = None;
@@ -2156,6 +2168,9 @@ impl App {
         if !self.prompt_acts.borrow().is_empty() {
             self.step_polkit(shell, qh);
         }
+        if !self.snip_acts.borrow().is_empty() {
+            self.step_capture(shell, qh);
+        }
         let sw: Vec<crate::switch_ui::Act> = std::mem::take(&mut *self.switch_acts.borrow_mut());
         let any = !sw.is_empty();
         for a in sw {
@@ -2941,12 +2956,155 @@ impl App {
         }
     }
 
+    // ── screenshots ──────────────────────────────────────────────────────
+
+    /// `screenshot region|window|screen|all`, Print (the toolbar's place,
+    /// the frozen screen for now) and Text from screen.
+    fn screenshot(&mut self, _shell: &mut wl::Shell, what: &str) {
+        if !self.snips.is_empty() {
+            return;
+        }
+        let raw = theme::raw();
+        let delay = raw["captureDelay"].as_u64().unwrap_or(0);
+        let pointer = raw["capturePointer"].as_bool().unwrap_or(false);
+        let outputs: Vec<String> = self.bars.iter().map(|b| b.monitor.clone()).collect();
+        match what {
+            "screen" => {
+                let bar = self.focused_bar();
+                let out = self.bars.get(bar).map(|b| b.monitor.clone());
+                self.capture.whole(out, delay, pointer);
+            }
+            "all" => self.capture.whole(None, delay, pointer),
+            "ocr" => {
+                self.snip_kind = crate::capture::Kind::Ocr;
+                self.capture.freeze(crate::capture::Kind::Ocr, outputs, 0, false);
+            }
+            _ => {
+                self.snip_kind = crate::capture::Kind::Shot;
+                let mode = if what == "window" { "window" } else { "region" };
+                self.snip_mode = mode.to_string();
+                self.capture.freeze(crate::capture::Kind::Shot, outputs, delay, pointer);
+            }
+        }
+    }
+
+    fn step_capture(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        use crate::capture::Msg;
+        while let Ok(m) = self.capture.rx.try_recv() {
+            match m {
+                Msg::Failed(why) => {
+                    crate::capture::trace(&format!("failed: {why}"));
+                    self.capture.finished();
+                    self.close_snips(shell);
+                    crate::capture::say("Screenshot failed", &why);
+                }
+                Msg::Done => self.capture.finished(),
+                Msg::Frozen { kind, stills, wins, mons } => {
+                    self.close_snips(shell);
+                    let focused = self.bars.get(self.focused_bar()).map(|b| b.monitor.clone()).unwrap_or_default();
+                    let mode = if kind == crate::capture::Kind::Ocr { "region".to_string() } else { self.snip_mode.clone() };
+                    for st in stills {
+                        let Some(output) = self.bars.iter().find(|b| b.monitor == st.output).map(|b| b.output.clone()) else { continue };
+                        let (lw, lh) = shell.output_logical(&output);
+                        let Ok(v) = crate::Snipper::new() else { continue };
+                        let Some(adapter) = crate::platform::take_adapter() else { continue };
+                        let us = self.look.screen_scale(&st.output);
+                        theme_into!(v, &self.look, us);
+                        let ratio = if lw > 0 { st.pixels.width() as f32 / lw as f32 } else { 1.0 };
+                        v.set_still(slint::Image::from_rgba8(st.pixels.clone()));
+                        v.set_ratio(ratio);
+                        v.set_ocr(kind == crate::capture::Kind::Ocr);
+                        v.set_mode(mode.clone().into());
+                        let here = st.output == focused;
+                        v.set_focused_here(here);
+                        let size = (lw as f32, lh as f32);
+                        let boxes = crate::capture::boxes_on(&wins, &mons, &st.output, size);
+                        v.on_window_at(move |x, y| {
+                            let (x, y, w, h) = crate::capture::window_at(&boxes, x, y, size);
+                            crate::SnipBox { x, y, w, h }
+                        });
+                        v.set_g_crop(crate::glyphs::glyph("crop"));
+                        v.set_g_window(crate::glyphs::glyph("square"));
+                        v.set_g_screen(crate::glyphs::glyph("monitor"));
+                        v.set_g_close(crate::glyphs::glyph("x"));
+                        let i = self.snips.len();
+                        let q = self.snip_acts.clone();
+                        v.on_take(move |x, y, w, h| q.borrow_mut().push(SnipAct::Take(i, x, y, w, h)));
+                        let q = self.snip_acts.clone();
+                        v.on_cancel(move || q.borrow_mut().push(SnipAct::Cancel));
+                        let q = self.snip_acts.clone();
+                        v.on_mode_changed(move |m| q.borrow_mut().push(SnipAct::Mode(i, m.to_string())));
+                        let id = shell.add_window(qh, adapter, Some(&output), &wl::Placement {
+                            namespace: "quickshell:snip",
+                            layer: Layer::Overlay,
+                            anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+                            width: 0,
+                            height: 0,
+                            exclusive: -1,
+                            keyboard: if here { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None },
+                        });
+                        let _ = v.show();
+                        self.snips.push(SnipWin { view: v, id, still: st.pixels, ratio });
+                    }
+                    if self.snips.is_empty() {
+                        self.capture.finished();
+                        crate::capture::say("Screenshot failed", "The frozen screen could not be put up");
+                    } else {
+                        crate::capture::trace(&format!("frozen screen up on {} output(s)", self.snips.len()));
+                    }
+                }
+            }
+        }
+        let acts: Vec<SnipAct> = std::mem::take(&mut *self.snip_acts.borrow_mut());
+        for a in acts {
+            match a {
+                SnipAct::Cancel => {
+                    crate::capture::trace("cancelled");
+                    self.close_snips(shell);
+                    self.capture.finished();
+                }
+                SnipAct::Mode(from, m) => {
+                    self.snip_mode = m.clone();
+                    for (i, s) in self.snips.iter().enumerate() {
+                        if i != from {
+                            s.view.set_mode(m.clone().into());
+                        }
+                    }
+                }
+                SnipAct::Take(i, x, y, w, h) => {
+                    let Some(s) = self.snips.get(i) else { continue };
+                    let (still, ratio) = (s.still.clone(), s.ratio);
+                    self.close_snips(shell);
+                    // Still busy until the cut is saved.
+                    self.capture.cut(self.snip_kind, still, (x, y, w, h), ratio);
+                }
+            }
+        }
+    }
+
+    fn close_snips(&mut self, shell: &mut wl::Shell) {
+        for s in self.snips.drain(..) {
+            let _ = s.view.hide();
+            shell.remove(s.id);
+        }
+    }
+
     /// A line from hyprshell.cmd: what the keybinds send the shell.
     fn command(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, line: &str) {
         let line = line.trim();
         let (name, arg) = line.split_once(' ').map(|(a, b)| (a, b.trim())).unwrap_or((line, ""));
         match name {
-            "toggleLauncher" => self.toggle_launcher(shell, qh),
+            "toggleLauncher" => {
+                // Not during a screenshot: Super on its own is a release
+                // bind, and letting go of Super+Shift+S would open the
+                // launcher over the very thing the shot was of.
+                if !self.snips.is_empty() || self.capture.busy || self.capture.shot_at.is_some_and(|t| t.elapsed() < Duration::from_millis(1500)) {
+                    eprintln!("toggleLauncher ignored during a screenshot");
+                } else {
+                    self.toggle_launcher(shell, qh);
+                }
+            }
+            "screenshot" | "toggleCapture" | "ocr" => self.screenshot(shell, if name == "screenshot" { arg } else { name }),
             "altTab" => {
                 match if arg.is_empty() { "next" } else { arg } {
                     "next" | "prev" => {
@@ -3129,4 +3287,19 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_forget, |n| Action::Forget(n.to_string()));
     on!(on_device, |m| Action::Device(m.to_string()));
     on!(on_pair_answer, |a| Action::PairAnswer(a));
+}
+
+/// One output's frozen screen.
+struct SnipWin {
+    view: crate::Snipper,
+    id: usize,
+    still: slint::SharedPixelBuffer<slint::Rgba8Pixel>,
+    ratio: f32,
+}
+
+/// What the frozen screen was asked, this frame.
+enum SnipAct {
+    Take(usize, f32, f32, f32, f32),
+    Cancel,
+    Mode(usize, String),
 }

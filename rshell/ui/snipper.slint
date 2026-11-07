@@ -1,0 +1,310 @@
+// The frozen screen (src/capture.rs): Super+Shift+S, Print, and Text from
+// screen. Every output was captured the moment the key went down; each
+// gets a full-screen surface showing its own still picture, dimmed, and
+// the choosing happens over that, so a menu, a video or a tooltip holds
+// still the way Windows' Snipping Tool does it. The toolbar at the top
+// switches what is chosen:
+//
+//   Rectangle   drag out an area; it is taken on release
+//   Window      the window under the pointer lights up; click to take it
+//   Screen      the whole screen; click to take it
+//
+// What is chosen is cut from the still picture at full resolution, not
+// captured again. Esc, a right click or × puts everything back.
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+import { GlyphData } from "icons.slint";
+
+export struct SnipBox { x: length, y: length, w: length, h: length }
+
+component ModeButton inherits Rectangle {
+    in property <string> label;
+    in property <GlyphData> glyph;
+    in property <bool> on;
+    callback clicked();
+    height: 42px;
+    width: 16px + 7px + t.preferred-width + 30px;
+    border-radius: self.height / 2;
+    background: !on && ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: 120ms; }
+    row := HorizontalLayout {
+        x: 15px;
+        width: parent.width - 30px;
+        height: parent.height;
+        spacing: 7px;
+        Glyph { y: (42px - 16px) / 2; data: root.glyph; size: 16px; monochrome: true; ink: root.on ? Theme.ink-on-accent : Theme.ink; }
+        t := Text { vertical-alignment: center; text: root.label; font-size: 13px; font-weight: 600; color: root.on ? Theme.ink-on-accent : Theme.ink; }
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+export component Snipper inherits Window {
+    in property <image> still;
+    in property <bool> focused-here;
+    in property <bool> ocr;
+    in-out property <string> mode: "region";
+    in property <GlyphData> g-crop;
+    in property <GlyphData> g-window;
+    in property <GlyphData> g-screen;
+    in property <GlyphData> g-close;
+    // Physical pixels per logical one, for the size label.
+    in property <float> ratio: 1;
+    callback take(length, length, length, length);
+    callback cancel();
+    callback mode-changed(string);
+    background: black;
+    forward-focus: keys;
+    default-font-family: Theme.font;
+
+    property <length> ax;
+    property <length> ay;
+    property <length> px: -1px;
+    property <length> py: -1px;
+    property <bool> dragging;
+    property <bool> taken;
+
+    // The window under the pointer, cut to the screen (capture.rs): the
+    // smallest one there, so a dialog over its parent wins. Empty when none.
+    pure callback window-at(length, length) -> SnipBox;
+    property <SnipBox> pick: {
+        if root.mode == "screen" {
+            return root.px >= 0 ? { x: 0px, y: 0px, w: root.width, h: root.height } : { x: 0px, y: 0px, w: 0px, h: 0px };
+        }
+        if root.mode == "window" {
+            if root.px < 0 { return { x: 0px, y: 0px, w: 0px, h: 0px }; }
+            return root.window-at(root.px, root.py);
+        }
+        if !root.dragging { return { x: 0px, y: 0px, w: 0px, h: 0px }; }
+        return { x: min(root.ax, root.px), y: min(root.ay, root.py), w: abs(root.px - root.ax), h: abs(root.py - root.ay) };
+    }
+    property <bool> has-pick: pick.w >= 1px && pick.h >= 1px;
+    property <length> cr: min(root.mode == "region" ? 12px : root.mode == "window" ? Theme.r-cap : 0px, pick.w / 2, pick.h / 2);
+
+    Image {
+        width: root.width;
+        height: root.height;
+        source: root.still;
+        image-fit: fill;
+    }
+
+    // The dimming, with the chosen part left clear: four pieces around it
+    // (a cut-out path left streaks behind as it was redrawn in parts).
+    property <brush> dim: root.has-pick ? #00000075 : #00000052;
+    property <length> hx: root.has-pick ? pick.x : 0px;
+    property <length> hy: root.has-pick ? pick.y : 0px;
+    property <length> hw: root.has-pick ? pick.w : 0px;
+    property <length> hh: root.has-pick ? pick.h : 0px;
+    Rectangle { x: 0; y: 0; width: root.width; height: root.hy; background: root.dim; }
+    Rectangle { x: 0; y: root.hy + root.hh; width: root.width; height: max(0px, root.height - root.hy - root.hh); background: root.dim; }
+    Rectangle { x: 0; y: root.hy; width: root.hx; height: root.hh; background: root.dim; }
+    Rectangle { x: root.hx + root.hw; y: root.hy; width: max(0px, root.width - root.hx - root.hw); height: root.hh; background: root.dim; }
+
+    if root.has-pick: Rectangle {
+        x: pick.x - 4px;
+        y: pick.y - 4px;
+        width: pick.w + 8px;
+        height: pick.h + 8px;
+        border-radius: root.cr + 4px;
+        border-width: 4px;
+        border-color: Theme.accent.with-alpha(0.22);
+    }
+    if root.has-pick: Rectangle {
+        x: pick.x - 1px;
+        y: pick.y - 1px;
+        width: pick.w + 2px;
+        height: pick.h + 2px;
+        border-radius: root.cr + 1px;
+        border-width: 2px;
+        border-color: Theme.accent;
+    }
+    if root.has-pick && root.mode == "region" && pick.w > 24px && pick.h > 24px: Rectangle {
+        for i in 4: Rectangle {
+            x: (Math.mod(i, 2) == 0 ? pick.x : pick.x + pick.w) - 6px;
+            y: (i < 2 ? pick.y : pick.y + pick.h) - 6px;
+            width: 12px;
+            height: 12px;
+            border-radius: 6px;
+            background: white;
+            border-width: 2.5px;
+            border-color: Theme.accent;
+        }
+    }
+    // The size, in the picture's own pixels.
+    if root.has-pick && root.mode == "region": Rectangle {
+        property <bool> below: pick.y + pick.h + 30px + 14px < root.height;
+        width: size-row.preferred-width + 22px;
+        height: 30px;
+        x: max(8px, min(root.width - self.width - 8px, pick.x + (pick.w - self.width) / 2));
+        y: below ? pick.y + pick.h + 12px : max(8px, pick.y - 30px - 12px);
+        border-radius: 15px;
+        background: Theme.panel.with-alpha(1);
+        border-width: 1px;
+        border-color: Theme.edge;
+        size-row := HorizontalLayout {
+            x: 11px;
+            height: parent.height;
+            spacing: 7px;
+            Glyph { y: (30px - 13px) / 2; data: root.g-crop; size: 13px; monochrome: true; ink: Theme.ink2; }
+            Text {
+                vertical-alignment: center;
+                text: round(pick.w / 1px * root.ratio) + " × " + round(pick.h / 1px * root.ratio);
+                font-size: 12px;
+                font-weight: 600;
+                color: Theme.ink;
+            }
+        }
+    }
+    // Crosshairs while nothing is being dragged.
+    Rectangle {
+        visible: root.mode == "region" && !root.dragging && root.px >= 0;
+        x: root.px; y: 0; width: 1px; height: root.height; background: #ffffff59;
+    }
+    Rectangle {
+        visible: root.mode == "region" && !root.dragging && root.px >= 0;
+        x: 0; y: root.py; width: root.width; height: 1px; background: #ffffff59;
+    }
+
+    TouchArea {
+        width: root.width;
+        height: root.height;
+        moved => {
+            root.px = self.mouse-x;
+            root.py = self.mouse-y;
+        }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.move {
+                root.px = self.mouse-x;
+                root.py = self.mouse-y;
+            }
+            if e.kind == PointerEventKind.down {
+                if e.button == PointerEventButton.right { root.cancel(); return; }
+                if e.button != PointerEventButton.left { return; }
+                root.px = self.mouse-x;
+                root.py = self.mouse-y;
+                if root.mode == "region" {
+                    root.ax = self.mouse-x;
+                    root.ay = self.mouse-y;
+                    root.dragging = true;
+                }
+            }
+            if e.kind == PointerEventKind.up && e.button == PointerEventButton.left {
+                root.finish();
+            }
+        }
+    }
+
+    function finish() {
+        if root.taken { return; }
+        if root.mode == "region" {
+            let r = root.pick;
+            root.dragging = false;
+            if r.w >= 3px && r.h >= 3px {
+                root.taken = true;
+                root.take(r.x, r.y, r.w, r.h);
+            }
+        } else if root.has-pick {
+            root.taken = true;
+            root.take(root.pick.x, root.pick.y, root.pick.w, root.pick.h);
+        }
+    }
+    public function reset() {
+        root.taken = false;
+        root.dragging = false;
+        root.px = -1px;
+        root.py = -1px;
+    }
+
+    // The toolbar: on the screen with the keyboard.
+    if root.focused-here: Rectangle {
+        x: (root.width - bar.width) / 2 - 2px;
+        y: 24px;
+        width: bar.width + 4px;
+        height: bar.height + 4px;
+        border-radius: self.height / 2;
+        background: #00000047;
+    }
+    bar := Rectangle {
+        visible: root.focused-here;
+        x: (root.width - self.width) / 2;
+        y: 20px;
+        width: bar-row.preferred-width + 16px;
+        height: 54px;
+        border-radius: self.height / 2;
+        background: Theme.panel.with-alpha(1);
+        border-width: 1px;
+        border-color: Theme.edge;
+        // Swallows clicks, so one on the toolbar never starts a drag.
+        TouchArea { }
+        Rectangle {
+            x: 8px + (root.mode == "region" ? b1.x : root.mode == "window" ? b2.x : b3.x);
+            y: (54px - 42px) / 2;
+            width: root.mode == "region" ? b1.width : root.mode == "window" ? b2.width : b3.width;
+            height: 42px;
+            border-radius: 21px;
+            background: Theme.accent;
+            animate x, width { duration: 260ms; easing: ease-out-back; }
+        }
+        bar-row := HorizontalLayout {
+            x: 8px;
+            height: parent.height;
+            spacing: 4px;
+            alignment: start;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            b1 := ModeButton { label: "Rectangle"; glyph: root.g-crop; on: root.mode == "region"; clicked => { root.set-mode("region"); } }
+            b2 := ModeButton { label: "Window"; glyph: root.g-window; on: root.mode == "window"; clicked => { root.set-mode("window"); } }
+            b3 := ModeButton { label: "Screen"; glyph: root.g-screen; on: root.mode == "screen"; clicked => { root.set-mode("screen"); } }
+            Rectangle { width: 9px; Rectangle { x: 4px; y: (42px - 26px) / 2; width: 1px; height: 26px; background: Theme.rule; } }
+            Rectangle {
+                width: 42px;
+                height: 42px;
+                border-radius: 21px;
+                background: close-ta.has-hover ? Theme.sel : transparent;
+                Glyph { x: 13px; y: 13px; data: root.g-close; size: 16px; monochrome: true; ink: Theme.ink2; }
+                close-ta := TouchArea { clicked => { root.cancel(); } }
+            }
+        }
+    }
+    if root.focused-here && !root.dragging: Rectangle {
+        property <length> w: hint.preferred-width + 24px;
+        x: (root.width - self.w) / 2;
+        y: 20px + 54px + 12px;
+        width: self.w;
+        height: 28px;
+        border-radius: 14px;
+        background: #00000080;
+        hint := Text {
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            text: (root.ocr ? "Text: " : "")
+                + (root.mode == "region" ? "Drag over what you want" : root.mode == "window" ? "Click a window" : "Click a screen")
+                + " · Esc to cancel";
+            font-size: 12px;
+            font-weight: 500;
+            color: white;
+        }
+    }
+
+    function set-mode(m: string) {
+        root.mode = m;
+        root.dragging = false;
+        root.mode-changed(m);
+    }
+
+    keys := FocusScope {
+        width: 0;
+        height: 0;
+        key-pressed(e) => {
+            if e.text == Key.Escape { root.cancel(); return accept; }
+            if e.text == "r" || e.text == "R" { root.set-mode("region"); return accept; }
+            if e.text == "w" || e.text == "W" { root.set-mode("window"); return accept; }
+            if e.text == "s" || e.text == "S" { root.set-mode("screen"); return accept; }
+            if (e.text == Key.Return) && root.mode == "screen" && !root.taken {
+                root.taken = true;
+                root.take(0, 0, root.width, root.height);
+                return accept;
+            }
+            reject
+        }
+    }
+}
