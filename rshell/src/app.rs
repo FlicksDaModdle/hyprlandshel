@@ -45,6 +45,7 @@ pub enum Action {
     NoteAct(i32, String),
     NotesClear,
     ToggleDnd,
+    OpenSettingsPane(String),
     DriveOpen(String),
     DriveMount(String),
     DriveEject(String),
@@ -1712,12 +1713,15 @@ impl App {
     }
 
     fn refresh_session(&mut self) {
-        let version = hypr::json("j/version")["tag"].as_str().unwrap_or("").trim_start_matches('v').to_string();
+        // The tag as Hyprland gives it, "v0.57.0": SysInfo.compositorVersion.
+        let version = hypr::json("j/version")["tag"].as_str().unwrap_or("").trim().to_string();
         let monitors = self.bars.len();
         for b in &self.bars {
             b.panels.set_uptime(uptime().into());
             b.panels.set_hyprland(if version.is_empty() { "Hyprland".into() } else { format!("Hyprland {version}").into() });
-            b.panels.set_session(format!("Hyprland · {} display{}", monitors, if monitors == 1 { "" } else { "s" }).into());
+            // SysInfo.sessionLabel.
+            let wm = if version.is_empty() { "hyprland".to_string() } else { format!("hyprland {version}") };
+            b.panels.set_session(format!("{wm} · wayland · {}", if monitors == 1 { "1 monitor".to_string() } else { format!("{monitors} monitors") }).into());
         }
     }
 
@@ -2149,7 +2153,8 @@ impl App {
         self.last_frame = Instant::now();
         let Some(host) = self.bars.get_mut(bar) else { return };
         host.panels.set_anchor(x);
-        host.panels.set_top(host.height + 10.0);
+        // Appearance.panelTop: the bar's setting plus a gap, not the scaled surface.
+        host.panels.set_top(self.look.bar_height + 10.0);
         // Switching from one panel to another starts the new one afresh.
         let fresh = host.panels.get_which().as_str() != which;
         host.panels.set_which(which.into());
@@ -2418,6 +2423,10 @@ impl App {
                     }
                 }
                 self.refresh_notes(shell, qh);
+            }
+            Action::OpenSettingsPane(p) => {
+                self.close_panel();
+                self.command(shell, qh, &format!("openSettings {p}"));
             }
             Action::ToggleDnd => {
                 theme::set("dnd", json!(!self.look.dnd));
@@ -3407,6 +3416,7 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_note_act, |id, k| Action::NoteAct(id, k.to_string()));
     on!(on_notes_clear, | | Action::NotesClear);
     on!(on_toggle_dnd, | | Action::ToggleDnd);
+    on!(on_open_notif_settings, | | Action::OpenSettingsPane("Notifications".into()));
     on!(on_media_prev, | | Action::Media(mpris::Cmd::Prev));
     on!(on_media_toggle, | | Action::Media(mpris::Cmd::Toggle));
     on!(on_media_next, | | Action::Media(mpris::Cmd::Next));

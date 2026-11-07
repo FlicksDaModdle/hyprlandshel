@@ -38,7 +38,7 @@ component FaceScan inherits Rectangle {
     property <color> tone: root.state == "found" ? root.accent : root.state == "failed" ? root.bad : root.ink;
     property <float> s: root.size / 1px;
     property <float> lw: max(2, root.s * 0.045);
-    property <float> r: root.s / 2 - root.lw;
+    property <float> r: root.s / 2 - root.lw / 2;
     property <float> c: root.s / 2;
     property <float> looking: root.state == "looking" ? 1 : 0;
     property <float> tick: root.state == "found" ? 1 : 0;
@@ -79,10 +79,22 @@ component FaceScan inherits Rectangle {
         background: transparent;
         opacity: 0.22 * (1 - root.tick);
     }
-    if root.show-face && root.tick < 0.99: Rectangle {
+    // Resting dots: all in one path, so they are drawn smoothly rather than each
+    // snapped to whole pixels (a dot is a pixel or two across at the small size).
+    if root.show-face && root.tick < 0.99 && root.state != "looking": Path {
+        width: root.size;
+        height: root.size;
+        viewbox-width: root.s;
+        viewbox-height: root.s;
+        fill: root.tone;
+        stroke-width: 0px;
+        opacity: (root.dim < 0.01 ? 0.75 : 0.35) * (1 - 0.6 * root.dim) * (1 - root.tick);
+        commands: "M \{0.4250 * root.s - root.dr} \{0.2750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s + root.dr} \{0.2750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s - root.dr} \{0.2750 * root.s} Z M \{0.5000 * root.s - root.dr} \{0.2750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s + root.dr} \{0.2750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s - root.dr} \{0.2750 * root.s} Z M \{0.5750 * root.s - root.dr} \{0.2750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s + root.dr} \{0.2750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s - root.dr} \{0.2750 * root.s} Z M \{0.3500 * root.s - root.dr} \{0.3500 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.3500 * root.s + root.dr} \{0.3500 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.3500 * root.s - root.dr} \{0.3500 * root.s} Z M \{0.4250 * root.s - root.dr} \{0.3500 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s + root.dr} \{0.3500 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s - root.dr} \{0.3500 * root.s} Z M \{0.5000 * root.s - root.dr} \{0.3500 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s + root.dr} \{0.3500 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s - root.dr} \{0.3500 * root.s} Z M \{0.5750 * root.s - root.dr} \{0.3500 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s + root.dr} \{0.3500 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s - root.dr} \{0.3500 * root.s} Z M \{0.6500 * root.s - root.dr} \{0.3500 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.6500 * root.s + root.dr} \{0.3500 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.6500 * root.s - root.dr} \{0.3500 * root.s} Z M \{0.3500 * root.s - root.dr} \{0.4250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.3500 * root.s + root.dr} \{0.4250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.3500 * root.s - root.dr} \{0.4250 * root.s} Z M \{0.4250 * root.s - root.dr} \{0.4250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s + root.dr} \{0.4250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s - root.dr} \{0.4250 * root.s} Z M \{0.5000 * root.s - root.dr} \{0.4250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s + root.dr} \{0.4250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s - root.dr} \{0.4250 * root.s} Z M \{0.5750 * root.s - root.dr} \{0.4250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s + root.dr} \{0.4250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s - root.dr} \{0.4250 * root.s} Z M \{0.6500 * root.s - root.dr} \{0.4250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.6500 * root.s + root.dr} \{0.4250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.6500 * root.s - root.dr} \{0.4250 * root.s} Z M \{0.3500 * root.s - root.dr} \{0.5000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.3500 * root.s + root.dr} \{0.5000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.3500 * root.s - root.dr} \{0.5000 * root.s} Z M \{0.4250 * root.s - root.dr} \{0.5000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s + root.dr} \{0.5000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s - root.dr} \{0.5000 * root.s} Z M \{0.5000 * root.s - root.dr} \{0.5000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s + root.dr} \{0.5000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s - root.dr} \{0.5000 * root.s} Z M \{0.5750 * root.s - root.dr} \{0.5000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s + root.dr} \{0.5000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s - root.dr} \{0.5000 * root.s} Z M \{0.6500 * root.s - root.dr} \{0.5000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.6500 * root.s + root.dr} \{0.5000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.6500 * root.s - root.dr} \{0.5000 * root.s} Z M \{0.4250 * root.s - root.dr} \{0.5750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s + root.dr} \{0.5750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s - root.dr} \{0.5750 * root.s} Z M \{0.5000 * root.s - root.dr} \{0.5750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s + root.dr} \{0.5750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s - root.dr} \{0.5750 * root.s} Z M \{0.5750 * root.s - root.dr} \{0.5750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s + root.dr} \{0.5750 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s - root.dr} \{0.5750 * root.s} Z M \{0.4250 * root.s - root.dr} \{0.7250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s + root.dr} \{0.7250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s - root.dr} \{0.7250 * root.s} Z M \{0.5000 * root.s - root.dr} \{0.7250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s + root.dr} \{0.7250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s - root.dr} \{0.7250 * root.s} Z M \{0.5750 * root.s - root.dr} \{0.7250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s + root.dr} \{0.7250 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s - root.dr} \{0.7250 * root.s} Z M \{0.3500 * root.s - root.dr} \{0.8000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.3500 * root.s + root.dr} \{0.8000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.3500 * root.s - root.dr} \{0.8000 * root.s} Z M \{0.4250 * root.s - root.dr} \{0.8000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s + root.dr} \{0.8000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.4250 * root.s - root.dr} \{0.8000 * root.s} Z M \{0.5000 * root.s - root.dr} \{0.8000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s + root.dr} \{0.8000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5000 * root.s - root.dr} \{0.8000 * root.s} Z M \{0.5750 * root.s - root.dr} \{0.8000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s + root.dr} \{0.8000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.5750 * root.s - root.dr} \{0.8000 * root.s} Z M \{0.6500 * root.s - root.dr} \{0.8000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.6500 * root.s + root.dr} \{0.8000 * root.s} A \{root.dr} \{root.dr} 0 1 0 \{0.6500 * root.s - root.dr} \{0.8000 * root.s} Z";
+    }
+    if root.show-face && root.tick < 0.99 && root.state == "looking": Rectangle {
         background: transparent;
         opacity: 1 - root.tick;
-        for k in 81: Rectangle {
+        for k in 81: Path {
             property <float> u: 0.2 + mod(k, 9) * 0.075;
             property <float> v: 0.2 + floor(k / 9) * 0.075;
             property <float> hx: (u - 0.5) / 0.17;
@@ -93,12 +105,16 @@ component FaceScan inherits Rectangle {
             property <float> t: (v - root.sweep) / 0.09;
             property <float> alpha: root.sweep > -0.5 ? 0.28 + 0.72 * exp(-t * t) : (root.dim < 0.01 ? 0.75 : 0.35);
             visible: inside;
+            // A circle drawn as a vector, so a dot a pixel or two across stays round.
             x: (u * root.s - root.dr) * 1px;
             y: (v * root.s - root.dr) * 1px;
             width: 2 * root.dr * 1px;
-            height: self.width;
-            border-radius: self.width / 2;
-            background: root.tone;
+            height: 2 * root.dr * 1px;
+            viewbox-width: 2;
+            viewbox-height: 2;
+            commands: "M 0 1 A 1 1 0 1 0 2 1 A 1 1 0 1 0 0 1 Z";
+            fill: root.tone;
+            stroke-width: 0px;
             opacity: alpha * (1 - 0.6 * root.dim);
         }
     }
