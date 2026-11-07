@@ -22,7 +22,33 @@ pub fn pam_helper() -> Option<std::path::PathBuf> {
     if let Some(p) = std::env::var_os("HYPRSHELL_TEST_PAM") {
         return Some(p.into());
     }
-    std::env::current_exe().ok()
+    Some(own_exe())
+}
+
+/// This running program, as something that can be started again. Not
+/// `current_exe()`: when the file on disk is replaced while the shell runs (an
+/// update, a rebuild), that says "…/hyprshell-rs (deleted)", which cannot be
+/// started, and the lock screen then had no way to check a password ("Could
+/// not start authentication"). /proc/self/exe always names the program that is
+/// running, whatever has happened to its file.
+pub fn own_exe() -> std::path::PathBuf {
+    let proc = std::path::PathBuf::from("/proc/self/exe");
+    if proc.exists() {
+        proc
+    } else {
+        std::env::current_exe().unwrap_or_else(|_| "hyprshell-rs".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_helper_is_started_from_the_running_program_not_a_path_that_may_be_gone() {
+        assert_eq!(super::own_exe(), std::path::PathBuf::from("/proc/self/exe"));
+        // And that does start a program: this one, as a child.
+        let out = std::process::Command::new(super::own_exe()).arg("--list").output();
+        assert!(out.is_ok(), "it can be started: {out:?}");
+    }
 }
 
 /// Face unlock set up, as a test says (HYPRSHELL_TEST_FACE=1 or 0); None
