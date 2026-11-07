@@ -1,10 +1,9 @@
 // FacePanel.qml: Settings → Login screen → Your face. A dark stage with
-// the webcam in a circle while a face is being added, what is happening in
-// words, the buttons that add one, and the looks Howdy knows you by.
-// What it shows comes from src/face.rs.
+// the webcam behind a circle while a face is being added, what is happening
+// in words, the buttons that add one, and the looks Howdy knows you by.
+// What it shows comes from src/face.rs. FaceScan is common/FaceScan.qml.
 
-import { Theme, Icon } from "@kit";
-import { PillButton } from "common.slint";
+import { Theme } from "@kit";
 
 export struct FaceLook { id: int, label: string, sub: string }
 
@@ -26,14 +25,120 @@ export global FaceUi {
     callback remove(int);
 }
 
-component Corner inherits Rectangle {
-    in property <color> ink;
-    in property <bool> right;
-    in property <bool> bottom;
-    width: 26px;
-    height: 26px;
-    Rectangle { x: root.right ? parent.width - 3px : 0px; y: 0; width: 3px; height: parent.height; background: root.ink; border-radius: 2px; }
-    Rectangle { x: 0; y: root.bottom ? parent.height - 3px : 0px; width: parent.width; height: 3px; background: root.ink; border-radius: 2px; }
+// The scan mark: three arcs round it (turning while it looks, closing when
+// it has found you), a faint ring inside, a face of dots that a line sweeps
+// over, and a tick when it's done.
+component FaceScan inherits Rectangle {
+    in property <length> size: 64px;
+    in property <color> ink: white;
+    in property <color> accent: Theme.accent;
+    in property <bool> show-face: true;
+    in property <string> state: "idle";
+    property <color> bad: #ff6b61;
+    property <color> tone: root.state == "found" ? root.accent : root.state == "failed" ? root.bad : root.ink;
+    property <float> s: root.size / 1px;
+    property <float> lw: max(2, root.s * 0.045);
+    property <float> r: root.s / 2 - root.lw;
+    property <float> c: root.s / 2;
+    property <float> looking: root.state == "looking" ? 1 : 0;
+    property <float> tick: root.state == "found" ? 1 : 0;
+    property <float> dim: root.state == "failed" ? 1 : 0;
+    property <float> t9: animation-tick() / 9000ms;
+    property <float> t16: animation-tick() / 1600ms;
+    // Turning, and the sweep's place (-1 when it isn't looking).
+    property <float> turn: root.looking > 0 ? (root.t9 - floor(root.t9)) * 6.2831853 : 0;
+    property <float> sweep: root.looking > 0 ? (root.t16 - floor(root.t16)) * 1.4 - 0.2 : -1;
+    property <float> gap: root.state == "found" ? 0 : 0.55;
+    property <float> dr: max(1, root.s * 0.022);
+    width: root.size;
+    height: root.size;
+    background: transparent;
+
+    for i in 3: Path {
+        width: root.size;
+        height: root.size;
+        viewbox-width: root.s;
+        viewbox-height: root.s;
+        stroke: root.tone;
+        stroke-width: root.lw * 1px;
+        stroke-line-cap: round;
+        fill: transparent;
+        property <float> a0: root.turn + i * 2.0943951 + root.gap / 2;
+        property <float> a1: root.turn + (i + 1) * 2.0943951 - root.gap / 2;
+        commands: "M \{root.c + root.r * cos(a0 * 1rad)} \{root.c + root.r * sin(a0 * 1rad)} A \{root.r} \{root.r} 0 0 1 \{root.c + root.r * cos(a1 * 1rad)} \{root.c + root.r * sin(a1 * 1rad)}";
+    }
+    // The faint ring inside.
+    Rectangle {
+        x: (root.s / 2 - (root.r - root.lw * 1.6)) * 1px;
+        y: self.x;
+        width: 2 * (root.r - root.lw * 1.6) * 1px;
+        height: self.width;
+        border-radius: self.width / 2;
+        border-width: max(1, root.lw * 0.5) * 1px;
+        border-color: root.tone;
+        background: transparent;
+        opacity: 0.22 * (1 - root.tick);
+    }
+    if root.show-face && root.tick < 0.99: Rectangle {
+        background: transparent;
+        opacity: 1 - root.tick;
+        for k in 81: Rectangle {
+            property <float> u: 0.2 + mod(k, 9) * 0.075;
+            property <float> v: 0.2 + floor(k / 9) * 0.075;
+            property <float> hx: (u - 0.5) / 0.17;
+            property <float> hy: (v - 0.42) / 0.2;
+            property <float> sx: (u - 0.5) / 0.31;
+            property <float> sy: (v - 0.92) / 0.22;
+            property <bool> inside: (hx * hx + hy * hy <= 1 || (v > 0.68 && sx * sx + sy * sy <= 1)) && sqrt((u - 0.5) * (u - 0.5) + (v - 0.5) * (v - 0.5)) < 0.36;
+            property <float> t: (v - root.sweep) / 0.09;
+            property <float> alpha: root.sweep > -0.5 ? 0.28 + 0.72 * exp(-t * t) : (root.dim < 0.01 ? 0.75 : 0.35);
+            visible: inside;
+            x: (u * root.s - root.dr) * 1px;
+            y: (v * root.s - root.dr) * 1px;
+            width: 2 * root.dr * 1px;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: root.tone;
+            opacity: alpha * (1 - 0.6 * root.dim);
+        }
+    }
+    if root.tick > 0.01: Path {
+        width: root.size;
+        height: root.size;
+        viewbox-width: root.s;
+        viewbox-height: root.s;
+        stroke: root.tone;
+        stroke-width: root.lw * 1.3 * 1px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        fill: transparent;
+        commands: "M \{root.s * 0.33} \{root.s * 0.52} L \{root.s * 0.45} \{root.s * 0.64} L \{root.s * 0.68} \{root.s * 0.39}";
+    }
+}
+
+// common/NetButton.qml.
+component NetButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary;
+    in property <bool> danger;
+    in property <bool> active: true;
+    callback clicked();
+    width: t.preferred-width + 26px;
+    height: 30px;
+    border-radius: Theme.r-sm;
+    opacity: root.active ? 1 : 0.45;
+    background: root.primary ? Theme.accent : (ta.has-hover && root.active ? Theme.sel : Theme.hover);
+    border-width: root.primary ? 0px : 1px;
+    border-color: Theme.rule;
+    t := Text {
+        x: 13px;
+        y: (parent.height - self.height) / 2;
+        text: root.label;
+        font-size: Theme.fs(12);
+        font-weight: 600;
+        color: root.primary ? Theme.ink-on-accent : (root.danger ? Theme.accent : Theme.ink);
+    }
+    ta := TouchArea { enabled: root.active; mouse-cursor: root.active ? pointer : default; clicked => { root.clicked(); } }
 }
 
 export component FacePanel inherits VerticalLayout {
@@ -45,60 +150,49 @@ export component FacePanel inherits VerticalLayout {
         background: #0d0c0c;
         clip: true;
         property <length> d: 196px;
-        property <color> tone: FaceUi.state == "found" ? #4cc38a : FaceUi.state == "failed" ? #ff6b61 : FaceUi.state == "looking" ? Theme.accent : #ffffff59;
+        property <length> cy: 34px + stage.d / 2;
 
+        // The webcam across the whole stage, as wide as it is, with its middle
+        // on the circle.
+        if FaceUi.seeing: Image {
+            width: stage.width;
+            height: stage.width * 0.75;
+            x: 0;
+            y: stage.cy - self.height / 2;
+            source: FaceUi.frame;
+            image-fit: fill;
+        }
+        // Darkened everywhere but the circle: a ring whose hole is the circle.
+        if FaceUi.seeing: Rectangle {
+            x: (parent.width - stage.d) / 2 - 800px;
+            y: stage.cy - stage.d / 2 - 800px;
+            width: stage.d + 1600px;
+            height: stage.d + 1600px;
+            border-radius: self.width / 2;
+            border-width: 800px;
+            border-color: #0d0c0c9e;
+            background: transparent;
+        }
         circle := Rectangle {
             x: (parent.width - self.width) / 2;
             y: 34px;
             width: stage.d;
             height: stage.d;
             border-radius: stage.d / 2;
-            background: #191817;
-            clip: true;
-            // The middle square of the picture, rounded by the image itself (a
-            // rounded clip doesn't round what is inside it here).
-            if FaceUi.seeing: Image {
-                width: stage.d;
-                height: stage.d;
-                source: FaceUi.frame;
-                source-clip-x: 80;
-                source-clip-y: 0;
-                source-clip-width: 480;
-                source-clip-height: 480;
-                image-fit: fill;
-            }
-            // A ring of the stage's own colour over the square's corners.
-            Rectangle {
-                x: -48px;
-                y: -48px;
-                width: stage.d + 96px;
-                height: stage.d + 96px;
-                border-radius: self.width / 2;
-                border-width: 48px;
-                border-color: #0d0c0c;
-                background: transparent;
-            }
-            if !FaceUi.seeing: Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; name: "user"; size: 64px; ink: #ffffff40; acc: #ffffff40; }
+            background: FaceUi.seeing ? transparent : #191817;
         }
-        // The ring and the four corners of the scan.
-        Rectangle {
-            x: circle.x - 8px;
-            y: circle.y - 8px;
-            width: stage.d + 16px;
-            height: stage.d + 16px;
-            border-radius: self.width / 2;
-            border-width: 3px;
-            border-color: stage.tone;
-            background: transparent;
+        FaceScan {
+            x: (parent.width - self.width) / 2;
+            y: stage.cy - self.height / 2;
+            size: stage.d + 30px;
+            ink: #ffffffd9;
+            show-face: !FaceUi.seeing;
+            state: FaceUi.state;
         }
-        Corner { x: circle.x - 22px; y: circle.y - 22px; ink: stage.tone; }
-        Corner { x: circle.x + stage.d - 4px; y: circle.y - 22px; ink: stage.tone; right: true; }
-        Corner { x: circle.x - 22px; y: circle.y + stage.d - 4px; ink: stage.tone; bottom: true; }
-        Corner { x: circle.x + stage.d - 4px; y: circle.y + stage.d - 4px; ink: stage.tone; right: true; bottom: true; }
 
         VerticalLayout {
             x: 24px;
-            y: circle.y + stage.d + 26px;
+            y: 34px + stage.d + 26px;
             width: parent.width - 48px;
             height: stage.height - self.y - 8px;
             alignment: start;
@@ -111,26 +205,40 @@ export component FacePanel inherits VerticalLayout {
     HorizontalLayout {
         spacing: 8px;
         alignment: start;
-        PillButton { label: FaceUi.add-label; primary: true; active: FaceUi.can-add; clicked => { FaceUi.add(false); } }
-        PillButton { label: "Add an alternative look"; active: FaceUi.can-alt; clicked => { FaceUi.add(true); } }
+        NetButton { label: FaceUi.add-label; primary: true; active: FaceUi.can-add; clicked => { FaceUi.add(false); } }
+        NetButton { label: "Add an alternative look"; active: FaceUi.can-alt; clicked => { FaceUi.add(true); } }
     }
 
-    for look[i] in FaceUi.looks: Rectangle {
-        height: 44px;
-        border-radius: Theme.r-sm;
-        background: Theme.hover;
-        HorizontalLayout {
-            padding-left: 12px;
-            padding-right: 8px;
-            spacing: 10px;
-            VerticalLayout { alignment: center; Icon { name: "user"; size: 22px; ink: Theme.ink2; acc: Theme.ink2; } }
+    VerticalLayout {
+        spacing: 6px;
+        for look[i] in FaceUi.looks: Rectangle {
+            height: 44px;
+            border-radius: Theme.r-sm;
+            background: Theme.hover;
+            FaceScan {
+                x: 10px;
+                y: (parent.height - self.height) / 2;
+                size: 26px;
+                ink: Theme.ink2;
+                state: "idle";
+            }
             VerticalLayout {
-                horizontal-stretch: 1;
+                x: 46px;
+                y: 0;
+                height: parent.height;
                 alignment: center;
+                width: parent.width - 46px - rm.width - 18px;
                 Text { text: look.label; overflow: elide; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
                 Text { text: look.sub; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
             }
-            VerticalLayout { alignment: center; PillButton { label: "Remove"; active: FaceUi.can-remove; clicked => { FaceUi.remove(look.id); } } }
+            rm := NetButton {
+                x: parent.width - self.width - 8px;
+                y: (parent.height - self.height) / 2;
+                label: "Remove";
+                danger: true;
+                active: FaceUi.can-remove;
+                clicked => { FaceUi.remove(look.id); }
+            }
         }
     }
 
