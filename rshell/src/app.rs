@@ -3183,6 +3183,16 @@ impl App {
                 self.reload_look();
             }
             "lock" => self.power("lock"),
+            // Hyprland has no "minimise everything": workspace 99 is the
+            // empty stash toggled in and out of (Compositor.toggleShowDesktop).
+            "showDesktop" => {
+                let here = hypr::json("j/activeworkspace")["id"].as_i64().unwrap_or(1);
+                if here == 99 {
+                    hypr::dispatch("hl.dsp.focus({ workspace = \"previous\" })", "workspace previous");
+                } else {
+                    hypr::dispatch("hl.dsp.focus({ workspace = 99 })", "workspace 99");
+                }
+            }
             "openMail" => self.act(shell, qh, Action::OpenMail),
             "checkUpdates" => {
                 let _ = self.updates_now.send(());
