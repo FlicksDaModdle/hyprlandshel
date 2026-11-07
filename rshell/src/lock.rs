@@ -691,9 +691,17 @@ impl Lock {
                     if ev["ok"] == true {
                         self.info.clear();
                         self.face_state = "found".into();
-                        // The keyring too, if it was locked meanwhile.
+                        // The keyring too, if it was locked meanwhile: the
+                        // shell's face-keyring.sh (FaceKeyring.unlock), when
+                        // a password has been sealed for it (Settings → Login
+                        // screen → Keyring); a no-op otherwise.
                         let _ = std::process::Command::new("sh")
-                            .args(["-c", "command -v hyprshell-face-keyring >/dev/null && hyprshell-face-keyring unlock"])
+                            .args([
+                                "-c",
+                                r#"cfg=${XDG_CONFIG_HOME:-$HOME/.config} data=${XDG_DATA_HOME:-$HOME/.local/share}
+                                   f="$cfg/quickshell/hyprshell/scripts/face-keyring.sh"
+                                   [ -s "$data/hyprshell/keyring.cred" ] && [ -f "$f" ] && exec bash "$f" --unlock"#,
+                            ])
                             .stdout(std::process::Stdio::null())
                             .stderr(std::process::Stdio::null())
                             .spawn();
