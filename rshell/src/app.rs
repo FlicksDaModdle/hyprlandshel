@@ -46,6 +46,10 @@ pub enum Action {
     NotesClear,
     ToggleDnd,
     OpenSettingsPane(String),
+    HistSearch(String),
+    HistForget(i32),
+    HistClear,
+    NcView(String),
     DriveOpen(String),
     DriveMount(String),
     DriveEject(String),
@@ -490,6 +494,20 @@ pub struct App {
     /// Night light (hyprsunset or wlsunset): installed, on, which.
     night: (bool, bool, String),
     night_at: Option<Instant>,
+    /// Idle (the daemon's idle module): what was last sent, the Keep awake switch, and
+    /// when the lock it asked for is to be confirmed back to it.
+    idle_sent: String,
+    idle_holds: (bool, bool),
+    keep_awake: bool,
+    /// Notification history (the daemon's nhist): what the search last answered, how
+    /// many are kept, the search's number, what the box says, and the config sent.
+    hist: Vec<serde_json::Value>,
+    hist_total: i32,
+    hist_asked: u64,
+    hist_query: String,
+    hist_active: bool,
+    hist_sent: String,
+    idle_locked_due: Option<Instant>,
     /// Whether power-profiles-daemon has a performance profile (Game mode's other half).
     can_set_profile: bool,
     daemon: daemon::Daemon,
@@ -843,6 +861,16 @@ impl App {
             sound: daemon::State { kbd_level: -1, ..Default::default() },
             night: (false, false, String::new()),
             night_at: None,
+            idle_sent: String::new(),
+            idle_holds: (false, false),
+            keep_awake: false,
+            hist: Vec::new(),
+            hist_total: 0,
+            hist_asked: 0,
+            hist_query: String::new(),
+            hist_active: false,
+            hist_sent: String::new(),
+            idle_locked_due: None,
             can_set_profile: std::process::Command::new("powerprofilesctl").arg("list").output().is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("performance")),
             daemon,
             media: mpris::Media::default(),
@@ -991,6 +1019,36 @@ impl App {
                 Some("bt-cancel") => {
                     self.pairing = None;
                     self.refresh_lists();
+                    continue;
+                }
+                Some("nh-results") => {
+                    if ev["id"].as_u64() == Some(self.hist_asked) {
+                        self.hist = ev["entries"].as_array().cloned().unwrap_or_default();
+                        self.hist_total = ev["total"].as_i64().unwrap_or(0) as i32;
+                        self.publish_history();
+                    }
+                    continue;
+                }
+                Some("nh-changed") => {
+                    self.hist_total = ev["total"].as_i64().unwrap_or(0) as i32;
+                    if self.hist_active {
+                        self.hist_search();
+                    } else {
+                        self.publish_history();
+                    }
+                    continue;
+                }
+                // The idle module: after a while untouched (Idle.qml's onEvent).
+                Some("idle-action") => {
+                    match ev["action"].as_str().unwrap_or("") {
+                        "lock" => {
+                            self.lock_wanted = true;
+                            self.idle_locked_due = Some(Instant::now() + Duration::from_millis(400));
+                        }
+                        "screen-off" => hypr::dispatch("hl.dsp.dpms({ action = \"off\" })", "dpms off"),
+                        "screen-on" => hypr::dispatch("hl.dsp.dpms({ action = \"on\" })", "dpms on"),
+                        _ => {}
+                    }
                     continue;
                 }
                 _ => {}
@@ -1533,9 +1591,9 @@ impl App {
         }
     }
 
-    fn dock_menu(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, bar: usize, t: usize, x: f32) {
+    /// The dock menu's heading and rows for a tile (Apps.menuFor).
+    fn menu_rows(&self, tile: &crate::dock::Tile) -> Option<(String, Vec<crate::AppMenuRow>)> {
         use crate::dock::Tile;
-        let Some(tile) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned() else { return };
         let row = |key: &str, label: &str, glyph: &str, rule: bool, danger: bool| crate::AppMenuRow {
             key: key.into(),
             label: label.into(),
@@ -1543,7 +1601,7 @@ impl App {
             rule,
             danger,
         };
-        let (heading, rows) = match &tile {
+        Some(match tile {
             Tile::Pin { index, .. } => {
                 let p = &self.pinned[*index];
                 let mut r = Vec::new();
@@ -1572,8 +1630,13 @@ impl App {
                 ];
                 (self.dock_labels.get(class).cloned().unwrap_or_else(|| class.clone()), r)
             }
-            _ => return,
-        };
+            _ => return None,
+        })
+    }
+
+    fn dock_menu(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, bar: usize, t: usize, x: f32) {
+        let Some(tile) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned() else { return };
+        let Some((heading, rows)) = self.menu_rows(&tile) else { return };
         let Some(b) = self.bars.get(bar) else { return };
         let g = b.dock_geom;
         b.panels.set_app_menu_heading(heading.into());
@@ -1601,6 +1664,25 @@ impl App {
     fn app_menu(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, key: &str) {
         use crate::dock::Tile;
         let Some((bar, t)) = self.menu_for else { return };
+        // Move left / right keep the menu open, being clicked more than once:
+        // the rows are made again for the tile where it has gone.
+        if key == "left" || key == "right" {
+            let Some(Tile::Pin { index, .. }) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned() else { return };
+            let pin = self.pinned[index].key.clone();
+            crate::dock::move_pin(&theme::raw(), &pin, if key == "left" { -1 } else { 1 });
+            self.dock_tiles();
+            let at = self.bars.get(bar).and_then(|b| b.dock_tiles.iter().position(|k| matches!(k, Tile::Pin { index, .. } if self.pinned.get(*index).is_some_and(|p| p.key == pin))));
+            if let Some(nt) = at {
+                self.menu_for = Some((bar, nt));
+                if let Some((heading, rows)) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(nt)).and_then(|k| self.menu_rows(k)) {
+                    if let Some(b) = self.bars.get(bar) {
+                        b.panels.set_app_menu_heading(heading.into());
+                        b.panels.set_app_menu(model(rows));
+                    }
+                }
+            }
+            return;
+        }
         // Change icon… swaps this panel for the picker, in place.
         if key == "icon" {
             let Some(Tile::Pin { index, .. }) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned() else { return };
@@ -1690,9 +1772,108 @@ impl App {
         self.live.follow(&raw);
     }
 
+    fn hist_search(&mut self) {
+        self.hist_asked += 1;
+        self.daemon.send(json!({ "cmd": "nh-search", "id": self.hist_asked, "query": self.hist_query, "limit": 300 }));
+    }
+
+    /// The history tab's rows, by day (NotifHistory.byDay).
+    fn publish_history(&self) {
+        let raw = theme::raw();
+        let clock24 = self.look.clock24;
+        let local_day = |t: i64| {
+            let (y, mo, d, _, _, _) = local_parts(t);
+            (y, mo, d)
+        };
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+        let (today, yesterday) = (local_day(now), local_day(now - 86400));
+        let mut last = String::new();
+        let rows: Vec<crate::HistEntry> = self
+            .hist
+            .iter()
+            .map(|e| {
+                let t = e["time"].as_i64().unwrap_or(0);
+                let (y, mo, d, h, mi, _) = local_parts(t);
+                let day = if (y, mo, d) == today {
+                    "Today".to_string()
+                } else if (y, mo, d) == yesterday {
+                    "Yesterday".to_string()
+                } else {
+                    // The weekday from the day count (1 Jan 1970 was a Thursday).
+                    let (ty, tm, td, ..) = (y, mo, d, 0, 0, 0);
+                    let days = days_from_civil(ty, tm, td);
+                    let wd = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"][(days.rem_euclid(7)) as usize];
+                    let mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][(mo as usize).saturating_sub(1).min(11)];
+                    format!("{wd} {td} {mon}")
+                };
+                let show_day = day != last;
+                last = day.clone();
+                let time = if clock24 { format!("{h:02}:{mi:02}") } else { format!("{}:{mi:02} {}", if h % 12 == 0 { 12 } else { h % 12 }, if h < 12 { "AM" } else { "PM" }) };
+                let app = e["app"].as_str().filter(|a| !a.is_empty()).unwrap_or("Notification");
+                crate::HistEntry {
+                    id: e["id"].as_i64().unwrap_or(0) as i32,
+                    day: day.into(),
+                    show_day,
+                    head: format!("{app} · {time}").into(),
+                    summary: e["summary"].as_str().unwrap_or("").into(),
+                    body: e["body"].as_str().unwrap_or("").into(),
+                    urgent: e["urgency"].as_i64() == Some(2),
+                }
+            })
+            .collect();
+        let on = raw["notifHistory"].as_bool().unwrap_or(true);
+        for b in &self.bars {
+            b.panels.set_history_on(on);
+            b.panels.set_hist(model(rows.clone()));
+            b.panels.set_hist_total(self.hist_total);
+        }
+    }
+
+    /// The daemon's idle module, as Idle.qml configures it: when to lock, switch
+    /// the screen off and suspend, and what holds that off (Keep awake, media
+    /// playing, a fullscreen window). Sent when they change.
+    fn sync_idle(&mut self) {
+        let raw = theme::raw();
+        let mins = |k: &str, d: i64| raw[k].as_i64().unwrap_or(d) * 60;
+        let cfg = format!("{}|{}|{}", mins("idleLock", 10), mins("idleOff", 12), mins("idleSuspend", 30));
+        let media = raw["idleHoldMedia"].as_bool().unwrap_or(true) && self.media.playing;
+        let full = raw["idleHoldFullscreen"].as_bool().unwrap_or(true) && hypr::json("j/activewindow")["fullscreen"].as_i64() == Some(2);
+        if cfg != self.idle_sent {
+            self.idle_sent = cfg;
+            self.daemon.send(json!({ "cmd": "idle-config", "lock": mins("idleLock", 10), "off": mins("idleOff", 12), "suspend": mins("idleSuspend", 30) }));
+            self.daemon.send(json!({ "cmd": "idle-lock-before-sleep", "on": true }));
+            self.daemon.send(json!({ "cmd": "idle-hold", "why": "awake", "on": self.keep_awake }));
+            self.idle_holds = (!media, !full);
+        }
+        if self.idle_holds.0 != media {
+            self.idle_holds.0 = media;
+            self.daemon.send(json!({ "cmd": "idle-hold", "why": "media", "on": media }));
+        }
+        if self.idle_holds.1 != full {
+            self.idle_holds.1 = full;
+            self.daemon.send(json!({ "cmd": "idle-hold", "why": "fullscreen", "on": full }));
+        }
+        // The lock it asked for has happened: said back to it, a moment on.
+        if self.idle_locked_due.is_some_and(|t| Instant::now() >= t) {
+            self.idle_locked_due = None;
+            self.daemon.send(json!({ "cmd": "idle-locked" }));
+        }
+    }
+
     fn refresh_second(&mut self) {
         let mode = theme::raw()["shellBlurMode"].as_str().unwrap_or("auto").to_string();
         self.blur.sync(&mode);
+        self.sync_idle();
+        // History's own settings, once and when they change (NotifHistory.tell).
+        {
+            let raw = theme::raw();
+            let cfg = format!("{}|{}", raw["notifHistory"].as_bool().unwrap_or(true), raw["notifHistoryDays"].as_i64().unwrap_or(30).max(1));
+            if cfg != self.hist_sent {
+                self.hist_sent = cfg;
+                self.daemon.send(json!({ "cmd": "nh-config", "on": raw["notifHistory"].as_bool().unwrap_or(true), "days": raw["notifHistoryDays"].as_i64().unwrap_or(30).max(1) }));
+                self.publish_history();
+            }
+        }
         if self.night_at.is_none_or(|t| t.elapsed() > Duration::from_secs(8)) {
             self.night_at = Some(Instant::now());
             let probe = std::process::Command::new("sh")
@@ -1787,6 +1968,8 @@ impl App {
                 on: game,
             });
         }
+        // No lock, screen off or sleep until switched off again.
+        tiles.push(Tile { kind: "keepawake".into(), name: "Keep awake".into(), sub: if self.keep_awake { "on" } else { "off" }.into(), on: self.keep_awake });
         if !s.rog_profiles.is_empty() {
             tiles.push(Tile {
                 kind: "performance".into(),
@@ -2228,6 +2411,15 @@ impl App {
             self.daemon.send(json!({ "cmd": "bl-watch", "on": false }));
             self.set_cc_pane("");
         }
+        if which == "notifications" {
+            // Back to the live list, with the search emptied, as the QML panel does.
+            self.hist_active = false;
+            self.hist_query.clear();
+            for b in &self.bars {
+                b.panels.set_nc_view("now".into());
+                b.panels.set_hist_query("".into());
+            }
+        }
         if which == "tray" {
             self.menu_at = None;
             self.menu_stack.clear();
@@ -2468,6 +2660,31 @@ impl App {
                 }
                 self.refresh_notes(shell, qh);
             }
+            Action::HistSearch(q) => {
+                self.hist_query = q;
+                self.hist_search();
+            }
+            Action::HistForget(id) => {
+                self.hist.retain(|e| e["id"].as_i64() != Some(id as i64));
+                self.daemon.send(json!({ "cmd": "nh-delete", "id": id }));
+                self.publish_history();
+            }
+            Action::HistClear => {
+                self.hist.clear();
+                self.daemon.send(json!({ "cmd": "nh-clear" }));
+                self.publish_history();
+            }
+            Action::NcView(v) => {
+                self.hist_active = v == "history";
+                if self.hist_active {
+                    self.hist_search();
+                    if let Some((bar, _)) = self.open.clone() {
+                        if let Some(b) = self.bars.get(bar) {
+                            b.panels.invoke_focus_history();
+                        }
+                    }
+                }
+            }
             Action::OpenSettingsPane(p) => {
                 self.close_panel();
                 self.command(shell, qh, &format!("openSettings {p}"));
@@ -2664,6 +2881,11 @@ impl App {
             "dnd" => {
                 theme::set("dnd", json!(!self.look.dnd));
                 self.reload_look();
+            }
+            "keepawake" => {
+                self.keep_awake = !self.keep_awake;
+                self.daemon.send(json!({ "cmd": "idle-hold", "why": "awake", "on": self.keep_awake }));
+                self.refresh_sound();
             }
             "nightlight" => {
                 let (avail, on, backend) = self.night.clone();
@@ -3486,6 +3708,10 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_notes_clear, | | Action::NotesClear);
     on!(on_toggle_dnd, | | Action::ToggleDnd);
     on!(on_open_notif_settings, | | Action::OpenSettingsPane("Notifications".into()));
+    on!(on_hist_search, |q| Action::HistSearch(q.to_string()));
+    on!(on_hist_forget, |id| Action::HistForget(id));
+    on!(on_hist_clear, | | Action::HistClear);
+    on!(on_nc_view_changed, |v| Action::NcView(v.to_string()));
     on!(on_media_prev, | | Action::Media(mpris::Cmd::Prev));
     on!(on_media_toggle, | | Action::Media(mpris::Cmd::Toggle));
     on!(on_media_next, | | Action::Media(mpris::Cmd::Next));
@@ -3523,4 +3749,26 @@ enum SnipAct {
     Take(usize, f32, f32, f32, f32),
     Cancel,
     Mode(usize, String),
+}
+
+
+/// Days since 1970-01-01 of a calendar date (for the weekday).
+fn days_from_civil(y: i32, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y } as i64;
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m as i64 + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
+}
+
+
+/// (year, month, day, hour, minute, second) of an epoch time, in local time.
+fn local_parts(t: i64) -> (i32, u32, u32, u32, u32, u32) {
+    // SAFETY: localtime_r fills the tm it is given and keeps nothing.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    let secs = t as libc::time_t;
+    unsafe { libc::localtime_r(&secs, &mut tm) };
+    (tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32, tm.tm_hour as u32, tm.tm_min as u32, tm.tm_sec as u32)
 }

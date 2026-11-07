@@ -7,6 +7,9 @@ import { Glyph } from "glyph.slint";
 import { IconButton, PanelSurface, Caps, Toggle, FillSlider, MenuRow, Rule } from "widgets.slint";
 import { MediaInfo, MenuEntry, Note, NoteAction, DriveRow, TimerRow, Tile, PrivacyRow, DayCell, WifiRow, BtRow } from "types.slint";
 
+export struct HistEntry { id: int, day: string, show-day: bool, head: string, summary: string, body: string, urgent: bool }
+
+
 // Where each panel sits, and how it arrives: Entrance.qml's springs, run
 // in Rust (app.rs) and handed in here. The software renderer can't scale,
 // so where Quickshell scales the panel out of its button this grows its
@@ -945,16 +948,42 @@ export component NoteCard inherits Rectangle {
 component NotificationCenter inherits PanelSurface {
     in property <[Note]> notes;
     in property <bool> quiet;
+    // History: kept by the daemon (nhist) when it is on.
+    in property <bool> history-on;
+    in property <[HistEntry]> hist;
+    in property <int> hist-total;
+    in-out property <string> view: "now";
+    in-out property <string> hist-query;
+    property <bool> in-history: root.view == "history" && root.history-on;
+    property <bool> confirm-clear;
     callback dismiss(int);
     callback act(int, string);
     callback clear();
     callback toggle-dnd();
     callback open-settings();
+    callback hist-search(string);
+    callback hist-forget(int);
+    callback hist-clear();
+    callback view-changed(string);
+    public function focus-search() { hq.focus(); }
     VerticalLayout {
-        // NotificationCenter.qml: the title, then the buttons on the right.
+        // NotificationCenter.qml: the tabs, then the buttons on the right.
         Rectangle {
             height: 52px;
-            Text { x: 16px; y: (parent.height - self.height) / 2; text: "Notifications"; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+            HorizontalLayout {
+                x: 16px;
+                height: parent.height;
+                spacing: 14px;
+                alignment: start;
+                for tab in root.history-on ? ["now", "history"] : ["now"]: Text {
+                    vertical-alignment: center;
+                    text: tab == "now" ? "Notifications" : "History";
+                    font-size: Theme.fs(13);
+                    font-weight: 600;
+                    color: (root.in-history ? "history" : "now") == tab || !root.history-on ? Theme.ink : (tt.has-hover ? Theme.ink2 : Theme.ink3);
+                    tt := TouchArea { enabled: root.history-on; mouse-cursor: pointer; clicked => { root.view = tab; root.confirm-clear = false; root.view-changed(tab); } }
+                }
+            }
             HorizontalLayout {
                 x: parent.width - self.width - 12px;
                 y: 0;
@@ -988,19 +1017,34 @@ component NotificationCenter inherits PanelSurface {
                     Glyph { x: 7px; y: 7px; data: Icons.settings; size: 14px; monochrome: true; ink: Theme.ink2; }
                     gta := TouchArea { mouse-cursor: pointer; clicked => { root.open-settings(); } }
                 }
-                if root.notes.length > 0: Rectangle {
+                if (root.in-history ? root.hist-total > 0 : root.notes.length > 0): Rectangle {
                     y: 12px;
                     height: 28px;
                     width: cl.preferred-width + 20px;
                     horizontal-stretch: 0;
                     border-radius: 9px;
-                    background: ctl.has-hover ? Theme.sel : Theme.hover;
-                    cl := Text { x: 10px; y: (parent.height - self.height) / 2; text: "Clear"; font-size: Theme.fs(11); font-weight: 600; color: Theme.ink2; }
-                    ctl := TouchArea { mouse-cursor: pointer; clicked => { root.clear(); } }
+                    background: root.confirm-clear ? #d93a2b : (ctl.has-hover ? Theme.sel : Theme.hover);
+                    cl := Text {
+                        x: 10px;
+                        y: (parent.height - self.height) / 2;
+                        text: root.confirm-clear ? "Forget all " + root.hist-total + "?" : "Clear";
+                        font-size: Theme.fs(11);
+                        font-weight: 600;
+                        color: root.confirm-clear ? white : Theme.ink2;
+                    }
+                    ctl := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            if (!root.in-history) { root.clear(); }
+                            else if (!root.confirm-clear) { root.confirm-clear = true; }
+                            else { root.confirm-clear = false; root.hist-clear(); }
+                        }
+                    }
                 }
             }
         }
-        if root.notes.length == 0: Rectangle {
+        // Now.
+        if !root.in-history && root.notes.length == 0: Rectangle {
             height: 74px + 14px;
             Rectangle {
                 x: 12px;
@@ -1017,7 +1061,7 @@ component NotificationCenter inherits PanelSurface {
                 }
             }
         }
-        if root.notes.length > 0: Flickable {
+        if !root.in-history && root.notes.length > 0: Flickable {
             height: min(list.preferred-height + 14px, 508px);
             content-height: list.preferred-height;
             list := VerticalLayout {
@@ -1029,6 +1073,109 @@ component NotificationCenter inherits PanelSurface {
                     note: n;
                     dismiss(id) => { root.dismiss(id); }
                     act(id, k) => { root.act(id, k); }
+                }
+            }
+        }
+        // History: a search box, then what was kept, by day.
+        Rectangle {
+            height: root.in-history ? 32px + 10px : 0px;
+            visible: root.in-history;
+            Rectangle {
+                x: 12px;
+                width: parent.width - 24px;
+                height: 32px;
+                border-radius: Theme.r-sm;
+                background: Theme.sel;
+                border-width: 1px;
+                border-color: hq.has-focus ? Theme.accent : Theme.edge;
+                Glyph { x: 10px; y: (parent.height - self.height) / 2; data: Icons.search; size: 14px; monochrome: true; ink: hq.has-focus ? Theme.accent : Theme.ink3; }
+                FocusScope {
+                    x: 32px;
+                    width: parent.width - 42px;
+                    hq := TextInput {
+                        height: parent.height;
+                        vertical-alignment: center;
+                        text <=> root.hist-query;
+                        font-size: Theme.fs(12);
+                        color: Theme.ink;
+                        selection-background-color: Theme.accent;
+                        selection-foreground-color: Theme.ink-on-accent;
+                        single-line: true;
+                        edited => { root.hist-search(self.text); }
+                    }
+                    if root.hist-query == "": Text { y: (parent.height - self.height) / 2; text: "Search " + root.hist-total + " kept"; font-size: Theme.fs(12); color: Theme.ink3; }
+                }
+            }
+        }
+        if root.in-history && root.hist.length == 0: Rectangle {
+            height: 74px + 14px;
+            Rectangle {
+                x: 12px;
+                width: parent.width - 24px;
+                height: 74px;
+                border-radius: Theme.r-cap;
+                background: Theme.hover;
+                Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: root.hist-query != "" ? "Nothing matches" : "Nothing kept yet";
+                    font-size: Theme.fs(12);
+                    color: Theme.ink3;
+                }
+            }
+        }
+        if root.in-history && root.hist.length > 0: Flickable {
+            height: min(hlist.preferred-height + 14px, 460px);
+            content-height: hlist.preferred-height;
+            hlist := VerticalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-bottom: 14px;
+                spacing: 4px;
+                for e[i] in root.hist: VerticalLayout {
+                    spacing: 4px;
+                    if e.show-day: Text {
+                        text: e.day.to-uppercase();
+                        font-size: Theme.fs(11);
+                        font-weight: 600;
+                        letter-spacing: 0.8px;
+                        color: Theme.ink3;
+                    }
+                    Rectangle {
+                        height: col.preferred-height + 18px;
+                        border-radius: Theme.r-cap;
+                        background: ea.has-hover ? Theme.sel : Theme.hover;
+                        ea := TouchArea {}
+                        if e.urgent: Rectangle { x: 6px; y: 6px; width: 2px; height: parent.height - 12px; border-radius: 1px; background: Theme.accent; }
+                        Rectangle {
+                            x: 12px;
+                            y: 9px;
+                            width: 26px;
+                            height: 26px;
+                            border-radius: 8px;
+                            background: Theme.sel;
+                            Glyph { x: 6.5px; y: 6.5px; data: Icons.bell; size: 13px; }
+                        }
+                        col := VerticalLayout {
+                            x: 48px;
+                            y: 9px;
+                            width: parent.width - 48px - 34px;
+                            spacing: 3px;
+                            Text { text: e.head; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
+                            if e.summary != "": Text { text: e.summary; overflow: elide; font-size: Theme.fs(12.5); font-weight: 600; color: Theme.ink; }
+                            if e.body != "": Text { text: e.body; wrap: word-wrap; overflow: elide; max-height: 34px; font-size: Theme.fs(12); color: Theme.ink2; }
+                        }
+                        if ea.has-hover: Rectangle {
+                            x: parent.width - 30px;
+                            y: 8px;
+                            width: 22px;
+                            height: 22px;
+                            border-radius: 7px;
+                            background: fa.has-hover ? Theme.sel : transparent;
+                            Glyph { x: 4.5px; y: 4.5px; data: Icons.x; size: 13px; monochrome: true; ink: Theme.ink3; }
+                            fa := TouchArea { mouse-cursor: pointer; clicked => { root.hist-forget(e.id); } }
+                        }
+                    }
                 }
             }
         }
@@ -1460,6 +1607,17 @@ export component Panels inherits Window {
     callback notes-clear();
     callback toggle-dnd();
     callback open-notif-settings();
+    // notification history
+    in property <bool> history-on;
+    in property <[HistEntry]> hist;
+    in property <int> hist-total;
+    in-out property <string> hist-query;
+    in-out property <string> nc-view: "now";
+    callback hist-search(string);
+    callback hist-forget(int);
+    callback hist-clear();
+    callback nc-view-changed(string);
+    public function focus-history() { nc.focus-search(); }
     // media
     in property <MediaInfo> media;
     callback media-prev();
@@ -1558,8 +1716,13 @@ export component Panels inherits Window {
     }
     Drop {
         shown: root.which == "notifications"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 396px;
-        NotificationCenter {
+        nc := NotificationCenter {
             notes: root.notes; quiet: root.quiet;
+            history-on: root.history-on; hist: root.hist; hist-total: root.hist-total; hist-query <=> root.hist-query; view <=> root.nc-view;
+            hist-search(q) => { root.hist-search(q); }
+            hist-forget(id) => { root.hist-forget(id); }
+            hist-clear => { root.hist-clear(); }
+            view-changed(v) => { root.nc-view-changed(v); }
             dismiss(id) => { root.note-dismiss(id); }
             act(id, k) => { root.note-act(id, k); }
             clear => { root.notes-clear(); }
