@@ -62,3 +62,8 @@ pub fn dispatch(lua: &str, legacy: &str) {
 pub fn lua_str(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
+
+/// Runs Lua against the live config (`hyprctl eval`): changes last until the next reload.
+pub fn eval_lua(code: &str) {
+    let _ = std::process::Command::new("hyprctl").args(["eval", code]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+}

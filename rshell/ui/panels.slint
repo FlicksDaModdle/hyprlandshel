@@ -320,6 +320,10 @@ component CcTile inherits Rectangle {
         if (kind == "keyboard") { return Icons.keyboard; }
         if (kind == "dnd") { return Icons.bell-off; }
         if (kind == "night") { return Icons.moon; }
+        if (kind == "nightlight") { return Icons.moon; }
+        if (kind == "capture") { return Icons.camera; }
+        if (kind == "gamemode") { return Icons.gamepad; }
+        if (kind == "keepawake") { return Icons.sun; }
         return Icons.dot;
     }
     height: 88px;

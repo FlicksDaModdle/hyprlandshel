@@ -200,7 +200,18 @@ pub fn apply(s: &mut State, ev: &Value) -> bool {
         Some("pa") if ev["available"] == true => {
             let sink = ev["defaultSink"].as_str().unwrap_or("").to_string();
             let sinks = ev["sinks"].as_array().cloned().unwrap_or_default();
-            if let Some(d) = sinks.iter().find(|x| x["name"] == sink.as_str()).or(sinks.first()) {
+            let ours = |x: &Value| x["name"].as_str().unwrap_or("").starts_with("hyprshell_");
+            let raw = crate::theme::raw();
+            // With the equalizer in the way (it is the default), the level that
+            // is shown and set is the device behind it (Audio.qml's `sink`): the
+            // equalizer's own stays where it is.
+            let chosen = if sink == crate::audiofx::EQ_SINK {
+                let target = raw["eqTarget"].as_str().unwrap_or("");
+                sinks.iter().find(|x| x["name"] == target && !ours(x)).or_else(|| sinks.iter().find(|x| !ours(x)))
+            } else {
+                None
+            };
+            if let Some(d) = chosen.or_else(|| sinks.iter().find(|x| x["name"] == sink.as_str())).or(sinks.first()) {
                 s.volume = d["volume"].as_f64().unwrap_or(0.0);
                 s.muted = d["mute"].as_bool().unwrap_or(false);
                 s.sink = d["name"].as_str().unwrap_or("").to_string();
@@ -208,9 +219,15 @@ pub fn apply(s: &mut State, ev: &Value) -> bool {
             }
             let source = ev["defaultSource"].as_str().unwrap_or("");
             let sources = ev["sources"].as_array().cloned().unwrap_or_default();
-            s.mic = sources
-                .iter()
-                .find(|x| x["name"] == source)
+            // Likewise the noise suppression's source and the microphone behind it.
+            let mic_pick = if source == crate::audiofx::NS_SOURCE {
+                let target = raw["nsTarget"].as_str().unwrap_or("");
+                sources.iter().find(|x| x["name"] == target && !ours(x) && x["monitor"] != true).or_else(|| sources.iter().find(|x| !ours(x) && x["monitor"] != true))
+            } else {
+                None
+            };
+            s.mic = mic_pick
+                .or_else(|| sources.iter().find(|x| x["name"] == source))
                 .or_else(|| sources.iter().find(|x| x["monitor"] != true))
                 .filter(|x| x["monitor"] != true)
                 .map(|x| (x["name"].as_str().unwrap_or("").to_string(), x["volume"].as_f64().unwrap_or(0.0), x["mute"].as_bool().unwrap_or(false)));

@@ -487,6 +487,11 @@ pub struct App {
     snip_kind: crate::capture::Kind,
     snip_acts: Rc<RefCell<Vec<SnipAct>>>,
     sound: daemon::State,
+    /// Night light (hyprsunset or wlsunset): installed, on, which.
+    night: (bool, bool, String),
+    night_at: Option<Instant>,
+    /// Whether power-profiles-daemon has a performance profile (Game mode's other half).
+    can_set_profile: bool,
     daemon: daemon::Daemon,
     /// The equalizer, noise suppression and listening (AudioFx.qml).
     fx: crate::audiofx::Fx,
@@ -836,6 +841,9 @@ impl App {
             look_stamp,
             look_changed: theme::watch(&wake),
             sound: daemon::State { kbd_level: -1, ..Default::default() },
+            night: (false, false, String::new()),
+            night_at: None,
+            can_set_profile: std::process::Command::new("powerprofilesctl").arg("list").output().is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("performance")),
             daemon,
             media: mpris::Media::default(),
             media_cmd,
@@ -1685,6 +1693,22 @@ impl App {
     fn refresh_second(&mut self) {
         let mode = theme::raw()["shellBlurMode"].as_str().unwrap_or("auto").to_string();
         self.blur.sync(&mode);
+        if self.night_at.is_none_or(|t| t.elapsed() > Duration::from_secs(8)) {
+            self.night_at = Some(Instant::now());
+            let probe = std::process::Command::new("sh")
+                .args(["-c", "if pgrep -x hyprsunset >/dev/null 2>&1; then echo 'on hyprsunset'; elif pgrep -x wlsunset >/dev/null 2>&1; then echo 'on wlsunset'; elif command -v hyprsunset >/dev/null 2>&1; then echo 'off hyprsunset'; elif command -v wlsunset >/dev/null 2>&1; then echo 'off wlsunset'; else echo none; fi"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            let mut it = probe.split(' ');
+            let state = it.next().unwrap_or("none");
+            let backend = it.next().unwrap_or("hyprsunset").to_string();
+            let now = (state != "none", state == "on", backend);
+            if now != self.night {
+                self.night = now;
+                self.refresh_sound();
+            }
+        }
         let (time, date) = clock(self.look.clock24);
         let battery = sys::battery();
         self.battery_now = battery.as_ref().map(|b| (b.percent, b.charging));
@@ -1739,14 +1763,30 @@ impl App {
         if s.bt_available {
             tiles.push(Tile { kind: "bluetooth".into(), name: "Bluetooth".into(), sub: s.bt_label.clone().into(), on: s.bt_on });
         }
+        // Night light after Bluetooth, as ControlCenter.qml has them.
+        {
+            let (avail, on, _) = &self.night;
+            let temp = theme::raw()["nightTemp"].as_i64().unwrap_or(3500);
+            tiles.push(Tile {
+                kind: "nightlight".into(),
+                name: "Night light".into(),
+                sub: if !avail { "not installed".into() } else if *on { format!("{temp} K").into() } else { "off".into() },
+                on: *on,
+            });
+        }
         let airplane = !s.wifi_on && (!s.bt_available || !s.bt_on);
         tiles.push(Tile { kind: "airplane".into(), name: "Airplane".into(), sub: if airplane { "radios off".into() } else { "radios on".into() }, on: airplane });
-        tiles.push(Tile {
-            kind: "dnd".into(),
-            name: "Do not disturb".into(),
-            sub: if self.look.dnd { "on".into() } else { "off".into() },
-            on: self.look.dnd,
-        });
+        tiles.push(Tile { kind: "capture".into(), name: "Capture".into(), sub: "region".into(), on: false });
+        {
+            let game = theme::raw()["gameMode"].as_bool().unwrap_or(false);
+            let cp = self.can_set_profile;
+            tiles.push(Tile {
+                kind: "gamemode".into(),
+                name: "Game mode".into(),
+                sub: if game { if cp { "performance · vrr" } else { "vrr" } } else if cp { "balanced" } else { "vrr off" }.into(),
+                on: game,
+            });
+        }
         if !s.rog_profiles.is_empty() {
             tiles.push(Tile {
                 kind: "performance".into(),
@@ -2390,6 +2430,10 @@ impl App {
                 theme::set("theme", json!(next));
                 self.reload_look();
             }
+            Action::Tile(kind) if kind == "capture" => {
+                self.close_panel();
+                self.command(shell, qh, "toggleCapture");
+            }
             Action::Tile(kind) => self.tile(&kind),
             Action::NoteDismiss(id) => {
                 let id = id as u32;
@@ -2620,6 +2664,31 @@ impl App {
             "dnd" => {
                 theme::set("dnd", json!(!self.look.dnd));
                 self.reload_look();
+            }
+            "nightlight" => {
+                let (avail, on, backend) = self.night.clone();
+                if avail {
+                    if on {
+                        extras::sh(&format!("pkill -x {backend}"));
+                    } else {
+                        let t = theme::raw()["nightTemp"].as_i64().unwrap_or(3500);
+                        extras::sh(&if backend == "wlsunset" { format!("setsid -f wlsunset -t {t} -T 6500 >/dev/null 2>&1") } else { format!("setsid -f hyprsunset -t {t} >/dev/null 2>&1") });
+                    }
+                    self.night.1 = !on;
+                    self.night_at = None;
+                    self.refresh_sound();
+                }
+            }
+            "gamemode" => {
+                // Appearance.gameMode, the compositor's VRR, and the power profile.
+                let on = !theme::raw()["gameMode"].as_bool().unwrap_or(false);
+                theme::set("gameMode", json!(on));
+                hypr::eval_lua(&format!("hl.config({{ misc = {{ vrr = {} }} }})", if on { 2 } else { 0 }));
+                if self.can_set_profile {
+                    extras::sh(&format!("powerprofilesctl set {} >/dev/null 2>&1", if on { "performance" } else { "balanced" }));
+                }
+                self.reload_look();
+                self.refresh_sound();
             }
             "performance" => {
                 let list = &s.rog_profiles;
