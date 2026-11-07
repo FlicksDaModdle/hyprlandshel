@@ -1104,6 +1104,13 @@ impl App {
             self.refresh_extras();
         }
 
+        // The keyboard arrived on the launcher: typing goes to the search box.
+        for id in std::mem::take(&mut shell.entered) {
+            if self.launcher.surface == Some(id) && self.launcher.is_open() {
+                self.launcher.ui.invoke_focus_field();
+            }
+        }
+
         // Esc on a panel.
         for (id, _) in std::mem::take(&mut shell.keys) {
             if self.bars.iter().any(|b| b.panel_surface == Some(id)) {

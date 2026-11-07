@@ -165,6 +165,9 @@ pub struct Shell {
     focus: Option<usize>,
     /// Esc pressed on a surface, by id: what closes a panel.
     pub keys: Vec<(usize, Key)>,
+    /// Surfaces the keyboard has just entered: what lets the launcher put
+    /// its cursor in the search box once the window really is active.
+    pub entered: Vec<usize>,
     /// Key repeat, as the compositor says: (delay, interval).
     repeat: Option<(std::time::Duration, std::time::Duration)>,
     /// The key held down, what it types, and when it next repeats.
@@ -213,6 +216,7 @@ impl Shell {
             cursor: None,
             focus: None,
             keys: Vec::new(),
+            entered: Vec::new(),
             repeat: Some((std::time::Duration::from_millis(600), std::time::Duration::from_millis(40))),
             held: None,
             closed: false,
@@ -847,6 +851,9 @@ impl KeyboardHandler for Shell {
         eprintln!("hyprshell-rs: the keyboard is on surface {:?}", self.focus);
         if let Some(s) = self.key_window() {
             s.adapter.window().dispatch_event(WindowEvent::WindowActiveChanged(true));
+        }
+        if let Some(i) = self.focus {
+            self.entered.push(i);
         }
     }
 
