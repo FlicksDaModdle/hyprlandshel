@@ -556,6 +556,8 @@ pub struct App {
     prompt_surface: Option<usize>,
     /// The icon maker; its drawing is kept while the window is closed.
     maker: crate::maker::Host,
+    /// The compositor's blur rules for the shell's surfaces.
+    blur: crate::blur::Blur,
     auth: Option<crate::polkit::Request>,
     auth_queue: Vec<crate::polkit::Request>,
     auth_user: usize,
@@ -787,6 +789,7 @@ impl App {
             prompt_window,
             prompt_surface: None,
             maker: crate::maker::Host::new(),
+            blur: crate::blur::Blur::new(),
             auth: None,
             auth_queue: Vec::new(),
             auth_user: 0,
@@ -1640,6 +1643,8 @@ impl App {
     }
 
     fn refresh_look(&mut self) {
+        // Settings may have sent rules of its own with the change.
+        self.blur.stale();
         let raw = theme::raw();
         for b in &mut self.bars {
             let us = self.look.screen_scale(&b.monitor);
@@ -1677,6 +1682,8 @@ impl App {
     }
 
     fn refresh_second(&mut self) {
+        let mode = theme::raw()["shellBlurMode"].as_str().unwrap_or("auto").to_string();
+        self.blur.sync(&mode);
         let (time, date) = clock(self.look.clock24);
         let battery = sys::battery();
         self.battery_now = battery.as_ref().map(|b| (b.percent, b.charging));

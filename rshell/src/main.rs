@@ -15,6 +15,7 @@
 
 #[macro_use]
 mod app;
+mod blur;
 mod art;
 mod daemon;
 mod dock;
