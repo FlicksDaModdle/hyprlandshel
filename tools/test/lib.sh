@@ -160,6 +160,9 @@ tt_run() {
     # Each test from the same start: the fixture theme, no remembered state.
     rm -rf "${XDG_CONFIG_HOME:?}/quickshell/hyprshell" "$TT_LOGS"/*.log "${TT_ROOT:?}/greeter-state"
     unset HYPRSHELL_TEST_FACE TT_FACE FAKE_SCREENS FAKE_HDR
+    # Face unlock off unless a test says otherwise: not whatever this machine's
+    # own /etc/pam.d/hyprshell-lock happens to say.
+    export HYPRSHELL_TEST_FACE=0
     mkdir -p "$XDG_CONFIG_HOME/quickshell/hyprshell"
     cp "$REPO/tools/test/fixtures/theme.json" "$XDG_CONFIG_HOME/quickshell/hyprshell/theme.json"
     local start=$SECONDS
