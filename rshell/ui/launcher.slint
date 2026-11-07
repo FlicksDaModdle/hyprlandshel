@@ -489,6 +489,11 @@ export component Launcher inherits Window {
                 y: parent.height - self.height;
                 height: sz(40);
                 background: Theme.hover;
+                // Its own rounded corners, the panel's: the panel's clip
+                // isn't rounded on every renderer, and its square ones
+                // stood out past the panel's.
+                border-bottom-left-radius: Theme.r-cap;
+                border-bottom-right-radius: Theme.r-cap;
                 Rectangle { height: 1px; y: 0; background: Theme.rule; }
                 start := Rectangle {
                     x: sz(7);

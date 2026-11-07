@@ -68,6 +68,18 @@ pub struct Theme {
     pub bar_icon: f32,
     pub workspace_scale: f32,
     pub clock24: bool,
+    /// The bar's auto-hide, how long the pointer rests on the edge before it
+    /// comes out (ms), and the dock's.
+    pub bar_auto_hide: bool,
+    pub bar_reveal_delay: u64,
+    pub dock_auto_hide: bool,
+    /// Screen corners: on, their radius, every screen or the built-in one,
+    /// over fullscreen windows too, and which (TL, TR, BR, BL).
+    pub corners: bool,
+    pub corner_radius: u32,
+    pub corners_all: bool,
+    pub corners_fullscreen: bool,
+    pub corner_on: [bool; 4],
     pub badges: bool,
     screen_scales: Vec<(String, f32)>,
 }
@@ -98,6 +110,53 @@ pub fn path() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"));
     cfg.join("quickshell/hyprshell/theme.json")
+}
+
+/// Watches theme.json (its folder: Settings replaces the file whole, by
+/// renaming a new one over it) and wakes the loop the moment it changes,
+/// rather than at the next once-a-second look. The flag says it did.
+pub fn watch(wake: &std::os::unix::net::UnixStream) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let flag = std::sync::Arc::new(AtomicBool::new(false));
+    let Some(dir) = path().parent().map(|d| d.to_path_buf()) else { return flag };
+    let _ = std::fs::create_dir_all(&dir);
+    let Ok(mut wake) = wake.try_clone() else { return flag };
+    let f = flag.clone();
+    std::thread::spawn(move || {
+        let Ok(cdir) = std::ffi::CString::new(dir.as_os_str().as_encoded_bytes()) else { return };
+        // SAFETY: inotify on our own descriptor, read into our own buffer.
+        let fd = unsafe { libc::inotify_init1(libc::IN_CLOEXEC) };
+        if fd < 0 {
+            return;
+        }
+        let mask = libc::IN_CLOSE_WRITE | libc::IN_MOVED_TO | libc::IN_CREATE;
+        if unsafe { libc::inotify_add_watch(fd, cdir.as_ptr(), mask) } < 0 {
+            return;
+        }
+        let mut buf = [0u8; 4096];
+        loop {
+            let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+            if n <= 0 {
+                return;
+            }
+            // Each event: its header, then the name it's about.
+            let mut at = 0usize;
+            let mut ours = false;
+            while at + std::mem::size_of::<libc::inotify_event>() <= n as usize {
+                let ev = unsafe { &*(buf.as_ptr().add(at) as *const libc::inotify_event) };
+                let start = at + std::mem::size_of::<libc::inotify_event>();
+                let name = &buf[start..start + ev.len as usize];
+                let name = name.split(|b| *b == 0).next().unwrap_or(&[]);
+                ours |= name == b"theme.json";
+                at = start + ev.len as usize;
+            }
+            if ours {
+                f.store(true, Ordering::SeqCst);
+                let _ = std::io::Write::write_all(&mut wake, b"!");
+            }
+        }
+    });
+    flag
 }
 
 pub fn modified() -> Option<SystemTime> {
@@ -198,6 +257,14 @@ pub fn load() -> Theme {
         bar_icon: (16.0 * num("barIcon", 100.0) as f32 / 100.0).round().max(8.0),
         workspace_scale: (num("workspaceScale", 100.0).clamp(60.0, 160.0) / 100.0) as f32,
         clock24: flag("clock24", true),
+        bar_auto_hide: flag("barAutoHide", false),
+        bar_reveal_delay: num("barRevealDelay", 350.0).max(0.0) as u64,
+        dock_auto_hide: flag("dockAutoHide", false),
+        corners: flag("screenCorners", false),
+        corner_radius: num("screenCornerRadius", 18.0).clamp(0.0, 256.0) as u32,
+        corners_all: text("screenCornerScreens") == "all",
+        corners_fullscreen: flag("screenCornersFullscreen", true),
+        corner_on: [flag("screenCornerTL", true), flag("screenCornerTR", true), flag("screenCornerBR", true), flag("screenCornerBL", true)],
         badges: flag("badges", true),
         screen_scales,
     }

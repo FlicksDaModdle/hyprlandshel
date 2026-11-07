@@ -4,6 +4,7 @@
 #
 #   tools/test/run.sh                 everything
 #   tools/test/run.sh lock greeter    some areas: unit lock greeter settings shell
+#   tools/test/run.sh shell:launcher  one test of an area
 #   tools/test/run.sh --accept        take this run's screenshots as the new
 #                                     references (after a change meant to show)
 #   tools/test/run.sh --keep          keep the test folder (logs, screenshots)
@@ -59,6 +60,8 @@ tt_setup || exit 2
 trap 'tt_teardown' EXIT
 
 for a in "${areas[@]}"; do
+    only=""
+    case "$a" in *:*) only="test_${a#*:}"; a="${a%%:*}" ;; esac
     f="$HERE/scenarios/$a.sh"
     [ -f "$f" ] || { echo "no area called $a (tools/test/run.sh --list)"; continue; }
     tt_area "$a"
@@ -69,6 +72,7 @@ for a in "${areas[@]}"; do
     # test_ functions, in the order written.
     [ ${#TT_TESTS[@]} -eq 0 ] && mapfile -t TT_TESTS < <(grep -o '^test_[a-z0-9_]*' "$f")
     for t in "${TT_TESTS[@]}"; do
+        [ -n "$only" ] && [ "$t" != "$only" ] && continue
         tt_run "$a" "$t"
     done
 done

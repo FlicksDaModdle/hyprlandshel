@@ -156,6 +156,8 @@ pub struct Shell {
     /// By id: a removed surface leaves a hole, so the ids of the rest hold.
     pub surfaces: Vec<Option<ShellSurface>>,
     pointer: Option<wl_pointer::WlPointer>,
+    /// The surface the pointer is over, if one of ours.
+    pub pointer_on: Option<usize>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     cursor_shapes: Option<wp_cursor_shape_manager_v1::WpCursorShapeManagerV1>,
     cursor: Option<wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
@@ -205,6 +207,7 @@ impl Shell {
             pictures: Vec::new(),
             kept: Vec::new(),
             pointer: None,
+            pointer_on: None,
             keyboard: None,
             cursor_shapes,
             cursor: None,
@@ -578,6 +581,11 @@ impl Shell {
         }
     }
 
+    /// Something has been put on screen: a surface has had a frame drawn.
+    pub fn drawn(&self) -> bool {
+        self.surfaces.iter().flatten().any(|s| !s.bufs.is_empty())
+    }
+
     pub fn animating(&self) -> bool {
         self.surfaces.iter().flatten().any(|s| s.adapter.window().has_active_animations())
     }
@@ -703,6 +711,7 @@ impl PointerHandler for Shell {
             let window = adapter.window();
             match ev.kind {
                 PointerEventKind::Enter { serial } => {
+                    self.pointer_on = Some(i);
                     // The arrow, not whatever the window left behind.
                     if let Some(c) = &self.cursor {
                         c.set_shape(serial, wp_cursor_shape_device_v1::Shape::Default);
@@ -713,6 +722,9 @@ impl PointerHandler for Shell {
                     window.dispatch_event(WindowEvent::PointerMoved { position: at });
                 }
                 PointerEventKind::Leave { .. } => {
+                    if self.pointer_on == Some(i) {
+                        self.pointer_on = None;
+                    }
                     window.dispatch_event(WindowEvent::PointerExited);
                 }
                 PointerEventKind::Press { button, .. } | PointerEventKind::Release { button, .. } => {
@@ -831,12 +843,15 @@ impl Shell {
 impl KeyboardHandler for Shell {
     fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, surface: &wl_surface::WlSurface, _: u32, _: &[u32], _: &[Keysym]) {
         self.focus = self.index_of(surface);
+        // In the log, for when typing goes somewhere it shouldn't.
+        eprintln!("hyprshell-rs: the keyboard is on surface {:?}", self.focus);
         if let Some(s) = self.key_window() {
             s.adapter.window().dispatch_event(WindowEvent::WindowActiveChanged(true));
         }
     }
 
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &wl_surface::WlSurface, _: u32) {
+        eprintln!("hyprshell-rs: the keyboard left surface {:?}", self.focus);
         if let Some(s) = self.key_window() {
             s.adapter.window().dispatch_event(WindowEvent::WindowActiveChanged(false));
         }

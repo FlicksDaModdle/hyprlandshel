@@ -83,6 +83,11 @@ fn main() {
     wake_rx.set_nonblocking(true).ok();
 
     let mut app = app::App::new(&mut shell, &qh, wake_tx);
+    // Up: $XDG_RUNTIME_DIR/hyprshell-ready, once the first frame is on
+    // screen, as the Quickshell shell says it (start-shell.sh, the tests).
+    let ready = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap_or_else(|| "/tmp".into())).join("hyprshell-ready");
+    let _ = std::fs::remove_file(&ready);
+    let mut said_ready = false;
 
     loop {
         let _ = conn.flush();
@@ -117,6 +122,10 @@ fn main() {
         // those only queue actions; this is where they are carried out).
         app.run_actions(&mut shell, &qh);
         shell.draw();
+        if !said_ready && shell.drawn() {
+            said_ready = true;
+            let _ = std::fs::write(&ready, b"");
+        }
         if shell.closed {
             break;
         }

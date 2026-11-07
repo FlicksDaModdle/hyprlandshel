@@ -55,6 +55,15 @@ build() {
     for f in "$REPO/rshell/target/release/hyprshell-rs" "$REPO/apps/target/release/hyprshell-settings" "$REPO/shell/rust/target/release/hyprshell-daemon"; do
         install -m 755 "$f" "$RUSTBIN/.$(basename "$f").new" && mv -f "$RUSTBIN/.$(basename "$f").new" "$RUSTBIN/$(basename "$f")"
     done
+    # Settings is also started by Hyprland itself (keybinds, desktop
+    # entries), which finds whatever apps/install.sh put on the PATH: that
+    # copy is brought up to date too, so every way in opens this build.
+    local old
+    for old in "$HOME/.local/bin/hyprshell-settings"; do
+        if [ -f "$old" ] && [ ! "$old" -ef "$RUSTBIN/hyprshell-settings" ]; then
+            install -m 755 "$RUSTBIN/hyprshell-settings" "$old.new" && mv -f "$old.new" "$old" && say "Updated $old too."
+        fi
+    done
     # The start script that knows the switch.
     mkdir -p "${START%/*}"
     install -m 755 "$REPO/shell/start-shell.sh" "$START"

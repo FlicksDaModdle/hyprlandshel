@@ -289,10 +289,23 @@ export component Bar inherits Window {
     callback tray-menu(string, length);
     callback tray-scroll(string, int);
 
+    // Auto-hide (Bar.qml): everything slides up inside the surface, which
+    // stays put; -height and a little more is away.
+    in property <length> slide;
+
     background: transparent;
     default-font-family: Theme.font;
     default-font-weight: 500;
     default-font-size: Theme.bar-fs();
+
+    property <length> left-end: left.x + left.preferred-width;
+    property <length> middle-room: max(0px, (media-pill.visible ? media-pill.x : right.x) - root.left-end - 22px);
+
+    strip := Rectangle {
+    y: root.slide;
+    width: root.width;
+    height: root.height;
+    visible: root.slide > -root.height;
 
     // ── surface ──────────────────────────────────────────────────────────
     Rectangle {
@@ -378,8 +391,6 @@ export component Bar inherits Window {
     }
 
     // ══ the middle ═══════════════════════════════════════════════════════
-    property <length> left-end: left.x + left.preferred-width;
-    property <length> middle-room: max(0px, (media-pill.visible ? media-pill.x : right.x) - root.left-end - 22px);
 
     if root.window-title != "": Text {
         x: root.left-end + 10px;
@@ -705,5 +716,6 @@ export component Bar inherits Window {
                 ink: root.open-panel == "power" ? Theme.ink-on-accent : Theme.ink;
             }
         }
+    }
     }
 }

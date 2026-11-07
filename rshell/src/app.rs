@@ -328,6 +328,15 @@ struct BarOn {
     ground: usize,
     ground_done: Option<(crate::ground::Spec, u32, u32)>,
     ground_busy: bool,
+    bar_surface: usize,
+    /// Auto-hide: where the bar is (0 out, -height-4 away), the pointer's
+    /// latch and its timers, and the room and input last given.
+    bar_slide: Spring,
+    bar_to: f64,
+    bar_latch: bool,
+    bar_hover_since: Option<Instant>,
+    bar_hide_at: Option<Instant>,
+    bar_applied: Option<(i32, bool)>,
 }
 
 /// The dock's measures on one monitor, logical px (Dock.qml's).
@@ -466,6 +475,8 @@ pub struct App {
 
     look: theme::Theme,
     look_stamp: Option<SystemTime>,
+    /// theme.json changed (theme::watch): looked at now, not at the next tick.
+    look_changed: std::sync::Arc<std::sync::atomic::AtomicBool>,
     sound: daemon::State,
     daemon: daemon::Daemon,
     /// The equalizer, noise suppression and listening (AudioFx.qml).
@@ -557,6 +568,10 @@ pub struct App {
     wake: UnixStream,
     /// The lock screen, and logind's word (lock, unlock, sleep, wake).
     lock: crate::lock::Lock,
+    /// Screen corners: (monitor, which, its window, its surface), and what
+    /// they were made for, to know when to make them again.
+    corners: Vec<(String, i32, crate::Corner, usize)>,
+    corners_for: Option<(Vec<(String, bool)>, u32, [bool; 4])>,
     lock_wanted: bool,
     logind: Receiver<&'static str>,
     battery_now: Option<(i32, bool)>,
@@ -610,7 +625,7 @@ impl App {
             theme_into!(bar, &look, us);
             wire_bar(&bar, i, &actions);
             let height = (look.bar_height * us).round().max(1.0);
-            shell.add(qh, Some(output), &wl::Placement {
+            let bar_surface = shell.add(qh, Some(output), &wl::Placement {
                 // The Quickshell bar's namespace, so hyprland.lua's layer
                 // rules (the blur behind it) apply to this one as well.
                 namespace: "quickshell:bar",
@@ -691,6 +706,13 @@ impl App {
                 ground,
                 ground_done: None,
                 ground_busy: false,
+                bar_surface,
+                bar_slide: Spring::new(0.0),
+                bar_to: 0.0,
+                bar_latch: false,
+                bar_hover_since: None,
+                bar_hide_at: None,
+                bar_applied: None,
             });
         }
 
@@ -792,6 +814,7 @@ impl App {
             notify_conn: None,
             look,
             look_stamp,
+            look_changed: theme::watch(&wake),
             sound: daemon::State { kbd_level: -1, ..Default::default() },
             daemon,
             media: mpris::Media::default(),
@@ -824,6 +847,8 @@ impl App {
             last_frame: Instant::now(),
             pending_input: Vec::new(),
             lock: crate::lock::Lock::new(&wake),
+            corners: Vec::new(),
+            corners_for: None,
             lock_wanted: false,
             logind: crate::lock::watch_logind(&wake),
             battery_now: None,
@@ -856,6 +881,9 @@ impl App {
         }
         if let Some(t) = self.ident_until {
             d = d.min(t.saturating_duration_since(Instant::now()));
+        }
+        if self.bars_moving() {
+            d = d.min(Duration::from_millis(7));
         }
         // The lock screen's springs, the face glyph, PAM's answers.
         if self.lock.busy() {
@@ -1114,6 +1142,8 @@ impl App {
         }
 
         self.step_docks(shell, dt);
+        self.step_bars(shell, dt);
+        self.step_corners(shell, qh);
         self.step_lock(shell, qh, dt);
         self.step_ground(shell);
         self.step_polkit(shell, qh);
@@ -1141,8 +1171,12 @@ impl App {
             self.launcher.add_icons(icons);
         }
 
-        if self.last_tick.elapsed() >= Duration::from_secs(1) {
-            self.last_tick = Instant::now();
+        let theme_now = self.look_changed.swap(false, std::sync::atomic::Ordering::SeqCst);
+        if theme_now || self.last_tick.elapsed() >= Duration::from_secs(1) {
+            let tick = self.last_tick.elapsed() >= Duration::from_secs(1);
+            if tick {
+                self.last_tick = Instant::now();
+            }
             self.fx.sync(&theme::raw(), &mut self.daemon);
             let stamp = theme::modified();
             if stamp != self.look_stamp {
@@ -1151,8 +1185,10 @@ impl App {
                 self.refresh_look();
                 self.refresh_extras();
             }
-            self.refresh_second();
-            self.live.tick();
+            if tick {
+                self.refresh_second();
+                self.live.tick();
+            }
         }
     }
 
@@ -1312,6 +1348,122 @@ impl App {
                 shell.set_input_rect(b.dock_surface, input);
             }
         }
+    }
+
+    /// The bar's auto-hide (Bar.qml): out while the pointer is on it — once
+    /// it has rested on the top edge for barRevealDelay ms, and until it
+    /// has been away from it for 420 — while one of its panels is open, and
+    /// while the launcher is open with the dock hidden too; otherwise slid
+    /// up, keeping no room, taking clicks only along the very top.
+    fn step_bars(&mut self, shell: &mut wl::Shell, dt: f64) {
+        let m = self.look.motion;
+        let (auto, dock_hides) = (self.look.bar_auto_hide, self.look.dock_auto_hide);
+        let delay = Duration::from_millis(self.look.bar_reveal_delay);
+        let open_on = self.open.as_ref().map(|o| o.0);
+        let launcher_on = self.launcher.is_open().then_some(self.focused_bar_cached);
+        let now = Instant::now();
+        let pointer = shell.pointer_on;
+        for (i, b) in self.bars.iter_mut().enumerate() {
+            let hovered = pointer == Some(b.bar_surface);
+            if hovered {
+                b.bar_hide_at = None;
+                if !b.bar_latch {
+                    let since = *b.bar_hover_since.get_or_insert(now);
+                    if delay.is_zero() || now - since >= delay {
+                        b.bar_latch = true;
+                    }
+                }
+            } else {
+                b.bar_hover_since = None;
+                if b.bar_latch && b.bar_hide_at.is_none() {
+                    b.bar_hide_at = Some(now + Duration::from_millis(420));
+                }
+                if b.bar_hide_at.is_some_and(|t| now >= t) {
+                    b.bar_hide_at = None;
+                    b.bar_latch = false;
+                }
+            }
+            let revealed = !self.lock.active
+                && (!auto || b.bar_latch || open_on == Some(i) || (dock_hides && launcher_on == Some(i)));
+            let to = if revealed { 0.0 } else { -(b.height as f64) - 4.0 };
+            if to != b.bar_to {
+                b.bar_to = to;
+                if revealed {
+                    b.bar_slide.go(to, 340.0, 0.6, &m);
+                } else {
+                    b.bar_slide.go(to, 260.0, 0.0, &m);
+                }
+            }
+            if b.bar_slide.moving {
+                b.bar_slide.step(dt, &m);
+            }
+            b.bar.set_slide(b.bar_slide.value as f32);
+            // No room kept while it hides; clicks only along the top while away.
+            let want = (if auto { 0 } else { b.height as i32 }, revealed);
+            if b.bar_applied != Some(want) {
+                b.bar_applied = Some(want);
+                shell.set_layer(b.bar_surface, Layer::Top, want.0);
+                shell.set_input_rect(b.bar_surface, if revealed { Some((0, 0, 100_000, b.height as i32)) } else { Some((0, 0, 100_000, 3)) });
+            }
+        }
+    }
+
+    /// Screen corners (modules/corners/ScreenCorners.qml): a small black
+    /// surface in each corner chosen, on the overlay layer over everything,
+    /// taking no clicks; on the built-in screen or on all of them; away
+    /// while a window is fullscreen there, if Settings says so.
+    fn step_corners(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        let l = &self.look;
+        let r = l.corner_radius;
+        let screens: Vec<(String, bool)> = self
+            .bars
+            .iter()
+            .filter(|b| {
+                let builtin = ["eDP", "LVDS", "DSI"].iter().any(|p| b.monitor.starts_with(p));
+                l.corners && r > 0 && (l.corners_all || builtin) && (l.corners_fullscreen || !b.fullscreen)
+            })
+            .map(|b| (b.monitor.clone(), true))
+            .collect();
+        let want = (screens, r, l.corner_on);
+        if self.corners_for.as_ref() == Some(&want) {
+            return;
+        }
+        for (_, _, _, id) in self.corners.drain(..) {
+            shell.remove(id);
+        }
+        for (monitor, _) in &want.0 {
+            let Some(output) = self.bars.iter().find(|b| &b.monitor == monitor).map(|b| b.output.clone()) else { continue };
+            for (turn, anchor) in [
+                (0, Anchor::TOP | Anchor::LEFT),
+                (1, Anchor::TOP | Anchor::RIGHT),
+                (2, Anchor::BOTTOM | Anchor::RIGHT),
+                (3, Anchor::BOTTOM | Anchor::LEFT),
+            ] {
+                if !want.2[turn as usize] {
+                    continue;
+                }
+                let Ok(c) = crate::Corner::new() else { continue };
+                c.set_turn(turn);
+                let id = shell.add(qh, Some(&output), &wl::Placement {
+                    namespace: "quickshell:corners",
+                    layer: Layer::Overlay,
+                    anchor,
+                    width: r,
+                    height: r,
+                    // Into the very corner, whatever room the bar keeps.
+                    exclusive: -1,
+                    keyboard: KeyboardInteractivity::None,
+                });
+                shell.set_input_rect(id, None);
+                self.corners.push((monitor.clone(), turn, c, id));
+            }
+        }
+        self.corners_for = Some(want);
+    }
+
+    /// Anything the bars are doing that needs frames.
+    fn bars_moving(&self) -> bool {
+        self.bars.iter().any(|b| b.bar_slide.moving || b.bar_hover_since.is_some() || b.bar_hide_at.is_some())
     }
 
     fn dock_activate(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, bar: usize, t: usize) {
@@ -2421,12 +2573,16 @@ impl App {
                 let _ = std::io::Write::write_all(&mut wake, b"!");
             });
         }
-        match self.launcher.surface {
-            Some(id) => {
-                shell.set_input(id, true);
-                shell.set_keyboard(id, KeyboardInteractivity::Exclusive);
-            }
-            None => {
+        // A fresh surface each time it opens, not the last one given the
+        // keyboard again: Hyprland doesn't hand the keyboard to a layer
+        // surface that is already up when it asks for it afresh, so typing
+        // went nowhere from the second opening on. (Quickshell's window
+        // was unmapped and mapped again the same way.)
+        if let Some(id) = self.launcher.surface.take() {
+            shell.remove(id);
+        }
+        {
+            {
                 let output = self.bars.get(bar).map(|b| b.output.clone());
                 self.launcher.surface = Some(shell.add_window(qh, self.launcher.window.clone(), output.as_ref(), &wl::Placement {
                     namespace: "quickshell:launcher",

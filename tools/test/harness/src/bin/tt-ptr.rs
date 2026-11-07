@@ -1,6 +1,8 @@
-//! tt-ptr X Y [left|right|middle|move|up|down|drag X2 Y2]: a virtual pointer
-//! moved to X,Y (logical pixels on the test's output, TT_W×TT_H) and what it
-//! does there: a click (left by default), a move, a scroll, or a drag.
+//! tt-ptr X Y [left|right|middle|move|up|down|drag X2 Y2|hover SECS]: a
+//! virtual pointer moved to X,Y (logical pixels on the test's output,
+//! TT_W×TT_H) and what it does there: a click (left by default), a move, a
+//! scroll, a drag, or resting there SECS seconds (the pointer goes when this
+//! program does, as if it had left: what reacts to hovering needs it held).
 use wayland_client::protocol::wl_pointer::{Axis, ButtonState};
 use wayland_client::{globals::{registry_queue_init, GlobalListContents}, protocol::{wl_registry, wl_seat}, Connection, Dispatch, QueueHandle};
 use wayland_protocols_wlr::virtual_pointer::v1::client::{zwlr_virtual_pointer_manager_v1 as m, zwlr_virtual_pointer_v1 as p};
@@ -64,6 +66,10 @@ fn main() {
             ptr.frame();
         }
         "move" => {}
+        "hover" => {
+            let secs: f64 = a.get(4).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+            sync((secs * 1000.0) as u64);
+        }
         _ => {
             let b = match what.as_str() { "right" => 0x111, "middle" => 0x112, _ => 0x110 };
             ptr.button(t, b, ButtonState::Pressed);

@@ -164,6 +164,8 @@ tt_run() {
     cp "$REPO/tools/test/fixtures/theme.json" "$XDG_CONFIG_HOME/quickshell/hyprshell/theme.json"
     local start=$SECONDS
     ( set +e; "$t" ) > "$TT_DIR/out.txt" 2>&1
+    # Its logs beside it, before the next test starts afresh.
+    mkdir -p "$TT_DIR/logs" && cp "$TT_LOGS"/*.log "$TT_DIR/logs/" 2>/dev/null
     local why
     why=$(cat "$TT_DIR/why" 2>/dev/null)
     # A test that couldn't even keep its own record didn't pass.
@@ -240,8 +242,12 @@ drag() { tt-ptr "$1" "$2" drag "$3" "$4" >/dev/null 2>&1; sleep 0.3; }
 keys() { tt-kbd "$@" >/dev/null 2>&1; sleep 0.25; }
 
 start_shell() {
+    rm -f "$XDG_RUNTIME_DIR/hyprshell-ready"
     tt_spawn hyprshell-rs > "$TT_LOGS/shell.log" 2>&1 < /dev/null
-    sleep 1.5
+    # Up when it says so (its first frame on screen), then a moment for the
+    # wallpaper, drawn on a thread of its own.
+    wait_for 15 test -e "$XDG_RUNTIME_DIR/hyprshell-ready" || fail "the shell didn't come up: $(tail -n 2 "$TT_LOGS/shell.log")"
+    sleep 1
     alive hyprshell-rs || fail "the shell didn't start: $(tail -n 2 "$TT_LOGS/shell.log")"
 }
 cmd() {
