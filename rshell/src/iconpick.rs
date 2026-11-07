@@ -58,13 +58,22 @@ pub fn user_glyph(name: &str) -> GlyphData {
     };
     let d = v["dots"].as_array().and_then(|a| a.first()).cloned().unwrap_or(Value::Null);
     let f = |k: &str| d[k].as_f64().unwrap_or(0.0) as f32;
+    // Dots after the first, as circles in the fills (a glyph holds one dot).
+    let circle = |e: &Value| {
+        let (cx, cy, r) = (e["cx"].as_f64().unwrap_or(0.0), e["cy"].as_f64().unwrap_or(0.0), e["r"].as_f64().unwrap_or(0.0));
+        format!("M{} {cy}A{r} {r} 0 1 0 {} {cy}A{r} {r} 0 1 0 {} {cy}Z", cx - r, cx + r, cx - r)
+    };
+    let more = |acc: bool| -> String {
+        v["dots"].as_array().into_iter().flatten().skip(1).filter(|e| (e["c"] == "acc") == acc).map(circle).collect::<Vec<_>>().join(" ")
+    };
+    let join = |a: String, b: String| if b.is_empty() { a } else if a.is_empty() { b } else { format!("{a} {b}") };
     GlyphData {
         ink: s(v, "ink").into(),
         acc: s(v, "acc").into(),
         ink_w: s(v, "inkW").into(),
         acc_w: s(v, "accW").into(),
-        fill: s(v, "fill").into(),
-        fill_ink: s(v, "fillInk").into(),
+        fill: join(s(v, "fill"), more(true)).into(),
+        fill_ink: join(s(v, "fillInk"), more(false)).into(),
         dot_x: f("cx"),
         dot_y: f("cy"),
         dot_r: f("r"),
@@ -81,4 +90,21 @@ pub fn all_names() -> Vec<String> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_chat_bubble_has_all_three_dots() {
+        // The first dot is in the glyph's dot fields; the other two are circles in the fill.
+        let g = crate::glyphs::glyph("chat");
+        assert!(g.dot_r > 0.0, "the first dot");
+        assert_eq!(g.fill.matches('Z').count(), 2, "the other two, as circles: {}", g.fill);
+    }
+
+    #[test]
+    fn an_icon_with_one_dot_is_unchanged() {
+        let g = crate::glyphs::glyph("settings");
+        assert!(g.dot_r > 0.0 && g.fill.is_empty());
+    }
 }

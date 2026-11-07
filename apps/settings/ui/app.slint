@@ -4,7 +4,7 @@
 // comes from src/rows.rs, Settings.qml's rows ported row for row.
 
 import { Theme, Icons, Win, KitWindow, Icon, Switch, FillSlider, Scroll } from "@kit";
-import { Segmented } from "common.slint";
+import { Segmented, Frost, FrostSurface } from "common.slint";
 import { WifiPanel, Wifi, WifiNet, KV, SavedNet } from "wifi.slint";
 import { BluetoothPanel, Blue, BtDev } from "bluetooth.slint";
 import { SoundPanel, Snd, SndDev, SndOpt, SndApp, SndMix, SndChan, Meters } from "sound.slint";
@@ -17,7 +17,7 @@ import { ShellUpdatesPanel, Upd, UpPart, UpCommit } from "updates.slint";
 import { FacePanel, FaceUi, FaceLook } from "face.slint";
 import { WallpaperGallery, AnimatedGallery, Gal, GalItem, AnimLook, AnimTile, PalChip } from "gallery.slint";
 
-export { Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev, Snd, SndDev, SndOpt, SndApp, Look, Gal, GalItem, AnimLook, AnimTile, PalChip, FocusLook, FocusSch, NotifApp, Upd, UpPart, UpCommit, MonMap, MonBox, HdrCal, HdrPat, SndMix, SndChan, Meters, EqLook, EqCurve, EqTick, EqHandle, EqBandChip, EqPreset, EqApp, EqChipRow, EqPresetGroup, FaceUi, FaceLook }
+export { Frost, Theme, Icons, Win, Wifi, WifiNet, KV, SavedNet, Blue, BtDev, Snd, SndDev, SndOpt, SndApp, Look, Gal, GalItem, AnimLook, AnimTile, PalChip, FocusLook, FocusSch, NotifApp, Upd, UpPart, UpCommit, MonMap, MonBox, HdrCal, HdrPat, SndMix, SndChan, Meters, EqLook, EqCurve, EqTick, EqHandle, EqBandChip, EqPreset, EqApp, EqChipRow, EqPresetGroup, FaceUi, FaceLook }
 
 export struct Btn { label: string, quiet: bool, enabled: bool }
 
@@ -439,17 +439,13 @@ component SettingsRow inherits Rectangle {
                 color: Theme.ink;
             }
             Icon { x: parent.width - 27px; y: (parent.height - self.height) / 2; name: "chevronDown"; size: 17px; ink: Theme.ink3; }
-            mh := TouchArea { mouse-cursor: pointer; clicked => { pop.show(); } }
+            mh := TouchArea { mouse-cursor: pointer; clicked => { Frost.request(self.absolute-position.x, self.absolute-position.y + parent.height + 4px, parent.width, item.options.length * 30px + 8px); pop.show(); } }
             pop := PopupWindow {
                 x: 0;
                 y: parent.height + 4px;
                 width: parent.width;
-                Rectangle {
+                FrostSurface {
                     height: opts.preferred-height;
-                    border-radius: Theme.r-sm;
-                    background: Theme.dialog;
-                    border-width: 1px;
-                    border-color: Theme.edge;
                     opts := VerticalLayout {
                         padding: 4px;
                         spacing: 1px;

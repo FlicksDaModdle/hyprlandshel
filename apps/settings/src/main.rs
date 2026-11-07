@@ -14,6 +14,7 @@
 mod anim;
 mod bt;
 mod face;
+mod frost;
 mod focus;
 mod gallery;
 mod hdrcal;
@@ -37,6 +38,8 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime};
+
+use slint::Model;
 
 slint::include_modules!();
 
@@ -62,6 +65,11 @@ struct State {
     /// Settings → Login screen: face unlock; looked at when the pane is first opened.
     face: face::Face,
     face_started: bool,
+    /// The rows as drawn, kept so a change that leaves the page's shape alone is
+    /// written into them rather than replacing them (a switch re-made in its new
+    /// state has nothing to slide from).
+    rows_model: Option<Rc<VecModel<Row>>>,
+    rows_shape: Vec<(String, String, String)>,
     /// Updates was on screen at the last draw: it looks again each time
     /// it is opened, not each time it is drawn.
     upd_shown: bool,
@@ -151,7 +159,24 @@ fn show(ui: &AppWindow, st: &mut State) {
     g.set_title(rows::pane_title(&pane).into());
     g.set_note(rows::pane_note(&pane).into());
     g.set_shorts(ModelRc::new(VecModel::from(specs.iter().map(|r| SharedString::from(short(&r.row.s))).collect::<Vec<_>>())));
-    g.set_rows(ModelRc::new(VecModel::from(specs.iter().map(|r| r.row.clone()).collect::<Vec<_>>())));
+    // The same rows in the same order: written in place, so the ones that
+    // changed (a switch, a slider) move from where they were. Anything else
+    // is a new page.
+    let shape: Vec<(String, String, String)> = specs.iter().map(|r| (r.row.kind.to_string(), r.row.n.to_string(), r.row.panel.to_string())).collect();
+    let fresh: Vec<Row> = specs.iter().map(|r| r.row.clone()).collect();
+    match (&st.rows_model, shape == st.rows_shape && !shape.is_empty()) {
+        (Some(m), true) => {
+            for (i, r) in fresh.into_iter().enumerate() {
+                m.set_row_data(i, r);
+            }
+        }
+        _ => {
+            let m = Rc::new(VecModel::from(fresh));
+            g.set_rows(ModelRc::from(m.clone()));
+            st.rows_model = Some(m);
+            st.rows_shape = shape;
+        }
+    }
     st.specs = specs;
     if pane == "Login screen" {
         publish_face(ui, st);
@@ -385,6 +410,8 @@ fn main() {
         upd: updates::Updates::default(),
         face: face::Face::default(),
         face_started: false,
+        rows_model: None,
+        rows_shape: Vec::new(),
         upd_shown: false,
         landing: None,
         fx_seen: String::new(),
@@ -674,7 +701,15 @@ fn main() {
                 if let Some(ui) = weak.upgrade() {
                     let s = st.borrow();
                     let rows: Vec<Row> = s.specs.iter().map(|r| Row { flash: false, ..r.row.clone() }).collect();
-                    ui.global::<Prefs>().set_rows(ModelRc::new(VecModel::from(rows)));
+                    // Into the model that is on screen, not a new one beside it.
+                    match &s.rows_model {
+                        Some(m) if m.row_count() == rows.len() => {
+                            for (i, r) in rows.into_iter().enumerate() {
+                                m.set_row_data(i, r);
+                            }
+                        }
+                        _ => ui.global::<Prefs>().set_rows(ModelRc::new(VecModel::from(rows))),
+                    }
                 }
             });
         });
@@ -757,6 +792,7 @@ fn main() {
     wire_wifi(&ui, &st);
     wire_bt(&ui, &st);
     wire_face(&ui, &st);
+    wire_frost(&ui, &st);
     wire_sound(&ui, &st);
     wire_eq(&ui, &st);
     wire_galleries(&ui, &st, settle.clone());
@@ -1920,4 +1956,35 @@ fn open_hdr(st: &Rc<RefCell<State>>, output: &str, pattern: bool) {
     let _ = w.show();
     fullscreen_soon(w.as_weak());
     HDR.with(|h| h.borrow_mut().0 = Some((w, cal)));
+}
+
+
+/// Frosted menus: when one opens, the window is looked at and the part under
+/// it blurred (frost.rs); what the menu draws behind its tint.
+fn wire_frost(ui: &AppWindow, st: &Rc<RefCell<State>>) {
+    let (weak, st) = (ui.as_weak(), st.clone());
+    ui.global::<Frost>().on_request(move |x, y, w, h| {
+        let Some(ui) = weak.upgrade() else { return };
+        let (blurred, translucency) = {
+            let s = st.borrow();
+            (s.c.p.b("menuBlur"), s.c.p.f("menuTranslucency").clamp(0.0, 60.0))
+        };
+        let g = ui.global::<Frost>();
+        g.set_alpha((1.0 - translucency / 100.0) as f32);
+        if !blurred {
+            g.set_blurred(false);
+            return;
+        }
+        let scale = ui.window().scale_factor();
+        match ui.window().take_snapshot() {
+            Ok(snap) => match frost::behind(&snap, scale, x, y, w, h, 7.0 * scale) {
+                Some(img) => {
+                    g.set_image(img);
+                    g.set_blurred(true);
+                }
+                None => g.set_blurred(false),
+            },
+            Err(_) => g.set_blurred(false),
+        }
+    });
 }

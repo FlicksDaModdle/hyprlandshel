@@ -153,17 +153,26 @@ export component IconMakerWin inherits Window {
         }
         Btn { x: 400px; y: 14px; label: "Save"; primary: true; active: root.problem == ""; clicked => { root.save(); } }
         Text {
-            x: 470px;
-            y: 20px;
-            width: 160px;
+            x: 90px;
+            y: 62px + root.canvas + 14px;
+            width: parent.width - 110px;
+            horizontal-alignment: right;
             text: root.status != "" ? root.status : root.problem;
             overflow: elide;
             font-size: Theme.fs(11.5);
             color: root.status != "" ? Theme.accent : Theme.ink3;
         }
-        Btn { x: parent.width - self.width - 16px; y: 14px; label: "Close"; clicked => { root.done(); } }
-        Btn { x: parent.width - 150px; y: 14px; label: "New"; clicked => { root.act("new"); } }
-        if root.loaded: Btn { x: parent.width - 210px; y: 14px; label: "Delete icon"; clicked => { root.act("delete-saved"); } }
+        // One row, right-aligned, so the buttons can't land on each other.
+        HorizontalLayout {
+            x: 16px;
+            y: 14px;
+            width: parent.width - 32px;
+            alignment: end;
+            spacing: 8px;
+            if root.loaded: Btn { label: "Delete icon"; clicked => { root.act("delete-saved"); } }
+            Btn { label: "New"; clicked => { root.act("new"); } }
+            Btn { label: "Close"; clicked => { root.done(); } }
+        }
 
         // Tools.
         VerticalLayout {

@@ -78,3 +78,33 @@ test_face_unlock_page() {
     alive hyprshell-setti || fail "Settings closed adding a face"
 }
 TT_TESTS+=(test_face_unlock_page)
+
+# A switch flips when its setting changes ("Frosted menus", on then clicked off).
+# (The slide itself can't be seen in the headless run: by the time a frame is
+# taken it has settled. The rows are written in place when a setting changes
+# so a switch keeps its place and slides, rather than being re-made.)
+test_switch_flips() {
+    start_settings "Appearance"
+    sleep 1.5
+    sw() { magick "$TT_DIR/$1.png" -crop 70x34+1445+845 +repage "$TT_DIR/$1-sw.png"; }
+    grim "$TT_DIR/before.png" 2>/dev/null; sw before
+    click 1477 862
+    sleep 1
+    grim "$TT_DIR/after.png" 2>/dev/null; sw after
+    cmp -s "$TT_DIR/before-sw.png" "$TT_DIR/after-sw.png" && fail "the switch didn't change"
+    true
+}
+TT_TESTS+=(test_switch_flips)
+
+# A frosted dropdown: the menu opens over the page with the blurred page
+# behind its tint (Settings → Appearance → Frosted menus).
+test_dropdown_frost() {
+    face_fixture
+    start_settings "Login screen"
+    sleep 1.5
+    click 1375 337
+    sleep 0.8
+    shot open
+    alive hyprshell-setti || fail "Settings closed opening a dropdown"
+}
+TT_TESTS+=(test_dropdown_frost)

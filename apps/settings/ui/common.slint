@@ -3,6 +3,28 @@
 
 import { Theme, Icon } from "@kit";
 
+// Menus that frost what is behind them (Appearance → "Frosted menus"): the
+// window is looked at when a menu opens, the part under it blurred, and that
+// drawn behind a tint of the menu's colour (menuTranslucency makes the tint
+// thinner). Slint has no backdrop blur of its own; src/frost.rs makes the image.
+export global Frost {
+    in property <image> image;
+    in property <bool> blurred;
+    // How opaque the menu's own colour is: 1 - menuTranslucency.
+    in property <float> alpha: 0.92;
+    callback request(length, length, length, length);
+}
+
+export component FrostSurface inherits Rectangle {
+    border-radius: Theme.r-sm;
+    border-width: 1px;
+    border-color: Theme.edge;
+    clip: true;
+    if Frost.blurred: Image { x: 0; y: 0; width: root.width; height: root.height; source: Frost.image; image-fit: fill; }
+    Rectangle { background: Theme.dialog.with-alpha(Frost.alpha); }
+    @children
+}
+
 export component Segmented inherits Rectangle {
     in property <[string]> options;
     in property <int> current;
@@ -199,16 +221,12 @@ export component Choice inherits Rectangle {
         color: Theme.ink;
     }
     Icon { x: parent.width - 26px; y: 10px; name: "chevronDown"; size: 14px; ink: Theme.ink3; }
-    cta := TouchArea { mouse-cursor: pointer; clicked => { pop.show(); } }
+    cta := TouchArea { mouse-cursor: pointer; clicked => { Frost.request(root.absolute-position.x, root.absolute-position.y + root.height + 4px, root.width, root.labels.length * 31px + 8px); pop.show(); } }
     pop := PopupWindow {
         y: root.height + 4px;
         width: root.width;
-        Rectangle {
+        FrostSurface {
             height: list.preferred-height;
-            border-radius: Theme.r-sm;
-            background: Theme.dialog;
-            border-width: 1px;
-            border-color: Theme.edge;
             list := VerticalLayout {
                 padding: 4px;
                 spacing: 1px;

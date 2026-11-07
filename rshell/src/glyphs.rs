@@ -3,7 +3,34 @@
 
 use crate::GlyphData;
 
+/// The dots after an icon's first (that one is in the glyph's dot fields): as
+/// circle paths, for the accent fill and the ink fill. IconPaths.js icons with
+/// several (the chat bubble's three, the keyboard's keys).
+const EXTRA_DOTS: &[(&str, &str, &str)] = &[
+    ("arc", "M18.8 16A1.2 1.2 0 1 0 21.2 16A1.2 1.2 0 1 0 18.8 16Z", ""),
+    ("chat", "M10.8 12A1.2 1.2 0 1 0 13.2 12A1.2 1.2 0 1 0 10.8 12Z M14.5 12A1.2 1.2 0 1 0 16.9 12A1.2 1.2 0 1 0 14.5 12Z", ""),
+    ("gamepad", "", "M13.5 15.2A1.1 1.1 0 1 0 15.7 15.2A1.1 1.1 0 1 0 13.5 15.2Z"),
+    ("keyboard", "", "M10 10.8A1 1 0 1 0 12 10.8A1 1 0 1 0 10 10.8Z M14 10.8A1 1 0 1 0 16 10.8A1 1 0 1 0 14 10.8Z"),
+    ("list", "", "M3.35 12A1.4 1.4 0 1 0 6.15 12A1.4 1.4 0 1 0 3.35 12Z M3.35 17.5A1.4 1.4 0 1 0 6.15 17.5A1.4 1.4 0 1 0 3.35 17.5Z"),
+    ("more-horizontal", "", "M10.5 12A1.5 1.5 0 1 0 13.5 12A1.5 1.5 0 1 0 10.5 12Z M17 12A1.5 1.5 0 1 0 20 12A1.5 1.5 0 1 0 17 12Z"),
+    ("poly", "M12.8 13.5A1.2 1.2 0 1 0 15.2 13.5A1.2 1.2 0 1 0 12.8 13.5Z", ""),
+];
+
 pub fn glyph(name: &str) -> GlyphData {
+    let mut g = glyph_base(name);
+    let k: String = name.chars().flat_map(|c| if c.is_ascii_uppercase() { vec!['-', c.to_ascii_lowercase()] } else { vec![c] }).collect();
+    if let Some((_, acc, ink)) = EXTRA_DOTS.iter().find(|e| e.0 == k) {
+        if !acc.is_empty() {
+            g.fill = if g.fill.is_empty() { (*acc).into() } else { format!("{} {acc}", g.fill).into() };
+        }
+        if !ink.is_empty() {
+            g.fill_ink = if g.fill_ink.is_empty() { (*ink).into() } else { format!("{} {ink}", g.fill_ink).into() };
+        }
+    }
+    g
+}
+
+fn glyph_base(name: &str) -> GlyphData {
     let k: String = name.chars().flat_map(|c| if c.is_ascii_uppercase() { vec!['-', c.to_ascii_lowercase()] } else { vec![c] }).collect();
     let g = |ink: &str, acc: &str, ink_w: &str, acc_w: &str, fill: &str, fill_ink: &str, dx: f32, dy: f32, dr: f32, da: bool| GlyphData {
         ink: ink.into(), acc: acc.into(), ink_w: ink_w.into(), acc_w: acc_w.into(), fill: fill.into(), fill_ink: fill_ink.into(),

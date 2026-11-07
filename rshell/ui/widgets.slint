@@ -98,17 +98,26 @@ export component Toggle inherits Rectangle {
     height: 20px;
     border-radius: 10px;
     background: checked ? Theme.accent : Theme.sel;
-    animate background { duration: 160ms; }
-    Rectangle {
+    animate background { duration: 240ms; easing: ease-in-out; }
+    drop-shadow-color: root.checked ? Theme.accent.with-alpha(0.36) : Theme.accent.with-alpha(0);
+    drop-shadow-blur: 8px;
+    drop-shadow-offset-y: 1px;
+    animate drop-shadow-color { duration: 280ms; easing: ease-in-out; }
+    // The knob stretches toward where it is going while it is held, and
+    // overshoots a little as it lands.
+    knob := Rectangle {
+        width: touch.pressed ? 21px : 16px;
+        height: touch.pressed ? 14px : 16px;
+        y: (root.height - self.height) / 2;
         x: root.checked ? root.width - self.width - 2px : 2px;
-        animate x { duration: 200ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.15); }
-        y: 2px;
-        width: 16px;
-        height: 16px;
-        border-radius: 8px;
+        border-radius: self.height / 2;
         background: root.checked ? Theme.ink-on-accent : Theme.ink2;
+        animate x { duration: 340ms; easing: cubic-bezier(0.25, 1.25, 0.4, 1); }
+        animate width { duration: 130ms; easing: ease-out; }
+        animate height { duration: 130ms; easing: ease-out; }
+        animate background { duration: 240ms; easing: ease-in-out; }
     }
-    TouchArea {
+    touch := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.toggled(!root.checked); }
     }
