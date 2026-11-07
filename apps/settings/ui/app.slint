@@ -3,7 +3,7 @@
 // its control chosen by its kind), drawn the same. What each pane holds
 // comes from src/rows.rs, Settings.qml's rows ported row for row.
 
-import { Theme, Icons, Win, KitWindow, Icon, Switch, Slider, Scroll } from "@kit";
+import { Theme, Icons, Win, KitWindow, Icon, Switch, FillSlider, Scroll } from "@kit";
 import { Segmented } from "common.slint";
 import { WifiPanel, Wifi, WifiNet, KV, SavedNet } from "wifi.slint";
 import { BluetoothPanel, Blue, BtDev } from "bluetooth.slint";
@@ -376,8 +376,9 @@ component SettingsRow inherits Rectangle {
             spacing: 12px;
             VerticalLayout {
                 alignment: center;
-                Slider {
+                FillSlider {
                     width: 216px;
+                    trough: 20px;
                     minimum: item.min;
                     maximum: item.max;
                     step: item.step;

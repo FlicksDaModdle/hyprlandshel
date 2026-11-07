@@ -276,6 +276,76 @@ export component Slider inherits Rectangle {
     }
 }
 
+// The shell's settings slider (FillSlider.qml): a rounded trough filled
+// from the left in accent, with no handle. Drag or click anywhere on it.
+// The fill follows the pointer while dragging; `moved` on every step and
+// `released` once when let go, both in the minimum..maximum range.
+export component FillSlider inherits Rectangle {
+    in property <float> value: 0;
+    in property <float> minimum: 0;
+    in property <float> maximum: 1;
+    in property <float> step: 0;
+    in property <bool> enabled: true;
+    in property <length> trough: 20px;
+    in property <brush> fill: Theme.accent;
+    in property <bool> show-rule: true;
+    callback moved(float);
+    callback released(float);
+    height: root.trough;
+    min-width: 40px;
+    border-radius: min(Theme.r-sm, root.trough / 2);
+    property <float> drag-frac;
+    property <bool> dragging: ta.pressed;
+    property <float> frac: (root.value - root.minimum) / max(0.0001, root.maximum - root.minimum);
+    property <float> shown: max(0, min(1, root.dragging ? root.drag-frac : root.frac));
+    background: Theme.hover;
+    clip: true;
+    opacity: root.enabled ? 1 : 0.5;
+    // A plain bar clipped by the rounded trough: its edge is the level,
+    // straight at any value, and never outside the trough.
+    // (Slint's rounded clip doesn't reach a child, so the bar has the
+    // trough's corners itself: round on the left, and on the right only as
+    // it meets the trough's own rounded end.)
+    property <length> r: min(Theme.r-sm, root.height / 2);
+    property <length> fw: root.shown * root.width;
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.fw;
+        height: root.height;
+        background: root.fill;
+        border-top-left-radius: min(root.r, root.fw / 2);
+        border-bottom-left-radius: min(root.r, root.fw / 2);
+        border-top-right-radius: min(root.fw / 2, max(0px, root.r - (root.width - root.fw)));
+        border-bottom-right-radius: min(root.fw / 2, max(0px, root.r - (root.width - root.fw)));
+    }
+    if root.show-rule: Rectangle {
+        border-radius: root.r;
+        border-width: 1px;
+        border-color: Theme.rule;
+    }
+    function snapped(f: float) -> float {
+        let raw = root.minimum + max(0, min(1, f)) * (root.maximum - root.minimum);
+        return root.step > 0 ? max(root.minimum, min(root.maximum, round((raw - root.minimum) / root.step) * root.step + root.minimum)) : raw;
+    }
+    ta := TouchArea {
+        // A few px of slack makes a thin trough far easier to grab.
+        y: -6px;
+        height: root.height + 12px;
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        function apply() {
+            root.drag-frac = max(0, min(1, self.mouse-x / max(1px, root.width)));
+            root.moved(root.snapped(root.drag-frac));
+        }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down { self.apply(); }
+            if e.kind == PointerEventKind.up { root.released(root.snapped(root.drag-frac)); }
+        }
+        moved => { if self.pressed { self.apply(); } }
+    }
+}
+
 // A row of choices, one picked: the shell's segmented control.
 export component Seg inherits Rectangle {
     in property <[string]> options;

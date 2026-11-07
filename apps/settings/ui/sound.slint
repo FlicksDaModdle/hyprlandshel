@@ -3,7 +3,7 @@
 // at the top, then Output, Input, Apps and Options. What it shows comes
 // from src/sound.rs.
 
-import { Theme, Icon, Switch, Slider } from "@kit";
+import { Theme, Icon, Switch, FillSlider } from "@kit";
 import { Segmented, NetButton, NetField, Caption, Line, Card, Link, FillBar, CenterBar } from "common.slint";
 import { SoundEq, MicEffects } from "eq.slint";
 
@@ -204,7 +204,8 @@ component Glance inherits VerticalLayout {
     }
     HorizontalLayout {
         spacing: 8px;
-        Slider {
+        FillSlider {
+            trough: 14px;
             horizontal-stretch: 1;
             minimum: 0;
             maximum: 1;
@@ -294,7 +295,8 @@ component DeviceList inherits VerticalLayout {
                 }
                 VerticalLayout {
                     alignment: center;
-                    Slider {
+                    FillSlider {
+                        trough: 10px;
                         width: 170px;
                         minimum: 0;
                         maximum: 1;
@@ -489,7 +491,8 @@ component Inspector inherits Card {
         }
         InspectRow {
             label: "Delay";
-            Slider {
+            FillSlider {
+                trough: 14px;
                 horizontal-stretch: 1;
                 minimum: -500;
                 maximum: 500;
@@ -755,7 +758,8 @@ export component SoundPanel inherits VerticalLayout {
                             : "100% — as loud as the device goes without distortion";
                         Text { vertical-alignment: center; text: Snd.limit + "%"; font-size: Theme.fs(13); font-weight: 600; color: Snd.limit > 100 ? #d93a2b : Theme.ink; }
                     }
-                    Slider {
+                    FillSlider {
+                        trough: 12px;
                         minimum: 30;
                         maximum: 150;
                         step: 5;
