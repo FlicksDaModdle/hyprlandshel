@@ -58,6 +58,9 @@ fi
 export TT_ACCEPT=$accept
 tt_setup || exit 2
 trap 'tt_teardown' EXIT
+# Stopped (Ctrl+C, a kill, a timeout): tidied up all the same.
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 for a in "${areas[@]}"; do
     only=""

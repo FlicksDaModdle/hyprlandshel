@@ -84,14 +84,16 @@ test_rounding_follows() {
 # back away a moment after it leaves.
 test_bar_autohide() {
     start_shell
-    set_theme barAutoHide true
+    set_theme barHide true
     sleep 1
     shot hidden
     # Resting on the top edge (held there while the screenshot is taken).
     tt-ptr 700 1 hover 2.5 &
+    local held=$!
     sleep 1.5
     shot revealed
-    wait
+    # That one only: a bare `wait` would wait for the shell too.
+    wait "$held"
     click 700 500 move
     sleep 1.2
     shot hidden-again
@@ -102,7 +104,7 @@ test_bar_autohide() {
 test_dock_autohide_prompt() {
     start_shell
     click 700 400 move
-    set_theme dockAutoHide true
+    set_theme dockHide true
     sleep 0.5
     shot dock-hidden
 }
