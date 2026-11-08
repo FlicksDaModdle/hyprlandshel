@@ -1,0 +1,273 @@
+// The overview (modules/overview/Overview.qml), Super+Tab: every workspace as
+// a card, its windows drawn on it to scale — with their pictures — over a
+// dimmed screen. Click a window to go to it, drag one to another workspace
+// (or the new one), middle-click to close it, a number key to go to that
+// workspace, Esc to leave.
+import { Icons, GlyphData } from "icons.slint";
+import { Theme } from "theme.slint";
+import { Glyph } from "glyph.slint";
+
+export struct OvWin { idx: int, px: length, py: length, pw: length, ph: length, label: string, glyph: GlyphData, thumb: image, has-thumb: bool, active: bool }
+export struct OvWs { id: int, name: string, focused: bool, count: int, wins: [OvWin] }
+
+export component OverviewWin inherits Window {
+    in property <[OvWs]> spaces;
+    // The monitor in logical pixels, to scale the windows by; the new workspace's number.
+    in property <float> mon-w: 1920;
+    in property <float> mon-h: 1080;
+    in property <int> new-ws: 1;
+    in property <float> us: 1;
+    callback focus-window(int);
+    callback close-window(int);
+    callback focus-ws(int);
+    callback move-window(int, int);
+    callback cancel();
+    public function take-keys() { keys.focus(); }
+
+    property <length> cw: round(312 * root.us) * 1px;
+    property <length> ch: round(root.cw / 1px * root.mon-h / root.mon-w) * 1px;
+    property <length> gap: round(18 * root.us) * 1px;
+    // One more card while a window is being carried: the new workspace.
+    property <bool> carrying: root.drag-active;
+    property <int> n: root.spaces.length;
+    property <int> count: root.n + (root.carrying ? 1 : 0);
+    property <int> cols: max(1, min(root.count, floor((root.width - 80px) / (root.cw + root.gap))));
+    property <int> rows: max(1, ceil(root.count / root.cols));
+    property <length> grid-w: root.cols * root.cw + (root.cols - 1) * root.gap;
+    property <length> grid-h: root.rows * root.ch + (root.rows - 1) * root.gap;
+    // The column: the heading, the grid, the hint, as QML spaces them.
+    property <length> block-h: 15px + 26px + root.grid-h + 26px + 14px;
+    property <length> top: round((root.height - root.block-h) / 2 / 1px) * 1px;
+    property <length> grid-x: round((root.width - root.grid-w) / 2 / 1px) * 1px;
+    property <length> grid-y: root.top + 15px + 26px;
+
+    // A window being carried.
+    in-out property <bool> drag-active;
+    property <int> drag-idx: -1;
+    property <int> drag-from: -1;
+    property <length> drag-x;
+    property <length> drag-y;
+    property <length> grab-x;
+    property <length> grab-y;
+    property <length> drag-w;
+    property <length> drag-h;
+    property <image> drag-thumb;
+    property <bool> drag-has-thumb;
+    property <GlyphData> drag-glyph;
+
+    pure function digit(t: string) -> int {
+        if (t == "1") { return 1; }
+        if (t == "2") { return 2; }
+        if (t == "3") { return 3; }
+        if (t == "4") { return 4; }
+        if (t == "5") { return 5; }
+        if (t == "6") { return 6; }
+        if (t == "7") { return 7; }
+        if (t == "8") { return 8; }
+        if (t == "9") { return 9; }
+        return 0;
+    }
+
+    // Which workspace the pointer is over (-1 for none), from where the cards are.
+    function ws-at(px: length, py: length) -> int {
+        if (px < root.grid-x || py < root.grid-y) { return -1; }
+        // Inside a card, not the gap beside it.
+        if (mod((px - root.grid-x) / 1px, (root.cw + root.gap) / 1px) > root.cw / 1px) { return -1; }
+        if (mod((py - root.grid-y) / 1px, (root.ch + root.gap) / 1px) > root.ch / 1px) { return -1; }
+        return floor((px - root.grid-x) / (root.cw + root.gap)) + floor((py - root.grid-y) / (root.ch + root.gap)) * root.cols;
+    }
+    property <int> over: root.drag-active ? root.ws-at(root.drag-x + root.grab-x, root.drag-y + root.grab-y) : -1;
+
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-weight: 500;
+    forward-focus: keys;
+
+    Rectangle { background: Theme.dark ? #141312 : #201e1d; opacity: Theme.dark ? 0.5 : 0.24; }
+    TouchArea { clicked => { root.cancel(); } }
+
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.Escape) {
+                if (root.drag-active) { root.drag-active = false; } else { root.cancel(); }
+                return accept;
+            }
+            if (root.digit(e.text) > 0) { root.focus-ws(root.digit(e.text)); return accept; }
+            reject
+        }
+    }
+
+    Text {
+        x: 0;
+        y: root.top;
+        width: root.width;
+        horizontal-alignment: center;
+        text: "WORKSPACES";
+        font-size: Theme.fs(12);
+        font-weight: 600;
+        letter-spacing: 1.7px;
+        color: Theme.ink2;
+    }
+
+    for ws[i] in root.spaces: card := Rectangle {
+        x: root.grid-x + mod(i, root.cols) * (root.cw + root.gap);
+        y: root.grid-y + floor(i / root.cols) * (root.ch + root.gap);
+        width: root.cw;
+        height: root.ch;
+        property <bool> drop-here: root.drag-active && root.over == i && root.drag-from != ws.id;
+        border-radius: Theme.r-cap;
+        background: self.drop-here ? Theme.panel.mix(Theme.seam, 0.5) : Theme.panel;
+        border-width: ws.focused || self.drop-here ? 2px : 1px;
+        border-color: self.drop-here || ws.focused ? Theme.accent : Theme.edge;
+        clip: true;
+
+        TouchArea { clicked => { root.focus-ws(ws.id); } }
+
+        for w in ws.wins: win := Rectangle {
+            property <float> sx: root.cw / 1px / root.mon-w;
+            x: w.px;
+            y: w.py;
+            width: max(12px, w.pw);
+            height: max(10px, w.ph);
+            border-radius: 5px;
+            clip: true;
+            background: w.has-thumb ? transparent : (w.active ? Theme.sel : Theme.hover);
+            opacity: root.drag-active && root.drag-idx == w.idx ? 0.35 : 1;
+            if w.has-thumb: Image { width: parent.width; height: parent.height; source: w.thumb; image-fit: contain; }
+            if !w.has-thumb && parent.width > 56px && parent.height > 26px: Rectangle {
+                property <length> gsz: min(18px, parent.height - 10px);
+                property <length> tw: parent.width > 118px ? min(wl.preferred-width, parent.width - 44px) : 0px;
+                property <length> total: self.gsz + (self.tw > 0px ? 6px + self.tw : 0px);
+                Glyph { x: (parent.width - parent.total) / 2; y: (parent.height - self.height) / 2; data: w.glyph; size: parent.gsz; monochrome: true; ink: Theme.ink2; }
+                wl := Text {
+                    visible: parent.tw > 0px;
+                    x: (parent.width - parent.total) / 2 + parent.gsz + 6px;
+                    y: (parent.height - self.height) / 2;
+                    width: parent.tw;
+                    text: w.label;
+                    overflow: elide;
+                    font-size: Theme.fs(11);
+                    font-weight: 600;
+                    color: Theme.ink2;
+                }
+            }
+            Rectangle {
+                border-radius: 5px;
+                border-width: w.active || wt.has-hover ? 2px : 1px;
+                border-color: wt.has-hover ? Theme.accent : (w.active ? Theme.ink3 : Theme.edge);
+                background: transparent;
+            }
+            wt := TouchArea {
+                mouse-cursor: root.drag-active ? MouseCursor.grabbing : MouseCursor.pointer;
+                property <length> down-x;
+                property <length> down-y;
+                pointer-event(e) => {
+                    if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                        self.down-x = self.absolute-position.x + self.mouse-x;
+                        self.down-y = self.absolute-position.y + self.mouse-y;
+                    }
+                    if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) {
+                        if (root.drag-active) {
+                            root.drag-active = false;
+                            // Dropped on another workspace, or the new one.
+                            if (root.over >= 0 && root.over < root.n && root.spaces[root.over].id != root.drag-from) {
+                                root.move-window(w.idx, root.spaces[root.over].id);
+                            } else if (root.over == root.n && root.carrying) {
+                                root.move-window(w.idx, root.new-ws);
+                            }
+                        } else {
+                            root.focus-window(w.idx);
+                        }
+                    }
+                    if (e.button == PointerEventButton.middle && e.kind == PointerEventKind.up) { root.close-window(w.idx); }
+                }
+                moved => {
+                    if (self.pressed) {
+                        let ax = self.absolute-position.x + self.mouse-x;
+                        let ay = self.absolute-position.y + self.mouse-y;
+                        if (!root.drag-active && (abs((ax - self.down-x) / 1px) > 6 || abs((ay - self.down-y) / 1px) > 6)) {
+                            // Picked up: a little bigger than on the card, held where it was grabbed.
+                            let k = max(1, min(2.2, 180px / max(1px, win.width)));
+                            root.drag-idx = w.idx;
+                            root.drag-from = ws.id;
+                            root.drag-w = win.width * k;
+                            root.drag-h = win.height * k;
+                            root.grab-x = (self.down-x - win.absolute-position.x) * k;
+                            root.grab-y = (self.down-y - win.absolute-position.y) * k;
+                            root.drag-thumb = w.thumb;
+                            root.drag-has-thumb = w.has-thumb;
+                            root.drag-glyph = w.glyph;
+                            root.drag-active = true;
+                        }
+                        root.drag-x = ax - root.grab-x;
+                        root.drag-y = ay - root.grab-y;
+                    }
+                }
+            }
+        }
+        if ws.count == 0: Text { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; text: "Empty"; font-size: Theme.fs(12); color: Theme.ink3; }
+        // The workspace's name, and how many windows it has.
+        Rectangle {
+            x: 10px;
+            y: parent.height - self.height - 10px;
+            height: 26px;
+            width: lbl.preferred-width + 20px;
+            border-radius: 8px;
+            background: ws.focused ? Theme.accent : Theme.sel;
+            lbl := Text { x: 10px; y: (parent.height - self.height) / 2; text: ws.name; font-size: Theme.fs(11); font-weight: 600; color: ws.focused ? Theme.ink-on-accent : Theme.ink; }
+        }
+        if ws.count > 0: Rectangle {
+            x: parent.width - self.width - 10px;
+            y: parent.height - self.height - 10px;
+            width: 26px;
+            height: 26px;
+            border-radius: 8px;
+            background: Theme.sel;
+            Text { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; text: ws.count; font-size: Theme.fs(11); font-weight: 600; color: Theme.ink2; }
+        }
+    }
+
+    // The card for a workspace that doesn't exist yet, while a window is carried.
+    if root.carrying: nw := Rectangle {
+        x: root.grid-x + mod(root.n, root.cols) * (root.cw + root.gap);
+        y: root.grid-y + floor(root.n / root.cols) * (root.ch + root.gap);
+        width: root.cw;
+        height: root.ch;
+        property <bool> drop-here: root.over == root.n;
+        border-radius: Theme.r-cap;
+        background: self.drop-here ? Theme.panel.mix(Theme.seam, 0.5) : Theme.panel;
+        border-width: self.drop-here ? 2px : 1px;
+        border-color: self.drop-here ? Theme.accent : Theme.edge;
+        VerticalLayout {
+            alignment: center;
+            spacing: 8px;
+            Glyph { x: (parent.width - self.width) / 2; data: Icons.plus; size: 22px; monochrome: true; ink: nw.drop-here ? Theme.accent : Theme.ink2; }
+            Text { horizontal-alignment: center; text: "New workspace"; font-size: Theme.fs(12); font-weight: 600; color: nw.drop-here ? Theme.ink : Theme.ink2; }
+        }
+    }
+
+    Text {
+        x: 0;
+        y: root.top + 15px + 26px + root.grid-h + 26px;
+        width: root.width;
+        horizontal-alignment: center;
+        text: "Click a window to focus it · drag it to another workspace · middle click to close · Esc to dismiss";
+        font-size: Theme.fs(11);
+        font-weight: 400;
+        color: Theme.ink3;
+    }
+
+    // The window being carried.
+    if root.drag-active: Rectangle {
+        x: root.drag-x;
+        y: root.drag-y;
+        width: root.drag-w;
+        height: root.drag-h;
+        border-radius: 7px;
+        clip: true;
+        background: Theme.sel;
+        opacity: 0.94;
+        if root.drag-has-thumb: Image { width: parent.width; height: parent.height; source: root.drag-thumb; image-fit: contain; }
+        if !root.drag-has-thumb: Glyph { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; data: root.drag-glyph; size: min(parent.height * 0.5, 28px); monochrome: true; ink: Theme.ink2; }
+    }
+}

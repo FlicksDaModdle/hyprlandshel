@@ -38,12 +38,14 @@ mod pam;
 mod platform;
 mod polkit;
 mod spring;
+mod overview;
 mod switch_ui;
 mod sys;
 mod testhooks;
 mod theme;
 mod audiofx;
 mod capture;
+mod thumbs;
 mod tray;
 mod wl;
 

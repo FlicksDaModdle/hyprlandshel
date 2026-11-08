@@ -562,6 +562,8 @@ pub struct App {
     dock_labels: HashMap<String, String>,
     switcher: crate::switch_ui::Host,
     switch_acts: Rc<RefCell<Vec<crate::switch_ui::Act>>>,
+    overview: crate::overview::Host,
+    over_acts: Rc<RefCell<Vec<crate::overview::Act>>>,
     osd: crate::Osd,
     osd_window: Rc<MinimalSoftwareWindow>,
     osd_surface: Option<usize>,
@@ -593,6 +595,8 @@ pub struct App {
     prompt_surface: Option<usize>,
     /// The icon maker; its drawing is kept while the window is closed.
     maker: crate::maker::Host,
+    /// Pictures of windows (thumbs.rs), for the switchers.
+    thumbs: crate::thumbs::Thumbs,
     /// The compositor's blur rules for the shell's surfaces.
     blur: crate::blur::Blur,
     auth: Option<crate::polkit::Request>,
@@ -806,6 +810,9 @@ impl App {
         let switch_acts = Rc::new(RefCell::new(Vec::new()));
         let switcher = crate::switch_ui::Host::new(switch_acts.clone());
         theme_into!(switcher.ui, &look, 1.0);
+        let over_acts = Rc::new(RefCell::new(Vec::new()));
+        let overview = crate::overview::Host::new(over_acts.clone());
+        theme_into!(overview.ui, &look, 1.0);
         let osd = crate::Osd::new().expect("the popup");
         let osd_window = crate::platform::take_adapter().expect("the popup's window");
         theme_into!(osd, &look, 1.0);
@@ -813,6 +820,8 @@ impl App {
         let mut app = App {
             switcher,
             switch_acts,
+            overview,
+            over_acts,
             osd,
             osd_window,
             osd_surface: None,
@@ -826,6 +835,7 @@ impl App {
             prompt_window,
             prompt_surface: None,
             maker: crate::maker::Host::new(),
+            thumbs: crate::thumbs::Thumbs::start(wake.try_clone().expect("wake"), 640),
             blur: crate::blur::Blur::new(),
             auth: None,
             auth_queue: Vec::new(),
@@ -1280,6 +1290,7 @@ impl App {
         self.step_ground(shell);
         self.step_polkit(shell, qh);
         self.step_switcher(shell, qh);
+        self.step_overview(shell, qh);
         self.step_capture(shell, qh);
         self.step_osd(shell, dt);
         if self.ident_until.is_some_and(|t| Instant::now() >= t) {
@@ -1790,6 +1801,7 @@ impl App {
         }
         theme_into!(self.toasts, &self.look, 1.0);
         theme_into!(self.switcher.ui, &self.look, 1.0);
+        theme_into!(self.overview.ui, &self.look, 1.0);
         theme_into!(self.osd, &self.look, 1.0);
         theme_into!(self.prompt, &self.look, 1.0);
         theme_into!(self.maker.ui, &self.look, 1.0);
@@ -2640,6 +2652,13 @@ impl App {
             self.step_polkit(shell, qh);
         }
         self.maker.poll();
+        // Window pictures that have come: onto the cards that show them.
+        while let Ok(t) = self.thumbs.rx.try_recv() {
+            let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&t.rgba, t.w, t.h);
+            let img = slint::Image::from_rgba8(buf);
+            self.overview.picture(&t.id, img.clone());
+            self.switcher.picture(&t.id, img);
+        }
         if !self.maker.acts.borrow().is_empty() {
             let acts: Vec<crate::maker::Act> = std::mem::take(&mut *self.maker.acts.borrow_mut());
             for a in acts {
@@ -2661,6 +2680,41 @@ impl App {
         }
         if any {
             self.step_switcher(shell, qh);
+        }
+        let ov: Vec<crate::overview::Act> = std::mem::take(&mut *self.over_acts.borrow_mut());
+        if !ov.is_empty() {
+            for a in ov {
+                use crate::overview::Act;
+                match a {
+                    Act::Focus(i) => {
+                        if let Some((addr, min, ws)) = self.overview.client(i) {
+                            crate::dock::focus(&addr, min, self.overview.current_ws());
+                            let _ = ws;
+                        }
+                        self.overview.close();
+                    }
+                    Act::Close(i) => {
+                        if let Some((addr, _, _)) = self.overview.client(i) {
+                            crate::dock::close(&addr);
+                        }
+                    }
+                    Act::FocusWs(id) => {
+                        crate::hypr::dispatch(&format!("hl.dsp.focus({{ workspace = {id} }})"), &format!("workspace {id}"));
+                        self.overview.close();
+                    }
+                    Act::Move(i, ws) => {
+                        if let Some((addr, _, _)) = self.overview.client(i) {
+                            crate::hypr::dispatch(
+                                &format!("hl.dsp.window.move({{ workspace = {ws}, follow = false, window = \"address:{addr}\" }})"),
+                                &format!("movetoworkspacesilent {ws},address:{addr}"),
+                            );
+                        }
+                        self.overview.close();
+                    }
+                    Act::Cancel => self.overview.close(),
+                }
+            }
+            self.step_overview(shell, qh);
         }
         let acts: Vec<crate::launch_ui::Act> = std::mem::take(&mut *self.launch_acts.borrow_mut());
         for a in acts {
@@ -3473,6 +3527,31 @@ impl App {
         }
     }
 
+    /// The overview's surface: there while it is open, holding the keyboard.
+    fn step_overview(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        match (self.overview.open, self.overview.surface) {
+            (true, None) => {
+                let bar = self.focused_bar();
+                let output = self.bars.get(bar).map(|b| b.output.clone());
+                self.overview.surface = Some(shell.add_window(qh, self.overview.window.clone(), output.as_ref(), &wl::Placement {
+                    namespace: "quickshell:overview",
+                    layer: Layer::Overlay,
+                    anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+                    width: 0,
+                    height: 0,
+                    exclusive: -1,
+                    keyboard: KeyboardInteractivity::Exclusive,
+                }));
+                self.overview.ui.invoke_take_keys();
+            }
+            (false, Some(id)) => {
+                shell.remove(id);
+                self.overview.surface = None;
+            }
+            _ => {}
+        }
+    }
+
     /// Alt+Tab's surface: there while it is shown, holding the keyboard.
     fn step_switcher(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
         let (show, commit) = self.switcher.tick();
@@ -3762,6 +3841,10 @@ impl App {
                         let monitor = self.bars.get(bar).map(|b| b.monitor.clone()).unwrap_or_default();
                         let us = self.look.screen_scale(&monitor);
                         self.switcher.step(if arg == "prev" { -1 } else { 1 }, &theme::raw(), &monitor, us);
+                        let ids = self.switcher.wanted();
+                        if !ids.is_empty() {
+                            self.thumbs.ask(ids);
+                        }
                     }
                     "commit" => self.switcher.commit(),
                     "cancel" => self.switcher.close(),
@@ -3769,6 +3852,20 @@ impl App {
                     _ => {}
                 }
                 self.step_switcher(shell, qh);
+            }
+            "toggleOverview" => {
+                if self.overview.open {
+                    self.overview.close();
+                } else {
+                    let bar = self.focused_bar();
+                    let monitor = self.bars.get(bar).map(|b| b.monitor.clone()).unwrap_or_default();
+                    let us = self.look.screen_scale(&monitor);
+                    let (ws, _, _, _) = slots_for(&monitor);
+                    let slots: Vec<(i64, bool)> = ws.iter().map(|w| (w.id as i64, w.focused)).collect();
+                    let ids = self.overview.open(&monitor, us, &slots);
+                    self.thumbs.ask(ids);
+                }
+                self.step_overview(shell, qh);
             }
             "toggleControlCenter" => self.toggle_from_key(shell, qh, "control"),
             "toggleNotifications" => self.toggle_from_key(shell, qh, "notifications"),

@@ -5,7 +5,7 @@ import { Icons, GlyphData } from "icons.slint";
 import { Theme } from "theme.slint";
 import { Glyph } from "glyph.slint";
 
-export struct SwitchEntry { title: string, label: string, glyph: GlyphData, tag: string, count: int }
+export struct SwitchEntry { title: string, label: string, glyph: GlyphData, tag: string, count: int, thumb: image, has-thumb: bool }
 
 export component Switcher inherits Window {
     in property <[SwitchEntry]> entries;
@@ -13,6 +13,8 @@ export component Switcher inherits Window {
     in property <float> us: 1;
     in property <float> k: 1;
     in property <bool> tags;
+    // thumbnails, icons or list (Settings → Alt+Tab → Style).
+    in property <string> style: "thumbnails";
     // A key the switcher acts on (Tab, arrows, Return, Esc, Delete); the
     // modifier's release.
     callback key(string, bool) -> bool;
@@ -26,12 +28,14 @@ export component Switcher inherits Window {
     function u(px: float) -> length { return max(1, round(px * root.us)) * 1px; }
     property <length> pad: u(14);
     property <length> gap: u(8);
-    property <length> tile-w: u(320 * root.k);
+    property <length> tile-w: root.style == "list" ? u(460 * root.k) : root.style == "icons" ? u(88 * root.k) : u(320 * root.k);
     property <length> title-h: u(28);
     property <length> picture-h: round(root.tile-w * 0.6 / 1px) * 1px;
-    property <length> tile-h: root.title-h + root.picture-h + u(8);
+    property <length> tile-h: root.style == "list" ? u(42 * root.k) : root.style == "icons" ? root.tile-w : root.title-h + root.picture-h + u(8);
+    // The icons style names the chosen window beneath the row.
+    property <length> caption-h: root.style == "icons" ? u(34) : 0px;
     property <length> max-w: max(320px, root.width * 0.86);
-    property <int> per-row: max(1, floor((root.max-w - root.pad * 2 + root.gap) / (root.tile-w + root.gap)));
+    property <int> per-row: root.style == "list" ? 1 : max(1, floor((root.max-w - root.pad * 2 + root.gap) / (root.tile-w + root.gap)));
     property <int> cols: max(1, min(root.entries.length, root.per-row));
     property <int> rows: max(1, ceil(root.entries.length / root.per-row));
     property <length> grid-w: root.cols * root.tile-w + (root.cols - 1) * root.gap;
@@ -61,7 +65,7 @@ export component Switcher inherits Window {
 
     card := Rectangle {
         width: min(root.max-w, root.grid-w + root.pad * 2);
-        height: root.grid-h + root.pad * 2;
+        height: root.grid-h + root.caption-h + root.pad * 2;
         x: round((root.width - self.width) / 2 / 1px) * 1px;
         y: round((root.height - self.height) / 2 / 1px) * 1px;
         border-radius: Theme.r-cap;
@@ -69,6 +73,19 @@ export component Switcher inherits Window {
         border-width: 1px;
         border-color: Theme.edge;
         TouchArea {}
+
+        // The icons style: the chosen window's title beneath the row.
+        if root.style == "icons" && root.index >= 0 && root.index < root.entries.length: Text {
+            x: root.pad;
+            y: root.pad + root.grid-h + u(6);
+            width: parent.width - root.pad * 2;
+            horizontal-alignment: center;
+            text: root.entries[root.index].title;
+            overflow: elide;
+            font-size: Theme.fs(max(11, u(13) / 1px));
+            font-weight: 600;
+            color: Theme.ink;
+        }
 
         for e[i] in root.entries: tile := Rectangle {
             property <bool> on: root.index == i;
@@ -93,6 +110,7 @@ export component Switcher inherits Window {
 
             // The title row: the app's glyph and the window's title.
             HorizontalLayout {
+                visible: root.style == "thumbnails";
                 x: u(8);
                 y: 0;
                 width: parent.width - u(16) - (tag.visible ? tag.width + u(6) : 0px) - (close.visible ? close.width + u(4) : 0px);
@@ -114,27 +132,66 @@ export component Switcher inherits Window {
                     color: tile.on ? Theme.ink : Theme.ink2;
                 }
             }
-            // The picture: the app's glyph on a plate (live window pictures
-            // come later).
+            // The picture: the window as it is, on a plate that shows the app's glyph
+            // until the picture has come.
             Rectangle {
+                visible: root.style == "thumbnails";
                 x: u(6);
                 y: root.title-h;
                 width: parent.width - u(12);
                 height: root.picture-h;
                 border-radius: Theme.r-sm;
                 background: Theme.hover;
-                Glyph {
+                if !e.has-thumb: Glyph {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     data: e.glyph;
                     size: min(parent.height * 0.42, u(44));
                     ink: Theme.ink3;
                 }
+                // The window itself, fitted and centred in the plate (WindowThumb.qml).
+                if e.has-thumb: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: e.thumb;
+                    image-fit: contain;
+                }
+            }
+            // Icons: the app's glyph, big.
+            if root.style == "icons": Glyph {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                data: e.glyph;
+                size: round(root.tile-w / 1px * 0.5) * 1px;
+            }
+            // List: one row, the glyph, the title, and the app's name after it.
+            if root.style == "list": HorizontalLayout {
+                x: u(12);
+                y: 0;
+                width: parent.width - u(24) - (tag.visible ? tag.width + u(8) : 0px) - (e.count > 1 ? u(30) : 0px) - (close.visible ? close.width + u(4) : 0px);
+                height: parent.height;
+                spacing: u(10);
+                Glyph { y: (parent.height - self.height) / 2; data: e.glyph; size: u(20 * root.k); }
+                Text {
+                    vertical-alignment: center;
+                    text: e.title;
+                    overflow: elide;
+                    font-size: Theme.fs(max(11, u(13 * root.k) / 1px));
+                    font-weight: tile.on ? 600 : 500;
+                    color: Theme.ink;
+                }
+                if e.label != "" && e.label != e.title: Text {
+                    horizontal-stretch: 0;
+                    vertical-alignment: center;
+                    text: e.label;
+                    font-size: Theme.fs(max(10, u(12 * root.k) / 1px));
+                    color: Theme.ink3;
+                }
             }
             tag := Rectangle {
-                visible: root.tags && e.tag != "";
+                visible: root.tags && e.tag != "" && root.style != "icons";
                 x: parent.width - self.width - u(6) - (close.visible ? close.width + u(4) : 0px);
-                y: round((root.title-h - self.height) / 2 / 1px) * 1px;
+                y: root.style == "list" ? round((parent.height - self.height) / 2 / 1px) * 1px : round((root.title-h - self.height) / 2 / 1px) * 1px;
                 height: u(18);
                 width: max(self.height, tag-text.preferred-width + u(10));
                 border-radius: self.height / 2;
@@ -172,7 +229,7 @@ export component Switcher inherits Window {
                 height: self.width;
                 border-radius: self.width / 2;
                 x: parent.width - self.width - u(6);
-                y: round((root.title-h - self.height) / 2 / 1px) * 1px;
+                y: root.style == "list" ? round((parent.height - self.height) / 2 / 1px) * 1px : round((root.title-h - self.height) / 2 / 1px) * 1px;
                 background: ct.has-hover ? Theme.seam : Theme.hover;
                 Glyph {
                     x: (parent.width - self.width) / 2;

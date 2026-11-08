@@ -27,6 +27,8 @@ pub enum Act {
 #[derive(Clone)]
 struct Win {
     address: String,
+    /// Hyprland's stableId, which names the window to the capture.
+    stable: String,
     minimised: bool,
 }
 
@@ -46,6 +48,10 @@ pub struct Host {
     broken: bool,
     mod_keys: [&'static str; 2],
     pub monitor: String,
+    /// The entries as drawn (so a picture can be put into one as it arrives), and
+    /// the pictures so far, by stableId.
+    model: Option<Rc<VecModel<SwitchEntry>>>,
+    pictures: std::collections::HashMap<String, slint::Image>,
 }
 
 fn key_is(text: &str, k: Key) -> bool {
@@ -109,6 +115,8 @@ impl Host {
             broken: false,
             mod_keys: ["Alt_L", "Alt_R"],
             monitor: String::new(),
+            model: None,
+            pictures: std::collections::HashMap::new(),
         }
     }
 
@@ -153,8 +161,8 @@ impl Host {
             let id = c["workspace"]["id"].as_i64().unwrap_or(0);
             let tag = name.strip_prefix("special:").map(str::to_string).unwrap_or_else(|| if id > 0 { id.to_string() } else { name.clone() });
             out.push((
-                SwitchEntry { title: title.into(), label: label.into(), glyph: glyphs::glyph(crate::launcher::glyph_for_class(&cls)), tag: tag.into(), count: 1 },
-                Win { address: c["address"].as_str().unwrap_or("").to_string(), minimised: name == dock::MINIMISED },
+                SwitchEntry { title: title.into(), label: label.into(), glyph: glyphs::glyph(crate::launcher::glyph_for_class(&cls)), tag: tag.into(), count: 1, thumb: slint::Image::default(), has_thumb: false },
+                Win { address: c["address"].as_str().unwrap_or("").to_string(), stable: c["stableId"].as_str().unwrap_or("").to_string(), minimised: name == dock::MINIMISED },
                 cls,
                 id,
             ));
@@ -183,9 +191,10 @@ impl Host {
             }
             let n = entries.len();
             self.index = if n == 1 { 0 } else if dir > 0 { 1 } else { n - 1 };
-            self.ui.set_entries(ModelRc::from(Rc::new(VecModel::from(entries))));
+            self.set_model(entries);
             self.ui.set_index(self.index as i32);
             self.ui.set_us(us);
+            self.ui.set_style(match raw["altTabStyle"].as_str() { Some("icons") => "icons", Some("list") => "list", _ => "thumbnails" }.into());
             self.ui.set_k((raw["altTabSize"].as_f64().unwrap_or(100.0) / 100.0).clamp(0.6, 1.6) as f32);
             self.monitor = monitor.to_string();
             self.mod_keys = match raw["altTabMod"].as_str().unwrap_or("ALT").to_uppercase().as_str() {
@@ -311,6 +320,43 @@ impl Host {
         self.wins.clear();
     }
 
+    /// Puts the entries on the card, with the pictures already had for them.
+    fn set_model(&mut self, mut entries: Vec<SwitchEntry>) {
+        for (e, w) in entries.iter_mut().zip(self.wins.iter()) {
+            if let Some(img) = self.pictures.get(&w.stable) {
+                e.thumb = img.clone();
+                e.has_thumb = true;
+            }
+        }
+        let m = Rc::new(VecModel::from(entries));
+        self.ui.set_entries(ModelRc::from(m.clone()));
+        self.model = Some(m);
+    }
+
+    /// The windows listed, by stableId: what pictures to ask for.
+    pub fn wanted(&self) -> Vec<String> {
+        if !self.open {
+            return Vec::new();
+        }
+        self.wins.iter().map(|w| w.stable.clone()).filter(|s| !s.is_empty()).collect()
+    }
+
+    /// A window's picture has arrived: kept, and put on its card.
+    pub fn picture(&mut self, id: &str, img: slint::Image) {
+        self.pictures.insert(id.to_string(), img.clone());
+        if let Some(m) = &self.model {
+            for (i, w) in self.wins.iter().enumerate() {
+                if w.stable == id {
+                    if let Some(mut e) = slint::Model::row_data(m, i) {
+                        e.thumb = img.clone();
+                        e.has_thumb = true;
+                        slint::Model::set_row_data(m, i, e);
+                    }
+                }
+            }
+        }
+    }
+
     fn close_entry(&mut self, i: usize) {
         let Some(w) = self.wins.get(i).cloned() else { return };
         dock::close(&w.address);
@@ -325,7 +371,7 @@ impl Host {
             return;
         }
         self.index = self.index.min(rows.len() - 1);
-        self.ui.set_entries(ModelRc::from(Rc::new(VecModel::from(rows))));
+        self.set_model(rows);
         self.ui.set_index(self.index as i32);
     }
 
