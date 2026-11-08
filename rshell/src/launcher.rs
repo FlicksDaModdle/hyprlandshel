@@ -411,6 +411,8 @@ pub fn score(label: &str, about: &str, q: &str) -> Option<u8> {
 
 const SESSION_RUNNER: &str = "f=\"${XDG_STATE_HOME:-$HOME/.local/state}/hyprshell/session.env\"; \
     [ -r \"$f\" ] && . \"$f\"; \
+    if [ -z \"$DISPLAY\" ]; then for s in /tmp/.X11-unix/X[0-9]*; do [ -S \"$s\" ] && DISPLAY=\":${s##*/X}\" && export DISPLAY && break; done; fi; \
+    [ \"$QT_QPA_PLATFORM\" = wayland ] && QT_QPA_PLATFORM=\"wayland;xcb\" && export QT_QPA_PLATFORM; \
     if [ -n \"$HYPRSHELL_CWD\" ]; then cd \"$HYPRSHELL_CWD\" 2>/dev/null; unset HYPRSHELL_CWD; fi; \
     exec \"$@\"";
 
