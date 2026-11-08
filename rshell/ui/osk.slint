@@ -1,0 +1,99 @@
+// The on-screen keyboard (modules/osk/Osk.qml): a strip along the bottom of
+// the screen that types into whatever window has the focus, so it never
+// takes the keyboard itself. src/osk.rs has the layout and does the typing.
+import { Theme } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Glyph } from "glyph.slint";
+
+export struct OskKey { label: string, units: float, is-mod: bool, lit: bool, big: bool }
+export struct OskRow { keys: [OskKey] }
+
+component Cap inherits Rectangle {
+    in property <OskKey> key;
+    in property <length> unit;
+    in property <length> gap;
+    in property <length> key-h;
+    callback fire();
+    width: root.key.units * root.unit + (root.key.units - 1) * root.gap;
+    height: root.key-h;
+    border-radius: Theme.r-sm;
+    background: root.key.lit ? Theme.accent : ta.pressed ? Theme.sel : ta.has-hover ? Theme.hover : Theme.panel.with-alpha(1).mix(Theme.hover, 0.5);
+    Text {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        text: root.key.label;
+        font-size: Theme.fs(root.key.big ? 14 : 11);
+        font-weight: root.key.is-mod ? 600 : 500;
+        color: root.key.lit ? Theme.ink-on-accent : root.key.is-mod ? Theme.ink2 : Theme.ink;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                root.fire();
+                if (!root.key.is-mod) { first.running = true; }
+            }
+            if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                first.running = false;
+                fast.running = false;
+            }
+        }
+    }
+    // Held down, a key repeats: after a pause, then quickly.
+    first := Timer { interval: 420ms; running: false; triggered => { self.running = false; fast.running = true; } }
+    fast := Timer { interval: 45ms; running: false; triggered => { root.fire(); } }
+}
+
+export component Osk inherits Window {
+    in property <[OskRow]> rows;
+    in property <float> units: 15;
+    in property <string> note;
+    callback key(int, int);
+    callback close();
+    background: transparent;
+    default-font-family: Theme.font;
+    default-font-weight: 500;
+    property <length> gap: 5px;
+    property <length> pad: 12px;
+    property <length> max-w: min(root.width - 32px, 1180px);
+    property <length> unit: max(26px, (root.max-w - root.pad * 2 - (root.units - 1) * root.gap) / root.units);
+    property <length> key-h: max(30px, min(48px, root.unit * 0.92));
+    Rectangle {
+        x: 8px;
+        y: 8px;
+        width: parent.width - 16px;
+        height: parent.height - 16px;
+        border-radius: Theme.r-cap;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.edge;
+        TouchArea {}
+        Text { x: 14px; y: 6px; text: "KEYBOARD"; font-size: Theme.fs(10); font-weight: 600; letter-spacing: 0.8px; color: Theme.ink3; }
+        Text { x: (parent.width - self.width) / 2; y: 6px; text: root.note; font-size: Theme.fs(10); color: Theme.accent; }
+        Rectangle {
+            x: parent.width - 30px;
+            y: 3px;
+            width: 20px;
+            height: 20px;
+            border-radius: Theme.r-sm;
+            background: cx.has-hover ? Theme.hover : transparent;
+            Glyph { x: 4px; y: 4px; data: Icons.x; size: 12px; monochrome: true; ink: Theme.ink3; }
+            cx := TouchArea { mouse-cursor: pointer; clicked => { root.close(); } }
+        }
+        VerticalLayout {
+            y: 26px;
+            x: (parent.width - self.preferred-width) / 2;
+            spacing: root.gap;
+            for row[r] in root.rows: HorizontalLayout {
+                spacing: root.gap;
+                for k[c] in row.keys: Cap {
+                    key: k;
+                    unit: root.unit;
+                    gap: root.gap;
+                    key-h: root.key-h;
+                    fire => { root.key(r, c); }
+                }
+            }
+        }
+    }
+}

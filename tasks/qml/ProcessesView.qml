@@ -224,7 +224,7 @@ Item {
             width: 168
             spacing: 2
             StyledText {
-                text: "Hyprshell"
+                text: "Hyprshell shell"
                 font.pixelSize: Appearance.fs(11)
                 font.weight: Font.DemiBold
                 color: Appearance.ink3
@@ -254,62 +254,149 @@ Item {
             width: 1
             color: Appearance.rule
         }
-        Flow {
+        Column {
             id: chips
             anchors.left: split.right
             anchors.leftMargin: 14
             anchors.right: parent.right
             anchors.rightMargin: 14
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 6
-            Repeater {
-                model: view.shellUse.parts
-                Rectangle {
-                    id: chip
-                    required property var modelData
-                    readonly property bool app: modelData.role === "app"
-                    width: chipRow.implicitWidth + 20
-                    height: 30
-                    radius: Appearance.rSm
-                    color: chipArea.containsMouse ? Appearance.hover : "transparent"
-                    border.width: 1
-                    border.color: Appearance.rule
-                    opacity: app ? 0.75 : 1
-                    Row {
-                        id: chipRow
-                        anchors.centerIn: parent
-                        spacing: 7
-                        MonoIcon {
-                            anchors.verticalCenter: parent.verticalCenter
-                            name: view.shellGlyph(chip.modelData.key)
-                            size: 14
-                            inkColor: Appearance.ink2
-                            accentColor: Appearance.accent
+            spacing: 8
+            // The shell and the services it runs on.
+            Row {
+                spacing: 8
+                visible: view.shellUse.parts.length > 0
+                StyledText {
+                    width: 92
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Shell · " + Tasks.bytes(view.shellUse.mem)
+                    font.pixelSize: Appearance.fs(11)
+                    font.weight: Font.DemiBold
+                    color: Appearance.ink2
+                }
+                Flow {
+                    width: chips.width - 100
+                    spacing: 6
+                    Repeater {
+                        model: view.shellUse.parts.filter(m => m.role === "core")
+                    Rectangle {
+                        id: chip
+                        required property var modelData
+                        readonly property bool app: modelData.role === "app"
+                        width: chipRow.implicitWidth + 20
+                        height: 30
+                        radius: Appearance.rSm
+                        color: chipArea.containsMouse ? Appearance.hover : "transparent"
+                        border.width: 1
+                        border.color: Appearance.rule
+                        opacity: app ? 0.75 : 1
+                        Row {
+                            id: chipRow
+                            anchors.centerIn: parent
+                            spacing: 7
+                            MonoIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: view.shellGlyph(chip.modelData.key)
+                                size: 14
+                                inkColor: Appearance.ink2
+                                accentColor: Appearance.accent
+                            }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: chip.modelData.label + (chip.app ? " (app)" : "")
+                                font.pixelSize: Appearance.fs(12)
+                                color: Appearance.ink2
+                            }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: Tasks.bytes(chip.modelData.mem)
+                                font.pixelSize: Appearance.fs(12)
+                                font.weight: Font.DemiBold
+                                color: Appearance.ink
+                            }
                         }
-                        StyledText {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: chip.modelData.label + (chip.app ? " (app)" : "")
-                            font.pixelSize: Appearance.fs(12)
-                            color: Appearance.ink2
-                        }
-                        StyledText {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: Tasks.bytes(chip.modelData.mem)
-                            font.pixelSize: Appearance.fs(12)
-                            font.weight: Font.DemiBold
-                            color: Appearance.ink
+                        MouseArea {
+                            id: chipArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                view.select("p:" + chip.modelData.pids[0]);
+                                view.selectedPid = chip.modelData.pids[0];
+                                view.detailsOpen = true;
+                            }
                         }
                     }
-                    MouseArea {
-                        id: chipArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            view.select("p:" + chip.modelData.pids[0]);
-                            view.selectedPid = chip.modelData.pids[0];
-                            view.detailsOpen = true;
+
+                    }
+                }
+            }
+            // Its apps, each apart.
+            Row {
+                spacing: 8
+                visible: view.shellUse.parts.some(m => m.role === "app")
+                StyledText {
+                    width: 92
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Apps · " + Tasks.bytes(view.shellUse.appMem)
+                    font.pixelSize: Appearance.fs(11)
+                    font.weight: Font.DemiBold
+                    color: Appearance.ink2
+                }
+                Flow {
+                    width: chips.width - 100
+                    spacing: 6
+                    Repeater {
+                        model: view.shellUse.parts.filter(m => m.role === "app")
+                    Rectangle {
+                        id: chip
+                        required property var modelData
+                        readonly property bool app: modelData.role === "app"
+                        width: chipRow.implicitWidth + 20
+                        height: 30
+                        radius: Appearance.rSm
+                        color: chipArea.containsMouse ? Appearance.hover : "transparent"
+                        border.width: 1
+                        border.color: Appearance.rule
+                        opacity: app ? 0.75 : 1
+                        Row {
+                            id: chipRow
+                            anchors.centerIn: parent
+                            spacing: 7
+                            MonoIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: view.shellGlyph(chip.modelData.key)
+                                size: 14
+                                inkColor: Appearance.ink2
+                                accentColor: Appearance.accent
+                            }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: chip.modelData.label + (chip.app ? " (app)" : "")
+                                font.pixelSize: Appearance.fs(12)
+                                color: Appearance.ink2
+                            }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: Tasks.bytes(chip.modelData.mem)
+                                font.pixelSize: Appearance.fs(12)
+                                font.weight: Font.DemiBold
+                                color: Appearance.ink
+                            }
                         }
+                        MouseArea {
+                            id: chipArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                view.select("p:" + chip.modelData.pids[0]);
+                                view.selectedPid = chip.modelData.pids[0];
+                                view.detailsOpen = true;
+                            }
+                        }
+                    }
+
                     }
                 }
             }

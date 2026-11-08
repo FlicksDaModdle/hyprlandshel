@@ -986,6 +986,12 @@ QString ProcessModel::shellRole(const Proc &p, QString *key, QString *label) con
         if (label) *label = "Shell (Quickshell)";
         return "core";
     }
+    // The Rust shell: the same part as Quickshell, whichever one runs.
+    if (p.name == "hyprshell-rs" || exe == "hyprshell-rs") {
+        if (key) *key = "shell";
+        if (label) *label = "Shell (Rust)";
+        return "core";
+    }
     const QString name = p.name.startsWith("hyprshell-") ? p.name : exe;
     if (!name.startsWith("hyprshell-") || name == "hyprshell-greeter") return {};
     struct Kind { const char *key, *label; };
@@ -995,6 +1001,7 @@ QString ProcessModel::shellRole(const Proc &p, QString *key, QString *label) con
         {"hyprshell-daemon", "Background service"},
         {"hyprshell-maild", "Mail sync"},
         {"hyprshell-agent", "Network & Bluetooth agent"},
+        {"hyprshell-faced", "Face unlock service"},
     };
     static const char *helpers[] = {"hyprshell-accent", "hyprshell-colors", "hyprshell-cursors",
                                     "hyprshell-render", "hyprshell-tools", "hyprshell-backend"};

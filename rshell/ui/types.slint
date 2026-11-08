@@ -33,6 +33,13 @@ export struct DriveRow { drive: string, name: string, detail: string, part: stri
 
 export struct TimerRow { label: string, left: string, running: bool, pomodoro: bool }
 
+// Clipboard history: a copied text or image.
+export struct ClipItem { id: string, text: string, meta: string, image: bool, thumb: image, has-thumb: bool }
+
+// The timers panel (services/Timers.qml): a timer, an alarm.
+export struct TimerItem { id: int, label: string, left: string, running: bool, frac: float }
+export struct AlarmItem { id: int, time: string, about: string, on: bool }
+
 // A control center tile; `kind` picks its glyph.
 export struct Tile { kind: string, name: string, sub: string, on: bool }
 

@@ -7,8 +7,8 @@
 
 use crate::art::Pixels;
 use crate::spring::{Motion, Spring};
-use crate::{daemon, extras, hypr, mpris, notify, sys, theme, tray, wl};
-use crate::{Bar, DayCell, DriveRow, MediaInfo, MenuEntry, Note, NoteAction, Panels, PrivacyRow, Theme, Tile, TimerRow, Toasts, TrayItem, Workspace};
+use crate::{launcher, daemon, extras, hypr, mpris, notify, sys, theme, timers, tray, wl};
+use crate::{OskKey, OskRow, ClipItem, Bar, DayCell, DriveRow, MediaInfo, MenuEntry, Note, NoteAction, Panels, PrivacyRow, Theme, Tile, TimerItem, AlarmItem, TimerRow, Toasts, TrayItem, Workspace};
 use serde_json::json;
 use crate::platform::ShellWindow;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
@@ -22,7 +22,36 @@ use std::time::{Duration, Instant, SystemTime};
 use wayland_client::protocol::wl_output::WlOutput;
 use wayland_client::QueueHandle;
 
+pub enum TimerCmd {
+    Add(i32),
+    Custom(String),
+    Pause(i32),
+    Resume(i32),
+    Cancel(i32),
+    PomoStart,
+    PomoPause,
+    PomoResume,
+    PomoSkip,
+    PomoStop,
+    Lengths(i32, i32, i32, i32),
+    AddAlarm(i32, i32, String, String),
+    AlarmOn(i32, bool),
+    AlarmRemove(i32),
+    Sound(bool),
+}
+
+pub enum ClipCmd {
+    Edited(String),
+    Choose(i32),
+    Forget(i32),
+    Clear,
+}
+
 pub enum Action {
+    OskKey(i32, i32),
+    OskClose,
+    Clip(ClipCmd),
+    Timer(TimerCmd),
     TogglePanel(usize, String, f32),
     ClosePanel,
     Workspace(i32),
@@ -575,6 +604,16 @@ pub struct App {
     hypr_rx: Receiver<String>,
     /// When the overview next reads the windows again (after one was moved).
     overview_refresh: Option<Instant>,
+    /// The timers panel's custom length was unreadable.
+    bad_custom: bool,
+    /// The on-screen keyboard while it is up: its view, surface and state.
+    osk: Option<(crate::Osk, usize, crate::osk::Osk)>,
+    osk_acts: Queue,
+    /// Clipboard history, from the daemon: (available, enabled, error, entries).
+    clip: (bool, bool, String, Vec<serde_json::Value>),
+    clip_query: String,
+    clip_sent: Option<(bool, i64)>,
+    clip_thumbs: HashMap<String, slint::Image>,
     daemon_rx: Receiver<serde_json::Value>,
     media_rx: Receiver<mpris::Media>,
     art_tx: Sender<(String, Option<Pixels>)>,
@@ -900,6 +939,7 @@ impl App {
         let osd_window = crate::platform::take_adapter().expect("the popup's window");
         theme_into!(osd, &look, 1.0);
 
+        let osk_acts_q = actions.clone();
         let mut app = App {
             switcher,
             switch_acts,
@@ -1015,6 +1055,13 @@ impl App {
             sharing: false,
             hypr_rx,
             overview_refresh: None,
+            bad_custom: false,
+            osk: None,
+            osk_acts: osk_acts_q,
+            clip: (false, true, String::new(), Vec::new()),
+            clip_query: String::new(),
+            clip_sent: None,
+            clip_thumbs: HashMap::new(),
             daemon_rx,
             media_rx,
             art_tx,
@@ -1135,6 +1182,16 @@ impl App {
                 continue;
             }
             match ev["ev"].as_str() {
+                Some("clip") => {
+                    self.clip = (
+                        ev["available"].as_bool().unwrap_or(false),
+                        ev["enabled"].as_bool().unwrap_or(true),
+                        ev["error"].as_str().unwrap_or("").to_string(),
+                        ev["entries"].as_array().cloned().unwrap_or_default(),
+                    );
+                    self.refresh_clip();
+                    continue;
+                }
                 Some("net-done") => {
                     if ev["ok"] != true {
                         let e = ev["error"].as_str().unwrap_or("");
@@ -1468,6 +1525,7 @@ impl App {
                 self.last_tick = Instant::now();
             }
             self.fx.sync(&theme::raw(), &mut self.daemon);
+            self.clip_sync();
             let stamp = theme::modified();
             if stamp != self.look_stamp {
                 self.look_stamp = stamp;
@@ -2371,6 +2429,260 @@ impl App {
         }
     }
 
+    /// The timers panel's contents.
+    fn show_timers(&self, tv: &timers::View) {
+        let clock24 = self.look.clock24;
+        let items: Vec<TimerItem> = tv
+            .timers
+            .iter()
+            .map(|t| TimerItem { id: t.id as i32, label: t.label.clone().into(), left: timers::clock(t.left).into(), running: t.running, frac: t.left as f32 / t.total as f32 })
+            .collect();
+        let alarms: Vec<AlarmItem> = tv
+            .alarms
+            .iter()
+            .map(|a| AlarmItem { id: a.id as i32, time: timers::alarm_time(a.h, a.m, clock24).into(), about: format!("{} · {}", a.label, timers::days_text(&a.days)).into(), on: a.on })
+            .collect();
+        let p = &tv.pomo;
+        let clock = if p.active { timers::clock(p.left) } else { format!("{}:00", p.work) };
+        let title = if p.active { format!("{}{}", timers::phase_name(&p.phase), if p.running { "" } else { " · paused" }) } else { "Focus, then a break, on repeat".into() };
+        let sessions = match p.done {
+            0 => String::new(),
+            1 => "1 session today".into(),
+            n => format!("{n} sessions today"),
+        };
+        let next = tv.next_alarm.map(|at| format!("Next {}", timers::until_text(at))).unwrap_or_default();
+        for b in &self.bars {
+            let w = &b.panels;
+            w.set_timer_items(model(items.clone()));
+            w.set_alarm_items(model(alarms.clone()));
+            w.set_pomo_active(p.active);
+            w.set_pomo_running(p.running);
+            w.set_pomo_clock(clock.clone().into());
+            w.set_pomo_title(title.clone().into());
+            w.set_pomo_sessions(sessions.clone().into());
+            w.set_pomo_work(p.work as i32);
+            w.set_pomo_short(p.short as i32);
+            w.set_pomo_long(p.long as i32);
+            w.set_pomo_every(p.every as i32);
+            w.set_alarm_next(next.clone().into());
+            w.set_timer_sound(tv.sound);
+            w.set_bad_custom(self.bad_custom);
+        }
+    }
+
+    fn timer_cmd(&mut self, c: TimerCmd) {
+        match c {
+            TimerCmd::Add(s) => timers::add_timer(s as i64, ""),
+            TimerCmd::Custom(t) => {
+                let (len, name) = t.split_once(',').map(|(a, b)| (a.to_string(), b.trim().to_string())).unwrap_or((t.clone(), String::new()));
+                let secs = timers::parse_duration(&len);
+                self.bad_custom = secs <= 0 && !t.trim().is_empty();
+                if secs > 0 {
+                    timers::add_timer(secs, &name);
+                }
+            }
+            TimerCmd::Pause(i) => timers::pause_timer(i as i64),
+            TimerCmd::Resume(i) => timers::resume_timer(i as i64),
+            TimerCmd::Cancel(i) => timers::cancel_timer(i as i64),
+            TimerCmd::PomoStart => timers::pomo_start(),
+            TimerCmd::PomoPause => timers::pomo_pause(),
+            TimerCmd::PomoResume => timers::pomo_resume(),
+            TimerCmd::PomoSkip => timers::pomo_skip(),
+            TimerCmd::PomoStop => timers::pomo_stop(),
+            TimerCmd::Lengths(a, b, c, d) => timers::set_lengths(a as i64, b as i64, c as i64, d as i64),
+            TimerCmd::AddAlarm(h, m, days, name) => {
+                let days: Vec<i64> = days.split(',').filter_map(|d| d.trim().parse().ok()).collect();
+                timers::add_alarm(h as i64, m as i64, &days, name.trim());
+            }
+            TimerCmd::AlarmOn(i, on) => timers::alarm_on(i as i64, on),
+            TimerCmd::AlarmRemove(i) => timers::remove_alarm(i as i64),
+            TimerCmd::Sound(on) => timers::set_sound(on),
+        }
+        let tv = timers::view();
+        self.show_timers(&tv);
+    }
+
+    /// What the daemon keeps of the clipboard, as the user asked (Settings → Clipboard).
+    fn clip_sync(&mut self) {
+        let raw = theme::raw();
+        let want = (raw["clipboardHistory"].as_bool().unwrap_or(true), raw["clipboardMax"].as_i64().unwrap_or(100).max(5));
+        if self.clip_sent != Some(want) {
+            self.clip_sent = Some(want);
+            self.daemon.send(json!({ "cmd": "clip-enable", "on": want.0, "max": want.1 }));
+        }
+    }
+
+    /// The entries matching the search, newest first.
+    fn clip_shown(&self) -> Vec<&serde_json::Value> {
+        let q = self.clip_query.trim().to_lowercase();
+        self.clip.3.iter().filter(|e| q.is_empty() || (e["kind"] == "text" && e["preview"].as_str().unwrap_or("").to_lowercase().contains(&q))).collect()
+    }
+
+    fn refresh_clip(&mut self) {
+        let age = |t: i64| {
+            let s = (timers::now_ms() / 1000 - t).max(0);
+            if s < 45 {
+                "just now".to_string()
+            } else if s < 3600 {
+                format!("{} min ago", (s as f64 / 60.0).round())
+            } else if s < 86400 {
+                format!("{} h ago", (s as f64 / 3600.0).round())
+            } else {
+                format!("{} d ago", (s as f64 / 86400.0).round())
+            }
+        };
+        let size = |n: i64| if n < 1024 { format!("{n} B") } else if n < 1_048_576 { format!("{} KB", n / 1024) } else { format!("{:.1} MB", n as f64 / 1_048_576.0) };
+        let shown: Vec<serde_json::Value> = self.clip_shown().into_iter().cloned().collect();
+        let mut items = Vec::new();
+        for e in &shown {
+            let id = e["id"].as_str().unwrap_or("").to_string();
+            let image = e["kind"] == "image";
+            let when = age(e["time"].as_i64().unwrap_or(0));
+            let n = e["size"].as_i64().unwrap_or(0);
+            let (text, meta) = if image {
+                ("Image".to_string(), format!("{when} · {}", size(n)))
+            } else {
+                let lines = e["lines"].as_i64().unwrap_or(1);
+                let t = e["preview"].as_str().unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ");
+                (t, format!("{when}{}{}", if lines > 1 { format!(" · {lines} lines") } else { String::new() }, if n > 2000 { format!(" · {}", size(n)) } else { String::new() }))
+            };
+            let mut thumb = slint::Image::default();
+            let mut has = false;
+            if image {
+                if !self.clip_thumbs.contains_key(&id) {
+                    if let Some(px) = e["path"].as_str().and_then(|p| crate::art::file(std::path::Path::new(p), 160)) {
+                        self.clip_thumbs.insert(id.clone(), slint::Image::from_rgba8(px));
+                    }
+                }
+                if let Some(t) = self.clip_thumbs.get(&id) {
+                    thumb = t.clone();
+                    has = true;
+                }
+            }
+            items.push(ClipItem { id: id.into(), text: text.into(), meta: meta.into(), image, thumb, has_thumb: has });
+        }
+        let note = if !self.clip.1 {
+            "Clipboard history is off — Settings → Clipboard".to_string()
+        } else if !self.daemon_has_clip() {
+            "Clipboard history needs hyprshell-daemon".to_string()
+        } else if !self.clip.2.is_empty() {
+            self.clip.2.clone()
+        } else if !self.clip_query.trim().is_empty() {
+            "Nothing copied matches that".into()
+        } else {
+            "Nothing copied yet".into()
+        };
+        let total = self.clip.3.len() as i32;
+        for b in &self.bars {
+            b.panels.set_clip_items(model(items.clone()));
+            b.panels.set_clip_total(total);
+            b.panels.set_clip_note(note.clone().into());
+        }
+    }
+
+    fn daemon_has_clip(&self) -> bool {
+        self.clip.0 || !self.clip.3.is_empty()
+    }
+
+    /// The keyboard's keys, as the model it draws.
+    fn osk_rows(osk: &crate::osk::Osk) -> Vec<OskRow> {
+        let shifted = osk.shifted();
+        crate::osk::rows()
+            .iter()
+            .map(|row| {
+                let keys: Vec<OskKey> = row
+                    .iter()
+                    .map(|k| {
+                        let label = match (k.label, k.c) {
+                            (Some(l), _) => l.to_string(),
+                            (None, Some((a, b))) => if shifted { b } else { a }.to_string(),
+                            _ => String::new(),
+                        };
+                        OskKey { label: label.into(), units: k.w, is_mod: k.m.is_some(), lit: k.m.is_some_and(|m| osk.is_held(m)), big: k.c.is_some() && k.label.is_none() }
+                    })
+                    .collect();
+                OskRow { keys: model(keys) }
+            })
+            .collect()
+    }
+
+    fn toggle_osk(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        if let Some((_, id, _)) = self.osk.take() {
+            shell.remove(id);
+            return;
+        }
+        let bar = self.focused_bar();
+        let Some(b) = self.bars.get(bar) else { return };
+        let output = b.output.clone();
+        let width = b.panel_window.size().width as f32 / b.panel_window.scale_factor();
+        let Ok(view) = crate::Osk::new() else { return };
+        let Some(adapter) = crate::platform::take_adapter() else { return };
+        let us = self.look.screen_scale(&b.monitor);
+        theme_into!(view, &self.look, us);
+        let state = crate::osk::Osk::default();
+        view.set_rows(model(Self::osk_rows(&state)));
+        view.set_units(crate::osk::widest());
+        let (units, gap, pad) = (crate::osk::widest(), 5.0f32, 12.0f32);
+        let max_w = (width - 32.0).min(1180.0);
+        let unit = ((max_w - pad * 2.0 - (units - 1.0) * gap) / units).max(26.0);
+        let key_h = (unit * 0.92).clamp(30.0, 48.0);
+        let height = pad * 2.0 + 5.0 * key_h + 4.0 * gap + 26.0 + 16.0;
+        let q = self.osk_acts.clone();
+        view.on_key(move |r, c| q.borrow_mut().push(Action::OskKey(r, c)));
+        let q = self.osk_acts.clone();
+        view.on_close(move || q.borrow_mut().push(Action::OskClose));
+        let id = shell.add_window(qh, adapter, Some(&output), &wl::Placement {
+            namespace: "quickshell:osk",
+            layer: Layer::Overlay,
+            anchor: Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+            width: 0,
+            height: height.ceil() as u32,
+            exclusive: 0,
+            // Never: the window being typed into has to stay the focused one.
+            keyboard: KeyboardInteractivity::None,
+        });
+        self.osk = Some((view, id, state));
+    }
+
+    fn osk_key(&mut self, r: i32, c: i32) {
+        let Some((view, _, state)) = self.osk.as_mut() else { return };
+        let rows = crate::osk::rows();
+        if let Some(key) = rows.get(r as usize).and_then(|row| row.get(c as usize)) {
+            state.press(key);
+        }
+        view.set_rows(model(Self::osk_rows(state)));
+        view.set_note(state.note.clone().into());
+    }
+
+    fn clip_cmd(&mut self, c: ClipCmd) {
+        match c {
+            ClipCmd::Edited(t) => {
+                self.clip_query = t;
+                self.refresh_clip();
+            }
+            ClipCmd::Choose(i) => {
+                let id = self.clip_shown().get(i.max(0) as usize).and_then(|e| e["id"].as_str().map(str::to_string));
+                if let Some(id) = id {
+                    self.daemon.send(json!({ "cmd": "clip-copy", "id": id }));
+                    self.close_panel();
+                }
+            }
+            ClipCmd::Forget(i) => {
+                let id = self.clip_shown().get(i.max(0) as usize).and_then(|e| e["id"].as_str().map(str::to_string));
+                if let Some(id) = id {
+                    self.clip.3.retain(|e| e["id"].as_str() != Some(id.as_str()));
+                    self.daemon.send(json!({ "cmd": "clip-delete", "id": id }));
+                    self.refresh_clip();
+                }
+            }
+            ClipCmd::Clear => {
+                self.clip.3.clear();
+                self.daemon.send(json!({ "cmd": "clip-clear" }));
+                self.refresh_clip();
+            }
+        }
+    }
+
     fn refresh_second(&mut self) {
         let mode = theme::raw()["shellBlurMode"].as_str().unwrap_or("auto").to_string();
         self.blur.sync(&mode);
@@ -2409,13 +2721,18 @@ impl App {
         let (time, date) = clock(self.look.clock24);
         let battery = sys::battery();
         self.battery_now = battery.as_ref().map(|b| (b.percent, b.charging));
-        let timers = extras::timers();
-        let soonest = timers.iter().filter(|t| t.running).min_by_key(|t| t.left);
-        let timer_text = soonest.map(|t| extras::clock(t.left)).unwrap_or_else(|| "paused".into());
-        let rows: Vec<TimerRow> = timers
+        timers::tick(self.look.clock24);
+        let tv = timers::view();
+        let soonest: Option<(i64, bool)> = tv
+            .timers
             .iter()
-            .map(|t| TimerRow { label: t.label.clone().into(), left: extras::clock(t.left).into(), running: t.running, pomodoro: t.pomodoro })
-            .collect();
+            .filter(|t| t.running)
+            .map(|t| (t.left, false))
+            .chain((tv.pomo.active && tv.pomo.running).then_some((tv.pomo.left, true)))
+            .min_by_key(|t| t.0);
+        let any_timer = !tv.timers.is_empty() || tv.pomo.active;
+        let timer_text = soonest.map(|t| extras::clock(t.0)).unwrap_or_else(|| "paused".into());
+        let rows: Vec<TimerRow> = Vec::new();
         for b in &self.bars {
             b.bar.set_time(time.clone().into());
             b.dock.set_time(time.clone().into());
@@ -2425,16 +2742,17 @@ impl App {
             b.dock.set_battery(battery.as_ref().map(|x| x.percent).unwrap_or(-1));
             b.bar.set_charging(battery.as_ref().is_some_and(|x| x.charging));
             b.dock.set_charging(battery.as_ref().is_some_and(|x| x.charging));
-            b.bar.set_has_timer(!timers.is_empty());
-            b.dock.set_has_timer(!timers.is_empty());
+            b.bar.set_has_timer(any_timer);
+            b.dock.set_has_timer(any_timer);
             b.bar.set_timer_text(timer_text.clone().into());
             b.dock.set_timer_text(timer_text.clone().into());
             b.bar.set_timer_running(soonest.is_some());
             b.dock.set_timer_running(soonest.is_some());
-            b.bar.set_timer_pomodoro(soonest.is_some_and(|t| t.pomodoro));
-            b.dock.set_timer_pomodoro(soonest.is_some_and(|t| t.pomodoro));
+            b.bar.set_timer_pomodoro(soonest.is_some_and(|t| t.1));
+            b.dock.set_timer_pomodoro(soonest.is_some_and(|t| t.1));
             b.panels.set_timers(model(rows.clone()));
         }
+        self.show_timers(&tv);
         // "5 min" on the cards moves on.
         if !self.notes.is_empty() && self.open.as_ref().is_some_and(|o| o.1 == "notifications") {
             self.refresh_note_models();
@@ -2966,6 +3284,13 @@ impl App {
         }
         if which == "power" {
             self.refresh_session();
+        }
+        if which == "clipboard" {
+            self.clip_query.clear();
+            for b in &self.bars {
+                b.panels.set_clip_query("".into());
+            }
+            self.refresh_clip();
         }
         if which == "control" {
             self.daemon.send(json!({ "cmd": "bl-watch", "on": true }));
@@ -3545,6 +3870,14 @@ impl App {
                 }
                 self.refresh_lists();
             }
+            Action::OskKey(r, c) => self.osk_key(r, c),
+            Action::OskClose => {
+                if let Some((_, id, _)) = self.osk.take() {
+                    shell.remove(id);
+                }
+            }
+            Action::Timer(c) => self.timer_cmd(c),
+            Action::Clip(c) => self.clip_cmd(c),
             Action::JoinSecret(ssid, secret) => {
                 if secret.is_empty() {
                     return;
@@ -3804,6 +4137,10 @@ impl App {
                     "keybinds" => self.command(shell, qh, "openSettings Keybinds"),
                     "wallpaper" => self.command(shell, qh, "openSettings Wallpaper"),
                     "capture" => self.command(shell, qh, "toggleCapture"),
+                    "clipboard" => self.command(shell, qh, "toggleClipboard"),
+                    "record" => self.command(shell, qh, "toggleRecording"),
+                    "overview" => self.command(shell, qh, "toggleOverview"),
+                    "osk" => self.command(shell, qh, "toggleKeyboard"),
                     "ocr" => self.command(shell, qh, "ocr"),
                     "lock" | "logout" | "suspend" | "reboot" | "poweroff" => self.power(k),
                     other => eprintln!("hyprshell-rs: the \"{other}\" command isn't in the Rust shell yet"),
@@ -4541,6 +4878,68 @@ impl App {
             "toggleTimers" => self.toggle_from_key(shell, qh, "timers"),
             "toggleMedia" => self.toggle_from_key(shell, qh, "media"),
             "toggleUpdates" => self.toggle_from_key(shell, qh, "updates"),
+            // "timer 10m", "timer 1h30, tea"
+            "timer" => {
+                let (len, label) = arg.split_once(',').map(|(a, b)| (a, b.trim())).unwrap_or((arg, ""));
+                timers::add_timer(timers::parse_duration(len), label);
+                let tv = timers::view();
+                self.show_timers(&tv);
+            }
+            "pomodoro" => {
+                let p = timers::view().pomo;
+                match (p.active, p.running) {
+                    (true, true) => timers::pomo_pause(),
+                    (true, false) => timers::pomo_resume(),
+                    _ => timers::pomo_start(),
+                }
+                let tv = timers::view();
+                self.show_timers(&tv);
+            }
+            "openFiles" => {
+                let dir = if arg.is_empty() { std::env::var("HOME").unwrap_or_default() } else { arg.to_string() };
+                launcher::launch(&launcher::files_command(&dir), "");
+            }
+            "openMusic" => launcher::launch(&[extras::terminal(), "-e".into(), "ncmpcpp".into()], ""),
+            "openTasks" => {
+                let mut a = vec!["hyprshell-tasks".to_string()];
+                if !arg.is_empty() {
+                    a.extend(["--view".into(), arg.to_string()]);
+                }
+                launcher::launch(&a, "");
+            }
+            "composeMail" => {
+                let to = if arg.is_empty() { "--compose".to_string() } else { format!("mailto:{arg}") };
+                launcher::launch(&["hyprshell-mail".into(), to], "");
+            }
+            "setTheme" => {
+                if matches!(arg, "light" | "dark" | "auto") {
+                    theme::set("theme", json!(arg));
+                    self.reload_look();
+                }
+            }
+            "setWallpaper" => {
+                theme::set("wallpaper", json!(arg));
+                self.reload_look();
+            }
+            "setLiveWallpaper" => {
+                theme::set("liveWallpaper", json!(arg));
+                self.reload_look();
+            }
+            "toggleRecording" | "record" => {
+                let raw = theme::raw();
+                let mode = raw["captureRecordMode"].as_str().filter(|m| !m.is_empty()).unwrap_or("screen").to_string();
+                let audio = raw["captureAudio"].as_str().unwrap_or("none").to_string();
+                let bar = self.focused_bar();
+                let out = self.bars.get(bar).map(|b| b.monitor.clone()).unwrap_or_default();
+                self.close_panel();
+                crate::capture::toggle_recording(&mode, &audio, &out);
+            }
+            "toggleKeyboard" => self.toggle_osk(shell, qh),
+            "toggleClipboard" => {
+                let bar = self.focused_bar();
+                let x = self.bars.get(bar).map(|b| b.panel_window.size().width as f32 / b.panel_window.scale_factor() / 2.0).unwrap_or(960.0);
+                self.toggle_panel(shell, qh, bar, "clipboard", x);
+            }
             "snapWindow" => snap_active(arg),
             "snapLayouts" => self.toggle_from_key(shell, qh, "window"),
             "closePanels" => self.close_panel(),
@@ -4843,6 +5242,25 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_wifi, |v| Action::Wifi(v));
     on!(on_bt, |v| Action::Bt(v));
     on!(on_join, |n| Action::Join(n.to_string()));
+    on!(on_clip_edited, |t| Action::Clip(ClipCmd::Edited(t.to_string())));
+    on!(on_clip_choose, |i| Action::Clip(ClipCmd::Choose(i)));
+    on!(on_clip_forget, |i| Action::Clip(ClipCmd::Forget(i)));
+    on!(on_clip_clear, | | Action::Clip(ClipCmd::Clear));
+    on!(on_timer_add, |s| Action::Timer(TimerCmd::Add(s)));
+    on!(on_timer_custom, |t| Action::Timer(TimerCmd::Custom(t.to_string())));
+    on!(on_timer_pause, |i| Action::Timer(TimerCmd::Pause(i)));
+    on!(on_timer_resume, |i| Action::Timer(TimerCmd::Resume(i)));
+    on!(on_timer_cancel, |i| Action::Timer(TimerCmd::Cancel(i)));
+    on!(on_pomo_start, | | Action::Timer(TimerCmd::PomoStart));
+    on!(on_pomo_pause, | | Action::Timer(TimerCmd::PomoPause));
+    on!(on_pomo_resume, | | Action::Timer(TimerCmd::PomoResume));
+    on!(on_pomo_skip, | | Action::Timer(TimerCmd::PomoSkip));
+    on!(on_pomo_stop, | | Action::Timer(TimerCmd::PomoStop));
+    on!(on_pomo_lengths, |a, b, c, d| Action::Timer(TimerCmd::Lengths(a, b, c, d)));
+    on!(on_alarm_add, |h, m, d, n| Action::Timer(TimerCmd::AddAlarm(h, m, d.to_string(), n.to_string())));
+    on!(on_alarm_on, |i, o| Action::Timer(TimerCmd::AlarmOn(i, o)));
+    on!(on_alarm_remove, |i| Action::Timer(TimerCmd::AlarmRemove(i)));
+    on!(on_set_timer_sound, |o| Action::Timer(TimerCmd::Sound(o)));
     on!(on_join_secret, |n, s| Action::JoinSecret(n.to_string(), s.to_string()));
     on!(on_disconnect, | | Action::Disconnect);
     on!(on_forget, |n| Action::Forget(n.to_string()));

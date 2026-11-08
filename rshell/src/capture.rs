@@ -471,3 +471,99 @@ mod tests {
         assert_eq!(b, vec![(100.0, 100.0, 200.0, 100.0), (0.0, 0.0, 800.0, 600.0)]);
     }
 }
+
+
+// ── recording (Capture.qml's wf-recorder) ────────────────────────────────
+
+static REC_PID: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+pub fn recording() -> bool {
+    REC_PID.load(std::sync::atomic::Ordering::SeqCst) > 0
+}
+
+fn pactl(what: &str) -> String {
+    Command::new("pactl").arg(what).stderr(Stdio::null()).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default()
+}
+
+/// Starts a recording of `mode` (region | screen) with `audio` (none |
+/// desktop | mic) of `output`; or, if one runs, stops it (wf-recorder
+/// finishes the file on SIGINT).
+pub fn toggle_recording(mode: &str, audio: &str, output: &str) {
+    use std::sync::atomic::Ordering;
+    let pid = REC_PID.load(Ordering::SeqCst);
+    if pid > 0 {
+        unsafe {
+            libc::kill(pid, libc::SIGINT);
+        }
+        return;
+    }
+    if !which("wf-recorder") {
+        say("Screen recording", "Needs wf-recorder — sudo pacman -S wf-recorder");
+        return;
+    }
+    let dev = match audio {
+        "desktop" => {
+            let s = pactl("get-default-sink");
+            if s.is_empty() { s } else { format!("{s}.monitor") }
+        }
+        "mic" => pactl("get-default-source"),
+        _ => String::new(),
+    };
+    let (mode, output) = (mode.to_string(), output.to_string());
+    let dir = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Videos/Recordings")).unwrap_or_else(|| "/tmp".into());
+    std::thread::spawn(move || {
+        let script = "mode=$1; dev=$2; dir=$3; out=$4; mkdir -p \"$dir\" || exit 3; \
+            f=\"$dir/Recording_$(date +%Y-%m-%d_%H-%M-%S).mp4\"; \
+            set -- -f \"$f\"; \
+            if [ \"$mode\" = region ]; then g=$(slurp -d < /dev/null) || exit 1; set -- \"$@\" -g \"$g\"; \
+            elif [ -n \"$out\" ]; then set -- \"$@\" -o \"$out\"; fi; \
+            [ -n \"$dev\" ] && set -- \"$@\" \"--audio=$dev\"; \
+            printf 'FILE %s\\n' \"$f\"; \
+            exec wf-recorder -y \"$@\"";
+        let child = Command::new("sh")
+            .args(["-c", script, "record", &mode, &dev, &dir.to_string_lossy(), &output])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn();
+        let Ok(mut child) = child else { return };
+        REC_PID.store(child.id() as i32, Ordering::SeqCst);
+        let mut file = String::new();
+        let mut since = Instant::now();
+        if let Some(out) = child.stdout.take() {
+            use std::io::BufRead;
+            for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+                if let Some(f) = line.strip_prefix("FILE ") {
+                    file = f.to_string();
+                    since = Instant::now();
+                    say("Recording", "Started — press the key again to stop");
+                }
+            }
+        }
+        let err = child.stderr.take().map(|mut e| {
+            let mut t = String::new();
+            let _ = std::io::Read::read_to_string(&mut e, &mut t);
+            t
+        });
+        let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
+        REC_PID.store(0, Ordering::SeqCst);
+        if file.is_empty() {
+            // Cancelled in the selection, or never began.
+            if code != 1 {
+                say("Recording failed", err.unwrap_or_default().trim().lines().last().unwrap_or("wf-recorder did not start"));
+            }
+            return;
+        }
+        let secs = since.elapsed().as_secs();
+        let name = file.rsplit('/').next().unwrap_or(&file).to_string();
+        let out = Command::new("notify-send")
+            .args(["-a", "Screenshot", "-i", "camera-video", "-A", "open=Play", "-A", "folder=Show in Files", "--wait", "Recording saved", &format!("{}:{:02} · {name}", secs / 60, secs % 60)])
+            .stderr(Stdio::null())
+            .output();
+        match out.ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).as_deref() {
+            Some("open") => crate::extras::spawn(&["xdg-open", &file]),
+            Some("folder") => crate::launcher::launch(&crate::launcher::files_command(&dir.to_string_lossy()), ""),
+            _ => {}
+        }
+    });
+}

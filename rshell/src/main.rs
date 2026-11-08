@@ -22,6 +22,8 @@ mod art;
 mod daemon;
 mod dock;
 mod extras;
+mod osk;
+mod timers;
 mod glyphs;
 mod iconpick;
 mod greetd;
