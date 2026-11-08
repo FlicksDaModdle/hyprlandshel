@@ -6,6 +6,7 @@ import { Theme } from "theme.slint";
 import { Glyph } from "glyph.slint";
 
 export struct MakerShape { glyph: GlyphData, selected: bool }
+export struct MakerHandle { x: float, y: float }
 
 component Btn inherits Rectangle {
     in property <string> label;
@@ -66,6 +67,7 @@ export component IconMakerWin inherits Window {
     in property <string> sel-r;
     in property <string> sel-a0;
     in property <string> sel-a1;
+    in property <[MakerHandle]> handles;
     in property <float> bx;
     in property <float> by;
     in property <float> bw;
@@ -228,6 +230,17 @@ export component IconMakerWin inherits Window {
                 border-width: 1px;
                 border-color: Theme.accent;
                 background: transparent;
+            }
+            // The handles of the selected shape: drag one to resize it.
+            for h in root.handles: Rectangle {
+                x: h.x * root.cell - 5px;
+                y: h.y * root.cell - 5px;
+                width: 10px;
+                height: 10px;
+                border-radius: 2px;
+                background: white;
+                border-width: 2px;
+                border-color: Theme.accent;
             }
             ta := TouchArea {
                 mouse-cursor: root.tool == "select" ? MouseCursor.default : MouseCursor.crosshair;

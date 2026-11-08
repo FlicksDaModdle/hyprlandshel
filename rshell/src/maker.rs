@@ -733,6 +733,64 @@ pub enum Act {
 enum Drag {
     Move { last: (f64, f64), moved: bool },
     Draw { start: (f64, f64) },
+    /// One of the selected shape's handles, by its place in `handles()`.
+    Handle { which: usize, moved: bool },
+}
+
+/// The points to take hold of a shape by, on the grid: the ends of a line, the
+/// corners of a box, a circle's or an ellipse's edge, an arc's two ends and the
+/// middle of its curve. None for the shapes with no such handles (paths) and
+/// for a turned shape, whose own frame isn't the grid's.
+pub fn handles(s: &Value) -> Vec<(f64, f64)> {
+    if f(s, "rot") != 0.0 {
+        return Vec::new();
+    }
+    match kind(s) {
+        "line" => vec![(f(s, "x1"), f(s, "y1")), (f(s, "x2"), f(s, "y2"))],
+        "rect" => {
+            let (x, y, w, h) = (f(s, "x"), f(s, "y"), f(s, "w"), f(s, "h"));
+            vec![(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+        }
+        "circle" | "dot" => vec![(f(s, "cx") + f(s, "r"), f(s, "cy"))],
+        "ellipse" => vec![(f(s, "cx") + f(s, "rx"), f(s, "cy")), (f(s, "cx"), f(s, "cy") + f(s, "ry"))],
+        "arc" => {
+            let (cx, cy, r, a0, a1) = (f(s, "cx"), f(s, "cy"), f(s, "r"), f(s, "a0"), f(s, "a1"));
+            vec![polar(cx, cy, r, a0), polar(cx, cy, r, a1), polar(cx, cy, r, (a0 + a1) / 2.0)]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// A handle dragged to a grid point (already snapped): the fields it changes.
+pub fn drag_handle(s: &Value, which: usize, px: f64, py: f64) -> Vec<(&'static str, Value)> {
+    match kind(s) {
+        "line" => if which == 0 { vec![("x1", json!(px)), ("y1", json!(py))] } else { vec![("x2", json!(px)), ("y2", json!(py))] },
+        "rect" => {
+            // The corner opposite is the one that stays.
+            let hs = handles(s);
+            let Some(fixed) = hs.get((which + 2) % 4) else { return Vec::new() };
+            vec![("x", json!(px.min(fixed.0))), ("y", json!(py.min(fixed.1))), ("w", json!((px - fixed.0).abs())), ("h", json!((py - fixed.1).abs()))]
+        }
+        "circle" | "dot" => vec![("r", json!(n(((px - f(s, "cx")).hypot(py - f(s, "cy"))) * 2.0) / 2.0))],
+        "ellipse" => if which == 0 { vec![("rx", json!((px - f(s, "cx")).abs()))] } else { vec![("ry", json!((py - f(s, "cy")).abs()))] },
+        "arc" => {
+            let (cx, cy) = (f(s, "cx"), f(s, "cy"));
+            let angle = ((py - cy).atan2(px - cx).to_degrees() / 15.0).round() * 15.0;
+            match which {
+                0 => vec![("a0", json!(angle))],
+                1 => {
+                    // Kept within a turn of the start, so a drag never flips the arc's way round.
+                    let a0 = f(s, "a0");
+                    let mut a = angle;
+                    while a <= a0 - 360.0 { a += 360.0 }
+                    while a > a0 + 360.0 { a -= 360.0 }
+                    vec![("a1", json!(a))]
+                }
+                _ => vec![("r", json!(n((px - cx).hypot(py - cy) * 2.0) / 2.0))],
+            }
+        }
+        _ => Vec::new(),
+    }
 }
 
 pub struct Host {
@@ -945,6 +1003,14 @@ impl Host {
         let (sx, sy) = (snap(x), snap(y));
         match k {
             0 => {
+                // A handle of the shape already selected comes first, whatever the tool.
+                if let Some(cur) = self.model.current() {
+                    let hit = handles(cur).iter().position(|h| (h.0 - x).hypot(h.1 - y) <= 0.7);
+                    if let Some(which) = hit {
+                        self.drag = Some(Drag::Handle { which, moved: false });
+                        return;
+                    }
+                }
                 if self.tool == "select" {
                     self.model.selected = self.model.pick(x, y, 0.9);
                     self.drag = self.model.selected.map(|_| Drag::Move { last: (sx, sy), moved: false });
@@ -978,6 +1044,18 @@ impl Host {
                         }
                         *last = (sx, sy);
                         self.model.move_selected(dx, dy);
+                    }
+                }
+                Some(Drag::Handle { which, ref mut moved }) => {
+                    if let Some(cur) = self.model.current().cloned() {
+                        let fields = drag_handle(&cur, which, sx, sy);
+                        if !fields.is_empty() {
+                            if !*moved {
+                                *moved = true;
+                                self.model.snapshot();
+                            }
+                            self.model.update(&fields, true);
+                        }
                     }
                 }
                 Some(Drag::Draw { start }) => {
@@ -1234,12 +1312,17 @@ impl Host {
                 ui.set_sel_r(fmt(f(s, "r")).into());
                 ui.set_sel_a0(fmt(f(s, "a0")).into());
                 ui.set_sel_a1(fmt(f(s, "a1")).into());
+                let hs: Vec<crate::MakerHandle> = handles(s).into_iter().map(|h| crate::MakerHandle { x: h.0 as f32, y: h.1 as f32 }).collect();
+                ui.set_handles(ModelRc::new(VecModel::from(hs)));
                 ui.set_bx(x as f32);
                 ui.set_by(y as f32);
                 ui.set_bw(w as f32);
                 ui.set_bh(h as f32);
             }
-            None => ui.set_has_sel(false),
+            None => {
+                ui.set_has_sel(false);
+                ui.set_handles(ModelRc::new(VecModel::from(Vec::<crate::MakerHandle>::new())));
+            }
         }
         let name = ui.get_name().to_string();
         ui.set_problem(if self.model.shapes.is_empty() && name.is_empty() { "".into() } else { name_problem(&name, &self.model.shapes, &self.loaded_as).into() });
@@ -1319,5 +1402,40 @@ fn pick_file() -> Picked {
             }
         }
         Err(_) => Picked::Nothing("Could not open the file dialog — is hyprshell-files installed?".into()),
+    }
+}
+
+#[cfg(test)]
+mod handle_tests {
+    use super::*;
+
+    #[test]
+    fn dragging_a_boxs_corner_keeps_the_opposite_one() {
+        let b = json!({ "kind": "rect", "x": 4, "y": 4, "w": 8, "h": 6, "r": 0 });
+        // The bottom right corner (index 2) taken to (16, 14): top left stays at (4, 4).
+        let fields = drag_handle(&b, 2, 16.0, 14.0);
+        let get = |k: &str| fields.iter().find(|f| f.0 == k).map(|f| f.1.as_f64().unwrap());
+        assert_eq!((get("x"), get("y"), get("w"), get("h")), (Some(4.0), Some(4.0), Some(12.0), Some(10.0)));
+        // Past the opposite corner, it turns the box over rather than going negative.
+        let flipped = drag_handle(&b, 2, 2.0, 2.0);
+        let g = |k: &str| flipped.iter().find(|f| f.0 == k).map(|f| f.1.as_f64().unwrap());
+        assert_eq!((g("x"), g("y"), g("w"), g("h")), (Some(2.0), Some(2.0), Some(2.0), Some(2.0)));
+    }
+
+    #[test]
+    fn a_circles_handle_sets_the_radius_and_a_turned_shape_has_none() {
+        let c = json!({ "kind": "circle", "cx": 12, "cy": 12, "r": 4 });
+        assert_eq!(handles(&c), vec![(16.0, 12.0)]);
+        let fields = drag_handle(&c, 0, 18.0, 12.0);
+        assert_eq!(fields[0].1.as_f64(), Some(6.0));
+        let turned = json!({ "kind": "rect", "x": 1, "y": 1, "w": 2, "h": 2, "rot": 30 });
+        assert!(handles(&turned).is_empty());
+    }
+
+    #[test]
+    fn an_arc_end_follows_the_pointer_in_steps_of_fifteen_degrees() {
+        let a = json!({ "kind": "arc", "cx": 12, "cy": 12, "r": 6, "a0": 0, "a1": 270 });
+        let fields = drag_handle(&a, 0, 12.0, 18.0);
+        assert_eq!(fields[0].1.as_f64(), Some(90.0));
     }
 }

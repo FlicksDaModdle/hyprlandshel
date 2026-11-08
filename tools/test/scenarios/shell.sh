@@ -234,6 +234,9 @@ test_icon_maker_saves() {
     click 412 338
     drag 702 462 822 462
     sleep 0.3
+    # The circle's handle (its east edge) dragged out two units: the radius is 8.
+    drag 822 462 862 462
+    sleep 0.3
     click 600 188
     keys "testicon"
     sleep 0.3
@@ -243,6 +246,7 @@ test_icon_maker_saves() {
     shot saved
     grep -q '"testicon"' "$XDG_CONFIG_HOME/quickshell/hyprshell/icons.json" || fail "the icon wasn't saved"
     grep -q '"kind": "circle"' "$XDG_CONFIG_HOME/quickshell/hyprshell/icons.json" || fail "the icon was saved without its shapes"
+    grep -q '"r": 8' "$XDG_CONFIG_HOME/quickshell/hyprshell/icons.json" || fail "dragging the circle's handle didn't resize it"
 }
 
 # The maker's extras: keys, a flip, undo, loading a saved icon, deleting it.
