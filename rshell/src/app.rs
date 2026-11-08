@@ -10,7 +10,7 @@ use crate::spring::{Motion, Spring};
 use crate::{daemon, extras, hypr, mpris, notify, sys, theme, tray, wl};
 use crate::{Bar, DayCell, DriveRow, MediaInfo, MenuEntry, Note, NoteAction, Panels, PrivacyRow, Theme, Tile, TimerRow, Toasts, TrayItem, Workspace};
 use serde_json::json;
-use slint::platform::software_renderer::MinimalSoftwareWindow;
+use crate::platform::ShellWindow;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 use std::cell::RefCell;
@@ -318,7 +318,7 @@ struct BarOn {
     /// Logical height of the bar.
     height: f32,
     panels: Panels,
-    panel_window: Rc<MinimalSoftwareWindow>,
+    panel_window: Rc<ShellWindow>,
     panel_surface: Option<usize>,
     /// Entrance.qml's springs for the panel on this monitor.
     anim: PanelAnim,
@@ -512,7 +512,7 @@ pub struct App {
     open: Option<(usize, String)>,
 
     toasts: Toasts,
-    toast_window: Rc<MinimalSoftwareWindow>,
+    toast_window: Rc<ShellWindow>,
     toast_surface: Option<usize>,
     /// Shown as banners: id and when each goes (None: until dismissed).
     toast_list: Vec<(u32, Option<Instant>)>,
@@ -619,7 +619,7 @@ pub struct App {
     overview: crate::overview::Host,
     over_acts: Rc<RefCell<Vec<crate::overview::Act>>>,
     osd: crate::Osd,
-    osd_window: Rc<MinimalSoftwareWindow>,
+    osd_window: Rc<ShellWindow>,
     osd_surface: Option<usize>,
     /// When the popup goes, and its springs: rise, fade, grow.
     osd_until: Option<Instant>,
@@ -645,7 +645,7 @@ pub struct App {
     /// The polkit agent: its prompt, the request on it and those waiting,
     /// and where it tells the agent how each ended.
     prompt: crate::PolkitPrompt,
-    prompt_window: Rc<MinimalSoftwareWindow>,
+    prompt_window: Rc<ShellWindow>,
     prompt_surface: Option<usize>,
     /// The icon maker; its drawing is kept while the window is closed.
     maker: crate::maker::Host,

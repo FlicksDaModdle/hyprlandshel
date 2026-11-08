@@ -265,7 +265,7 @@ component EqGraph inherits Rectangle {
     border-color: Theme.rule;
 
     // Adding: under the handles.
-    TouchArea {
+    TouchArea { mouse-cursor: pointer;
         clicked => { EqLook.selected = -1; EqLook.pick(-1); }
         double-clicked => {
             if (self.mouse-x >= root.pad-l && self.mouse-y <= root.pad-t + root.ph) {

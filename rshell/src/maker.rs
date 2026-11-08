@@ -954,7 +954,7 @@ pub fn drag_handle(s: &Value, which: usize, px: f64, py: f64) -> Vec<(&'static s
 
 pub struct Host {
     pub ui: IconMakerWin,
-    pub window: Rc<slint::platform::software_renderer::MinimalSoftwareWindow>,
+    pub window: Rc<crate::platform::ShellWindow>,
     pub surface: Option<usize>,
     pub model: Model,
     pub acts: Rc<RefCell<Vec<Act>>>,

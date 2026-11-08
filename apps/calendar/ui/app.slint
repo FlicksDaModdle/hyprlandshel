@@ -174,7 +174,7 @@ component MonthView inherits Rectangle {
                 background: c.selected ? Theme.hover : transparent;
                 Rectangle { y: 0; height: 1px; background: Theme.rule; }
                 if mod(i, 7) != 0: Rectangle { x: 0; width: 1px; background: Theme.rule; }
-                cta := TouchArea {
+                cta := TouchArea { mouse-cursor: pointer;
                     clicked => { Cal.pick(c.iso); }
                     double-clicked => { Cal.new-event(c.iso, -1); }
                 }
@@ -226,7 +226,7 @@ component WeekView inherits Rectangle {
                 padding-bottom: 6px;
                 Rectangle {
                     height: 44px;
-                    TouchArea { clicked => { Cal.pick(d.iso); } double-clicked => { Cal.new-event(d.iso, -1); } }
+                    TouchArea { mouse-cursor: pointer; clicked => { Cal.pick(d.iso); } double-clicked => { Cal.new-event(d.iso, -1); } }
                     VerticalLayout {
                         alignment: center;
                         Text { text: d.name; horizontal-alignment: center; font-size: Theme.fs(11); font-weight: 600; color: d.today ? Theme.accent : Theme.ink3; }
@@ -273,7 +273,7 @@ component WeekView inherits Rectangle {
                     width: root.colw;
                     height: parent.height;
                     Rectangle { x: 0; width: 1px; background: Theme.rule; }
-                    TouchArea {
+                    TouchArea { mouse-cursor: pointer;
                         double-clicked => { Cal.new-event(d.iso, floor(self.mouse-y / root.hour)); }
                         clicked => { Cal.pick(d.iso); }
                     }

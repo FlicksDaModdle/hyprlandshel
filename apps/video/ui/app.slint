@@ -278,7 +278,7 @@ export component AppWindow inherits KitWindow {
             opacity: root.show ? 1 : 0;
             animate opacity { duration: Theme.t(220); }
             background: @linear-gradient(180deg, #000000b0 0%, #00000000 100%);
-            TouchArea {
+            TouchArea { mouse-cursor: pointer;
                 height: 52px;
                 y: 0;
                 pointer-event(e) => {

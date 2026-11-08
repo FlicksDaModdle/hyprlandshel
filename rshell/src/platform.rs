@@ -6,30 +6,36 @@
 //! that buffer is handed to the compositor as the surface's content.
 //!
 //! Every Slint window made while this platform is set gets a
-//! `MinimalSoftwareWindow`; `take_adapter()` hands the most recent one to
+//! `ShellWindow`; `take_adapter()` hands the most recent one to
 //! whoever is about to put it on a layer surface (`wl::Shell::add`).
 
-use slint::platform::software_renderer::{MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType, TargetPixel};
-use slint::platform::{Platform, WindowAdapter};
-use std::cell::RefCell;
+use i_slint_core::cursor::MouseCursorInner;
+use i_slint_core::items::BuiltInMouseCursor;
+use i_slint_core::window::WindowAdapterInternal;
+use slint::platform::software_renderer::{PremultipliedRgbaColor, RepaintBufferType, SoftwareRenderer, TargetPixel};
+use slint::platform::{Platform, Renderer, WindowAdapter};
+use slint::{PhysicalSize, Window, WindowSize};
+use std::cell::{Cell, RefCell};
+use std::rc::Weak;
+use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
 use std::rc::Rc;
 
 thread_local! {
-    static MADE: RefCell<Vec<Rc<MinimalSoftwareWindow>>> = const { RefCell::new(Vec::new()) };
+    static MADE: RefCell<Vec<Rc<ShellWindow>>> = const { RefCell::new(Vec::new()) };
 }
 
 pub struct ShellPlatform;
 
 impl Platform for ShellPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
-        let w = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
+        let w = ShellWindow::new();
         MADE.with(|m| m.borrow_mut().push(w.clone()));
         Ok(w)
     }
 }
 
 /// The adapter of the Slint window made last.
-pub fn take_adapter() -> Option<Rc<MinimalSoftwareWindow>> {
+pub fn take_adapter() -> Option<Rc<ShellWindow>> {
     MADE.with(|m| m.borrow_mut().pop())
 }
 
@@ -62,5 +68,104 @@ impl TargetPixel for Bgra {
     // shadow need to see the desktop through them.
     fn background() -> Self {
         Bgra::default()
+    }
+}
+
+
+/// Slint's ShellWindow, plus the one thing it lacks: it keeps the
+/// cursor the item under the pointer asks for (`mouse-cursor:` in the UI),
+/// for the pointer handler to pass to the compositor.
+pub struct ShellWindow {
+    window: Window,
+    renderer: SoftwareRenderer,
+    needs_redraw: Cell<bool>,
+    size: Cell<PhysicalSize>,
+    shape: Cell<Shape>,
+}
+
+impl ShellWindow {
+    pub fn new() -> Rc<Self> {
+        Rc::new_cyclic(|w: &Weak<Self>| Self {
+            window: Window::new(w.clone()),
+            renderer: SoftwareRenderer::new_with_repaint_buffer_type(RepaintBufferType::ReusedBuffer),
+            needs_redraw: Cell::new(false),
+            size: Cell::new(PhysicalSize::default()),
+            shape: Cell::new(Shape::Default),
+        })
+    }
+
+    pub fn draw_if_needed(&self, render: impl FnOnce(&SoftwareRenderer)) -> bool {
+        if self.needs_redraw.replace(false) {
+            render(&self.renderer);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Resizes; the inherent form, so no trait import is needed to call it.
+    pub fn set_size(&self, size: impl Into<WindowSize>) {
+        WindowAdapter::set_size(self, size.into());
+    }
+
+    /// The cursor the item under the pointer asked for.
+    pub fn shape(&self) -> Shape {
+        self.shape.get()
+    }
+}
+
+impl std::ops::Deref for ShellWindow {
+    type Target = Window;
+    fn deref(&self) -> &Window {
+        &self.window
+    }
+}
+
+impl WindowAdapter for ShellWindow {
+    fn window(&self) -> &Window {
+        &self.window
+    }
+    fn renderer(&self) -> &dyn Renderer {
+        &self.renderer
+    }
+    fn size(&self) -> PhysicalSize {
+        self.size.get()
+    }
+    fn set_size(&self, size: WindowSize) {
+        let sf = self.window.scale_factor();
+        self.size.set(size.to_physical(sf));
+        self.window.dispatch_event(slint::platform::WindowEvent::Resized { size: size.to_logical(sf) });
+    }
+    fn request_redraw(&self) {
+        self.needs_redraw.set(true);
+    }
+    fn internal(&self, _: i_slint_core::InternalToken) -> Option<&dyn WindowAdapterInternal> {
+        Some(self)
+    }
+}
+
+impl WindowAdapterInternal for ShellWindow {
+    fn set_mouse_cursor(&self, cursor: MouseCursorInner) {
+        use BuiltInMouseCursor as C;
+        let shape = match cursor {
+            MouseCursorInner::BuiltIn(c) => match c {
+                C::Pointer => Shape::Pointer,
+                C::Text => Shape::Text,
+                C::Help => Shape::Help,
+                C::Progress => Shape::Progress,
+                C::Wait => Shape::Wait,
+                C::Crosshair => Shape::Crosshair,
+                C::Move => Shape::Move,
+                C::NoDrop => Shape::NoDrop,
+                C::NotAllowed => Shape::NotAllowed,
+                C::Grab => Shape::Grab,
+                C::Grabbing => Shape::Grabbing,
+                C::ColResize => Shape::ColResize,
+                C::RowResize => Shape::RowResize,
+                _ => Shape::Default,
+            },
+            _ => Shape::Default,
+        };
+        self.shape.set(shape);
     }
 }

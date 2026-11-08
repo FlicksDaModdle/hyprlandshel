@@ -6,7 +6,7 @@ use crate::theme;
 use crate::launcher::{self, Entry, Pinned, Recent};
 use crate::spring::{Motion, Spring};
 use crate::{extras, glyphs, LaunchItem, Launcher, RecentFile};
-use slint::platform::software_renderer::MinimalSoftwareWindow;
+use crate::platform::ShellWindow;
 use slint::platform::Key;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
@@ -62,7 +62,7 @@ pub struct Pill {
 
 pub struct Host {
     pub ui: Launcher,
-    pub window: Rc<MinimalSoftwareWindow>,
+    pub window: Rc<ShellWindow>,
     pub surface: Option<usize>,
     pub closing: bool,
     morph: Spring,

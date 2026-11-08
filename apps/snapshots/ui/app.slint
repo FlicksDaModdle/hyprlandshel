@@ -371,7 +371,7 @@ export component AppWindow inherits KitWindow {
                                     height: 32px;
                                     border-radius: Theme.r-sm - 2px;
                                     background: Snapper.change-picked == i ? Theme.sel : cta.has-hover ? Theme.hover : transparent;
-                                    cta := TouchArea { clicked => { Snapper.pick-change(i); } }
+                                    cta := TouchArea { mouse-cursor: pointer; clicked => { Snapper.pick-change(i); } }
                                     HorizontalLayout {
                                         padding-left: 8px;
                                         padding-right: 8px;

@@ -249,7 +249,7 @@ export component AppWindow inherits KitWindow {
                     badge: f.count;
                     selected: Notes.place == f.path;
                     clicked => { Notes.pick-place(f.path); }
-                    TouchArea {
+                    TouchArea { mouse-cursor: pointer;
                         pointer-event(e) => {
                             if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
                                 root.folder-menu-for = f.path;

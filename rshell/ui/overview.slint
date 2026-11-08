@@ -121,7 +121,7 @@ export component OverviewWin inherits Window {
         border-color: self.drop-here || ws.focused ? Theme.accent : Theme.edge;
         clip: true;
 
-        TouchArea { clicked => { root.focus-ws(ws.id); } }
+        TouchArea { mouse-cursor: pointer; clicked => { root.focus-ws(ws.id); } }
 
         for w in ws.wins: win := Rectangle {
             property <float> sx: root.cw / 1px / root.mon-w;

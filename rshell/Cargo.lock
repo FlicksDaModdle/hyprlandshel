@@ -1370,6 +1370,7 @@ version = "0.1.0"
 dependencies = [
  "async-io",
  "glow 0.17.0",
+ "i-slint-core",
  "image",
  "khronos-egl",
  "libc",

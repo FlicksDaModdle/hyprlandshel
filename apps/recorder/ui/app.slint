@@ -264,7 +264,7 @@ export component AppWindow inherits KitWindow {
                             background: open ? Theme.hover : ra.has-hover ? Theme.hover.transparentize(0.4) : transparent;
                             animate height { duration: Theme.t(260); easing: spring(0.15); }
                             clip: true;
-                            ra := TouchArea {
+                            ra := TouchArea { mouse-cursor: pointer;
                                 pointer-event(e) => {
                                     if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
                                         root.menu-path = r.path;

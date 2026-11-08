@@ -258,7 +258,7 @@ component DeviceList inherits VerticalLayout {
         border-width: n.in-use ? 1px : 0px;
         border-color: Theme.accent;
         opacity: n.dim ? 0.6 : 1;
-        rh := TouchArea { clicked => { Snd.pick(root.out, n.name); } }
+        rh := TouchArea { mouse-cursor: pointer; clicked => { Snd.pick(root.out, n.name); } }
         HorizontalLayout {
             padding-left: 10px;
             padding-right: 10px;

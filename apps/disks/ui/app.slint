@@ -251,7 +251,7 @@ export component AppWindow inherits KitWindow {
                             height: 54px;
                             border-radius: Theme.r-sm;
                             background: Disks.part == i ? Theme.sel : pa.has-hover ? Theme.hover : transparent;
-                            pa := TouchArea { clicked => { Disks.part = i; } }
+                            pa := TouchArea { mouse-cursor: pointer; clicked => { Disks.part = i; } }
                             HorizontalLayout {
                                 padding-left: 12px;
                                 padding-right: 12px;

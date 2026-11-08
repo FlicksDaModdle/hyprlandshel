@@ -6,7 +6,7 @@
 //! surface also sees the release once it has the keyboard.
 
 use crate::{dock, glyphs, hypr, SwitchEntry, Switcher};
-use slint::platform::software_renderer::MinimalSoftwareWindow;
+use crate::platform::ShellWindow;
 use slint::platform::Key;
 use slint::{ModelRc, SharedString, VecModel};
 use std::rc::Rc;
@@ -34,7 +34,7 @@ struct Win {
 
 pub struct Host {
     pub ui: Switcher,
-    pub window: Rc<MinimalSoftwareWindow>,
+    pub window: Rc<ShellWindow>,
     pub surface: Option<usize>,
     pub open: bool,
     pub shown: bool,

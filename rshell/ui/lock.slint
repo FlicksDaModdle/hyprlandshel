@@ -155,7 +155,7 @@ export component LockView inherits Window {
 
     // A click anywhere puts the keys back in the field; the pointer moving
     // says you're back (the face is looked for again).
-    TouchArea {
+    TouchArea { mouse-cursor: pointer;
         property <length> fx: -1px;
         property <length> fy;
         clicked => { keys.focus(); }

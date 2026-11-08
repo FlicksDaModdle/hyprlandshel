@@ -35,7 +35,7 @@ component ModeButton inherits Rectangle {
         Glyph { y: (42px - 16px) / 2; data: root.glyph; size: 16px; monochrome: true; ink: root.on ? Theme.ink-on-accent : Theme.ink; }
         t := Text { vertical-alignment: center; text: root.label; font-size: 13px; font-weight: 600; color: root.on ? Theme.ink-on-accent : Theme.ink; }
     }
-    ta := TouchArea { clicked => { root.clicked(); } }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
 
 export component Snipper inherits Window {
@@ -167,6 +167,7 @@ export component Snipper inherits Window {
     TouchArea {
         width: root.width;
         height: root.height;
+        mouse-cursor: root.mode == "region" ? MouseCursor.crosshair : MouseCursor.pointer;
         moved => {
             root.px = self.mouse-x;
             root.py = self.mouse-y;
@@ -261,7 +262,7 @@ export component Snipper inherits Window {
                 border-radius: 21px;
                 background: close-ta.has-hover ? Theme.sel : transparent;
                 Glyph { x: 13px; y: 13px; data: root.g-close; size: 16px; monochrome: true; ink: Theme.ink2; }
-                close-ta := TouchArea { clicked => { root.cancel(); } }
+                close-ta := TouchArea { mouse-cursor: pointer; clicked => { root.cancel(); } }
             }
         }
     }

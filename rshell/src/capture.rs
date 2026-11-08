@@ -126,6 +126,11 @@ fn grim(out: Option<&str>, pointer: bool, file: &Path) -> Result<(), String> {
     if let Some(o) = out {
         c.args(["-o", o]);
     }
+    // Uncompressed when it is only to be shown (a .ppm): several times
+    // faster than a PNG at a screen's size, and nothing to decode slowly.
+    if file.extension().is_some_and(|e| e == "ppm") {
+        c.args(["-t", "ppm"]);
+    }
     c.arg(file).stdout(Stdio::null()).stderr(Stdio::piped());
     match c.output() {
         Ok(o) if o.status.success() => Ok(()),
@@ -255,7 +260,7 @@ impl Capture {
                 let jobs: Vec<_> = outputs
                     .iter()
                     .map(|o| {
-                        let file = dir.join(format!("{o}.png"));
+                        let file = dir.join(format!("{o}.ppm"));
                         let o = o.clone();
                         std::thread::spawn(move || grim(Some(&o), pointer, &file).map(|_| (o, file)))
                     })

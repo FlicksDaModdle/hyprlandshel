@@ -370,7 +370,7 @@ component BubbleView inherits VerticalLayout {
                 drop-shadow-blur: root.sticker || b.big-emoji || Theme.dark ? 0px : 2px;
                 drop-shadow-color: #0000001a;
                 drop-shadow-offset-y: 1px;
-                TouchArea {
+                TouchArea { mouse-cursor: pointer;
                     // Right-click (or a double-click) for what can be done with it.
                     // Under the content, so the play button and pictures get
                     // their own clicks.
@@ -709,7 +709,7 @@ component MessageMenu inherits PopupWindow {
                         font-size: Theme.fs(12.5);
                     }
                 }
-                mt := TouchArea {
+                mt := TouchArea { mouse-cursor: pointer;
                     clicked => {
                         if (i == 0) { root.reply(); }
                         if (i == 1) { root.copy(); }

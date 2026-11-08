@@ -7,7 +7,7 @@
 //! glyphs land on the screen's own pixels rather than being stretched.
 
 use crate::platform::{self, Bgra};
-use slint::platform::software_renderer::MinimalSoftwareWindow;
+use crate::platform::ShellWindow;
 use slint::platform::{PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{LogicalPosition, PhysicalSize};
 use smithay_client_toolkit::{
@@ -94,7 +94,7 @@ impl Role {
 
 pub struct ShellSurface {
     pub layer: Role,
-    pub adapter: Rc<MinimalSoftwareWindow>,
+    pub adapter: Rc<ShellWindow>,
     #[allow(dead_code)] // the dock and panels, per monitor, read it
     pub output: Option<wl_output::WlOutput>,
     /// Logical size, as configured.
@@ -163,7 +163,7 @@ pub struct Shell {
     viewporter: Option<wp_viewporter::WpViewporter>,
     /// A removed surface's last frame, kept for its window: Slint redraws
     /// only what changed, so the window's next surface starts from it.
-    kept: Vec<(Rc<MinimalSoftwareWindow>, Vec<Bgra>)>,
+    kept: Vec<(Rc<ShellWindow>, Vec<Bgra>)>,
     pub pictures: Vec<Picture>,
     /// By id: a removed surface leaves a hole, so the ids of the rest hold.
     pub surfaces: Vec<Option<ShellSurface>>,
@@ -173,6 +173,10 @@ pub struct Shell {
     keyboard: Option<wl_keyboard::WlKeyboard>,
     cursor_shapes: Option<wp_cursor_shape_manager_v1::WpCursorShapeManagerV1>,
     cursor: Option<wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
+    /// The pointer's last enter serial and the shape sent since, for
+    /// `mouse-cursor:` in the UI.
+    enter_serial: u32,
+    shape_sent: Option<wp_cursor_shape_device_v1::Shape>,
     /// The surface with the keyboard, when one has it.
     focus: Option<usize>,
     /// Esc pressed on a surface, by id: what closes a panel.
@@ -229,6 +233,8 @@ impl Shell {
             keyboard: None,
             cursor_shapes,
             cursor: None,
+            enter_serial: 0,
+            shape_sent: None,
             focus: None,
             keys: Vec::new(),
             entered: Vec::new(),
@@ -252,7 +258,7 @@ impl Shell {
     pub fn add_window(
         &mut self,
         qh: &QueueHandle<Self>,
-        adapter: Rc<MinimalSoftwareWindow>,
+        adapter: Rc<ShellWindow>,
         output: Option<&wl_output::WlOutput>,
         p: &Placement,
     ) -> usize {
@@ -327,7 +333,7 @@ impl Shell {
     }
 
     /// A Slint window on a lock surface for `output`.
-    pub fn add_lock_window(&mut self, qh: &QueueHandle<Self>, adapter: Rc<MinimalSoftwareWindow>, output: &wl_output::WlOutput) -> Option<usize> {
+    pub fn add_lock_window(&mut self, qh: &QueueHandle<Self>, adapter: Rc<ShellWindow>, output: &wl_output::WlOutput) -> Option<usize> {
         let lock = self.lock.as_ref()?;
         let surface = self.compositor.create_surface(qh);
         let fractional = self.fractional.as_ref().map(|m| m.get_fractional_scale(&surface, qh, surface.id()));
@@ -537,7 +543,7 @@ impl Shell {
 
     /// Takes a surface off the screen. Its Slint window is handed back, to
     /// be put on another later.
-    pub fn remove(&mut self, id: usize) -> Option<Rc<MinimalSoftwareWindow>> {
+    pub fn remove(&mut self, id: usize) -> Option<Rc<ShellWindow>> {
         let mut s = self.surfaces.get_mut(id)?.take()?;
         if self.focus == Some(id) {
             self.focus = None;
@@ -837,6 +843,19 @@ impl Dispatch<wp_viewport::WpViewport, ()> for Shell {
 
 // ── the pointer ─────────────────────────────────────────────────────────────
 
+impl Shell {
+    /// The cursor the item under the pointer asked for, once per change.
+    fn send_shape(&mut self, shape: wp_cursor_shape_device_v1::Shape) {
+        if self.shape_sent == Some(shape) {
+            return;
+        }
+        if let Some(c) = &self.cursor {
+            c.set_shape(self.enter_serial, shape);
+            self.shape_sent = Some(shape);
+        }
+    }
+}
+
 impl PointerHandler for Shell {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         for ev in events {
@@ -847,14 +866,14 @@ impl PointerHandler for Shell {
             match ev.kind {
                 PointerEventKind::Enter { serial } => {
                     self.pointer_on = Some(i);
-                    // The arrow, not whatever the window left behind.
-                    if let Some(c) = &self.cursor {
-                        c.set_shape(serial, wp_cursor_shape_device_v1::Shape::Default);
-                    }
+                    self.enter_serial = serial;
+                    self.shape_sent = None;
                     window.dispatch_event(WindowEvent::PointerMoved { position: at });
+                    self.send_shape(adapter.shape());
                 }
                 PointerEventKind::Motion { .. } => {
                     window.dispatch_event(WindowEvent::PointerMoved { position: at });
+                    self.send_shape(adapter.shape());
                 }
                 PointerEventKind::Leave { .. } => {
                     if self.pointer_on == Some(i) {
@@ -875,6 +894,7 @@ impl PointerHandler for Shell {
                     } else {
                         WindowEvent::PointerReleased { position: at, button }
                     });
+                    self.send_shape(adapter.shape());
                 }
                 PointerEventKind::Axis { horizontal, vertical, .. } => {
                     window.dispatch_event(WindowEvent::PointerScrolled {

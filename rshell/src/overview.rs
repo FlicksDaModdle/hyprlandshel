@@ -3,7 +3,7 @@
 //! a click, a drag or a key does. ui/overview.slint draws it.
 
 use crate::{dock, glyphs, hypr, launcher, OvWin, OvWs, OverviewWin};
-use slint::platform::software_renderer::MinimalSoftwareWindow;
+use crate::platform::ShellWindow;
 use slint::{ComponentHandle, Image, ModelRc, VecModel};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -31,7 +31,7 @@ struct Client {
 
 pub struct Host {
     pub ui: OverviewWin,
-    pub window: Rc<MinimalSoftwareWindow>,
+    pub window: Rc<ShellWindow>,
     pub surface: Option<usize>,
     pub open: bool,
     clients: Vec<Client>,
