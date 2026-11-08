@@ -733,6 +733,8 @@ pub enum Act {
 enum Drag {
     Move { last: (f64, f64), moved: bool },
     Draw { start: (f64, f64) },
+    /// A pen point just placed: dragging pulls its curve handles out.
+    Pen { at: (f64, f64) },
     /// One of the selected shape's handles, by its place in `handles()`.
     Handle { which: usize, moved: bool },
 }
@@ -800,6 +802,8 @@ pub struct Host {
     pub model: Model,
     pub acts: Rc<RefCell<Vec<Act>>>,
     tool: String,
+    /// A path being drawn with the pen: Return (or its first point) ends it.
+    pen: bool,
     next_acc: bool,
     next_sw: i32,
     next_fill: bool,
@@ -884,6 +888,7 @@ impl Host {
             model: Model::default(),
             acts,
             tool: "select".into(),
+            pen: false,
             next_acc: false,
             next_sw: 2,
             next_fill: false,
@@ -923,7 +928,10 @@ impl Host {
         self.status.clear();
         match a {
             Act::Close => return true,
-            Act::Tool(t) => self.tool = t,
+            Act::Tool(t) => {
+                self.finish_pen();
+                self.tool = t;
+            }
             Act::Colour(acc) => self.next_acc = acc,
             Act::Weight(w) => self.next_sw = w,
             Act::SelColour(acc) => self.model.update(&[("c", json!(if acc { "acc" } else { "ink" }))], false),
@@ -1016,6 +1024,10 @@ impl Host {
                     self.drag = self.model.selected.map(|_| Drag::Move { last: (sx, sy), moved: false });
                     return;
                 }
+                if self.tool == "pen" {
+                    self.pen_press(sx, sy);
+                    return;
+                }
                 let s = match self.tool.as_str() {
                     "line" => json!({ "kind": "line", "x1": sx, "y1": sy, "x2": sx, "y2": sy }),
                     "rect" => json!({ "kind": "rect", "x": sx, "y": sy, "w": 0, "h": 0, "r": 0 }),
@@ -1044,6 +1056,21 @@ impl Host {
                         }
                         *last = (sx, sy);
                         self.model.move_selected(dx, dy);
+                    }
+                }
+                Some(Drag::Pen { at }) => {
+                    let (dx, dy) = (x - at.0, y - at.1);
+                    if dx.hypot(dy) > 0.4 {
+                        // Handles out of the point, one each way (a smooth point).
+                        let (hx, hy) = (snap(x), snap(y));
+                        if let Some(i) = self.model.selected {
+                            if let Some(nodes) = self.model.shapes[i]["nodes"].as_array_mut() {
+                                if let Some(last) = nodes.last_mut() {
+                                    last["ho"] = json!({ "x": hx, "y": hy });
+                                    last["hi"] = json!({ "x": snap(2.0 * at.0 - x), "y": snap(2.0 * at.1 - y) });
+                                }
+                            }
+                        }
                     }
                 }
                 Some(Drag::Handle { which, ref mut moved }) => {
@@ -1103,7 +1130,9 @@ impl Host {
             use slint::platform::Key;
             let step = if shift { 1.0 } else { 0.5 };
             let is = |k: Key| slint::SharedString::from(k) == t;
-            if is(Key::Delete) || is(Key::Backspace) {
+            if is(Key::Return) && self.pen {
+                self.finish_pen();
+            } else if is(Key::Delete) || is(Key::Backspace) {
                 self.model.remove_selected();
             } else if is(Key::LeftArrow) {
                 self.model.snapshot();
@@ -1126,6 +1155,10 @@ impl Host {
                     "e" => self.tool = "ellipse".into(),
                     "a" => self.tool = "arc".into(),
                     "d" => self.tool = "dot".into(),
+                    "p" => {
+                        self.finish_pen();
+                        self.tool = "pen".into();
+                    }
                     _ => return false,
                 }
             }
@@ -1246,6 +1279,51 @@ impl Host {
         self.model.replace(all);
         self.model.selected = if n > 0 { Some(at + n - 1) } else { None };
         self.traced_at = Some((at, n));
+    }
+
+    /// A click with the pen: the first starts a path, each after adds a point, and one on
+    /// the first point of three or more closes it.
+    fn pen_press(&mut self, x: f64, y: f64) {
+        let node = json!({ "x": x, "y": y });
+        if !self.pen {
+            let s = self.fresh(json!({ "kind": "path", "closed": false, "nodes": [node] }));
+            self.model.add(s);
+            self.pen = true;
+            self.drag = Some(Drag::Pen { at: (x, y) });
+            return;
+        }
+        let Some(i) = self.model.selected else { self.pen = false; return };
+        let (close, count) = {
+            let nodes = self.model.shapes[i]["nodes"].as_array().cloned().unwrap_or_default();
+            let first = nodes.first().map(|n| (f(n, "x"), f(n, "y")));
+            (nodes.len() >= 3 && first.is_some_and(|p| (p.0 - x).hypot(p.1 - y) < 0.7), nodes.len())
+        };
+        if close {
+            self.model.shapes[i]["closed"] = json!(true);
+            self.finish_pen();
+            return;
+        }
+        if let Some(nodes) = self.model.shapes[i]["nodes"].as_array_mut() {
+            nodes.push(node);
+        }
+        let _ = count;
+        self.drag = Some(Drag::Pen { at: (x, y) });
+    }
+
+    /// Ends the path being drawn: kept if it has two points, dropped if not.
+    fn finish_pen(&mut self) {
+        if !self.pen {
+            return;
+        }
+        self.pen = false;
+        if let Some(i) = self.model.selected {
+            let n = self.model.shapes[i]["nodes"].as_array().map(|a| a.len()).unwrap_or(0);
+            if n < 2 {
+                self.model.remove_selected();
+                self.model.forget_snapshot();
+                self.model.forget_snapshot();
+            }
+        }
     }
 
     fn save(&mut self) {

@@ -351,3 +351,29 @@ test_control_center_mixer() {
     sleep 0.8
     shot mixer
 }
+
+# The pen: three clicks and Return make a path; it is saved with its nodes.
+test_icon_maker_pen() {
+    start_shell
+    sleep 1
+    cmd iconMaker
+    sleep 1
+    click 412 474
+    click 560 320
+    click 760 320
+    click 760 480
+    keys "" enter
+    sleep 0.3
+    shot pen
+    click 600 188
+    keys "penicon"
+    click 786 188
+    sleep 0.6
+    local f="$XDG_CONFIG_HOME/quickshell/hyprshell/icons.json"
+    grep -q '"penicon"' "$f" || fail "the pen drawing wasn't saved"
+    python3 - "$f" <<'PY' || fail "the saved path doesn't have its three nodes"
+import json, sys
+s = json.load(open(sys.argv[1]))["icons"]["penicon"]["shapes"][0]
+assert s["kind"] == "path" and len(s["nodes"]) == 3, s
+PY
+}

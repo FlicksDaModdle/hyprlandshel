@@ -183,8 +183,8 @@ export component IconMakerWin inherits Window {
             width: 76px;
             alignment: start;
             spacing: 6px;
-            for t in ["select", "line", "rect", "circle", "ellipse", "arc", "dot"]: Btn {
-                label: t == "select" ? "Select" : (t == "rect" ? "Box" : (t == "line" ? "Line" : (t == "circle" ? "Circle" : (t == "ellipse" ? "Ellipse" : (t == "arc" ? "Arc" : "Dot")))));
+            for t in ["select", "line", "rect", "circle", "ellipse", "arc", "dot", "pen"]: Btn {
+                label: t == "pen" ? "Pen" : t == "select" ? "Select" : (t == "rect" ? "Box" : (t == "line" ? "Line" : (t == "circle" ? "Circle" : (t == "ellipse" ? "Ellipse" : (t == "arc" ? "Arc" : "Dot")))));
                 on: root.tool == t;
                 clicked => { root.tool-set(t); }
             }
