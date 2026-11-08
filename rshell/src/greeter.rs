@@ -1107,10 +1107,17 @@ pub fn run() {
         g.step(&mut shell, &qh, dt);
         g.sync_wall(&mut shell, &qh, &mut gpu, &mut gpu_off, display);
         if let Some(card) = gpu.as_mut() {
-            if !card.frame(&|group, key, child| shell.draws_on(group, key, child)).is_empty() {
+            if !card.frame(&mut |group, key, child, ask| match ask {
+                crate::gpuwall::Ask::Alive => shell.draws_on(group, key, child),
+                crate::gpuwall::Ask::Begin => shell.may_draw(&qh, group, key, child),
+            })
+            .is_empty()
+            {
                 eprintln!("hyprshell-greeter: the card couldn't draw the wallpaper");
                 gpu_off = true;
-                card.set_outputs(1, Vec::new());
+                if let Some(c) = gpu.take() {
+                    c.retire();
+                }
                 for s in &g.screens {
                     s.view.set_live(false);
                 }

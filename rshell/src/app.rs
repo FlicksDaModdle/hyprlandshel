@@ -1412,7 +1412,7 @@ impl App {
         self.step_bars(shell, dt);
         self.step_corners(shell, qh);
         self.step_lock(shell, qh, dt);
-        self.step_ground(shell);
+        self.step_ground(shell, qh);
         self.step_polkit(shell, qh);
         self.step_switcher(shell, qh);
         self.step_overview(shell, qh);
@@ -4113,13 +4113,24 @@ impl App {
         self.lock.set_live(!self.lock_backdrops.is_empty());
     }
 
-    fn step_ground(&mut self, shell: &mut wl::Shell) {
+    fn step_ground(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
         self.sync_anim(shell);
         if let Some(g) = self.gpu.as_mut() {
-            if !g.frame(&|group, key, child| shell.draws_on(group, key, child)).is_empty() {
+            if !g.frame(&mut |group, key, child, ask| match ask {
+                crate::gpuwall::Ask::Alive => shell.draws_on(group, key, child),
+                crate::gpuwall::Ask::Begin => shell.may_draw(qh, group, key, child),
+            })
+            .is_empty()
+            {
                 // The card couldn't build a style's program: all of it goes to the processor.
                 eprintln!("hyprshell-rs: the card couldn't draw the wallpaper; the processor will");
-                self.gpu = None;
+                if let Some(g) = self.gpu.take() {
+                    g.retire();
+                }
+                for id in std::mem::take(&mut self.lock_backdrops) {
+                    shell.drop_backdrop(id);
+                }
+                self.lock.set_live(false);
                 self.gpu_off = true;
                 self.anim_dirty = true;
                 for bar in std::mem::take(&mut self.gpu_bars) {

@@ -154,6 +154,9 @@ pub struct Shell {
     seats: SeatState,
     compositor: CompositorState,
     subcompositor: Option<smithay_client_toolkit::subcompositor::SubcompositorState>,
+    /// Surfaces the card draws on whose last frame the compositor has shown (and those never asked about).
+    frames_done: std::collections::HashSet<wayland_backend::client::ObjectId>,
+    frames_asked: std::collections::HashSet<wayland_backend::client::ObjectId>,
     layer_shell: LayerShell,
     shm: Shm,
     fractional: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
@@ -210,6 +213,8 @@ impl Shell {
             registry: RegistryState::new(globals),
             outputs: OutputState::new(globals, qh),
             seats: SeatState::new(globals, qh),
+            frames_done: Default::default(),
+            frames_asked: Default::default(),
             subcompositor: smithay_client_toolkit::subcompositor::SubcompositorState::bind(compositor.wl_compositor().clone(), globals, qh).ok(),
             compositor,
             layer_shell,
@@ -481,6 +486,20 @@ impl Shell {
         } else {
             self.surfaces.get(key).and_then(|s| s.as_ref()).and_then(|s| s.backdrop.as_ref()).is_some_and(|b| b.surface.id() == *child)
         }
+    }
+
+    /// Whether the card may draw `child`'s next frame: the last one has been shown (or there was none).
+    /// If so, a frame callback is asked for on the surface, to say when this one has been; if not (the
+    /// screen is off, say, and nothing is being shown) nothing is drawn and nothing can block.
+    pub fn may_draw(&mut self, qh: &QueueHandle<Self>, group: u8, key: usize, child: &wayland_backend::client::ObjectId) -> bool {
+        if self.frames_asked.contains(child) && !self.frames_done.remove(child) {
+            return false;
+        }
+        let surface = if group == 0 { self.pictures.get(key).map(|p| p.layer.wl_surface().clone()) } else { self.surfaces.get(key).and_then(|s| s.as_ref()).and_then(|s| s.backdrop.as_ref()).map(|b| b.surface.clone()) };
+        let Some(surface) = surface else { return false };
+        surface.frame(qh, surface.clone());
+        self.frames_asked.insert(child.clone());
+        true
     }
 
     /// Takes the backdrop away again (the lock screen going, the style changing).
@@ -777,7 +796,10 @@ impl CompositorHandler for Shell {
         }
     }
     fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
-    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
+    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &wl_surface::WlSurface, _: u32) {
+        // A surface the card draws on has been shown: it may be given the next frame.
+        self.frames_done.insert(surface.id());
+    }
     fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
     fn surface_leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
 }

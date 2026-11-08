@@ -106,10 +106,13 @@ if grep -qs '^shell=rust$' "$ENGINE" && [ -x "$RUSTBIN/hyprshell-rs" ]; then
     export PATH="$RUSTBIN:$PATH"
     crashes=""
     while :; do
+        # The last run's log is kept (and how it ended), or a crash is gone with the restart.
+        [ -s "$RLOG" ] && cp -f "$RLOG" "$RLOG.prev"
         : >"$RLOG"
         start=$(date +%s)
         "$RUSTBIN/hyprshell-rs" >>"$RLOG" 2>&1
         code=$?
+        [ "$code" = 0 ] || [ "$code" = 143 ] || [ "$code" = 130 ] || echo "$(date +%T) hyprshell-rs ended with status $code (signal $((code - 128)))" >>"$RLOG"
         # Ended on purpose (switched back, or the session ending).
         [ "$code" = 0 ] || [ "$code" = 143 ] || [ "$code" = 130 ] && exit 0
         grep -qs '^shell=rust$' "$ENGINE" || break

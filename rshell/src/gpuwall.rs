@@ -93,6 +93,14 @@ struct Out {
     drawn: bool,
 }
 
+/// What the card asks of the shell about a surface.
+pub enum Ask {
+    /// Is it still there?
+    Alive,
+    /// May the next frame be drawn on it?
+    Begin,
+}
+
 pub struct Gpu {
     egl: egl::DynamicInstance<egl::EGL1_4>,
     display: egl::Display,
@@ -153,6 +161,15 @@ impl Gpu {
             let Ok(surf) = surf else { continue };
             self.outs.push(Out { group, bar: s.bar, child, win, surf, size, s, time: 0.0, rise: 0.0, last: Instant::now(), drawn: false });
         }
+    }
+
+    /// The card given up on: every output let go of, and the library left loaded (unloading it
+    /// while Mesa still holds callbacks into it is what would bring the process down).
+    pub fn retire(mut self) {
+        for o in std::mem::take(&mut self.outs) {
+            self.release(o);
+        }
+        std::mem::forget(self);
     }
 
     /// An output's EGL surface, then its window, are let go.
@@ -233,10 +250,10 @@ impl Gpu {
 
     /// Draws what is due. The screens whose style the card couldn't compile are returned, to be
     /// drawn the other way.
-    pub fn frame(&mut self, alive: &dyn Fn(u8, usize, &ObjectId) -> bool) -> Vec<(u8, usize)> {
+    pub fn frame(&mut self, env: &mut dyn FnMut(u8, usize, &ObjectId, Ask) -> bool) -> Vec<(u8, usize)> {
         // What has lost its surface (a lock screen gone, a screen unplugged) is let go before
         // anything is drawn: swapping buffers on a surface that is gone brings the process down.
-        let (keep, gone): (Vec<Out>, Vec<Out>) = std::mem::take(&mut self.outs).into_iter().partition(|o| alive(o.group, o.bar, &o.child));
+        let (keep, gone): (Vec<Out>, Vec<Out>) = std::mem::take(&mut self.outs).into_iter().partition(|o| env(o.group, o.bar, &o.child, Ask::Alive));
         self.outs = keep;
         for o in gone {
             self.release(o);
@@ -250,6 +267,12 @@ impl Gpu {
                 ((o.group, o.bar), !o.drawn || (self.moves(o) && now.duration_since(o.last) >= interval))
             };
             if !due {
+                continue;
+            }
+            // Only when the compositor has shown the last frame: with the screen off it never
+            // does, and a swap would wait for it for good.
+            let (g, b, c) = (self.outs[i].group, self.outs[i].bar, self.outs[i].child.clone());
+            if !env(g, b, &c, Ask::Begin) {
                 continue;
             }
             if self.draw(i, now).is_none() {

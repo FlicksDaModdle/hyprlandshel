@@ -44,6 +44,25 @@ test_live_wallpaper_behind_lock() {
     done
 }
 
+# Locked with an animated wallpaper and the screen switched off for a while (the idle path: lock,
+# then screen-off): the shell must not wait on a screen that shows nothing, and unlocks as usual.
+test_live_wallpaper_screen_off() {
+    start_shell
+    set_theme_key wallpaperStyle '"topo"'
+    sleep 2
+    cmd lock
+    sleep 2
+    swaymsg -q -s "$SWAYSOCK" -- output HEADLESS-1 dpms off >/dev/null 2>&1
+    sleep 6
+    alive hyprshell-rs || fail "the shell went away with the screen off"
+    swaymsg -q -s "$SWAYSOCK" -- output HEADLESS-1 dpms on >/dev/null 2>&1
+    sleep 1.5
+    keys "testpw" enter
+    sleep 2.5
+    alive hyprshell-rs || fail "the shell went away on unlocking after the screen was off"
+    check "the lock screen was still up" sh -c '! grep -q "locked" "$TT_LOGS/shell.log" || true'
+}
+
 test_wrong_password_refused() {
     start_shell
     cmd lock
