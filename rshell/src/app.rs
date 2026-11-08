@@ -501,6 +501,15 @@ pub struct App {
     idle_sent: String,
     idle_holds: (bool, bool),
     keep_awake: bool,
+    /// The daemon's gamma module (Night light, extra dim): its last report, whether it
+    /// turned out not to be usable, the config sent, and the extra-dim level of the
+    /// laptop's panel (1 for none) with the panel's name.
+    gamma: Option<serde_json::Value>,
+    gamma_refused: bool,
+    gamma_sent: String,
+    extra_dim: f64,
+    dim_panel: String,
+    dim_restored: bool,
     /// Notification history (the daemon's nhist): what the search last answered, how
     /// many are kept, the search's number, what the box says, and the config sent.
     hist: Vec<serde_json::Value>,
@@ -866,6 +875,12 @@ impl App {
             idle_sent: String::new(),
             idle_holds: (false, false),
             keep_awake: false,
+            gamma: None,
+            gamma_refused: false,
+            gamma_sent: String::new(),
+            extra_dim: 1.0,
+            dim_panel: String::new(),
+            dim_restored: false,
             hist: Vec::new(),
             hist_total: 0,
             hist_asked: 0,
@@ -1021,6 +1036,18 @@ impl App {
                 Some("bt-cancel") => {
                     self.pairing = None;
                     self.refresh_lists();
+                    continue;
+                }
+                // The gamma module's report (NightLight.qml's onEvent).
+                Some("gamma") => {
+                    let active = ev["active"] == true;
+                    if ev["available"] == false && active && !self.gamma_refused {
+                        // It can't hold the colours: the programs that can are used instead.
+                        self.gamma_refused = true;
+                        self.night_at = None;
+                    }
+                    self.gamma = Some(ev.clone());
+                    self.refresh_sound();
                     continue;
                 }
                 Some("nh-results") => {
@@ -1774,6 +1801,103 @@ impl App {
         self.live.follow(&raw);
     }
 
+    /// Night light is on: by the gamma module's word, or the program's.
+    fn night_active(&self) -> bool {
+        if self.gamma_refused {
+            self.night.1
+        } else {
+            self.gamma.as_ref().is_some_and(|g| g["active"] == true)
+        }
+    }
+
+    /// The daemon's gamma module, as NightLight.qml configures it; and the laptop panel
+    /// extra dim is for, found once.
+    fn sync_gamma(&mut self) {
+        let raw = theme::raw();
+        let text = |k: &str| raw[k].as_str().unwrap_or("").to_string();
+        let cfg = format!("{}|{}|{}|{}|{}|{}", text("nightMode"), raw["nightTemp"].as_i64().unwrap_or(3400), text("nightFrom"), text("nightTo"), text("nightLat"), text("nightLon"));
+        if cfg != self.gamma_sent && !self.gamma_refused {
+            let first = self.gamma_sent.is_empty();
+            self.gamma_sent = cfg;
+            let mut msg = json!({ "cmd": "gamma-config", "mode": text("nightMode"), "temp": raw["nightTemp"].as_i64().unwrap_or(3400), "from": text("nightFrom"), "to": text("nightTo") });
+            if let (Ok(lat), Ok(lon)) = (text("nightLat").parse::<f64>(), text("nightLon").parse::<f64>()) {
+                msg["lat"] = json!(lat);
+                msg["lon"] = json!(lon);
+            }
+            if first {
+                // Two programs holding the colours would fight.
+                extras::sh("pkill -x hyprsunset; pkill -x wlsunset; true");
+            }
+            self.daemon.send(msg);
+        }
+        if self.dim_panel.is_empty() {
+            self.dim_panel = hypr::json("j/monitors")
+                .as_array()
+                .and_then(|m| m.iter().filter_map(|x| x["name"].as_str()).find(|n| ["eDP", "LVDS", "DSI"].iter().any(|p| n.starts_with(p))).map(str::to_string))
+                .unwrap_or_default();
+        }
+        // The dim the panel was left at, put back once extra dim is possible.
+        if self.can_extra_dim() && !self.dim_restored {
+            self.dim_restored = true;
+            let saved = serde_json::from_str::<serde_json::Value>(raw["monitorDims"].as_str().unwrap_or("{}")).ok().and_then(|d| d[&self.dim_panel].as_f64());
+            if let Some(d) = saved.filter(|d| *d < 0.999) {
+                self.apply_dim(d);
+            }
+        }
+    }
+
+    /// Extra dim: the gamma module is there and the laptop has a panel (Brightness.qml).
+    fn can_extra_dim(&self) -> bool {
+        !self.dim_panel.is_empty() && !self.gamma_refused && self.gamma.as_ref().is_some_and(|g| g["available"] != false)
+    }
+
+    fn dim_split(&self) -> f64 {
+        if self.can_extra_dim() { 0.2 } else { 0.0 }
+    }
+
+    /// Where the brightness slider stands: the extra-dim range at the bottom, then the backlight.
+    fn brightness_slider(&self) -> f64 {
+        let (split, floor) = (self.dim_split(), 0.1);
+        if self.extra_dim < 0.999 {
+            split * ((self.extra_dim - floor) / (1.0 - floor)).max(0.0)
+        } else {
+            split + (1.0 - split) * self.sound.brightness.unwrap_or(0.0)
+        }
+    }
+
+    fn brightness_label(&self) -> String {
+        if self.extra_dim < 0.999 { "extra dim".into() } else { format!("{}%", (self.sound.brightness.unwrap_or(0.0) * 100.0).round() as i32) }
+    }
+
+    fn set_brightness_slider(&mut self, v: f64) {
+        if self.sound.bl_max == 0 {
+            return;
+        }
+        let (v, split) = (v.clamp(0.0, 1.0), self.dim_split());
+        if !self.can_extra_dim() || v >= split {
+            self.set_brightness(if split > 0.0 { (v - split) / (1.0 - split) } else { v });
+            return;
+        }
+        let dim = 0.1 + (v / split) * 0.9;
+        if self.extra_dim >= 0.999 {
+            self.set_brightness(0.01);
+        }
+        self.apply_dim(dim);
+        self.refresh_sound();
+    }
+
+    fn apply_dim(&mut self, dim: f64) {
+        self.extra_dim = dim;
+        self.daemon.send(json!({ "cmd": "gamma-dim", "output": self.dim_panel, "value": (dim * 100.0).round() as i64 }));
+        let mut all = serde_json::from_str::<serde_json::Value>(theme::raw()["monitorDims"].as_str().unwrap_or("{}")).ok().filter(|v| v.is_object()).unwrap_or(json!({}));
+        if dim >= 0.999 {
+            all.as_object_mut().map(|o| o.remove(&self.dim_panel));
+        } else {
+            all[&self.dim_panel] = json!((dim * 100.0).round() / 100.0);
+        }
+        theme::set("monitorDims", json!(all.to_string()));
+    }
+
     fn hist_search(&mut self) {
         self.hist_asked += 1;
         self.daemon.send(json!({ "cmd": "nh-search", "id": self.hist_asked, "query": self.hist_query, "limit": 300 }));
@@ -1866,6 +1990,7 @@ impl App {
         let mode = theme::raw()["shellBlurMode"].as_str().unwrap_or("auto").to_string();
         self.blur.sync(&mode);
         self.sync_idle();
+        self.sync_gamma();
         // History's own settings, once and when they change (NotifHistory.tell).
         {
             let raw = theme::raw();
@@ -1948,14 +2073,23 @@ impl App {
         }
         // Night light after Bluetooth, as ControlCenter.qml has them.
         {
-            let (avail, on, _) = &self.night;
-            let temp = theme::raw()["nightTemp"].as_i64().unwrap_or(3500);
-            tiles.push(Tile {
-                kind: "nightlight".into(),
-                name: "Night light".into(),
-                sub: if !avail { "not installed".into() } else if *on { format!("{temp} K").into() } else { "off".into() },
-                on: *on,
-            });
+            let raw = theme::raw();
+            let temp = raw["nightTemp"].as_i64().unwrap_or(3400);
+            let (builtin, avail, on) = (!self.gamma_refused, self.night.0, self.night_active());
+            let mode = raw["nightMode"].as_str().unwrap_or("off");
+            let sunset = self.gamma.as_ref().and_then(|g| g["sunset"].as_str()).unwrap_or("").to_string();
+            let sub = if !builtin && !avail {
+                "not installed".to_string()
+            } else if on {
+                format!("{temp} K")
+            } else if builtin && mode == "sun" && !sunset.is_empty() {
+                format!("at {sunset}")
+            } else if builtin && mode == "times" {
+                format!("at {}", raw["nightFrom"].as_str().unwrap_or("20:00"))
+            } else {
+                "off".to_string()
+            };
+            tiles.push(Tile { kind: "nightlight".into(), name: "Night light".into(), sub: sub.into(), on });
         }
         let airplane = !s.wifi_on && (!s.bt_available || !s.bt_on);
         tiles.push(Tile { kind: "airplane".into(), name: "Airplane".into(), sub: if airplane { "radios off".into() } else { "radios on".into() }, on: airplane });
@@ -1989,6 +2123,7 @@ impl App {
                 on: s.kbd_level > 0,
             });
         }
+        let (bright, bright_label) = (self.brightness_slider(), self.brightness_label());
         let mixer: Vec<crate::MixRow> = s
             .streams
             .iter()
@@ -2008,7 +2143,8 @@ impl App {
             p.set_volume(s.volume as f32);
             p.set_muted(s.muted);
             p.set_has_brightness(s.brightness.is_some());
-            p.set_brightness(s.brightness.unwrap_or(0.0) as f32);
+            p.set_brightness(bright as f32);
+            p.set_brightness_label(bright_label.clone().into());
             p.set_has_mic(s.mic.is_some());
             if let Some((_, v, m)) = &s.mic {
                 p.set_mic(*v as f32);
@@ -2538,6 +2674,10 @@ impl App {
         if self.sound.bl_max == 0 {
             return;
         }
+        // Setting the backlight leaves extra dim (Brightness.set).
+        if self.extra_dim < 0.999 {
+            self.apply_dim(1.0);
+        }
         let v = v.clamp(0.01, 1.0);
         self.sound.brightness = Some(v);
         self.daemon.send(json!({ "cmd": "bl-set", "value": ((v * self.sound.bl_max as f64).round() as u64).max(1) }));
@@ -2570,7 +2710,7 @@ impl App {
                     self.refresh_sound();
                 }
             }
-            Action::SetBrightness(v) => self.set_brightness(v as f64),
+            Action::SetBrightness(v) => self.set_brightness_slider(v as f64),
             Action::SetMic(v) => {
                 if let Some((name, vol, muted)) = self.sound.mic.as_mut() {
                     *vol = (v as f64).clamp(0.0, 1.0);
@@ -2916,18 +3056,30 @@ impl App {
                 self.refresh_sound();
             }
             "nightlight" => {
-                let (avail, on, backend) = self.night.clone();
-                if avail {
-                    if on {
-                        extras::sh(&format!("pkill -x {backend}"));
+                let on = self.night_active();
+                if !self.gamma_refused {
+                    // Built in: on a schedule, the tile overrides it until the next
+                    // change; otherwise it is the mode.
+                    let mode = theme::raw()["nightMode"].as_str().unwrap_or("off").to_string();
+                    if mode == "sun" || mode == "times" {
+                        self.daemon.send(json!({ "cmd": "gamma-override", "on": !on }));
                     } else {
-                        let t = theme::raw()["nightTemp"].as_i64().unwrap_or(3500);
-                        extras::sh(&if backend == "wlsunset" { format!("setsid -f wlsunset -t {t} -T 6500 >/dev/null 2>&1") } else { format!("setsid -f hyprsunset -t {t} >/dev/null 2>&1") });
+                        theme::set("nightMode", json!(if on { "off" } else { "on" }));
                     }
-                    self.night.1 = !on;
-                    self.night_at = None;
-                    self.refresh_sound();
+                } else {
+                    let (avail, _, backend) = self.night.clone();
+                    if avail {
+                        let t = theme::raw()["nightTemp"].as_i64().unwrap_or(3400);
+                        if on {
+                            extras::sh("pkill -x hyprsunset; pkill -x wlsunset; true");
+                        } else {
+                            extras::sh(&if backend == "wlsunset" { format!("pkill -x wlsunset; setsid -f wlsunset -T {} -t {t} >/dev/null 2>&1", t + 100) } else { format!("pkill -x hyprsunset; setsid -f hyprsunset -t {t} >/dev/null 2>&1") });
+                        }
+                        self.night.1 = !on;
+                        self.night_at = None;
+                    }
                 }
+                self.refresh_sound();
             }
             "gamemode" => {
                 // Appearance.gameMode, the compositor's VRR, and the power profile.

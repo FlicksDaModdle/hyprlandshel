@@ -577,6 +577,7 @@ component ControlCenter inherits PanelSurface {
     in property <bool> muted;
     in property <bool> has-brightness;
     in property <float> brightness;
+    in property <string> brightness-label;
     in property <bool> has-mic;
     in property <float> mic;
     in property <bool> mic-muted;
@@ -979,7 +980,7 @@ component ControlCenter inherits PanelSurface {
             if root.has-brightness: CcSlider {
                 icon: Icons.sun;
                 label: "Brightness";
-                value-text: round(root.brightness * 100) + "%";
+                value-text: root.brightness-label;
                 value: root.brightness;
                 moved(v) => { root.set-brightness(v); }
             }
@@ -1747,6 +1748,7 @@ export component Panels inherits Window {
     in property <bool> muted;
     in property <bool> has-brightness;
     in property <float> brightness;
+    in property <string> brightness-label;
     in property <bool> has-mic;
     in property <float> mic;
     in property <bool> mic-muted;
@@ -1847,7 +1849,7 @@ export component Panels inherits Window {
         ControlCenter {
             user: root.user; session: root.session; theme-mode: root.theme-mode; tiles: root.tiles;
             volume: root.volume; muted: root.muted;
-            has-brightness: root.has-brightness; brightness: root.brightness;
+            has-brightness: root.has-brightness; brightness: root.brightness; brightness-label: root.brightness-label;
             has-mic: root.has-mic; mic: root.mic; mic-muted: root.mic-muted;
             cycle-theme => { root.cycle-theme(); }
             tile(k) => { root.tile(k); }
