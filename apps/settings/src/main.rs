@@ -14,6 +14,7 @@
 mod anim;
 mod bt;
 mod face;
+mod keyring;
 mod frost;
 mod focus;
 mod gallery;
@@ -65,6 +66,8 @@ struct State {
     /// Settings → Login screen: face unlock; looked at when the pane is first opened.
     face: face::Face,
     face_started: bool,
+    keyring: keyring::Keyring,
+    keyring_started: bool,
     /// The rows as drawn, kept so a change that leaves the page's shape alone is
     /// written into them rather than replacing them (a switch re-made in its new
     /// state has nothing to slide from).
@@ -128,6 +131,12 @@ fn show(ui: &AppWindow, st: &mut State) {
             let notify = face_notify(st.weak.clone());
             st.face.start(notify);
         }
+        if !st.keyring_started {
+            st.keyring_started = true;
+            let notify = keyring_notify(st.weak.clone());
+            st.keyring.start(notify);
+        }
+        st.c.ui.keyring = st.keyring.snap.clone();
         st.c.ui.face = st.face.snapshot();
         st.c.ui.face_pending = st.face.pending_count();
     } else if st.face_started && !st.c.ui.face.busy {
@@ -410,6 +419,8 @@ fn main() {
         upd: updates::Updates::default(),
         face: face::Face::default(),
         face_started: false,
+        keyring: keyring::Keyring::default(),
+        keyring_started: false,
         rows_model: None,
         rows_shape: Vec::new(),
         upd_shown: false,
@@ -441,6 +452,9 @@ fn main() {
                 // Settings → Login screen: what its rows asked of face unlock.
                 for cmd in std::mem::take(&mut s.c.ui.face_cmds) {
                     s.face.command(cmd);
+                }
+                for cmd in std::mem::take(&mut s.c.ui.keyring_cmds) {
+                    s.keyring.command(cmd);
                 }
                 (s.c.ui.toast.take(), std::mem::take(&mut s.c.ui.tell), s.c.ui.pick.take(), s.c.ui.hdr.take())
             };
@@ -1987,4 +2001,21 @@ fn wire_frost(ui: &AppWindow, st: &Rc<RefCell<State>>) {
             Err(_) => g.set_blurred(false),
         }
     });
+}
+
+
+/// What the keyring script's threads say, delivered on the window's own thread.
+fn keyring_notify(weak: slint::Weak<AppWindow>) -> keyring::Notify {
+    std::sync::Arc::new(move |m| {
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            STATE.with(|s| {
+                let Some(st) = s.borrow().as_ref().and_then(|w| w.upgrade()) else { return };
+                let mut st = st.borrow_mut();
+                st.keyring.on_msg(m);
+                if st.c.ui.pane == "Login screen" {
+                    show(&ui, &mut st);
+                }
+            });
+        });
+    })
 }

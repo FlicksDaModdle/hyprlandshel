@@ -44,6 +44,7 @@ export struct Row {
     colour: color,
     colours: [color],
     placeholder: string,
+    secret: bool,
     panel: string,
     card: string,
     flash: bool,
@@ -587,7 +588,9 @@ component SettingsRow inherits Rectangle {
                     font-size: Theme.fs(12);
                     color: Theme.ink;
                     single-line: true;
-                    accepted => { Prefs.set-text(root.index, self.text); }
+                    input-type: item.secret ? InputType.password : InputType.text;
+                    // A password goes once and is not left in the field.
+                    accepted => { Prefs.set-text(root.index, self.text); if (item.secret) { self.text = ""; } }
                 }
                 if tin.text == "" && !tin.has-focus: Text {
                     x: 10px;
@@ -597,7 +600,7 @@ component SettingsRow inherits Rectangle {
                     color: Theme.ink3;
                 }
             }
-            AccentButton { text: item.label != "" ? item.label : "Go"; clicked => { Prefs.set-text(root.index, tin.text); } }
+            AccentButton { text: item.label != "" ? item.label : "Go"; clicked => { Prefs.set-text(root.index, tin.text); if (item.secret) { tin.text = ""; } } }
         }
         if item.kind == "color": Rectangle {
             width: 44px;

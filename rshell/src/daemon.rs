@@ -76,6 +76,8 @@ pub struct State {
     /// The output's own name, and the apps playing (the volume mixer's rows).
     pub sink_desc: String,
     pub streams: Vec<Stream>,
+    /// The outputs a stream can be moved to: (index, name, description), not the shell's own.
+    pub outputs: Vec<(i64, String, String)>,
     pub have_audio: bool,
 }
 
@@ -86,6 +88,10 @@ pub struct Stream {
     pub media: String,
     pub volume: f64,
     pub mute: bool,
+    /// The output it plays to (a sink's index), and the key apps are kept in the
+    /// equalizer's list by (AudioFx.appKey).
+    pub sink: i64,
+    pub key: String,
 }
 
 fn find() -> Option<std::path::PathBuf> {
@@ -250,8 +256,15 @@ pub fn apply(s: &mut State, ev: &Value) -> bool {
                         media: p["media.name"].as_str().unwrap_or("").to_string(),
                         volume: v["volume"].as_f64().unwrap_or(1.0),
                         mute: v["mute"] == true,
+                        sink: v["sink"].as_i64().unwrap_or(-1),
+                        key: p["application.process.binary"].as_str().filter(|x| !x.is_empty()).or(p["application.name"].as_str()).unwrap_or("").to_string(),
                     }
                 })
+                .collect();
+            s.outputs = sinks
+                .iter()
+                .filter(|x| !ours(x))
+                .map(|x| (x["index"].as_i64().unwrap_or(-1), x["name"].as_str().unwrap_or("").to_string(), x["description"].as_str().unwrap_or("").to_string()))
                 .collect();
             let source = ev["defaultSource"].as_str().unwrap_or("");
             let sources = ev["sources"].as_array().cloned().unwrap_or_default();

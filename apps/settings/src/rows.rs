@@ -57,6 +57,9 @@ pub struct Ui {
     /// what the rows asked of it.
     pub face: crate::face::Snap,
     pub face_cmds: Vec<crate::face::Cmd>,
+    /// The keyring section (keyring.rs): how it stands, and what its rows asked.
+    pub keyring: crate::keyring::Snap,
+    pub keyring_cmds: Vec<crate::keyring::Cmd>,
     /// Howdy's settings waiting for the password.
     pub face_pending: usize,
     /// A message for the toast.
@@ -2513,6 +2516,7 @@ fn login(c: &Ctx) -> Vec<Spec> {
     }
     r.extend(face_service_rows(f));
     r.extend(howdy_rows(c));
+    r.extend(keyring_rows(&c.ui.keyring));
     r.push(header("Login screen", ""));
     r.push(info(
         "Hyprshell's login screen",
@@ -2671,5 +2675,72 @@ fn howdy_rows(c: &Ctx) -> Vec<Spec> {
     if n > 0 {
         r.push(waiting(f.busy, n));
     }
+    r
+}
+
+
+// Settings → Login screen → Keyring (Settings.qml's keyringRows).
+fn keyring_rows(k: &crate::keyring::Snap) -> Vec<Spec> {
+    use crate::keyring::Cmd;
+    let mut r = vec![header("Keyring", "Your saved passwords. A face login has no password to open them with, unless the laptop keeps it for you, sealed with its TPM")];
+    if !k.probed {
+        return r;
+    }
+    if !k.available() {
+        r.push(info(
+            "Unlock the keyring with my face",
+            if !k.keyring_installed {
+                "GNOME Keyring isn't installed".to_string()
+            } else if !k.tpm {
+                "This needs a TPM, and none was found: is it turned on in the firmware?".to_string()
+            } else {
+                format!("This needs systemd 256 or newer (this is {})", k.creds_version)
+            }
+            .as_str(),
+            "Not available",
+        ));
+        return r;
+    }
+    r.push(toggle_with(
+        "Unlock the keyring with my face",
+        if k.stored {
+            "Its password is sealed with this laptop's TPM, and opens it after a face login"
+        } else if k.asking {
+            "Type the keyring's password below to turn it on"
+        } else {
+            "Off: after a face login, the first app that needs the keyring asks for your password"
+        },
+        k.stored || k.asking,
+        move |c, v| {
+            if v {
+                c.ui.keyring_cmds.push(Cmd::Ask(true));
+            } else {
+                c.ui.keyring_cmds.push(Cmd::Ask(false));
+                if c.ui.keyring.stored {
+                    c.ui.keyring_cmds.push(Cmd::Forget);
+                }
+            }
+        },
+    ));
+    if k.asking && !k.stored {
+        let mut t = text(
+            "Your keyring's password",
+            "Usually your login password. The keyring checks it first; then it's sealed with the TPM, never stored readable",
+            "",
+            "Password",
+            if k.busy { "Checking…" } else { "Store" },
+            |c, v| c.ui.keyring_cmds.push(Cmd::Store(v)),
+        );
+        t.row.secret = true;
+        r.push(t);
+    }
+    if !k.status.is_empty() {
+        r.push(info(if k.busy { "Working…" } else if k.failed { "That didn't work" } else { "Done" }, &k.status, ""));
+    }
+    r.push(info(
+        "How safe it is",
+        "The sealed password opens only on this laptop, never from a copied disk or a backup. Programs running as you could unseal it, but they can already read an open keyring. It makes your saved passwords as safe as Howdy, which is easier to fool than a password",
+        "",
+    ));
     r
 }

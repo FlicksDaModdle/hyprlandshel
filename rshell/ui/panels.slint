@@ -7,7 +7,7 @@ import { Glyph } from "glyph.slint";
 import { IconButton, PanelSurface, Caps, Toggle, FillSlider, MenuRow, Rule } from "widgets.slint";
 import { MediaInfo, MenuEntry, Note, NoteAction, DriveRow, TimerRow, Tile, PrivacyRow, DayCell, WifiRow, BtRow } from "types.slint";
 
-export struct MixRow { index: int, title: string, sub: string, vol: float, muted: bool, pct: string }
+export struct MixRow { index: int, title: string, sub: string, vol: float, muted: bool, pct: string, has-out: bool, out-label: string, has-eq: bool, eq-on: bool }
 export struct HistEntry { id: int, day: string, show-day: bool, head: string, summary: string, body: string, urgent: bool }
 
 
@@ -471,17 +471,11 @@ component CcSlider inherits VerticalLayout {
             horizontal-stretch: 0;
             y: -3px;
             height: 20px;
-            width: chl.preferred-width + 14px;
+            width: cht.preferred-width + 3px + 11px + 14px;
             border-radius: 10px;
             background: cha.has-hover ? Theme.sel : Theme.hover;
-            chl := HorizontalLayout {
-                x: 7px;
-                y: 0;
-                height: parent.height;
-                spacing: 3px;
-                Text { vertical-alignment: center; text: root.chip; font-size: Theme.fs(10.5); font-weight: 600; color: cha.has-hover ? Theme.ink : Theme.ink3; }
-                VerticalLayout { alignment: center; Glyph { data: Icons.chevron-right; size: 11px; monochrome: true; ink: Theme.ink3; } }
-            }
+            cht := Text { x: 7px; y: (parent.height - self.height) / 2; text: root.chip; font-size: Theme.fs(10.5); font-weight: 600; color: cha.has-hover ? Theme.ink : Theme.ink3; }
+            Glyph { x: 7px + cht.preferred-width + 3px; y: (parent.height - 11px) / 2; data: Icons.chevron-right; size: 11px; monochrome: true; ink: Theme.ink3; }
             cha := TouchArea { mouse-cursor: pointer; clicked => { root.chip-clicked(); } }
         }
         Rectangle { horizontal-stretch: 1; }
@@ -505,13 +499,20 @@ component MixLevel inherits VerticalLayout {
     in property <float> vol;
     in property <bool> muted;
     in property <string> pct;
+    in property <bool> has-out;
+    in property <string> out-label;
+    in property <bool> has-eq;
+    in property <bool> eq-on;
     callback badge-clicked();
+    callback out-clicked();
+    callback eq-clicked();
     callback moved(float);
     spacing: 7px;
-    Rectangle {
+    HorizontalLayout {
         height: 30px;
+        spacing: 8px;
         Rectangle {
-            x: 0;
+            horizontal-stretch: 0;
             width: 30px;
             height: 30px;
             border-radius: 15px;
@@ -520,19 +521,46 @@ component MixLevel inherits VerticalLayout {
             ba := TouchArea { mouse-cursor: pointer; clicked => { root.badge-clicked(); } }
         }
         VerticalLayout {
-            x: 40px;
-            y: 0;
-            height: parent.height;
-            width: parent.width - 40px - 46px;
+            horizontal-stretch: 1;
             alignment: center;
             spacing: 1px;
             Text { text: root.title; overflow: elide; font-size: Theme.fs(12); font-weight: 600; color: Theme.ink; }
             if root.sub != "": Text { text: root.sub; overflow: elide; font-size: Theme.fs(10.5); color: Theme.ink3; }
         }
+        // Where it plays: the next output, on a click.
+        if root.has-out: VerticalLayout {
+            horizontal-stretch: 0;
+            alignment: center;
+            Rectangle {
+                height: 22px;
+                width: min(110px, ol.preferred-width + 30px);
+                border-radius: 11px;
+                background: oa.has-hover ? Theme.sel : transparent;
+                border-width: 1px;
+                border-color: Theme.rule;
+                Glyph { x: 7px; y: 5px; data: Icons.volume; size: 12px; monochrome: true; ink: Theme.ink2; }
+                ol := Text { x: 23px; width: parent.width - 31px; y: (parent.height - self.height) / 2; overflow: elide; text: root.out-label; font-size: Theme.fs(10.5); font-weight: 600; color: Theme.ink2; }
+                oa := TouchArea { mouse-cursor: pointer; clicked => { root.out-clicked(); } }
+            }
+        }
+        if root.has-eq: VerticalLayout {
+            horizontal-stretch: 0;
+            alignment: center;
+            Rectangle {
+                height: 22px;
+                width: eqt.preferred-width + 16px;
+                border-radius: 11px;
+                background: root.eq-on ? Theme.accent : (ea.has-hover ? Theme.sel : transparent);
+                border-width: root.eq-on ? 0px : 1px;
+                border-color: Theme.rule;
+                eqt := Text { x: 8px; y: (parent.height - self.height) / 2; text: "EQ"; font-size: Theme.fs(10.5); font-weight: 600; color: root.eq-on ? Theme.ink-on-accent : Theme.ink3; }
+                ea := TouchArea { mouse-cursor: pointer; clicked => { root.eq-clicked(); } }
+            }
+        }
         Text {
-            x: parent.width - self.width;
-            y: (parent.height - self.height) / 2;
+            horizontal-stretch: 0;
             width: 38px;
+            vertical-alignment: center;
             horizontal-alignment: right;
             text: root.pct;
             font-size: Theme.fs(11.5);
@@ -587,6 +615,8 @@ component ControlCenter inherits PanelSurface {
     in property <string> mixer-chip;
     callback mix-set(int, float);
     callback mix-mute(int);
+    callback mix-out(int);
+    callback mix-eq(int);
     callback open-sound-settings();
     callback cycle-theme();
     callback tile(string);
@@ -650,7 +680,13 @@ component ControlCenter inherits PanelSurface {
                         vol: m.vol;
                         muted: m.muted;
                         pct: m.pct;
+                        has-out: m.has-out;
+                        out-label: m.out-label;
+                        has-eq: m.has-eq;
+                        eq-on: m.eq-on;
                         badge-clicked => { root.mix-mute(m.index); }
+                        out-clicked => { root.mix-out(m.index); }
+                        eq-clicked => { root.mix-eq(m.index); }
                         moved(v) => { root.mix-set(m.index, v); }
                     }
                 }
@@ -1733,6 +1769,8 @@ export component Panels inherits Window {
     in property <string> mixer-chip;
     callback mix-set(int, float);
     callback mix-mute(int);
+    callback mix-out(int);
+    callback mix-eq(int);
     callback open-sound-settings();
     callback show-pane(string);
     callback wifi(bool);
@@ -1862,6 +1900,8 @@ export component Panels inherits Window {
             mixer: root.mixer; mixer-device: root.mixer-device; mixer-sub: root.mixer-sub; mixer-chip: root.mixer-chip;
             mix-set(i, v) => { root.mix-set(i, v); }
             mix-mute(i) => { root.mix-mute(i); }
+            mix-out(i) => { root.mix-out(i); }
+            mix-eq(i) => { root.mix-eq(i); }
             open-sound-settings => { root.open-sound-settings(); }
             wifi(v) => { root.wifi(v); }
             bt(v) => { root.bt(v); }

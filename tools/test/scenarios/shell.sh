@@ -335,3 +335,15 @@ test_polkit_prompt_return() {
     sleep 1
     shot answered
 }
+
+# The volume mixer: the control center's Apps chip opens it, with the output's level and
+# each playing app's own.
+test_control_center_mixer() {
+    start_shell
+    cmd toggleControlCenter
+    sleep 1
+    shot cc
+    click 1262 411
+    sleep 0.8
+    shot mixer
+}

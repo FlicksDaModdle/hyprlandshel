@@ -52,6 +52,8 @@ pub enum Action {
     NcView(String),
     MixSet(i32, f32),
     MixMute(i32),
+    MixOut(i32),
+    MixEq(i32),
     DriveOpen(String),
     DriveMount(String),
     DriveEject(String),
@@ -2124,10 +2126,29 @@ impl App {
             });
         }
         let (bright, bright_label) = (self.brightness_slider(), self.brightness_label());
+        // The equalizer on for some apps only: each stream gets its EQ switch.
+        let raw_fx = theme::raw();
+        let eq_per_app = raw_fx["eqEnabled"].as_bool().unwrap_or(false) && raw_fx["eqScope"].as_str() == Some("apps");
+        let eq_apps: Vec<String> = serde_json::from_str(raw_fx["eqApps"].as_str().unwrap_or("[]")).unwrap_or_default();
         let mixer: Vec<crate::MixRow> = s
             .streams
             .iter()
-            .map(|m| crate::MixRow { index: m.index as i32, title: m.app.clone().into(), sub: m.media.clone().into(), vol: m.volume.clamp(0.0, 1.0) as f32, muted: m.mute, pct: if m.mute { "muted".into() } else { format!("{}%", (m.volume * 100.0).round() as i32).into() } })
+            
+            .map(|m| {
+                let here = s.outputs.iter().find(|o| o.0 == m.sink);
+                crate::MixRow {
+                    index: m.index as i32,
+                    title: m.app.clone().into(),
+                    sub: m.media.clone().into(),
+                    vol: m.volume.clamp(0.0, 1.0) as f32,
+                    muted: m.mute,
+                    pct: if m.mute { "muted".into() } else { format!("{}%", (m.volume * 100.0).round() as i32).into() },
+                    has_out: s.outputs.len() > 1,
+                    out_label: here.map(|o| if o.2.is_empty() { o.1.clone() } else { o.2.clone() }).unwrap_or_else(|| "Output".into()).into(),
+                    has_eq: eq_per_app,
+                    eq_on: eq_apps.contains(&m.key),
+                }
+            })
             .collect();
         for b in &self.bars {
             b.bar.set_net_label(s.net_label.clone().into());
@@ -2817,6 +2838,31 @@ impl App {
                 extras::spawn(&["pactl", "set-sink-input-volume", &index.to_string(), &format!("{pct}%")]);
                 if let Some(st) = self.sound.streams.iter_mut().find(|x| x.index == index as i64) {
                     st.volume = v as f64;
+                }
+                self.refresh_sound();
+            }
+            // Moved to the next output (Audio.moveStream), round the list.
+            Action::MixOut(index) => {
+                let outs = self.sound.outputs.clone();
+                if let (Some(st), true) = (self.sound.streams.iter().find(|x| x.index == index as i64), outs.len() > 1) {
+                    let at = outs.iter().position(|o| o.0 == st.sink).unwrap_or(outs.len() - 1);
+                    let next = &outs[(at + 1) % outs.len()];
+                    self.daemon.send(json!({ "cmd": "pa-move-input", "index": index, "sink": next.1 }));
+                }
+            }
+            // In the equalizer's list or out of it (AudioFx.setEqApp): the effects follow the pref.
+            Action::MixEq(index) => {
+                if let Some(st) = self.sound.streams.iter().find(|x| x.index == index as i64) {
+                    let key = st.key.clone();
+                    if !key.is_empty() {
+                        let mut list: Vec<String> = serde_json::from_str(theme::raw()["eqApps"].as_str().unwrap_or("[]")).unwrap_or_default();
+                        if list.contains(&key) {
+                            list.retain(|k| *k != key);
+                        } else {
+                            list.push(key);
+                        }
+                        theme::set("eqApps", json!(serde_json::to_string(&list).unwrap_or_default()));
+                    }
                 }
                 self.refresh_sound();
             }
@@ -3903,6 +3949,8 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_hist_clear, | | Action::HistClear);
     on!(on_mix_set, |i, v| Action::MixSet(i, v));
     on!(on_mix_mute, |i| Action::MixMute(i));
+    on!(on_mix_out, |i| Action::MixOut(i));
+    on!(on_mix_eq, |i| Action::MixEq(i));
     on!(on_open_sound_settings, | | Action::OpenSettingsPane("Sound".into()));
     on!(on_nc_view_changed, |v| Action::NcView(v.to_string()));
     on!(on_media_prev, | | Action::Media(mpris::Cmd::Prev));
