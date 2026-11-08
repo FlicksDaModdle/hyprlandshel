@@ -728,6 +728,8 @@ pub enum Act {
     Key(String, bool, bool),
     Import(String),
     ImportStep(String, i32),
+    /// A path node's corner / split / remove.
+    Node(String),
 }
 
 enum Drag {
@@ -737,6 +739,8 @@ enum Drag {
     Pen { at: (f64, f64) },
     /// One of the selected shape's handles, by its place in `handles()`.
     Handle { which: usize, moved: bool },
+    /// The lasso being drawn round part of a shape.
+    Lasso,
 }
 
 /// The points to take hold of a shape by, on the grid: the ends of a line, the
@@ -761,6 +765,159 @@ pub fn handles(s: &Value) -> Vec<(f64, f64)> {
         }
         _ => Vec::new(),
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Role {
+    Point,
+    Node,
+    Bezier,
+    Rot,
+}
+
+pub struct Handle {
+    pub x: f64,
+    pub y: f64,
+    pub role: Role,
+    /// What a curve handle hangs off, for the stalk drawn back to it.
+    pub from: Option<(f64, f64)>,
+}
+
+/// A path's handles in order: each node, then its two curve handles where it has them.
+/// (node, 0 = the point, 1 = the handle into it, 2 = the handle out of it)
+fn path_ids(s: &Value) -> Vec<(usize, u8)> {
+    let mut out = Vec::new();
+    for (i, nd) in s["nodes"].as_array().into_iter().flatten().enumerate() {
+        out.push((i, 0));
+        if nd["hi"].is_object() {
+            out.push((i, 1));
+        }
+        if nd["ho"].is_object() {
+            out.push((i, 2));
+        }
+    }
+    out
+}
+
+/// Every handle of a shape: its own (a path's nodes and curve handles included) and,
+/// last, the knob above it that turns it — all but a circle or a dot, which have nothing to turn.
+pub fn all_handles(s: &Value) -> Vec<Handle> {
+    let mut out: Vec<Handle> = Vec::new();
+    if kind(s) == "path" && f(s, "rot") == 0.0 {
+        let ids = path_ids(s);
+        let nodes = nodes_of(&s["nodes"]);
+        for (i, part) in ids {
+            let nd = nodes[i];
+            match part {
+                0 => out.push(Handle { x: nd.0, y: nd.1, role: Role::Node, from: None }),
+                1 => out.push(Handle { x: nd.2.unwrap_or((nd.0, nd.1)).0, y: nd.2.unwrap_or((nd.0, nd.1)).1, role: Role::Bezier, from: Some((nd.0, nd.1)) }),
+                _ => out.push(Handle { x: nd.3.unwrap_or((nd.0, nd.1)).0, y: nd.3.unwrap_or((nd.0, nd.1)).1, role: Role::Bezier, from: Some((nd.0, nd.1)) }),
+            }
+        }
+    } else {
+        out.extend(handles(s).into_iter().map(|h| Handle { x: h.0, y: h.1, role: Role::Point, from: None }));
+    }
+    if !matches!(kind(s), "circle" | "dot") {
+        let (x, y, w, h) = bounds_of(s);
+        let top = (x + w / 2.0, y);
+        let turned = turn(s, f(s, "rot"));
+        let (kx, ky) = turned(x + w / 2.0, y - 2.2);
+        let from = turned(top.0, top.1);
+        out.push(Handle { x: kx, y: ky, role: Role::Rot, from: Some(from) });
+    }
+    out
+}
+
+/// Handle `which` of `all_handles` dragged to a point: `(px, py)` snapped to the grid,
+/// `(rx, ry)` as it is (an angle isn't snapped).
+pub fn drag_any(s: &Value, which: usize, (px, py): (f64, f64), (rx, ry): (f64, f64)) -> Vec<(&'static str, Value)> {
+    let hs = all_handles(s);
+    match hs.get(which).map(|h| h.role) {
+        Some(Role::Rot) => {
+            let (cx, cy) = centre_of(s);
+            // Straight up is no turn: measured from due north.
+            let mut deg = (ry - cy).atan2(rx - cx).to_degrees() + 90.0;
+            while deg <= -180.0 {
+                deg += 360.0;
+            }
+            while deg > 180.0 {
+                deg -= 360.0;
+            }
+            vec![("rot", json!((deg * 10.0).round() / 10.0))]
+        }
+        Some(Role::Node) | Some(Role::Bezier) => {
+            let Some(&(i, part)) = path_ids(s).get(which) else { return Vec::new() };
+            let mut nodes = s["nodes"].clone();
+            let Some(nd) = nodes.get_mut(i) else { return Vec::new() };
+            let (ox, oy) = (f(nd, "x"), f(nd, "y"));
+            match part {
+                0 => {
+                    // The point, its handles in tow.
+                    let (dx, dy) = (px - ox, py - oy);
+                    nd["x"] = json!(px);
+                    nd["y"] = json!(py);
+                    for k in ["hi", "ho"] {
+                        if nd[k].is_object() {
+                            nd[k]["x"] = json!(f(&nd[k], "x") + dx);
+                            nd[k]["y"] = json!(f(&nd[k], "y") + dy);
+                        }
+                    }
+                }
+                _ => {
+                    let (this, other) = if part == 1 { ("hi", "ho") } else { ("ho", "hi") };
+                    nd[this] = json!({ "x": px, "y": py });
+                    // A smooth point keeps its two handles opposite and equal, so the curve runs
+                    // through it rather than kinking; a corner is the one marked for a kink.
+                    if nd["corner"] != true && nd[other].is_object() {
+                        nd[other] = json!({ "x": 2.0 * ox - px, "y": 2.0 * oy - py });
+                    }
+                }
+            }
+            vec![("nodes", nodes)]
+        }
+        _ => drag_handle(s, which, px, py),
+    }
+}
+
+/// A node's corner/smooth toggle, split and remove (IconModel.pathNodeOp).
+pub fn node_op(s: &Value, op: &str, index: usize) -> Option<Value> {
+    let mut nodes = s["nodes"].as_array()?.clone();
+    if index >= nodes.len() {
+        return None;
+    }
+    match op {
+        "delete" => {
+            // Two nodes is the least that still draws a line.
+            if nodes.len() <= 2 {
+                return None;
+            }
+            nodes.remove(index);
+        }
+        "corner" => {
+            let (prev, next) = (nodes[(index + nodes.len() - 1) % nodes.len()].clone(), nodes[(index + 1) % nodes.len()].clone());
+            let nd = &mut nodes[index];
+            if nd["corner"] == true {
+                // Back to smooth: handles along the line between its neighbours.
+                nd["corner"] = json!(false);
+                let (dx, dy) = ((f(&next, "x") - f(&prev, "x")) / 4.0, (f(&next, "y") - f(&prev, "y")) / 4.0);
+                nd["hi"] = json!({ "x": f(nd, "x") - dx, "y": f(nd, "y") - dy });
+                nd["ho"] = json!({ "x": f(nd, "x") + dx, "y": f(nd, "y") + dy });
+            } else {
+                nd["corner"] = json!(true);
+                nd.as_object_mut()?.remove("hi");
+                nd.as_object_mut()?.remove("ho");
+            }
+        }
+        "split" => {
+            // A node halfway along the segment that follows this one.
+            let closed = s["closed"] == true;
+            let b = nodes.get(index + 1).cloned().or(if closed { nodes.first().cloned() } else { None })?;
+            let a = nodes[index].clone();
+            nodes.insert(index + 1, json!({ "x": (f(&a, "x") + f(&b, "x")) / 2.0, "y": (f(&a, "y") + f(&b, "y")) / 2.0, "corner": true }));
+        }
+        _ => return None,
+    }
+    Some(Value::Array(nodes))
 }
 
 /// A handle dragged to a grid point (already snapped): the fields it changes.
@@ -808,6 +965,10 @@ pub struct Host {
     next_sw: i32,
     next_fill: bool,
     drag: Option<Drag>,
+    /// The node of the selected path last taken hold of, for the corner / split / remove buttons.
+    sel_node: Option<usize>,
+    /// The lasso's points so far, in grid units.
+    lasso: Vec<(f64, f64)>,
     loaded_as: String,
     status: String,
     /// What was last saved (or loaded), to tell whether there is unsaved work.
@@ -864,6 +1025,7 @@ impl Host {
             }};
         }
         on!(on_pointer, |k, x, y| Act::Pointer(k, x, y));
+        on!(on_node_act, |o| Act::Node(o.to_string()));
         on!(on_tool_set, |t| Act::Tool(t.to_string()));
         on!(on_colour, |a| Act::Colour(a));
         on!(on_weight, |w| Act::Weight(w));
@@ -893,6 +1055,8 @@ impl Host {
             next_sw: 2,
             next_fill: false,
             drag: None,
+            sel_node: None,
+            lasso: Vec::new(),
             loaded_as: String::new(),
             status: String::new(),
             saved_shapes: Vec::new(),
@@ -1001,6 +1165,23 @@ impl Host {
             }
             Act::NextFill => self.next_fill = !self.next_fill,
             Act::Key(t, ctrl, shift) => return self.key(&t, ctrl, shift),
+            Act::Node(op) => {
+                if let (Some(cur), Some(i)) = (self.model.current().cloned(), self.sel_node) {
+                    if kind(&cur) == "path" {
+                        match node_op(&cur, &op, i) {
+                            Some(nodes) => {
+                                self.model.snapshot();
+                                self.model.update(&[("nodes", nodes)], true);
+                                if op == "delete" {
+                                    self.sel_node = None;
+                                }
+                            }
+                            None if op == "delete" => self.status = "A line needs at least two points.".into(),
+                            None => {}
+                        }
+                    }
+                }
+            }
             Act::Pointer(k, x, y) => self.pointer(k, x as f64, y as f64),
         }
         self.refresh();
@@ -1013,14 +1194,28 @@ impl Host {
             0 => {
                 // A handle of the shape already selected comes first, whatever the tool.
                 if let Some(cur) = self.model.current() {
-                    let hit = handles(cur).iter().position(|h| (h.0 - x).hypot(h.1 - y) <= 0.7);
-                    if let Some(which) = hit {
+                    let hs = all_handles(cur);
+                    // The nearest within reach, curve handles over the point they hang off.
+                    let hit = hs.iter().enumerate().filter(|(_, h)| (h.x - x).hypot(h.y - y) <= 0.7).min_by(|a, b| (a.1.x - x).hypot(a.1.y - y).partial_cmp(&(b.1.x - x).hypot(b.1.y - y)).unwrap_or(std::cmp::Ordering::Equal));
+                    if let Some((which, h)) = hit {
+                        if h.role == Role::Node {
+                            self.sel_node = path_ids(cur).get(which).map(|p| p.0);
+                        }
                         self.drag = Some(Drag::Handle { which, moved: false });
                         return;
                     }
                 }
+                if self.tool == "lasso" {
+                    self.lasso = vec![(x, y)];
+                    self.drag = Some(Drag::Lasso);
+                    return;
+                }
                 if self.tool == "select" {
+                    let before = self.model.selected;
                     self.model.selected = self.model.pick(x, y, 0.9);
+                    if self.model.selected != before {
+                        self.sel_node = None;
+                    }
                     self.drag = self.model.selected.map(|_| Drag::Move { last: (sx, sy), moved: false });
                     return;
                 }
@@ -1073,9 +1268,14 @@ impl Host {
                         }
                     }
                 }
+                Some(Drag::Lasso) => {
+                    if self.lasso.last().is_none_or(|l| (l.0 - x).hypot(l.1 - y) > 0.2) {
+                        self.lasso.push((x, y));
+                    }
+                }
                 Some(Drag::Handle { which, ref mut moved }) => {
                     if let Some(cur) = self.model.current().cloned() {
-                        let fields = drag_handle(&cur, which, sx, sy);
+                        let fields = drag_any(&cur, which, (sx, sy), (x, y));
                         if !fields.is_empty() {
                             if !*moved {
                                 *moved = true;
@@ -1100,6 +1300,13 @@ impl Host {
                 None => {}
             },
             _ => {
+                if matches!(self.drag, Some(Drag::Lasso)) {
+                    let pts = std::mem::take(&mut self.lasso);
+                    self.drag = None;
+                    self.split_by_lasso(&pts);
+                    self.refresh();
+                    return;
+                }
                 // A shape dragged out to nothing isn't kept.
                 if let (Some(Drag::Draw { .. }), Some(s)) = (&self.drag, self.model.current()) {
                     let (_, _, w, h) = bounds_of(s);
@@ -1112,6 +1319,44 @@ impl Host {
             }
         }
         self.refresh();
+    }
+
+    /// What the lasso was drawn round becomes a piece of its own, in the accent (IconModel.splitByLasso):
+    /// the selected shape, or the one under the lasso's middle if nothing is.
+    fn split_by_lasso(&mut self, lasso: &[(f64, f64)]) {
+        if lasso.len() < 3 {
+            return;
+        }
+        let at = match self.model.selected {
+            Some(i) => i,
+            None => {
+                let (mx, my) = (lasso.iter().map(|p| p.0).sum::<f64>() / lasso.len() as f64, lasso.iter().map(|p| p.1).sum::<f64>() / lasso.len() as f64);
+                match self.model.pick(mx, my, 3.0) {
+                    Some(i) => i,
+                    None => {
+                        self.status = "Draw the lasso over a shape to split it.".into();
+                        return;
+                    }
+                }
+            }
+        };
+        let Some(shape) = self.model.shapes.get(at).cloned() else { return };
+        match crate::split::split(&shape, lasso) {
+            Err(e) => self.status = e,
+            Ok(cut) => {
+                self.model.snapshot();
+                let n_out = cut.outside.len();
+                let inside = cut.inside.into_iter().map(|mut p| {
+                    p["c"] = json!("acc");
+                    p
+                });
+                let pieces: Vec<Value> = cut.outside.into_iter().chain(inside).collect();
+                self.model.shapes.splice(at..=at, pieces);
+                // The cut-out piece, so it can be recoloured straight away.
+                self.model.selected = Some(at + n_out);
+                self.sel_node = None;
+            }
+        }
     }
 
     /// Keys: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, Ctrl+S, Ctrl+D; Delete; the arrows
@@ -1155,6 +1400,7 @@ impl Host {
                     "e" => self.tool = "ellipse".into(),
                     "a" => self.tool = "arc".into(),
                     "d" => self.tool = "dot".into(),
+                    "s" => self.tool = "lasso".into(),
                     "p" => {
                         self.finish_pen();
                         self.tool = "pen".into();
@@ -1256,7 +1502,7 @@ impl Host {
     /// the last trace, if the drawing hasn't been touched since, are replaced.
     fn retrace(&mut self) {
         let Some(src) = &self.source else { return };
-        match src.trace(&crate::tracing::Opts { threshold: self.thr, detail: self.det }) {
+        match src.trace(&crate::tracing::Opts { threshold: self.thr, detail: self.det, ..Default::default() }) {
             Ok(shapes) => {
                 let count = shapes.len();
                 self.add_traced(shapes, true);
@@ -1367,6 +1613,11 @@ impl Host {
             .collect();
         ui.set_shapes(ModelRc::new(VecModel::from(shapes)));
         ui.set_tool(self.tool.clone().into());
+        let mut d = String::new();
+        for (i, p) in self.lasso.iter().enumerate() {
+            d += &format!("{}{:.2} {:.2} ", if i == 0 { "M" } else { "L" }, p.0, p.1);
+        }
+        ui.set_lasso_path(d.into());
         ui.set_next_acc(self.next_acc);
         ui.set_next_sw(self.next_sw);
         ui.set_next_fill(self.next_fill);
@@ -1390,8 +1641,23 @@ impl Host {
                 ui.set_sel_r(fmt(f(s, "r")).into());
                 ui.set_sel_a0(fmt(f(s, "a0")).into());
                 ui.set_sel_a1(fmt(f(s, "a1")).into());
-                let hs: Vec<crate::MakerHandle> = handles(s).into_iter().map(|h| crate::MakerHandle { x: h.0 as f32, y: h.1 as f32 }).collect();
+                let ids = path_ids(s);
+                let hs: Vec<crate::MakerHandle> = all_handles(s)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, h)| crate::MakerHandle {
+                        x: h.x as f32,
+                        y: h.y as f32,
+                        role: match h.role { Role::Point => "point", Role::Node => "node", Role::Bezier => "bezier", Role::Rot => "rot" }.into(),
+                        fx: h.from.map_or(h.x, |p| p.0) as f32,
+                        fy: h.from.map_or(h.y, |p| p.1) as f32,
+                        stalk: h.from.is_some(),
+                        on: h.role == Role::Node && ids.get(i).map(|p| p.0) == self.sel_node,
+                    })
+                    .collect();
                 ui.set_handles(ModelRc::new(VecModel::from(hs)));
+                ui.set_sel_node(kind(s) == "path" && self.sel_node.is_some_and(|i| i < s["nodes"].as_array().map_or(0, |a| a.len())));
+                ui.set_node_note(if kind(s) == "path" { format!("{} points", s["nodes"].as_array().map_or(0, |a| a.len())) } else { String::new() }.into());
                 ui.set_bx(x as f32);
                 ui.set_by(y as f32);
                 ui.set_bw(w as f32);
@@ -1399,6 +1665,7 @@ impl Host {
             }
             None => {
                 ui.set_has_sel(false);
+                ui.set_sel_node(false);
                 ui.set_handles(ModelRc::new(VecModel::from(Vec::<crate::MakerHandle>::new())));
             }
         }
@@ -1515,5 +1782,47 @@ mod handle_tests {
         let a = json!({ "kind": "arc", "cx": 12, "cy": 12, "r": 6, "a0": 0, "a1": 270 });
         let fields = drag_handle(&a, 0, 12.0, 18.0);
         assert_eq!(fields[0].1.as_f64(), Some(90.0));
+    }
+
+    fn bend() -> Value {
+        json!({ "kind": "path", "c": "ink", "sw": 2, "closed": false, "nodes": [
+            { "x": 4.0, "y": 12.0, "corner": true },
+            { "x": 12.0, "y": 8.0, "hi": { "x": 9.0, "y": 8.0 }, "ho": { "x": 15.0, "y": 8.0 } },
+            { "x": 20.0, "y": 12.0, "corner": true } ] })
+    }
+
+    #[test]
+    fn a_node_drags_with_its_handles_and_a_smooth_handle_mirrors() {
+        let s = bend();
+        let hs = all_handles(&s);
+        // node 0, node 1, its two handles, node 2, then the knob.
+        assert_eq!(hs.iter().map(|h| h.role).collect::<Vec<_>>(), vec![Role::Node, Role::Node, Role::Bezier, Role::Bezier, Role::Node, Role::Rot]);
+        let moved = drag_any(&s, 1, (12.0, 10.0), (12.0, 10.0));
+        let nd = &moved[0].1[1];
+        assert_eq!((nd["y"].as_f64(), nd["ho"]["y"].as_f64()), (Some(10.0), Some(10.0)));
+        // The handle out, pulled up: the one in goes the opposite way.
+        let moved = drag_any(&s, 3, (15.0, 6.0), (15.0, 6.0));
+        assert_eq!(moved[0].1[1]["hi"]["y"].as_f64(), Some(10.0));
+    }
+
+    #[test]
+    fn the_knob_turns_and_node_ops_work() {
+        let s = bend();
+        let hs = all_handles(&s);
+        let knob = hs.last().unwrap();
+        assert_eq!(knob.role, Role::Rot);
+        // Dragged to the right of the middle: a quarter turn.
+        let c = centre_of(&s);
+        let r = drag_any(&s, hs.len() - 1, (c.0 + 6.0, c.1), (c.0 + 6.0, c.1));
+        assert_eq!(r[0].0, "rot");
+        assert_eq!(r[0].1.as_f64(), Some(90.0));
+        // Corner on a smooth node drops its handles, and again gives them back.
+        let cornered = node_op(&s, "corner", 1).unwrap();
+        assert!(cornered[1]["hi"].is_null() && cornered[1]["corner"] == true);
+        // Split adds a node midway; remove won't go below two.
+        assert_eq!(node_op(&s, "split", 0).unwrap().as_array().unwrap().len(), 4);
+        assert_eq!(node_op(&s, "delete", 1).unwrap().as_array().unwrap().len(), 2);
+        let two = json!({ "kind": "path", "closed": false, "nodes": [{ "x": 1.0, "y": 1.0 }, { "x": 2.0, "y": 2.0 }] });
+        assert!(node_op(&two, "delete", 0).is_none());
     }
 }

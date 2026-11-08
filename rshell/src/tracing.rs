@@ -226,11 +226,16 @@ fn point_in_loop(p: P, l: &[P]) -> bool {
 pub struct Opts {
     pub threshold: f64,
     pub detail: f64,
+    /// Cells to the grid unit when the mask already is the grid (a shape cut apart): the
+    /// outline keeps its place instead of being fitted to the square. 0 fits.
+    pub cells: f64,
+    /// The smallest ring kept, as a share of the mask (0 for the usual).
+    pub min_area: f64,
 }
 
 impl Default for Opts {
     fn default() -> Self {
-        Opts { threshold: 128.0, detail: 1.0 }
+        Opts { threshold: 128.0, detail: 1.0, cells: 0.0, min_area: 0.0 }
     }
 }
 
@@ -238,7 +243,7 @@ impl Default for Opts {
 pub fn trace(mask: &[f32], w: u32, h: u32, o: &Opts) -> Result<Vec<Value>, String> {
     let (wi, hi) = (w as i32, h as i32);
     let margin = 2.0;
-    let min_area = 0.0006;
+    let min_area = if o.min_area > 0.0 { o.min_area } else { 0.0006 };
     let corner_deg = 42.0;
     // Half a pixel of slack: the outline is already smooth, so this only
     // drops points that lie on a line.
@@ -261,9 +266,13 @@ pub fn trace(mask: &[f32], w: u32, h: u32, o: &Opts) -> Result<Vec<Value>, Strin
 
     // The drawing fitted into the grid, proportions kept.
     let (bw, bh) = ((x1 - x0).max(1e-6), (y1 - y0).max(1e-6));
-    let scale = (UNITS - margin * 2.0) / bw.max(bh);
-    let off_x = (UNITS - bw * scale) / 2.0 - x0 * scale;
-    let off_y = (UNITS - bh * scale) / 2.0 - y0 * scale;
+    let (scale, off_x, off_y) = if o.cells > 0.0 {
+        // Cell i covers [i, i+1): the contour runs through cell centres, half a cell in.
+        (1.0 / o.cells, 0.5 / o.cells, 0.5 / o.cells)
+    } else {
+        let scale = (UNITS - margin * 2.0) / bw.max(bh);
+        (scale, (UNITS - bw * scale) / 2.0 - x0 * scale, (UNITS - bh * scale) / 2.0 - y0 * scale)
+    };
     let to_grid = |p: P| (r2(p.0 * scale + off_x), r2(p.1 * scale + off_y));
 
     let area = (w * h) as f64;

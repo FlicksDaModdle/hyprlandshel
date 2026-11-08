@@ -6,7 +6,7 @@ import { Theme } from "theme.slint";
 import { Glyph } from "glyph.slint";
 
 export struct MakerShape { glyph: GlyphData, selected: bool }
-export struct MakerHandle { x: float, y: float }
+export struct MakerHandle { x: float, y: float, role: string, fx: float, fy: float, stalk: bool, on: bool }
 
 component Btn inherits Rectangle {
     in property <string> label;
@@ -68,6 +68,10 @@ export component IconMakerWin inherits Window {
     in property <string> sel-a0;
     in property <string> sel-a1;
     in property <[MakerHandle]> handles;
+    in property <bool> sel-node;
+    in property <string> node-note;
+    in property <string> lasso-path;
+    callback node-act(string);
     in property <float> bx;
     in property <float> by;
     in property <float> bw;
@@ -183,8 +187,8 @@ export component IconMakerWin inherits Window {
             width: 76px;
             alignment: start;
             spacing: 6px;
-            for t in ["select", "line", "rect", "circle", "ellipse", "arc", "dot", "pen"]: Btn {
-                label: t == "pen" ? "Pen" : t == "select" ? "Select" : (t == "rect" ? "Box" : (t == "line" ? "Line" : (t == "circle" ? "Circle" : (t == "ellipse" ? "Ellipse" : (t == "arc" ? "Arc" : "Dot")))));
+            for t in ["select", "line", "rect", "circle", "ellipse", "arc", "dot", "pen", "lasso"]: Btn {
+                label: t == "lasso" ? "Lasso" : t == "pen" ? "Pen" : t == "select" ? "Select" : (t == "rect" ? "Box" : (t == "line" ? "Line" : (t == "circle" ? "Circle" : (t == "ellipse" ? "Ellipse" : (t == "arc" ? "Arc" : "Dot")))));
                 on: root.tool == t;
                 clicked => { root.tool-set(t); }
             }
@@ -231,16 +235,42 @@ export component IconMakerWin inherits Window {
                 border-color: Theme.accent;
                 background: transparent;
             }
-            // The handles of the selected shape: drag one to resize it.
+            // The handles of the selected shape: drag one to reshape it. Curve handles on a
+            // stalk back to their point, round; a point square; the turning knob above the shape.
+            for h in root.handles: Path {
+                visible: h.stalk;
+                x: 0;
+                y: 0;
+                width: root.canvas;
+                height: root.canvas;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: "M " + h.fx + " " + h.fy + " L " + h.x + " " + h.y;
+                stroke: Theme.accent.with-alpha(0.55);
+                stroke-width: 1px;
+            }
             for h in root.handles: Rectangle {
-                x: h.x * root.cell - 5px;
-                y: h.y * root.cell - 5px;
-                width: 10px;
-                height: 10px;
-                border-radius: 2px;
-                background: white;
-                border-width: 2px;
+                x: h.x * root.cell - self.width / 2;
+                y: h.y * root.cell - self.height / 2;
+                width: h.role == "bezier" ? 9px : 11px;
+                height: self.width;
+                border-radius: h.role == "node" || h.role == "point" ? 3px : self.width / 2;
+                background: h.on ? Theme.accent : (h.role == "bezier" ? Theme.hover : (h.role == "rot" ? Theme.accent.with-alpha(0.25) : Theme.panel));
+                border-width: 1.5px;
                 border-color: Theme.accent;
+            }
+            // The lasso, while it is being drawn.
+            if root.lasso-path != "": Path {
+                x: 0;
+                y: 0;
+                width: root.canvas;
+                height: root.canvas;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: root.lasso-path;
+                stroke: Theme.accent;
+                stroke-width: 2px;
+                fill: Theme.accent.with-alpha(0.12);
             }
             ta := TouchArea {
                 mouse-cursor: root.tool == "select" ? MouseCursor.default : MouseCursor.crosshair;
@@ -292,6 +322,13 @@ export component IconMakerWin inherits Window {
                     Btn { label: "Forward"; clicked => { root.act("forward"); } }
                     Btn { label: "Back"; clicked => { root.act("back"); } }
                 }
+                if root.sel-node: HorizontalLayout {
+                    spacing: 6px;
+                    Btn { label: "Corner / smooth"; clicked => { root.node-act("corner"); } }
+                    Btn { label: "Split"; clicked => { root.node-act("split"); } }
+                    Btn { label: "Remove"; clicked => { root.node-act("delete"); } }
+                }
+                if root.node-note != "": Text { text: root.node-note + " · click one to edit it"; font-size: Theme.fs(11); color: Theme.ink3; }
                 Stepper { label: "Turn"; value: root.sel-rot + "°"; minus => { root.step("rot", -1); } plus => { root.step("rot", 1); } }
                 if root.sel-kind == "rect": Stepper { label: "Corners"; value: root.sel-r; minus => { root.step("r", -1); } plus => { root.step("r", 1); } }
                 if root.sel-kind == "arc": Stepper { label: "From"; value: root.sel-a0 + "°"; minus => { root.step("a0", -1); } plus => { root.step("a0", 1); } }

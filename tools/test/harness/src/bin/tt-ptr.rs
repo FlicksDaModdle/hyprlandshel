@@ -21,7 +21,7 @@ fn env(k: &str, d: u32) -> u32 {
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     if a.len() < 3 {
-        eprintln!("tt-ptr X Y [left|right|middle|move|up|down|drag X2 Y2]");
+        eprintln!("tt-ptr X Y [left|right|middle|move|up|down|drag X2 Y2|path X2 Y2 X3 Y3 …]");
         std::process::exit(2);
     }
     let (x, y): (u32, u32) = (a[1].parse().expect("X"), a[2].parse().expect("Y"));
@@ -56,6 +56,26 @@ fn main() {
                 ptr.motion_absolute(t, xi, yi, w, h);
                 ptr.frame();
                 sync(30);
+            }
+            sync(150);
+            ptr.button(t + 1, 0x110, ButtonState::Released);
+            ptr.frame();
+        }
+        // Held down through a list of points (X2 Y2 X3 Y3 …): a lasso, a curve.
+        "path" => {
+            let mut at = (x as i64, y as i64);
+            ptr.button(t, 0x110, ButtonState::Pressed);
+            ptr.frame();
+            sync(80);
+            for pair in a[4..].chunks(2) {
+                let (nx, ny): (i64, i64) = (pair[0].parse().expect("X"), pair[1].parse().expect("Y"));
+                for i in 1..=10i64 {
+                    t += 1;
+                    ptr.motion_absolute(t, (at.0 + (nx - at.0) * i / 10) as u32, (at.1 + (ny - at.1) * i / 10) as u32, w, h);
+                    ptr.frame();
+                    sync(30);
+                }
+                at = (nx, ny);
             }
             sync(150);
             ptr.button(t + 1, 0x110, ButtonState::Released);

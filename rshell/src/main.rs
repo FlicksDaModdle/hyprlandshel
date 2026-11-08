@@ -39,6 +39,7 @@ mod platform;
 mod polkit;
 mod spring;
 mod overview;
+mod split;
 mod switch_ui;
 mod sys;
 mod testhooks;

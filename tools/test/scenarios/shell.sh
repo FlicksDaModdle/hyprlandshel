@@ -185,6 +185,22 @@ test_screenshot_screen() {
     wait_for 5 sh -c 'ls "$HOME"/Pictures/Screenshots/Screenshot_*.png' >/dev/null 2>&1 || fail "no screenshot was saved: $(tail -n 3 "$TT_LOGS/shell.log")"
 }
 
+# Wi-Fi off and on again from the tile: two commands, and nothing turns it off afterwards.
+test_wifi_tile_stays_on() {
+    start_shell
+    cmd toggleControlCenter
+    sleep 0.8
+    click 1200 170
+    sleep 1.5
+    click 1200 170
+    sleep 8
+    shot after
+    local n
+    n=$(grep -c '"net-wifi"' "$TT_LOGS/daemon.log")
+    [ "$n" = 2 ] || fail "expected 2 net-wifi commands, saw $n: $(grep '"net-wifi"' "$TT_LOGS/daemon.log" | tr '\n' ' ')"
+    [ "$(grep '"net-wifi"' "$TT_LOGS/daemon.log" | tail -1 | grep -c true)" = 1 ] || fail "Wi-Fi's last command wasn't 'on'"
+}
+
 # The dock on the left edge: a column along it, its menu beside it.
 test_dock_left() {
     start_shell
@@ -387,5 +403,35 @@ test_icon_maker_pen() {
 import json, sys
 s = json.load(open(sys.argv[1]))["icons"]["penicon"]["shapes"][0]
 assert s["kind"] == "path" and len(s["nodes"]) == 3, s
+PY
+}
+
+# The lasso: a line drawn with the pen, then a region drawn round its far end; what is inside
+# becomes a piece of its own, in the accent.
+test_icon_maker_lasso() {
+    start_shell
+    sleep 1
+    cmd iconMaker
+    sleep 1
+    click 412 474
+    click 560 320
+    click 620 320
+    click 760 320
+    click 760 480
+    keys "" enter
+    sleep 0.3
+    click 412 508
+    tt-ptr 700 250 path 820 250 820 540 700 540 700 250 >/dev/null 2>&1; sleep 0.4
+    shot lassoed
+    click 600 188
+    keys "lassoicon"
+    click 786 188
+    sleep 0.6
+    local f="$XDG_CONFIG_HOME/quickshell/hyprshell/icons.json"
+    python3 - "$f" <<'PY' || fail "the lasso didn't split the line in two (inside in the accent)"
+import json, sys
+shapes = json.load(open(sys.argv[1]))["icons"]["lassoicon"]["shapes"]
+assert len(shapes) == 2, shapes
+assert sorted(s["c"] for s in shapes) == ["acc", "ink"], shapes
 PY
 }

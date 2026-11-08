@@ -364,15 +364,17 @@ pub fn apply(s: &mut State, ev: &Value) -> bool {
                 })
                 .collect();
             devs.sort_by(|a, b| b.connected.cmp(&a.connected).then(b.paired.cmp(&a.paired)).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+            let paired = devs.iter().filter(|d| d.paired).count();
             s.bt_devices = devs;
-            s.bt_label = if !s.bt_on {
+            // Bluetooth.qml's label: the first connected device, else how many are paired.
+            s.bt_label = if !s.bt_available {
+                "no adapter".into()
+            } else if !s.bt_on {
                 "off".into()
-            } else if connected.len() == 1 {
-                connected[0].to_string()
-            } else if connected.len() > 1 {
-                format!("{} connected", connected.len())
+            } else if let Some(c) = connected.first() {
+                c.to_string()
             } else {
-                "on".into()
+                format!("{paired} paired")
             };
             true
         }
