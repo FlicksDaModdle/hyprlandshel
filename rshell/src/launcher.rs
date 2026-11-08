@@ -496,3 +496,55 @@ pub fn entry_for_class(cls: &str) -> Option<Entry> {
         e.class.to_lowercase() == c || e.id.to_lowercase() == c || e.id.to_lowercase().rsplit('.').next() == Some(&c)
     })
 }
+
+
+/// One setting in the Settings app (`hyprshell-settings --index`), for the
+/// launcher's search.
+#[derive(Clone)]
+pub struct SettingHit {
+    pub pane: String,
+    pub title: String,
+    pub name: String,
+    pub about: String,
+    pub section: String,
+    pub page: bool,
+}
+
+static SETTINGS: std::sync::Mutex<Option<Vec<SettingHit>>> = std::sync::Mutex::new(None);
+static SETTINGS_ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The settings the Settings app lists. Read once, in the background, the
+/// first time it is asked for; empty until it has come.
+pub fn settings_index() -> Vec<SettingHit> {
+    if !SETTINGS_ASKED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        std::thread::spawn(|| {
+            let bin = std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/bin/hyprshell-settings")).filter(|p| p.exists());
+            let out = std::process::Command::new(bin.unwrap_or_else(|| "hyprshell-settings".into())).arg("--index").stderr(std::process::Stdio::null()).output();
+            let list = out
+                .ok()
+                .and_then(|o| serde_json::from_slice::<serde_json::Value>(&o.stdout).ok())
+                .map(|v| {
+                    v.as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|e| {
+                            let g = |k: &str| e[k].as_str().unwrap_or("").to_string();
+                            SettingHit { pane: g("pane"), title: g("title"), name: g("n"), about: g("s"), section: g("section"), page: e["page"].as_bool().unwrap_or(false) }
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            *SETTINGS.lock().unwrap() = Some(list);
+        });
+    }
+    SETTINGS.lock().unwrap().clone().unwrap_or_default()
+}
+
+/// What opens a setting: the Settings app on its pane, the row flashed.
+pub fn open_setting(h: &SettingHit) {
+    if h.page {
+        launch(&["hyprshell-settings".into(), h.pane.clone()], "");
+    } else {
+        launch(&["hyprshell-settings".into(), "--row".into(), h.pane.clone(), h.name.clone()], "");
+    }
+}

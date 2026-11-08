@@ -145,6 +145,11 @@ impl Host {
         self.ui.set_spaces(ModelRc::new(VecModel::from(spaces)));
     }
 
+    /// Of these stable ids, those with no picture yet.
+    pub fn missing(&self, ids: Vec<String>) -> Vec<String> {
+        ids.into_iter().filter(|i| !self.pictures.contains_key(i)).collect()
+    }
+
     /// A window's picture has come.
     pub fn picture(&mut self, id: &str, img: Image) {
         self.pictures.insert(id.to_string(), img);

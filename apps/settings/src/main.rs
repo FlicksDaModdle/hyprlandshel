@@ -388,12 +388,29 @@ fn main() {
         }
         return;
     }
+    // Every setting's name and where it lives, as JSON, for the launcher's
+    // search: [{ "pane", "n", "s", "section", "page" }].
+    if args.first().map(String::as_str) == Some("--index") {
+        let c = Ctx { p: prefs::Prefs::read(), ui: Ui::default() };
+        let list: Vec<serde_json::Value> = rows::search_index(&c)
+            .into_iter()
+            .map(|e| serde_json::json!({ "pane": e.pane, "title": rows::pane_title(&e.pane), "n": e.n, "s": e.s, "section": e.section, "page": e.is_pane }))
+            .collect();
+        println!("{}", serde_json::Value::Array(list));
+        return;
+    }
     kit::init("hyprshell-settings");
     let ui = AppWindow::new().expect("window");
     kit::setup!(ui, "hyprshell-settings");
 
     // The pane asked for: a pane's name, a category, or the old lower-case
     // page names.
+    // `--row <Pane> <setting>`: that pane, the setting flashed (the launcher's pick).
+    let (args, want_row) = if args.first().map(String::as_str) == Some("--row") {
+        (args.iter().skip(1).take(1).cloned().collect::<Vec<_>>(), args.get(2).cloned())
+    } else {
+        (args, None)
+    };
     let first = args.first().cloned().unwrap_or_default();
     let first = rows::PANES
         .iter()
@@ -431,6 +448,16 @@ fn main() {
         live: eq::Live::default(),
         weak: ui.as_weak(),
     }));
+    if let Some(n) = want_row {
+        let mut s = st.borrow_mut();
+        let pane = s.c.ui.pane.clone();
+        let marked = rows::shown_rows(&pane, rows::rows_for(&pane, &s.c), true);
+        if marked.iter().any(|r| r.adv && r.row.n == n.as_str()) {
+            s.c.ui.adv_open.insert(pane);
+        }
+        s.flash = Some(n);
+    }
+    let had_row = st.borrow().flash.is_some();
     show(&ui, &mut st.borrow_mut());
 
     let toast_timer = Rc::new(slint::Timer::default());
@@ -873,6 +900,25 @@ fn main() {
         });
     }
 
+    if had_row {
+        // The flash let go of after a moment, as after a pick in the search.
+        let weak = ui.as_weak();
+        let st = st.clone();
+        flash_timer.start(slint::TimerMode::SingleShot, Duration::from_millis(1400), move || {
+            if let Some(ui) = weak.upgrade() {
+                let s = st.borrow();
+                let rows: Vec<Row> = s.specs.iter().map(|r| Row { flash: false, ..r.row.clone() }).collect();
+                match &s.rows_model {
+                    Some(m) if m.row_count() == rows.len() => {
+                        for (i, r) in rows.into_iter().enumerate() {
+                            m.set_row_data(i, r);
+                        }
+                    }
+                    _ => ui.global::<Prefs>().set_rows(ModelRc::new(VecModel::from(rows))),
+                }
+            }
+        });
+    }
     ui.run().expect("run");
 }
 

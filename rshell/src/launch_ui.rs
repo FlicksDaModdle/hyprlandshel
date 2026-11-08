@@ -35,6 +35,7 @@ enum Hit {
     Command(&'static str),
     File { path: String, dir: bool },
     Calc(String),
+    Setting(usize),
 }
 
 /// What running a row asks of the rest of the shell.
@@ -75,6 +76,8 @@ pub struct Host {
     /// Closing as itself rather than into the dock.
     pub leaving_whole: bool,
     entries: Vec<Entry>,
+    /// What the Settings app lists, for search.
+    settings: Vec<launcher::SettingHit>,
     icons: HashMap<String, slint::Image>,
     pinned: Vec<Pinned>,
     recent: Vec<Recent>,
@@ -152,6 +155,7 @@ impl Host {
             leaving_whole: false,
             fade: Spring::new(0.0),
             entries: Vec::new(),
+            settings: Vec::new(),
             icons: HashMap::new(),
             pinned: Vec::new(),
             recent: Vec::new(),
@@ -213,7 +217,10 @@ impl Host {
     /// Fresh each time it opens: the apps (a new install shows at once),
     /// what's pinned, the recent files; an empty search.
     pub fn open(&mut self, raw: &serde_json::Value, m: &Motion, grows: bool, pill: Option<Pill>) {
-        self.entries = launcher::entries();
+        // The Settings app has its own command in the list; its desktop
+        // entry would be a second "Settings".
+        self.entries = launcher::entries().into_iter().filter(|e| e.exec.first().and_then(|a| a.rsplit('/').next()) != Some("hyprshell-settings")).collect();
+        self.settings = launcher::settings_index();
         self.wants_icons = self.entries.iter().any(|e| !e.icon.is_empty() && !self.icons.contains_key(&e.id));
         self.pinned = launcher::pinned(raw);
         self.recent = launcher::recent();
@@ -346,6 +353,9 @@ impl Host {
     /// search as it stands. Ranked as Launcher.qml's appResults.
     fn refresh(&mut self) {
         let q = self.query.trim().to_lowercase();
+        if self.settings.is_empty() {
+            self.settings = launcher::settings_index();
+        }
         let mut hits: Vec<Hit> = Vec::new();
         if q.is_empty() {
             let mut all: Vec<(String, Hit)> = self.entries.iter().enumerate().map(|(i, e)| (e.name.to_lowercase(), Hit::App(i))).collect();
@@ -366,6 +376,19 @@ impl Host {
                 if let Some(s) = launcher::score(c.1, c.3, &q) {
                     scored.push((s, c.1.to_lowercase(), Hit::Command(c.0)));
                 }
+            }
+            // Settings inside the Settings app, below apps and commands that
+            // match as well.
+            if q.chars().count() >= 2 {
+                let mut found: Vec<(u8, String, usize)> = Vec::new();
+                for (i, s) in self.settings.iter().enumerate() {
+                    let about = format!("{} {}", s.section, s.about);
+                    if let Some(sc) = launcher::score(&s.name, &about, &q) {
+                        found.push((sc + 1, s.name.to_lowercase(), i));
+                    }
+                }
+                found.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.len().cmp(&b.1.len())).then(a.1.cmp(&b.1)));
+                scored.extend(found.into_iter().take(8).map(|(sc, n, i)| (sc, format!("~{n}"), Hit::Setting(i))));
             }
             scored.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
             hits.extend(scored.into_iter().map(|(_, _, h)| h));
@@ -388,6 +411,17 @@ impl Host {
                     let name = f.map(|f| f.1.as_str()).unwrap_or(path);
                     let where_ = f.map(|f| if f.2.is_empty() { "~".to_string() } else { format!("~/{}", f.2) }).unwrap_or_default();
                     self.item(name, &where_, launcher::file_glyph(name, *dir), None)
+                }
+                Hit::Setting(i) => {
+                    let st = &self.settings[*i];
+                    let sub = if st.page {
+                        "Settings · page".to_string()
+                    } else if st.section.is_empty() {
+                        format!("Settings › {}", st.title)
+                    } else {
+                        format!("Settings › {} › {}", st.title, st.section)
+                    };
+                    self.item(&st.name, &sub, "settings", None)
                 }
                 Hit::Calc(v) => self.item(
                     &format!("= {v}"),
@@ -494,6 +528,11 @@ impl Host {
                     launcher::launch(&launcher::files_command(&abs), "");
                 } else {
                     launcher::launch(&["xdg-open".into(), abs], "");
+                }
+            }
+            Hit::Setting(i) => {
+                if let Some(st) = self.settings.get(i) {
+                    launcher::open_setting(st);
                 }
             }
             Hit::Calc(v) => extras::spawn(&["wl-copy", "--", &v]),

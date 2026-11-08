@@ -573,6 +573,8 @@ pub struct App {
     sharing: bool,
 
     hypr_rx: Receiver<String>,
+    /// When the overview next reads the windows again (after one was moved).
+    overview_refresh: Option<Instant>,
     daemon_rx: Receiver<serde_json::Value>,
     media_rx: Receiver<mpris::Media>,
     art_tx: Sender<(String, Option<Pixels>)>,
@@ -1012,6 +1014,7 @@ impl App {
             eq_tick: Rc::new(RefCell::new(0)),
             sharing: false,
             hypr_rx,
+            overview_refresh: None,
             daemon_rx,
             media_rx,
             art_tx,
@@ -1096,6 +1099,9 @@ impl App {
         let mut hypr_changed = false;
         while let Ok(line) = self.hypr_rx.try_recv() {
             hypr_changed = true;
+            if self.overview.open && ["movewindow", "openwindow", "closewindow", "workspace", "createworkspace", "destroyworkspace", "changefloatingmode"].iter().any(|k| line.starts_with(k)) {
+                self.overview_refresh = Some(Instant::now() + Duration::from_millis(120));
+            }
             if let Some(d) = line.strip_prefix("screencast>>") {
                 self.sharing = d.starts_with('1');
                 self.refresh_privacy();
@@ -1103,6 +1109,18 @@ impl App {
         }
         if hypr_changed {
             self.refresh_hypr();
+        }
+        if self.overview_refresh.is_some_and(|t| Instant::now() >= t) {
+            self.overview_refresh = None;
+            if self.overview.open {
+                let bar = self.focused_bar();
+                let monitor = self.bars.get(bar).map(|b| b.monitor.clone()).unwrap_or_default();
+                let us = self.look.screen_scale(&monitor);
+                let (ws, _, _, _) = slots_for(&monitor);
+                let slots: Vec<(i64, bool)> = ws.iter().map(|w| (w.id as i64, w.focused)).collect();
+                let ids = self.overview.open(&monitor, us, &slots);
+                self.thumbs.ask(self.overview.missing(ids));
+            }
         }
 
         // The daemon.
@@ -3127,7 +3145,9 @@ impl App {
                                 &format!("movetoworkspacesilent {ws},address:{addr}"),
                             );
                         }
-                        self.overview.close();
+                        // The overview stays: it reads the windows again once
+                        // Hyprland has tiled them where they went.
+                        self.overview_refresh = Some(Instant::now() + Duration::from_millis(150));
                     }
                     Act::Cancel => self.overview.close(),
                 }
@@ -4521,6 +4541,8 @@ impl App {
             "toggleTimers" => self.toggle_from_key(shell, qh, "timers"),
             "toggleMedia" => self.toggle_from_key(shell, qh, "media"),
             "toggleUpdates" => self.toggle_from_key(shell, qh, "updates"),
+            "snapWindow" => snap_active(arg),
+            "snapLayouts" => self.toggle_from_key(shell, qh, "window"),
             "closePanels" => self.close_panel(),
             // The control center open on its Wi-Fi or Bluetooth list
             // (Settings → Network / Bluetooth).
@@ -4614,6 +4636,85 @@ impl App {
             }
             _ => eprintln!("hyprshell-rs: \"{line}\" isn't in the Rust shell yet"),
         }
+    }
+}
+
+thread_local! {
+    /// Where Super+arrows last put each window (Compositor.snapState).
+    static SNAPPED: std::cell::RefCell<HashMap<String, &'static str>> = std::cell::RefCell::new(HashMap::new());
+}
+
+/// Super + an arrow, as Compositor.snapActive does it: halves, quarters,
+/// maximise, and back; Down from a plain window minimises it.
+fn snap_active(wh: &str) {
+    let w = hypr::json("j/activewindow");
+    let Some(addr) = w["address"].as_str().filter(|a| !a.is_empty()).map(str::to_string) else { return };
+    let monitors = hypr::json("j/monitors");
+    let mid = w["monitor"].as_i64();
+    let Some(m) = monitors.as_array().and_then(|ms| ms.iter().find(|m| m["id"].as_i64() == mid)).cloned() else { return };
+    let scale = m["scale"].as_f64().filter(|s| *s > 0.0).unwrap_or(1.0);
+    let swap = m["transform"].as_i64().unwrap_or(0) % 2 == 1;
+    let (pw, ph) = (m["width"].as_f64().unwrap_or(1920.0), m["height"].as_f64().unwrap_or(1080.0));
+    let (lw, lh) = if swap { (ph / scale, pw / scale) } else { (pw / scale, ph / scale) };
+    let r: Vec<f64> = m["reserved"].as_array().map(|a| a.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect()).unwrap_or_default();
+    let res = |k: usize| r.get(k).copied().unwrap_or(0.0);
+    let gap = 10.0;
+    let (ax, ay) = (m["x"].as_f64().unwrap_or(0.0) + res(0) + gap, m["y"].as_f64().unwrap_or(0.0) + res(1) + gap);
+    let (aw, ah) = (lw - res(0) - res(2) - 2.0 * gap, lh - res(1) - res(3) - 2.0 * gap);
+    let (hw, hh) = ((aw - gap) / 2.0, (ah - gap) / 2.0);
+    let rect = |k: &str| -> (f64, f64, f64, f64) {
+        match k {
+            "left" => (ax, ay, hw, ah),
+            "right" => (ax + hw + gap, ay, hw, ah),
+            "tl" => (ax, ay, hw, hh),
+            "tr" => (ax + hw + gap, ay, hw, hh),
+            "bl" => (ax, ay + hh + gap, hw, hh),
+            _ => (ax + hw + gap, ay + hh + gap, hw, hh),
+        }
+    };
+    let was: &str = SNAPPED.with(|s| s.borrow().get(&addr).copied()).unwrap_or(if w["fullscreen"].as_i64() == Some(1) { "max" } else { "" });
+    if wh == "down" && was.is_empty() {
+        crate::dock::minimise(&addr);
+        return;
+    }
+    let next: &'static str = match (wh, was) {
+        ("left", "right" | "tr" | "br") => "",
+        ("left", _) => "left",
+        ("right", "left" | "tl" | "bl") => "",
+        ("right", _) => "right",
+        ("up", "left") => "tl",
+        ("up", "right") => "tr",
+        ("up", "bl") => "left",
+        ("up", "br") => "right",
+        ("up", "tl") => "tl",
+        ("up", "tr") => "tr",
+        ("up", _) => "max",
+        ("down", "left") => "bl",
+        ("down", "right") => "br",
+        ("down", "tl") => "left",
+        ("down", "tr") => "right",
+        ("down", "bl") => "bl",
+        ("down", "br") => "br",
+        ("down", _) => "",
+        _ => return,
+    };
+    SNAPPED.with(|s| s.borrow_mut().insert(addr.clone(), next));
+    if was == "max" && next != "max" {
+        hypr::dispatch("hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"unset\" })", "fullscreen 1");
+    }
+    if next == "max" {
+        hypr::dispatch("hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"set\" })", "fullscreen 1");
+    } else if next.is_empty() {
+        let (x, y) = ((aw * 0.62).round(), (ah * 0.7).round());
+        hypr::dispatch("hl.dsp.window.float({ action = \"enable\" })", "setfloating");
+        hypr::dispatch(&format!("hl.dsp.window.resize({{ x = {x}, y = {y} }})"), &format!("resizeactive exact {x} {y}"));
+        hypr::dispatch("hl.dsp.window.center()", "centerwindow");
+    } else {
+        let (x, y, w, h) = rect(next);
+        let (x, y, w, h) = (x.round(), y.round(), w.round(), h.round());
+        hypr::dispatch("hl.dsp.window.float({ action = \"enable\" })", "setfloating");
+        hypr::dispatch(&format!("hl.dsp.window.resize({{ x = {w}, y = {h} }})"), &format!("resizeactive exact {w} {h}"));
+        hypr::dispatch(&format!("hl.dsp.window.move({{ x = {x}, y = {y} }})"), &format!("moveactive exact {x} {y}"));
     }
 }
 
