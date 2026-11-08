@@ -31,6 +31,7 @@ pub enum Action {
     SetVolume(f32),
     ToggleMute,
     SetBrightness(f32),
+    SetMonitor(String, f32),
     SetMic(f32),
     ToggleMic,
     Media(mpris::Cmd),
@@ -362,6 +363,15 @@ struct DockGeom {
     left: bool,
 }
 
+/// A DDC monitor's slider from its backlight (0..100) and any software dim (Monitors.ddcSlider).
+fn ddc_slider(backlight: f64, dim: Option<f64>) -> f64 {
+    let (split, floor) = (0.2, 0.1);
+    match dim {
+        Some(d) if d < 0.999 => split * ((d - floor) / (1.0 - floor)).max(0.0),
+        _ => split + (1.0 - split) * backlight.clamp(0.0, 100.0) / 100.0,
+    }
+}
+
 fn dock_geom(raw: &serde_json::Value, us: f32) -> (DockGeom, f32, f32, f32, f32, f32, f32) {
     let num = |k: &str, d: f64| raw[k].as_f64().unwrap_or(d) as f32;
     let u = |px: f32| (px * us).round().max(1.0);
@@ -510,6 +520,9 @@ pub struct App {
     /// turned out not to be usable, the config sent, and the extra-dim level of the
     /// laptop's panel (1 for none) with the panel's name.
     gamma: Option<serde_json::Value>,
+    /// External monitors' brightness (the daemon's ddc module): output, name, whether DDC, the slider's value.
+    displays: Vec<(String, String, bool, f64)>,
+    ddc_asked: usize,
     gamma_refused: bool,
     gamma_sent: String,
     extra_dim: f64,
@@ -893,6 +906,8 @@ impl App {
             idle_holds: (false, false),
             keep_awake: false,
             gamma: None,
+            displays: Vec::new(),
+            ddc_asked: usize::MAX,
             gamma_refused: false,
             gamma_sent: String::new(),
             extra_dim: 1.0,
@@ -1056,6 +1071,24 @@ impl App {
                     continue;
                 }
                 // The gamma module's report (NightLight.qml's onEvent).
+                // The monitors it can dim, apart from the laptop's own (Monitors.qml).
+                Some("ddc") => {
+                    let saved = self.monitor_dims();
+                    self.displays = ev["displays"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|d| {
+                            let out = d["output"].as_str().unwrap_or("").to_string();
+                            let ddc = d["method"].as_str() == Some("ddc");
+                            let dim = saved.get(&out).copied();
+                            let value = if !ddc { dim.unwrap_or(1.0) } else { ddc_slider(d["value"].as_f64().unwrap_or(0.0), dim) };
+                            (out.clone(), d["name"].as_str().filter(|n| !n.is_empty()).unwrap_or(&out).to_string(), ddc, value)
+                        })
+                        .collect();
+                    self.refresh_sound();
+                    continue;
+                }
                 Some("gamma") => {
                     let active = ev["active"] == true;
                     if ev["available"] == false && active && !self.gamma_refused {
@@ -1900,6 +1933,48 @@ impl App {
         !self.dim_panel.is_empty() && !self.gamma_refused && self.gamma.as_ref().is_some_and(|g| g["available"] != false)
     }
 
+    /// monitorDims: each dimmed monitor's level, 0..1.
+    fn monitor_dims(&self) -> std::collections::HashMap<String, f64> {
+        let raw = theme::raw();
+        let m: serde_json::Value = serde_json::from_str(raw["monitorDims"].as_str().unwrap_or("{}")).unwrap_or_default();
+        m.as_object().map(|o| o.iter().filter_map(|(k, v)| v.as_f64().map(|v| (k.clone(), v))).collect()).unwrap_or_default()
+    }
+
+    /// A monitor's slider moved (Monitors.apply): a DDC one sets its backlight above the
+    /// extra-dim range and dims in software below it; any other dims in software throughout.
+    fn set_monitor(&mut self, output: &str, v: f64) {
+        let Some(i) = self.displays.iter().position(|d| d.0 == output) else { return };
+        let ddc = self.displays[i].2;
+        let v = v.clamp(if ddc { 0.0 } else { 0.05 }, 1.0);
+        self.displays[i].3 = v;
+        let mut all = self.monitor_dims();
+        let (split, floor) = (0.2, 0.1);
+        if ddc {
+            if v >= split {
+                self.daemon.send(json!({ "cmd": "ddc-set", "output": output, "value": ((v - split) / (1.0 - split) * 100.0).round() as i64 }));
+                if all.remove(output).is_some() {
+                    self.daemon.send(json!({ "cmd": "gamma-dim", "output": output, "value": 100 }));
+                }
+            } else {
+                let dim = floor + (v / split) * (1.0 - floor);
+                if !all.contains_key(output) {
+                    self.daemon.send(json!({ "cmd": "ddc-set", "output": output, "value": 0 }));
+                }
+                self.daemon.send(json!({ "cmd": "gamma-dim", "output": output, "value": (dim * 100.0).round() as i64 }));
+                all.insert(output.to_string(), (dim * 100.0).round() / 100.0);
+            }
+        } else {
+            self.daemon.send(json!({ "cmd": "gamma-dim", "output": output, "value": (v * 100.0).round() as i64 }));
+            if v >= 0.999 {
+                all.remove(output);
+            } else {
+                all.insert(output.to_string(), (v * 100.0).round() / 100.0);
+            }
+        }
+        theme::set("monitorDims", json!(serde_json::to_string(&all).unwrap_or_else(|_| "{}".into())));
+        self.refresh_sound();
+    }
+
     fn dim_split(&self) -> f64 {
         if self.can_extra_dim() { 0.2 } else { 0.0 }
     }
@@ -2040,6 +2115,10 @@ impl App {
         self.blur.sync(&mode);
         self.sync_idle();
         self.sync_gamma();
+        if self.ddc_asked != self.bars.len() {
+            self.ddc_asked = self.bars.len();
+            self.daemon.send(json!({ "cmd": "ddc-refresh" }));
+        }
         // History's own settings, once and when they change (NotifHistory.tell).
         {
             let raw = theme::raw();
@@ -2210,6 +2289,22 @@ impl App {
             p.set_mixer_chip(if s.streams.is_empty() { "Apps".to_string() } else { format!("Apps · {}", s.streams.len()) }.into());
             p.set_volume(s.volume as f32);
             p.set_muted(s.muted);
+            p.set_monitors(model(
+                self.displays
+                    .iter()
+                    .map(|(o, name, ddc, v)| crate::MonSlider {
+                        output: o.clone().into(),
+                        name: name.clone().into(),
+                        value: *v as f32,
+                        label: if *ddc {
+                            if *v < 0.2 { "extra dim".to_string() } else { format!("{}%", ((*v - 0.2) / 0.8 * 100.0).round() as i32) }
+                        } else {
+                            format!("{}%", (*v * 100.0).round() as i32)
+                        }
+                        .into(),
+                    })
+                    .collect::<Vec<_>>(),
+            ));
             p.set_has_brightness(s.brightness.is_some());
             p.set_brightness(bright as f32);
             p.set_brightness_label(bright_label.clone().into());
@@ -2821,6 +2916,7 @@ impl App {
                 }
             }
             Action::SetBrightness(v) => self.set_brightness_slider(v as f64),
+            Action::SetMonitor(o, v) => self.set_monitor(&o, v as f64),
             Action::SetMic(v) => {
                 if let Some((name, vol, muted)) = self.sound.mic.as_mut() {
                     *vol = (v as f64).clamp(0.0, 1.0);
@@ -4069,6 +4165,7 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_set_volume, |v| Action::SetVolume(v));
     on!(on_toggle_mute, | | Action::ToggleMute);
     on!(on_set_brightness, |v| Action::SetBrightness(v));
+    on!(on_set_monitor, |o, v| Action::SetMonitor(o.to_string(), v));
     on!(on_set_mic, |v| Action::SetMic(v));
     on!(on_toggle_mic, | | Action::ToggleMic);
     on!(on_note_dismiss, |id| Action::NoteDismiss(id));

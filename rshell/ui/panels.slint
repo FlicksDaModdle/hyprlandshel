@@ -7,6 +7,7 @@ import { Glyph } from "glyph.slint";
 import { IconButton, PanelSurface, Caps, Toggle, FillSlider, MenuRow, Rule } from "widgets.slint";
 import { MediaInfo, MenuEntry, Note, NoteAction, DriveRow, TimerRow, Tile, PrivacyRow, DayCell, WifiRow, BtRow } from "types.slint";
 
+export struct MonSlider { output: string, name: string, value: float, label: string }
 export struct MixRow { index: int, title: string, sub: string, vol: float, muted: bool, pct: string, has-out: bool, out-label: string, has-eq: bool, eq-on: bool }
 export struct HistEntry { id: int, day: string, show-day: bool, head: string, summary: string, body: string, urgent: bool }
 
@@ -623,6 +624,8 @@ component ControlCenter inherits PanelSurface {
     in property <float> volume;
     in property <bool> muted;
     in property <bool> has-brightness;
+    in property <[MonSlider]> monitors;
+    callback set-monitor(string, float);
     in property <float> brightness;
     in property <string> brightness-label;
     in property <bool> has-mic;
@@ -1037,10 +1040,17 @@ component ControlCenter inherits PanelSurface {
             }
             if root.has-brightness: CcSlider {
                 icon: Icons.sun;
-                label: "Brightness";
+                label: root.monitors.length > 0 ? "Built-in display" : "Brightness";
                 value-text: root.brightness-label;
                 value: root.brightness;
                 moved(v) => { root.set-brightness(v); }
+            }
+            for m in root.monitors: CcSlider {
+                icon: Icons.monitor;
+                label: m.name;
+                value-text: m.label;
+                value: m.value;
+                moved(v) => { root.set-monitor(m.output, v); }
             }
             if root.has-mic: CcSlider {
                 icon: root.mic-muted ? Icons.mic-off : Icons.mic;
@@ -1808,6 +1818,8 @@ export component Panels inherits Window {
     in property <float> volume;
     in property <bool> muted;
     in property <bool> has-brightness;
+    in property <[MonSlider]> monitors;
+    callback set-monitor(string, float);
     in property <float> brightness;
     in property <string> brightness-label;
     in property <bool> has-mic;
@@ -1912,7 +1924,7 @@ export component Panels inherits Window {
         ControlCenter {
             user: root.user; session: root.session; theme-mode: root.theme-mode; tiles: root.tiles;
             volume: root.volume; muted: root.muted;
-            has-brightness: root.has-brightness; brightness: root.brightness; brightness-label: root.brightness-label;
+            has-brightness: root.has-brightness; brightness: root.brightness; brightness-label: root.brightness-label; monitors: root.monitors;
             has-mic: root.has-mic; mic: root.mic; mic-muted: root.mic-muted;
             cycle-theme => { root.cycle-theme(); }
             tile(k) => { root.tile(k); }
@@ -1940,6 +1952,7 @@ export component Panels inherits Window {
             set-volume(v) => { root.set-volume(v); }
             toggle-mute => { root.toggle-mute(); }
             set-brightness(v) => { root.set-brightness(v); }
+            set-monitor(o, v) => { root.set-monitor(o, v); }
             set-mic(v) => { root.set-mic(v); }
             toggle-mic => { root.toggle-mic(); }
         }
