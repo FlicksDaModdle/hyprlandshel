@@ -71,6 +71,10 @@ pub enum Action {
     DockActivate(usize, usize),
     DockMenu(usize, usize, f32),
     DockMiddle(usize, usize),
+    TileHover(usize, usize, bool, f32),
+    PreviewHover(usize, bool),
+    PreviewPick(usize, usize),
+    PreviewClose(usize, usize),
     DockHover(usize, bool),
     AppMenu(String),
     IconQuery(String),
@@ -329,7 +333,7 @@ struct BarOn {
     latch: bool,
     hide_at: Option<Instant>,
     dock_tiles: Vec<crate::dock::Tile>,
-    dock_input: Option<(i32, i32, i32, i32)>,
+    dock_input: Vec<(i32, i32, i32, i32)>,
     /// Over a fullscreen window: on the overlay layer, keeping no room.
     over: bool,
     fullscreen: bool,
@@ -361,6 +365,8 @@ struct DockGeom {
     exclusive: i32,
     hides: bool,
     left: bool,
+    /// Hovering a tile with windows shows a card of them (above the pill, so the dock's surface has room for it).
+    previews: bool,
 }
 
 /// A DDC monitor's slider from its backlight (0..100) and any software dim (Monitors.ddcSlider).
@@ -384,7 +390,11 @@ fn dock_geom(raw: &serde_json::Value, us: f32) -> (DockGeom, f32, f32, f32, f32,
     let gaps_out = num("gapsOut", 8.0).max(0.0);
     let exclusive = if hides { 0 } else { breadth.max(breadth + edge * 2.0 - gaps_out).round() as i32 };
     let left = raw["dockPosition"].as_str() == Some("Left");
-    (DockGeom { head: u(46.0), breadth, edge, exclusive, hides, left }, tile, icon, u(7.0), u(5.0), u(3.0), num("dockLabelSize", 12.0))
+    let previews = raw["dockPreviews"].as_bool().unwrap_or(true) && !left;
+    // Room above the pill: for the names, or for the preview card if it is on (DockPreview.fullHeight + gap).
+    let card = u(8.0) * 2.0 + u(28.0) + (u(200.0) * 0.6).ceil() + u(6.0) + u(10.0) + u(4.0);
+    let head = if previews { u(46.0).max(card) } else { u(46.0) };
+    (DockGeom { head, breadth, edge, exclusive, hides, left, previews }, tile, icon, u(7.0), u(5.0), u(3.0), num("dockLabelSize", 12.0))
 }
 
 fn shell_input_off(id: usize, pending: &mut Vec<usize>) {
@@ -576,6 +586,21 @@ pub struct App {
     active_class: String,
     pinned: Vec<crate::launcher::Pinned>,
     dock_labels: HashMap<String, String>,
+    /// The launcher's hand-over with the dock: its glass steps aside once the launcher's
+    /// first frame is on screen (`cover_at`), and the dock stays out a moment after the
+    /// Start tile closes it (`dock_hold_until`).
+    /// The dock's preview card: which tile's is showing, one waiting to open or to close, the
+    /// tile and the card under the pointer, the pictures had so far and what the card lists.
+    prev_show: Option<(usize, usize)>,
+    prev_pending: Option<(Instant, usize, usize, f32)>,
+    prev_close_at: Option<Instant>,
+    prev_hover: Option<(usize, usize)>,
+    prev_card_hover: bool,
+    prev_info: Vec<(String, String, String)>,
+    pics: HashMap<String, slint::Image>,
+    launcher_cover_at: Option<Instant>,
+    launcher_covering: bool,
+    dock_hold_until: Option<Instant>,
     switcher: crate::switch_ui::Host,
     switch_acts: Rc<RefCell<Vec<crate::switch_ui::Act>>>,
     overview: crate::overview::Host,
@@ -726,6 +751,7 @@ impl App {
             // The dock, under everything on this monitor.
             let dock = crate::Dock::new().expect("the dock");
             theme_into!(dock, &look, us);
+            dock.set_us(us);
             {
                 let q = actions.clone();
                 dock.on_activate(move |t, _| q.borrow_mut().push(Action::DockActivate(i, t as usize)));
@@ -733,6 +759,14 @@ impl App {
                 dock.on_secondary(move |t, x| q.borrow_mut().push(Action::DockMenu(i, t as usize, x)));
                 let q = actions.clone();
                 dock.on_middle(move |t| q.borrow_mut().push(Action::DockMiddle(i, t as usize)));
+                let q = actions.clone();
+                dock.on_tile_hover(move |t, on, x| q.borrow_mut().push(Action::TileHover(i, t as usize, on, x)));
+                let q = actions.clone();
+                dock.on_preview_hover(move |on| q.borrow_mut().push(Action::PreviewHover(i, on)));
+                let q = actions.clone();
+                dock.on_preview_pick(move |k| q.borrow_mut().push(Action::PreviewPick(i, k as usize)));
+                let q = actions.clone();
+                dock.on_preview_close(move |k| q.borrow_mut().push(Action::PreviewClose(i, k as usize)));
                 let q = actions.clone();
                 dock.on_hovered(move |h| q.borrow_mut().push(Action::DockHover(i, h)));
             }
@@ -772,7 +806,7 @@ impl App {
                 latch: false,
                 hide_at: None,
                 dock_tiles: Vec::new(),
-                dock_input: None,
+                dock_input: Vec::new(),
                 over: false,
                 fullscreen: false,
                 applied_left: geom.left,
@@ -873,6 +907,16 @@ impl App {
             active_class: String::new(),
             pinned: Vec::new(),
             dock_labels: HashMap::new(),
+            prev_show: None,
+            prev_pending: None,
+            prev_close_at: None,
+            prev_hover: None,
+            prev_card_hover: false,
+            prev_info: Vec::new(),
+            pics: HashMap::new(),
+            launcher_cover_at: None,
+            launcher_covering: false,
+            dock_hold_until: None,
             menu_for: None,
             menu_x: 0.0,
             icon_for: None,
@@ -980,7 +1024,7 @@ impl App {
             }
         }
         // A frame's time while a panel moves.
-        if self.bars.iter().any(|b| b.anim.moving() || b.reveal.moving || b.hide_at.is_some()) || self.launcher.moving() {
+        if self.bars.iter().any(|b| b.anim.moving() || b.reveal.moving || b.hide_at.is_some()) || self.launcher.moving() || self.dock_hold_until.is_some() || self.launcher_cover_at.is_some() || self.prev_pending.is_some() || self.prev_close_at.is_some() {
             d = d.min(Duration::from_millis(7));
         }
         if let Some(t) = self.switcher.next_due() {
@@ -1345,6 +1389,9 @@ impl App {
         }
         if self.launcher.closing && !self.launcher.moving() {
             self.launcher.closing = false;
+            self.launcher.reset_springs();
+            self.launcher_covering = false;
+            self.launcher_cover_at = None;
             if let Some(id) = self.launcher.surface.take() {
                 shell.remove(id);
             }
@@ -1479,8 +1526,34 @@ impl App {
     /// there, which layer it's on, and where it takes the pointer.
     fn step_docks(&mut self, shell: &mut wl::Shell, dt: f64) {
         let m = self.look.motion;
-        let launcher_here = if self.launcher.is_open() { Some(self.focused_bar_cached) } else { None };
+        // The launcher is on this dock's screen: opening, open, or shrinking back into the
+        // dock (not when it is leaving as itself, nor once the Start tile's hold has run out).
+        let launcher_here = if self.launcher.surface.is_some() && !(self.launcher.closing && self.launcher.leaving_whole) { Some(self.focused_bar_cached) } else { None };
         let now = Instant::now();
+        if self.launcher_cover_at.is_some_and(|t| now >= t) {
+            self.launcher_cover_at = None;
+            self.launcher_covering = true;
+        }
+        let covering = self.launcher_covering && self.launcher.morphing && self.launcher.surface.is_some();
+        let held = self.dock_hold_until.is_some_and(|t| now < t);
+        if !held {
+            self.dock_hold_until = None;
+        }
+        let focused = self.focused_bar_cached;
+        let mut close_prev = false;
+        if self.prev_pending.is_some_and(|p| now >= p.0) {
+            if let Some((_, bar, t, x)) = self.prev_pending.take() {
+                if self.prev_hover == Some((bar, t)) {
+                    self.show_preview(bar, t, x);
+                }
+            }
+        }
+        if self.prev_close_at.is_some_and(|t| now >= t) {
+            self.prev_close_at = None;
+            if self.prev_hover.is_none() && !self.prev_card_hover {
+                self.close_preview();
+            }
+        }
         for (i, b) in self.bars.iter_mut().enumerate() {
             if b.hide_at.is_some_and(|t| now >= t) {
                 b.hide_at = None;
@@ -1488,7 +1561,11 @@ impl App {
             }
             let g = b.dock_geom;
             let hides = g.hides || b.fullscreen;
-            let revealed = !hides || b.latch || launcher_here == Some(i);
+            let revealed = !hides || b.latch || launcher_here == Some(i) || (held && focused == i);
+            b.dock.set_covered(covering && focused == i);
+            if !revealed && b.dock.get_preview_open() || (launcher_here == Some(i) && self.prev_show.is_some()) {
+                close_prev = true;
+            }
             // Where the pill's near edge goes: its top at the bottom (the room above is
             // for the names), its left edge on the left, sliding off the screen to hide.
             let to = match (g.left, revealed) {
@@ -1534,25 +1611,32 @@ impl App {
                 shell.set_layer(b.dock_surface, layer, ex);
             }
             let total = (g.head + g.breadth + g.edge) as i32;
-            let input = if g.left {
+            let mut input: Vec<(i32, i32, i32, i32)> = if g.left {
                 if revealed {
                     let (y, h) = (b.dock.get_pill_y() as i32, b.dock.get_pill_height() as i32);
                     let x = b.reveal.value as i32;
-                    Some((0, y - 40, total.min(x + b.dock.get_pill_width() as i32 + 40), h + 80))
+                    vec![(0, y - 40, total.min(x + b.dock.get_pill_width() as i32 + 40), h + 80)]
                 } else {
-                    Some((0, 0, 3, 100_000))
+                    vec![(0, 0, 3, 100_000)]
                 }
             } else if revealed {
                 let (x, w) = (b.dock.get_pill_x() as i32, b.dock.get_pill_width() as i32);
                 let y = b.reveal.value as i32;
-                Some((x - 40, y, w + 80, total - y))
+                vec![(x - 40, y, w + 80, total - y)]
             } else {
-                Some((0, total - 3, 100_000, 3))
+                vec![(0, total - 3, 100_000, 3)]
             };
-            if input != b.dock_input {
-                b.dock_input = input;
-                shell.set_input_rect(b.dock_surface, input);
+            // Over the pill, the preview card where it is showing.
+            if b.dock.get_preview_open() && revealed {
+                input.push((b.dock.get_card_x() as i32, b.dock.get_card_y() as i32, b.dock.get_card_w().ceil() as i32, b.dock.get_card_h().ceil() as i32));
             }
+            if input != b.dock_input {
+                b.dock_input = input.clone();
+                shell.set_input_rects(b.dock_surface, &input);
+            }
+        }
+        if close_prev {
+            self.close_preview();
         }
     }
 
@@ -1670,6 +1754,100 @@ impl App {
     /// Anything the bars are doing that needs frames.
     fn bars_moving(&self) -> bool {
         self.bars.iter().any(|b| b.bar_slide.moving || b.bar_hover_since.is_some() || b.bar_hide_at.is_some())
+    }
+
+    /// The pointer on a dock tile or off it. The card opens after 380 ms on a tile with windows (at
+    /// once if one is showing for a neighbour), and closes 300 ms after the pointer has left both.
+    fn dock_hover(&mut self, bar: usize, t: usize, on: bool, x: f32) {
+        use crate::dock::Tile;
+        if !self.bars.get(bar).is_some_and(|b| b.dock_geom.previews) || self.launcher.surface.is_some() {
+            return;
+        }
+        let has_windows = matches!(self.bars[bar].dock_tiles.get(t), Some(Tile::Pin { windows, .. } | Tile::App { windows, .. }) if !windows.is_empty());
+        if on && has_windows {
+            self.prev_hover = Some((bar, t));
+            self.prev_close_at = None;
+            if self.prev_show.is_some() {
+                self.show_preview(bar, t, x);
+            } else {
+                self.prev_pending = Some((Instant::now() + Duration::from_millis(380), bar, t, x));
+            }
+            return;
+        }
+        if !on {
+            if self.prev_hover == Some((bar, t)) {
+                self.prev_hover = None;
+            }
+            if self.prev_pending.is_some_and(|p| p.1 == bar && p.2 == t) {
+                self.prev_pending = None;
+            }
+            if self.prev_show.is_some() && self.prev_hover.is_none() {
+                self.prev_close_at = Some(Instant::now() + Duration::from_millis(300));
+            }
+        }
+    }
+
+    fn show_preview(&mut self, bar: usize, t: usize, x: f32) {
+        use crate::dock::Tile;
+        let Some(Tile::Pin { windows, .. } | Tile::App { windows, .. }) = self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned() else { return };
+        if windows.is_empty() {
+            return;
+        }
+        let all = hypr::json("j/clients");
+        let current = hypr::json("j/activewindow")["address"].as_str().unwrap_or("").to_string();
+        self.prev_info = windows
+            .iter()
+            .filter_map(|a| {
+                let c = all.as_array()?.iter().find(|c| c["address"].as_str() == Some(a.as_str()))?;
+                let title = c["title"].as_str().filter(|t| !t.is_empty()).or(c["class"].as_str()).unwrap_or("Window").to_string();
+                Some((a.clone(), title, c["stableId"].as_str().unwrap_or("").to_string()))
+            })
+            .collect();
+        let _ = current;
+        let glyph = slint::Model::row_data(&self.bars[bar].dock.get_tiles(), t).map(|d| d.glyph).unwrap_or_default();
+        let b = &self.bars[bar];
+        b.dock.set_preview_glyph(glyph);
+        b.dock.set_preview_anchor(x);
+        self.prev_show = Some((bar, t));
+        self.prev_pending = None;
+        let ids: Vec<String> = self.prev_info.iter().map(|w| w.2.clone()).filter(|s| !s.is_empty()).collect();
+        if !ids.is_empty() {
+            self.thumbs.ask(ids);
+        }
+        self.publish_preview();
+        if let Some(b) = self.bars.get(bar) {
+            b.dock.set_preview_open(true);
+        }
+    }
+
+    /// The card's windows, with the pictures had so far.
+    fn publish_preview(&mut self) {
+        let Some((bar, _)) = self.prev_show else { return };
+        let active = self.active_addr.clone();
+        let rows: Vec<crate::PreviewWin> = self
+            .prev_info
+            .iter()
+            .map(|(addr, title, stable)| {
+                let pic = self.pics.get(stable);
+                crate::PreviewWin { title: title.clone().into(), thumb: pic.cloned().unwrap_or_default(), has_thumb: pic.is_some(), current: *addr == active }
+            })
+            .collect();
+        if let Some(b) = self.bars.get(bar) {
+            b.dock.set_preview(model(rows));
+        }
+    }
+
+    fn close_preview(&mut self) {
+        self.prev_pending = None;
+        self.prev_close_at = None;
+        self.prev_card_hover = false;
+        if let Some((bar, _)) = self.prev_show.take() {
+            if let Some(b) = self.bars.get(bar) {
+                b.dock.set_preview_open(false);
+                b.dock.set_preview(model(Vec::<crate::PreviewWin>::new()));
+            }
+        }
+        self.prev_info.clear();
     }
 
     fn dock_activate(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, bar: usize, t: usize) {
@@ -1851,6 +2029,7 @@ impl App {
             theme_into!(b.bar, &self.look, us);
             theme_into!(b.panels, &self.look, us);
             theme_into!(b.dock, &self.look, us);
+            b.dock.set_us(us);
             let (geom, tile, icon, pad_h, pad_v, gap, label) = dock_geom(&raw, us);
             b.dock.set_tile(tile);
             b.dock.set_icon_size(icon);
@@ -1875,7 +2054,9 @@ impl App {
         theme_into!(self.maker.ui, &self.look, 1.0);
         let us = self.bars.get(self.focused_bar_cached).map(|b| self.look.screen_scale(&b.monitor)).unwrap_or(1.0);
         theme_into!(self.launcher.ui, &self.look, us);
-        self.launcher.configure(&theme::raw(), us, &user_name());
+        if !self.launcher.is_open() {
+            self.launcher.configure(&theme::raw(), us, &user_name(), None, self.look.bar_height);
+        }
         // Pins and the dock's tile settings may have changed with it.
         self.dock_tiles();
         let raw = theme::raw();
@@ -2787,7 +2968,11 @@ impl App {
             let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&t.rgba, t.w, t.h);
             let img = slint::Image::from_rgba8(buf);
             self.overview.picture(&t.id, img.clone());
+            self.pics.insert(t.id.clone(), img.clone());
             self.switcher.picture(&t.id, img);
+            if self.prev_info.iter().any(|w| w.2 == t.id) {
+                self.publish_preview();
+            }
         }
         if !self.maker.acts.borrow().is_empty() {
             let acts: Vec<crate::maker::Act> = std::mem::take(&mut *self.maker.acts.borrow_mut());
@@ -3163,6 +3348,33 @@ impl App {
             }
             Action::DockActivate(bar, t) => self.dock_activate(shell, qh, bar, t),
             Action::DockMenu(bar, t, x) => self.dock_menu(shell, qh, bar, t, x),
+            Action::TileHover(bar, t, on, x) => self.dock_hover(bar, t, on, x),
+            Action::PreviewHover(_, on) => {
+                self.prev_card_hover = on;
+                if on {
+                    self.prev_close_at = None;
+                } else if self.prev_show.is_some() && self.prev_hover.is_none() {
+                    self.prev_close_at = Some(Instant::now() + Duration::from_millis(300));
+                }
+            }
+            Action::PreviewPick(_, k) => {
+                if let Some((addr, _, _)) = self.prev_info.get(k).cloned() {
+                    self.close_preview();
+                    // Focusing a window on another workspace takes you there.
+                    crate::dock::focus(&addr, false, 0);
+                }
+            }
+            Action::PreviewClose(_, k) => {
+                if let Some((addr, _, _)) = self.prev_info.get(k).cloned() {
+                    crate::dock::close(&addr);
+                    self.prev_info.remove(k);
+                    if self.prev_info.is_empty() {
+                        self.close_preview();
+                    } else {
+                        self.publish_preview();
+                    }
+                }
+            }
             Action::DockMiddle(bar, t) => {
                 if let Some(crate::dock::Tile::Pin { windows, .. } | crate::dock::Tile::App { windows, .. }) =
                     self.bars.get(bar).and_then(|b| b.dock_tiles.get(t)).cloned()
@@ -3354,11 +3566,7 @@ impl App {
     fn toggle_launcher(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
         let m = self.look.motion;
         if self.launcher.is_open() {
-            self.launcher.close(&m);
-            if let Some(id) = self.launcher.surface {
-                shell.set_input(id, false);
-                shell.set_keyboard(id, KeyboardInteractivity::None);
-            }
+            self.close_launcher(shell, false);
             self.dock_tiles();
             return;
         }
@@ -3368,9 +3576,17 @@ impl App {
         let us = self.bars.get(bar).map(|b| self.look.screen_scale(&b.monitor)).unwrap_or(1.0);
         theme_into!(self.launcher.ui, &self.look, us);
         let raw = theme::raw();
-        self.launcher.configure(&raw, us, &user_name());
+        // The dock's pill it grows out of, if the morph is on and there is one.
+        let pill = self.bars.get(bar).filter(|_| raw["launcherMorph"].as_bool().unwrap_or(true)).and_then(|b| {
+            let g = b.dock_geom;
+            let (w, h) = (b.dock.get_pill_width(), b.dock.get_pill_height());
+            (w > 0.0 && h > 0.0).then_some(crate::launch_ui::Pill { gap: g.edge, w, h, tile: b.dock.get_tile(), icon: b.dock.get_icon_size(), pad: b.dock.get_pad_h(), left: g.left })
+        });
+        self.launcher.configure(&raw, us, &user_name(), pill, self.look.bar_height);
         self.last_frame = Instant::now();
-        self.launcher.open(&raw, &m, self.look.panels_grow);
+        self.launcher.open(&raw, &m, self.look.panels_grow, pill);
+        self.launcher_cover_at = pill.map(|_| Instant::now() + Duration::from_millis(34));
+        self.dock_hold_until = None;
         self.launcher.ui.invoke_focus_field();
         self.dock_tiles();
         self.daemon.send(json!({ "cmd": "fs-warm" }));
@@ -3410,21 +3626,35 @@ impl App {
         }
     }
 
+    /// Closing the launcher. `into_dock` is the Start tile ("I am done with it, put it
+    /// back where it came from"): the panel shrinks into the dock, which stays out a
+    /// moment. Otherwise, with auto-hide on, the dock is going too, so the panel leaves
+    /// as itself rather than shrinking into a pill that is about to vanish.
+    fn close_launcher(&mut self, shell: &mut wl::Shell, into_dock: bool) {
+        let m = self.look.motion;
+        let away = theme::raw()["dockHide"].as_bool().unwrap_or(false) && !into_dock;
+        self.launcher.close(&m, away);
+        if into_dock {
+            self.dock_hold_until = Some(Instant::now() + Duration::from_millis(1400));
+        }
+        if let Some(id) = self.launcher.surface {
+            shell.set_input(id, false);
+            // The keyboard back to the windows.
+            shell.set_keyboard(id, KeyboardInteractivity::None);
+        }
+    }
+
     fn launcher_wants(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, w: crate::launch_ui::Wants) {
         use crate::launch_ui::Wants;
-        let close = |app: &mut App, shell: &mut wl::Shell| {
-            let m = app.look.motion;
-            app.launcher.close(&m);
-            if let Some(id) = app.launcher.surface {
-                shell.set_input(id, false);
-                // The keyboard back to the windows.
-                shell.set_keyboard(id, KeyboardInteractivity::None);
-            }
-        };
+        let close = |app: &mut App, shell: &mut wl::Shell| app.close_launcher(shell, false);
         match w {
             Wants::Nothing => {}
             Wants::Close => {
                 close(self, shell);
+                self.dock_tiles();
+            }
+            Wants::CloseIntoDock => {
+                self.close_launcher(shell, true);
                 self.dock_tiles();
             }
             Wants::Power(k) => {

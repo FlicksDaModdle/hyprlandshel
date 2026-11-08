@@ -43,6 +43,20 @@ export component Launcher inherits Window {
     in property <float> morph: 1;
     in property <float> morph-y: 1;
     in property <float> fade: 1;
+    // Growing out of the dock's pill (Launcher.qml's morph): the pill's place and
+    // size on this screen, the dock's own tile and icon, how far the panel has left
+    // (the exit), and how fast it is moving (the glass gives as it travels).
+    in property <bool> morphing;
+    in property <bool> is-left;
+    in property <length> pill-gap;
+    in property <length> pill-w;
+    in property <length> pill-h;
+    in property <length> dock-tile;
+    in property <length> dock-icon;
+    in property <length> dock-pad;
+    in property <length> bar-h: 40px;
+    in property <float> exit;
+    in property <float> flow;
 
     // What it shows.
     in-out property <string> query;
@@ -71,6 +85,8 @@ export component Launcher inherits Window {
     callback set-show-all(bool);
     callback set-page(int);
     callback dismiss();
+    // The Start tile's close: the dock stays out to be collapsed into.
+    callback dismiss-into-dock();
     callback toggle-power();
     callback power(string);
 
@@ -91,25 +107,39 @@ export component Launcher inherits Window {
     property <length> natural: sz(50) + sz(32) + root.rows * root.tile + (root.rows - 1) * sz(2)
         + (root.page-count > 1 ? 20px : 8px) + 1px
         + (root.recent.length > 0 ? sz(32) + ceil(root.recent.length / 2) * (sz(36) + sz(1)) + sz(6) : 0px)
-        + sz(40);
+        + (root.over-dock ? max(sz(40), root.pill-h) : sz(40));
     property <length> h: min(root.natural, root.panel-max, root.height - root.near-edge - 24px);
-    property <length> w: root.panel-width;
+    property <length> w: min(root.panel-width, root.width - 24px);
 
     // Click-away.
     TouchArea { clicked => { root.dismiss(); } }
 
+    // Where the dock's pill sits on this screen: centred along the bottom, one gap up from it,
+    // or down the left, centred.
+    property <length> pill-x: root.is-left ? root.pill-gap : round((root.width - root.pill-w) / 2 / 1px) * 1px;
+    property <length> pill-y: root.is-left ? round((root.height - root.pill-h) / 2 / 1px) * 1px : root.height - root.pill-gap - root.pill-h;
+    // Where the finished panel sits: above the dock, or beside it on the left.
+    property <length> tx: root.is-left ? root.near-edge : max(12px, min(root.width - root.w - 12px, round((root.width - root.w) / 2 / 1px) * 1px));
+    property <length> ty: root.is-left ? max(root.bar-h + 12px, min(root.height - root.h - 12px, round((root.height - root.h) / 2 / 1px) * 1px)) : root.height - root.near-edge - root.h;
+    property <length> squeeze-max: root.over-dock ? max(0px, 2 * (root.dock-pad - 3px)) : sz(28);
+    property <bool> over-dock: root.morphing && !root.is-left && root.dock-tile > 0px;
+
     panel := Rectangle {
-        // Grows out of the bottom middle: 92 % → 100 % across, 60 % → 100 %
-        // up, as Launcher.qml's "grow" (the morph out of the dock comes
-        // with the dock).
+        // Without a pill to grow out of it swells from the middle of its bottom edge;
+        // with one it is the pill stretching: width and height from the pill's, the
+        // height a beat behind, the corner travelling too.
         property <float> sx: root.grows ? 0.92 + 0.08 * root.morph : 1;
         property <float> sy: root.grows ? 0.6 + 0.4 * root.morph-y : 1;
-        width: root.w * self.sx;
-        height: root.h * self.sy;
-        x: max(12px, min(root.width - root.w - 12px, round((root.width - root.w) / 2 / 1px) * 1px)) + root.w * (1 - self.sx) / 2;
-        y: root.height - root.near-edge - self.height + (root.grows ? 0px : (1 - root.morph-y) * sz(24));
-        opacity: clamp(root.morph-y * 3, 0, 1);
-        border-radius: Theme.r-cap;
+        width: root.morphing ? root.pill-w + (root.w - root.pill-w) * root.morph - root.flow * root.squeeze-max : root.w * self.sx;
+        height: root.morphing ? root.pill-h + (root.h - root.pill-h) * root.morph-y : root.h * self.sy;
+        x: root.morphing
+            ? (root.pill-x + root.pill-w / 2 + (root.tx + root.w / 2 - root.pill-x - root.pill-w / 2) * root.morph) - self.width / 2
+            : root.tx + root.w * (1 - self.sx) / 2;
+        y: root.morphing
+            ? root.pill-y + (root.ty - root.pill-y) * root.morph-y + (root.is-left ? 0px : root.exit * sz(56))
+            : root.ty + (root.grows ? 0px : (1 - root.morph-y) * sz(24));
+        opacity: root.morphing ? 1 - root.exit : clamp(root.morph-y * 3, 0, 1);
+        border-radius: root.morphing ? min(min(self.width, self.height) / 2, Theme.r-cap + root.flow * sz(10)) : Theme.r-cap;
         background: Theme.panel;
         clip: true;
         TouchArea {}
@@ -490,30 +520,34 @@ export component Launcher inherits Window {
             // ── the foot: start, the user, power ──
             footer := Rectangle {
                 y: parent.height - self.height;
-                height: sz(40);
-                background: Theme.hover;
+                // Growing out of the dock it is the dock's own height, so the Start button
+                // sits exactly where the dock's was.
+                height: root.over-dock ? max(sz(40), root.pill-h) : sz(40);
+                // Everything here but the Start button comes in with the inside: at the
+                // first frame this is the dock's pill, which has no tint on it.
+                background: Theme.hover.transparentize(1 - clamp(root.fade, 0, 1));
                 // Its own rounded corners, the panel's: the panel's clip
                 // isn't rounded on every renderer, and its square ones
                 // stood out past the panel's.
                 border-bottom-left-radius: Theme.r-cap;
                 border-bottom-right-radius: Theme.r-cap;
-                Rectangle { height: 1px; y: 0; background: Theme.rule; }
+                Rectangle { height: 1px; y: 0; background: Theme.rule; opacity: clamp(root.fade, 0, 1); }
                 start := Rectangle {
-                    x: sz(7);
+                    x: root.over-dock ? root.dock-pad : sz(7);
                     y: (parent.height - self.height) / 2;
-                    width: sz(28);
-                    height: sz(28);
-                    border-radius: Theme.r-sm;
-                    background: st.has-hover ? Theme.accent : Theme.sel;
+                    width: root.over-dock ? root.dock-tile : sz(28);
+                    height: self.width;
+                    border-radius: root.over-dock ? Theme.r-cap : Theme.r-sm;
+                    background: root.over-dock || st.has-hover ? Theme.accent : Theme.sel;
                     Glyph {
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                         data: Icons.grid;
-                        size: sz(15);
+                        size: root.over-dock ? root.dock-icon : sz(15);
                         monochrome: true;
-                        ink: st.has-hover ? Theme.ink-on-accent : Theme.ink2;
+                        ink: root.over-dock || st.has-hover ? Theme.ink-on-accent : Theme.ink2;
                     }
-                    st := TouchArea { mouse-cursor: pointer; clicked => { root.dismiss(); } }
+                    st := TouchArea { mouse-cursor: pointer; clicked => { root.dismiss-into-dock(); } }
                 }
                 Rectangle {
                     x: start.x + start.width + sz(6);

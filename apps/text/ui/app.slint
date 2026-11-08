@@ -369,11 +369,11 @@ export component AppWindow inherits KitWindow {
                         spacing: 12px;
                         HorizontalLayout {
                             Label { text: "Wrap long lines"; vertical-alignment: center; horizontal-stretch: 1; }
-                            Switch { on <=> Ed.wrap; toggled => { Ed.settings-changed(); } }
+                            Switch { on: Ed.wrap; toggled(v) => { Ed.wrap = v; Ed.settings-changed(); } }
                         }
                         HorizontalLayout {
                             Label { text: "Fixed-width font"; vertical-alignment: center; horizontal-stretch: 1; }
-                            Switch { on <=> Ed.mono; toggled => { Ed.settings-changed(); } }
+                            Switch { on: Ed.mono; toggled(v) => { Ed.mono = v; Ed.settings-changed(); } }
                         }
                         HorizontalLayout {
                             spacing: 6px;

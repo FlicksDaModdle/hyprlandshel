@@ -491,7 +491,7 @@ export component AppWindow inherits KitWindow {
         HorizontalLayout {
             spacing: 10px;
             Label { text: "All day"; horizontal-stretch: 1; }
-            Switch { on <=> Cal.ed-all-day; enabled: !Cal.ed-read-only; }
+            Switch { on: Cal.ed-all-day; enabled: !Cal.ed-read-only; toggled(v) => { Cal.ed-all-day = v; } }
         }
         HorizontalLayout {
             spacing: 8px;

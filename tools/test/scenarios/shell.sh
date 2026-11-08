@@ -201,6 +201,99 @@ test_wifi_tile_stays_on() {
     [ "$(grep '"net-wifi"' "$TT_LOGS/daemon.log" | tail -1 | grep -c true)" = 1 ] || fail "Wi-Fi's last command wasn't 'on'"
 }
 
+# The launcher grows out of the dock's pill and shrinks back into it. Frames on the way are
+# kept (not compared: when exactly they fall isn't fixed); the resting ones are.
+test_launcher_morph() {
+    start_shell
+    sleep 1
+    shot dock
+    # Slowed right down, so the grabs below fall on the way rather than after it.
+    set_theme animSpeed 12
+    sleep 0.5
+    cmd toggleLauncher
+    local pids=""
+    for t in 0.03 0.07 0.11 0.16 0.22 0.3; do ( sleep $t; grim "$TT_DIR/mid-open-$t.png" ) & pids="$pids $!"; done
+    wait $pids
+    sleep 7
+    shot open
+    cmd toggleLauncher
+    pids=""
+    for t in 0.03 0.07 0.11 0.16 0.22 0.3; do ( sleep $t; grim "$TT_DIR/mid-close-$t.png" ) & pids="$pids $!"; done
+    wait $pids
+    sleep 7
+    shot closed
+    # And again: it must grow out of the dock the second time as it did the first.
+    cmd toggleLauncher
+    pids=""
+    for t in 0.03 0.07 0.11 0.16 0.22 0.3; do ( sleep $t; grim "$TT_DIR/again-open-$t.png" ) & pids="$pids $!"; done
+    wait $pids
+    sleep 1
+}
+
+# With the dock set to auto-hide the panel leaves as itself; opened again it must still grow
+# out of the dock, not appear already open.
+test_launcher_morph_autohide() {
+    start_shell
+    sleep 1
+    set_theme dockHide true
+    set_theme animSpeed 12
+    sleep 1
+    cmd toggleLauncher
+    sleep 9
+    cmd toggleLauncher
+    sleep 9
+    cmd toggleLauncher
+    local pids=""
+    for t in 0.05 0.15; do ( sleep $t; grim "$TT_DIR/again-$t.png" ) & pids="$pids $!"; done
+    wait $pids
+    sleep 9
+    grim "$TT_DIR/rest.png"
+    # Early in the second opening the panel is still on its way: not what it is at rest.
+    tt-diff "$TT_DIR/rest.png" "$TT_DIR/again-0.15.png" "$TT_DIR/d.png" 0.05 >/dev/null 2>&1
+    [ $? = 1 ] || fail "the second opening did not grow out of the dock (it was already open at 0.15s)"
+}
+
+# A bar panel grows out of its button each time it opens, not only the first.
+test_panel_animates_every_time() {
+    start_shell
+    sleep 1
+    set_theme animSpeed 12
+    sleep 0.5
+    local n
+    for n in 1 2 3; do
+        cmd toggleControlCenter
+        ( sleep 0.15; grim "$TT_DIR/early-$n.png" ) &
+        local p=$!
+        wait $p
+        sleep 9
+        [ "$n" = 1 ] && grim "$TT_DIR/rest.png"
+        cmd toggleControlCenter
+        sleep 9
+    done
+    local k
+    for k in 1 2 3; do
+        tt-diff "$TT_DIR/rest.png" "$TT_DIR/early-$k.png" "$TT_DIR/d$k.png" 0.05 >/dev/null 2>&1
+        [ $? = 1 ] || fail "opening number $k was already fully open at 0.15s: no animation"
+    done
+}
+
+# Hovering a dock tile that has windows shows a card of them above it.
+test_dock_preview() {
+    cat > "$TT_LOGS/clients.json" <<'JSON'
+[{"address":"0x1","mapped":true,"class":"hyprshell-term","title":"~/work - fish","workspace":{"id":1,"name":"1"},"monitor":0,"stableId":"s1","at":[100,100],"size":[800,500],"floating":false,"pinned":false,"fullscreen":0},
+ {"address":"0x2","mapped":true,"class":"hyprshell-term","title":"cargo build","workspace":{"id":1,"name":"1"},"monitor":0,"stableId":"s2","at":[200,200],"size":[800,500],"floating":false,"pinned":false,"fullscreen":0}]
+JSON
+    export HYPRSHELL_TEST_CLIENTS="$TT_LOGS/clients.json"
+    start_shell
+    sleep 1
+    set_theme dockScope '"all"'
+    sleep 1.5
+    tt-ptr 701 918 hover 1.2 >/dev/null 2>&1
+    shot card
+    tt-ptr 300 300 hover 0.8 >/dev/null 2>&1
+    shot gone
+}
+
 # The dock on the left edge: a column along it, its menu beside it.
 test_dock_left() {
     start_shell

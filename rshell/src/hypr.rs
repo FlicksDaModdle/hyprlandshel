@@ -19,6 +19,13 @@ fn dir() -> Option<PathBuf> {
 /// One request: "j/workspaces", "j/activeworkspace", "j/activewindow",
 /// "dispatch workspace 3". None outside Hyprland.
 pub fn ask(request: &str) -> Option<String> {
+    // Tests: the windows a test wrote down, there being no Hyprland to ask.
+    #[cfg(feature = "test-hooks")]
+    if request == "j/clients" {
+        if let Some(text) = std::env::var_os("HYPRSHELL_TEST_CLIENTS").and_then(|p| std::fs::read_to_string(p).ok()) {
+            return Some(text);
+        }
+    }
     let mut s = UnixStream::connect(dir()?.join(".socket.sock")).ok()?;
     s.write_all(request.as_bytes()).ok()?;
     let mut out = String::new();

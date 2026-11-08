@@ -240,11 +240,11 @@ export component AppWindow inherits KitWindow {
                         spacing: 12px;
                         HorizontalLayout {
                             Label { text: "Mirror the picture"; vertical-alignment: center; horizontal-stretch: 1; }
-                            Switch { on <=> Cam.mirror; toggled => { Cam.settings-changed(); } }
+                            Switch { on: Cam.mirror; toggled(v) => { Cam.mirror = v; Cam.settings-changed(); } }
                         }
                         HorizontalLayout {
                             Label { text: "Record sound"; vertical-alignment: center; horizontal-stretch: 1; }
-                            Switch { on <=> Cam.sound; enabled: !Cam.recording; toggled => { Cam.settings-changed(); } }
+                            Switch { on: Cam.sound; enabled: !Cam.recording; toggled(v) => { Cam.sound = v; Cam.settings-changed(); } }
                         }
                         VerticalLayout {
                             spacing: 6px;

@@ -22,6 +22,8 @@ pub enum Act {
     ShowAll(bool),
     Page(i32),
     Close,
+    /// The Start tile: the dock stays out to be collapsed into.
+    CloseIntoDock,
     TogglePower,
     Power(String),
 }
@@ -39,10 +41,23 @@ enum Hit {
 pub enum Wants {
     Nothing,
     Close,
+    CloseIntoDock,
     /// A shell command by its Commands.qml key (theme, updates, lock …).
     Command(&'static str),
     /// A session action (lock, suspend …), from the power menu.
     Power(String),
+}
+
+/// The dock's pill on the screen the launcher opens on, logical px (the morph's start and end).
+#[derive(Clone, Copy, Default)]
+pub struct Pill {
+    pub gap: f32,
+    pub w: f32,
+    pub h: f32,
+    pub tile: f32,
+    pub icon: f32,
+    pub pad: f32,
+    pub left: bool,
 }
 
 pub struct Host {
@@ -53,6 +68,12 @@ pub struct Host {
     morph: Spring,
     morph_y: Spring,
     fade: Spring,
+    /// The panel leaving whole (auto-hide: the dock goes too), 0 in place, 1 gone.
+    exit: Spring,
+    /// Growing out of the pill, or opened without one.
+    pub morphing: bool,
+    /// Closing as itself rather than into the dock.
+    pub leaving_whole: bool,
     entries: Vec<Entry>,
     icons: HashMap<String, slint::Image>,
     pinned: Vec<Pinned>,
@@ -97,6 +118,7 @@ impl Host {
         on!(on_set_show_all, |b| Act::ShowAll(b));
         on!(on_set_page, |p| Act::Page(p));
         on!(on_dismiss, | | Act::Close);
+        on!(on_dismiss_into_dock, | | Act::CloseIntoDock);
         on!(on_toggle_power, | | Act::TogglePower);
         on!(on_power, |k| Act::Power(k.to_string()));
         {
@@ -125,6 +147,9 @@ impl Host {
             closing: false,
             morph: Spring::new(0.0),
             morph_y: Spring::new(0.0),
+            exit: Spring::new(0.0),
+            morphing: false,
+            leaving_whole: false,
             fade: Spring::new(0.0),
             entries: Vec::new(),
             icons: HashMap::new(),
@@ -149,7 +174,7 @@ impl Host {
     }
 
     /// Sizes from theme.json, as Appearance.qml derives them.
-    pub fn configure(&mut self, raw: &serde_json::Value, us: f32, user: &str) {
+    pub fn configure(&mut self, raw: &serde_json::Value, us: f32, user: &str, pill: Option<Pill>, bar_h: f32) {
         let num = |k: &str, d: f64| raw[k].as_f64().unwrap_or(d);
         let zoom = num("launcherSize", 145.0).max(40.0) / 100.0;
         let stretch = |k: &str| num(k, 100.0).clamp(50.0, 220.0) / 100.0;
@@ -158,10 +183,20 @@ impl Host {
         let rows = ((3.0 * tall).round() as i32).max(2);
         self.per_page = (cols * rows) as usize;
         let u = |px: f64| (px * us as f64).round().max(1.0);
-        let near = u(num("dockGap", 16.0).clamp(0.0, 40.0)) + u(num("dockSize", 42.0) + 10.0) + 12.0;
+        let gap = u(num("dockGap", 16.0).clamp(0.0, 40.0));
+        // Growing out of the dock, it takes the dock's room as well: the pill has faded
+        // out by then. Otherwise the dock is still there and the panel clears it.
+        let near = if pill.is_some() { gap } else { gap + u(num("dockSize", 42.0) + 10.0) + 12.0 };
         let ui = &self.ui;
         ui.set_zoom(zoom as f32);
-        ui.set_panel_width((420.0 * zoom * wide).round() as f32);
+        // As wide as the dock, whenever there is one along the bottom to measure, so the
+        // two read as one object; the setting is for a dock down the left.
+        let own = (420.0 * zoom * wide).round() as f32;
+        ui.set_panel_width(match pill {
+            Some(p) if !p.left && p.w > 0.0 => p.w.max(260.0),
+            _ => own,
+        });
+        ui.set_bar_h(bar_h);
         ui.set_panel_max((720.0 * zoom * tall).round() as f32);
         ui.set_columns(cols);
         ui.set_tile((60.0 * zoom).round() as f32);
@@ -174,7 +209,7 @@ impl Host {
 
     /// Fresh each time it opens: the apps (a new install shows at once),
     /// what's pinned, the recent files; an empty search.
-    pub fn open(&mut self, raw: &serde_json::Value, m: &Motion, grows: bool) {
+    pub fn open(&mut self, raw: &serde_json::Value, m: &Motion, grows: bool, pill: Option<Pill>) {
         self.entries = launcher::entries();
         self.wants_icons = self.entries.iter().any(|e| !e.icon.is_empty() && !self.icons.contains_key(&e.id));
         self.pinned = launcher::pinned(raw);
@@ -188,9 +223,23 @@ impl Host {
         self.ui.set_query("".into());
         self.ui.set_power_open(false);
         self.ui.set_picking(self.picking.is_some());
+        self.morphing = pill.is_some();
+        self.leaving_whole = false;
+        let ui = &self.ui;
+        ui.set_morphing(pill.is_some());
+        if let Some(p) = pill {
+            ui.set_is_left(p.left);
+            ui.set_pill_gap(p.gap);
+            ui.set_pill_w(p.w);
+            ui.set_pill_h(p.h);
+            ui.set_dock_tile(p.tile);
+            ui.set_dock_icon(p.icon);
+            ui.set_dock_pad(p.pad);
+        }
         self.ui.set_grows(grows && m.springy && m.speed > 0.0);
         self.refresh();
         self.closing = false;
+        self.exit.snap(0.0);
         if self.fade.value <= 0.05 {
             self.morph.snap(0.0);
             self.morph_y.snap(0.0);
@@ -198,27 +247,49 @@ impl Host {
         }
         self.morph.go(1.0, 400.0, 0.6, m);
         self.morph_y.go(1.0, 470.0, 0.8, m);
+        // The contents wait for the shape to be most of the way up.
+        if self.morphing && self.fade.value < 0.05 {
+            self.fade.snap(-0.55);
+        }
         self.fade.go(1.0, 320.0, 0.0, m);
         self.apply();
     }
 
-    pub fn close(&mut self, m: &Motion) {
+    /// `away`: with the dock going too (auto-hide), the panel leaves as itself, down a
+    /// little and out, rather than shrinking into a pill that is about to vanish.
+    pub fn close(&mut self, m: &Motion, away: bool) {
         if self.surface.is_none() || self.closing {
             return;
         }
         self.closing = true;
         self.picking = None;
+        if away && self.morphing {
+            self.leaving_whole = true;
+            self.exit.go(1.0, 260.0, 0.0, m);
+            return;
+        }
         self.morph.go(0.0, 300.0, 0.0, m);
         self.morph_y.go(0.0, 320.0, 0.0, m);
+        // Closing, the contents go first and quickly.
         self.fade.go(0.0, 140.0, 0.0, m);
     }
 
+    /// Back to the closed shape once nothing is on screen, or the next opening would start
+    /// from a panel that is already the right size and appear with no movement at all.
+    pub fn reset_springs(&mut self) {
+        self.morph.snap(0.0);
+        self.morph_y.snap(0.0);
+        self.fade.snap(0.0);
+        self.exit.snap(0.0);
+        self.apply();
+    }
+
     pub fn moving(&self) -> bool {
-        self.morph.moving || self.morph_y.moving || self.fade.moving
+        self.morph.moving || self.morph_y.moving || self.fade.moving || self.exit.moving
     }
 
     pub fn step(&mut self, dt: f64, m: &Motion) {
-        for s in [&mut self.morph, &mut self.morph_y, &mut self.fade] {
+        for s in [&mut self.morph, &mut self.morph_y, &mut self.fade, &mut self.exit] {
             s.step(dt, m);
         }
         self.apply();
@@ -228,6 +299,9 @@ impl Host {
         self.ui.set_morph(self.morph.value as f32);
         self.ui.set_morph_y(self.morph_y.value as f32);
         self.ui.set_fade(self.fade.value as f32);
+        self.ui.set_exit(self.exit.value as f32);
+        // The glass gives a little as it travels, as strong as the movement and gone when it stops.
+        self.ui.set_flow(if self.morphing { (self.morph_y.speed().abs() / 6.0).min(1.0) as f32 } else { 0.0 });
     }
 
     pub fn entries_for_icons(&self) -> Vec<Entry> {
@@ -537,6 +611,7 @@ impl Host {
                 self.refresh();
             }
             Act::Close => return Wants::Close,
+            Act::CloseIntoDock => return Wants::CloseIntoDock,
             Act::TogglePower => self.ui.set_power_open(!self.ui.get_power_open()),
             Act::Power(k) => return Wants::Power(k),
         }

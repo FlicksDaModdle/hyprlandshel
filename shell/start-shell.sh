@@ -52,12 +52,34 @@ case ";${QT_LOGGING_RULES:-};" in
     *) export QT_LOGGING_RULES="${QT_LOGGING_RULES:+$QT_LOGGING_RULES;}quickshell.io.socket.warning=false" ;;
 esac
 
-# --restart: the running shell goes first (either of them).
+# One of these at a time. Hyprland starts this on a reload as well as at login, and a
+# guard that only looked for `qs` let the Rust shell be started again and again: three
+# shells, each with its own launcher, so Escape closed one of three.
+LOCK=${XDG_RUNTIME_DIR:-/tmp}/hyprshell-start.lock
+
+# --restart: the running shell goes first (either of them), and the copy of this that
+# was looking after it.
 if [ "${1:-}" = "--restart" ]; then
+    old=$(cat "$LOCK" 2>/dev/null)
+    if [ -n "$old" ] && [ "$old" != "$$" ] && tr '\0' ' ' <"/proc/$old/cmdline" 2>/dev/null | grep -q 'start-shell\.sh'; then
+        kill "$old" 2>/dev/null
+    fi
     stopped=0
     pkill -x qs 2>/dev/null && stopped=1
     pkill -x hyprshell-rs 2>/dev/null && stopped=1
     [ "$stopped" = 1 ] && sleep 0.4
+fi
+
+# Held for as long as this, or anything it started, runs.
+if command -v flock >/dev/null 2>&1; then
+    exec 9>>"$LOCK"
+    tries=0
+    until flock -n 9; do
+        tries=$((tries + 1))
+        [ "$tries" -ge 15 ] && exit 0
+        sleep 0.1
+    done
+    echo $$ >"$LOCK"
 fi
 
 # Which shell: the Quickshell one, or the Rust rewrite (rshell/), as

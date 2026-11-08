@@ -181,14 +181,19 @@ export component Switch inherits Rectangle {
     in-out property <bool> on: false;
     in property <bool> enabled: true;
     callback toggled(bool);
+    // What is drawn. A click flips it at once (assigning `on` would cut a one-way
+    // binding such as `on: Wifi.wifi-on`, and the switch would stop following it);
+    // whenever `on` changes after that, it follows.
+    property <bool> shown: on;
+    changed on => { root.shown = root.on; }
     width: 38px;
     height: 22px;
     border-radius: 11px;
     opacity: enabled ? 1 : 0.45;
-    background: on ? Theme.accent : Theme.sel;
+    background: root.shown ? Theme.accent : Theme.sel;
     animate background { duration: Theme.t(260); easing: ease-in-out; }
     // A soft glow in the accent while it is on, fading in and out with it.
-    drop-shadow-color: root.on ? Theme.accent.with-alpha(0.38) : Theme.accent.with-alpha(0);
+    drop-shadow-color: root.shown ? Theme.accent.with-alpha(0.38) : Theme.accent.with-alpha(0);
     drop-shadow-blur: 9px;
     drop-shadow-offset-y: 1px;
     animate drop-shadow-color { duration: Theme.t(300); easing: ease-in-out; }
@@ -198,9 +203,9 @@ export component Switch inherits Rectangle {
         width: touch.pressed ? 22px : 16px;
         height: touch.pressed ? 15px : 16px;
         y: (root.height - self.height) / 2;
-        x: root.on ? root.width - self.width - 3px : 3px;
+        x: root.shown ? root.width - self.width - 3px : 3px;
         border-radius: self.height / 2;
-        background: root.on ? Theme.ink-on-accent : Theme.ink;
+        background: root.shown ? Theme.ink-on-accent : Theme.ink;
         drop-shadow-blur: 3px;
         drop-shadow-color: #00000040;
         animate x { duration: Theme.t(380); easing: spring(0.32); }
@@ -212,8 +217,8 @@ export component Switch inherits Rectangle {
         enabled: root.enabled;
         mouse-cursor: pointer;
         clicked => {
-            root.on = !root.on;
-            root.toggled(root.on);
+            root.shown = !root.shown;
+            root.toggled(root.shown);
         }
     }
 }

@@ -32,6 +32,9 @@ ans = {"monitors": mon, "version": {"tag": "v0.57.0"}, "workspaces": [{"id": 1},
        "activeworkspace": {"id": 1},
        "devices": {"mice": [{"name": "asue120a:00-04f3:31fb-touchpad"}, {"name": "logitech-mx-master-3"}],
                    "keyboards": [{"name": "at-kbd", "main": True, "active_keymap": "English (US)"}]}}
+# Windows, if a test wrote some (clients.json next to the logs): what `clients` answers.
+try: ans["clients"] = json.load(open(os.path.join(os.environ.get("TT_LOGS", "/tmp"), "clients.json")))
+except Exception: pass
 if a and a[0] in ("eval", "reload", "setcursor"):
     open(log, "a").write(" ".join(a) + "\n")
     print("ok")

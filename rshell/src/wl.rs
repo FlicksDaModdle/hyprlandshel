@@ -462,9 +462,14 @@ impl Shell {
     /// Where a surface takes the pointer, logical; None for nowhere. The
     /// dock takes it over its pill, or along the bottom edge while hidden.
     pub fn set_input_rect(&mut self, id: usize, r: Option<(i32, i32, i32, i32)>) {
+        self.set_input_rects(id, r.as_slice());
+    }
+
+    /// The parts of a surface that take the pointer (the dock's pill and, over it, its preview card).
+    pub fn set_input_rects(&mut self, id: usize, rects: &[(i32, i32, i32, i32)]) {
         let Some(Some(s)) = self.surfaces.get(id) else { return };
         let Ok(region) = smithay_client_toolkit::compositor::Region::new(&self.compositor) else { return };
-        if let Some((x, y, w, h)) = r {
+        for &(x, y, w, h) in rects {
             region.add(x, y, w.max(0), h.max(0));
         }
         s.layer.wl_surface().set_input_region(Some(region.wl_region()));

@@ -30,6 +30,11 @@ impl Spring {
         Spring { value: v, velocity: 0.0, to: v, response: 380.0, bounce: 1.0, span: 1.0, fresh: false, moving: false }
     }
 
+    /// How fast it is going, per second.
+    pub fn speed(&self) -> f64 {
+        self.velocity
+    }
+
     pub fn snap(&mut self, v: f64) {
         self.value = v;
         self.to = v;

@@ -21,6 +21,98 @@ export struct DockTileData {
     named: bool,
 }
 
+export struct PreviewWin { title: string, thumb: image, has-thumb: bool, current: bool }
+
+// The card over a tile with windows (DockPreview.qml): a picture of each, its title, a close
+// button; click to go to one, middle-click to close it.
+component PreviewCard inherits Rectangle {
+    in property <[PreviewWin]> wins;
+    in property <GlyphData> glyph;
+    in property <float> us: 1;
+    in property <length> max-w;
+    callback pick(int);
+    callback close(int);
+    callback hovered(bool);
+    function u(px: float) -> length { return max(1, round(px * root.us)) * 1px; }
+    property <length> pad: u(8);
+    property <length> gap: u(6);
+    property <length> title-h: u(28);
+    property <int> n: max(1, root.wins.length);
+    property <length> thumb-w: round(max(u(112), min(u(200), (root.max-w - root.pad * 2 - root.gap * (root.n - 1)) / root.n)) / 1px) * 1px;
+    property <length> image-h: round(root.thumb-w * 0.6 / 1px) * 1px;
+    width: min(root.max-w, root.n * root.thumb-w + (root.n - 1) * root.gap + root.pad * 2);
+    height: root.pad * 2 + root.title-h + root.image-h + u(6);
+    border-radius: Theme.r-cap;
+    background: Theme.panel;
+    border-width: 1px;
+    border-color: Theme.edge;
+    TouchArea { changed has-hover => { root.hovered(self.has-hover); } }
+    for w[i] in root.wins: cell := Rectangle {
+        x: root.pad + i * (root.thumb-w + root.gap);
+        y: root.pad;
+        width: root.thumb-w;
+        height: root.title-h + root.image-h + u(6);
+        border-radius: Theme.r-sm;
+        property <bool> hot: ct.has-hover || xt.has-hover;
+        background: self.hot ? Theme.sel : (w.current ? Theme.hover : transparent);
+        animate background { duration: 140ms; }
+        border-width: w.current ? 1px : 0px;
+        border-color: Theme.seam;
+        ct := TouchArea {
+            mouse-cursor: pointer;
+            changed has-hover => { root.hovered(self.has-hover); }
+            clicked => { root.pick(i); }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.middle) { root.close(i); }
+            }
+        }
+        HorizontalLayout {
+            x: u(7);
+            width: parent.width - u(7) - u(20) - u(13);
+            height: root.title-h;
+            spacing: u(6);
+            Glyph { y: (root.title-h - self.height) / 2; data: root.glyph; size: u(15); monochrome: true; ink: w.current ? Theme.ink : Theme.ink2; }
+            Text {
+                vertical-alignment: center;
+                text: w.title;
+                overflow: elide;
+                font-size: Theme.fs(max(10, u(12) / 1px));
+                font-weight: w.current ? 600 : 500;
+                color: w.current ? Theme.ink : Theme.ink2;
+            }
+        }
+        Rectangle {
+            x: u(5);
+            y: root.title-h;
+            width: parent.width - u(10);
+            height: root.image-h;
+            border-radius: Theme.r-sm;
+            clip: true;
+            background: w.has-thumb ? transparent : Theme.hover;
+            if !w.has-thumb: Glyph {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                data: root.glyph;
+                size: min(parent.height * 0.42, u(40));
+                ink: Theme.ink3;
+            }
+            if w.has-thumb: Image { width: parent.width; height: parent.height; source: w.thumb; image-fit: contain; }
+        }
+        // The close button, there while the window's tile is hovered.
+        Rectangle {
+            visible: cell.hot;
+            x: parent.width - self.width - u(5);
+            y: round((root.title-h - self.height) / 2 / 1px) * 1px;
+            width: u(20);
+            height: self.width;
+            border-radius: Theme.r-sm;
+            background: xt.has-hover ? Theme.accent : transparent;
+            Glyph { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; data: Icons.x; size: u(13); monochrome: true; ink: xt.has-hover ? Theme.ink-on-accent : Theme.ink2; }
+            xt := TouchArea { mouse-cursor: pointer; clicked => { root.close(i); } }
+        }
+    }
+}
+
 component DockTile inherits Rectangle {
     in property <DockTileData> data;
     in property <length> tile;
@@ -31,6 +123,8 @@ component DockTile inherits Rectangle {
     callback activated(length);
     callback secondary(length);
     callback middle();
+    // The pointer on it or off, and where it is across (for the preview card).
+    callback hover(bool, length);
     property <bool> hovered: t.has-hover;
     // The name's width, measured where it isn't drawn.
     measure := Text {
@@ -122,6 +216,7 @@ component DockTile inherits Rectangle {
 
     t := TouchArea {
         mouse-cursor: pointer;
+        changed has-hover => { root.hover(self.has-hover, root.left ? root.absolute-position.y + root.height / 2 : root.absolute-position.x + root.width / 2); }
         clicked => { root.activated(root.left ? root.absolute-position.y + root.height / 2 : root.absolute-position.x + root.width / 2); }
         pointer-event(e) => {
             if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
@@ -142,6 +237,9 @@ export component Dock inherits Window {
     in property <length> label-size: 12px;
     // On the left edge rather than the bottom.
     in property <bool> left;
+    // The launcher is out and on top of this pill (it grew out of it): the glass steps aside
+    // at once, the tiles fade, so there is only ever one pane.
+    in property <bool> covered;
     // Where the pill's near edge is (the reveal spring, from app.rs): its top at
     // the bottom, its left on the left.
     in property <length> pos;
@@ -153,6 +251,21 @@ export component Dock inherits Window {
     callback secondary(int, length);
     callback middle(int);
     callback hovered(bool);
+    callback tile-hover(int, bool, length);
+    // The preview card over a tile: its windows, whether it shows, which app's glyph, where
+    // its tile is across, the shell's scale.
+    in property <[PreviewWin]> preview;
+    in property <bool> preview-open;
+    in property <GlyphData> preview-glyph;
+    in property <length> preview-anchor;
+    in property <float> us: 1;
+    out property <length> card-x: card.x;
+    out property <length> card-y: card.y;
+    out property <length> card-w: card.width;
+    out property <length> card-h: card.height;
+    callback preview-pick(int);
+    callback preview-close(int);
+    callback preview-hover(bool);
 
     background: transparent;
     default-font-family: Theme.font;
@@ -173,14 +286,16 @@ export component Dock inherits Window {
         width: root.left ? root.tile + root.pad-h * 2 : row.preferred-width + root.pad-h * 2;
         height: root.left ? col.preferred-height + root.pad-v * 2 : root.tile + root.pad-v * 2;
         border-radius: Theme.r-cap;
-        background: Theme.panel;
-        border-width: 1px;
+        background: root.covered ? transparent : Theme.panel;
+        border-width: root.covered ? 0px : 1px;
         border-color: Theme.edge;
 
         hover := TouchArea {
             changed has-hover => { root.hovered(self.has-hover); }
             row := HorizontalLayout {
-                visible: !root.left;
+                visible: !root.left && self.opacity > 0.01;
+                opacity: root.covered ? 0 : 1;
+                animate opacity { duration: root.covered ? 140ms : 240ms; }
                 x: root.pad-h;
                 y: root.pad-v;
                 width: self.preferred-width;
@@ -204,12 +319,15 @@ export component Dock inherits Window {
                         activated(x) => { root.activate(i, x); }
                         secondary(x) => { root.secondary(i, x); }
                         middle => { root.middle(i); }
+                        hover(on, x) => { root.tile-hover(i, on, x); }
                         lift: root.pad-v;
                     }
                 }
             }
             col := VerticalLayout {
-                visible: root.left;
+                visible: root.left && self.opacity > 0.01;
+                opacity: root.covered ? 0 : 1;
+                animate opacity { duration: root.covered ? 140ms : 240ms; }
                 x: root.pad-h;
                 y: root.pad-v;
                 width: root.tile;
@@ -232,6 +350,7 @@ export component Dock inherits Window {
                         activated(y) => { root.activate(i, y); }
                         secondary(y) => { root.secondary(i, y); }
                         middle => { root.middle(i); }
+                        hover(on, x) => { root.tile-hover(i, on, x); }
                         lift: root.pad-h;
                     }
                 }
@@ -239,4 +358,19 @@ export component Dock inherits Window {
         }
     }
 
+    // The preview card, centred over its tile and kept a margin inside the screen.
+    card := PreviewCard {
+        wins: root.preview;
+        glyph: root.preview-glyph;
+        us: root.us;
+        max-w: root.width - max(1, round(24 * root.us)) * 1px;
+        x: round(max(max(1, round(12 * root.us)) * 1px, min(root.width - self.width - max(1, round(12 * root.us)) * 1px, root.preview-anchor - self.width / 2)) / 1px) * 1px;
+        y: round((pill.y - self.height - max(1, round(10 * root.us)) * 1px) / 1px) * 1px;
+        visible: self.opacity > 0.01;
+        opacity: root.preview-open ? 1 : 0;
+        animate opacity { duration: root.preview-open ? 200ms : 0ms; }
+        pick(i) => { root.preview-pick(i); }
+        close(i) => { root.preview-close(i); }
+        hovered(on) => { root.preview-hover(on); }
+    }
 }
