@@ -1409,71 +1409,126 @@ component NotificationCenter inherits PanelSurface {
     }
 }
 
-// ── what's playing (MediaPanel.qml, in short) ────────────────────────────
+// ── what's playing (MediaPanel.qml) ──────────────────────────────────────
 component MediaPanel inherits PanelSurface {
     in property <MediaInfo> media;
     callback prev();
     callback toggle();
     callback next();
     callback seek(float);
+    callback shuffle();
+    callback cycle-loop();
+    callback volume(float);
+    property <bool> dragging;
+    property <float> drag-at;
+    property <float> shown: root.dragging ? root.drag-at : root.media.progress;
     VerticalLayout {
-        padding: 14px;
-        spacing: 12px;
-        HorizontalLayout {
-            spacing: 12px;
+        // NOW PLAYING, and which player.
+        Rectangle {
+            height: 35px;
+            Caps { x: 14px; y: (parent.height - self.height) / 2; text: "NOW PLAYING"; letter-spacing: 0.88px; }
+            Text {
+                x: parent.width - self.width - 14px;
+                y: (parent.height - self.height) / 2;
+                width: min(self.preferred-width, 170px);
+                horizontal-alignment: right;
+                overflow: elide;
+                text: (root.media.identity != "" ? root.media.identity : "mpris") + " · mpris";
+                font-size: Theme.fs(10.5);
+                font-weight: 400;
+                color: Theme.ink3;
+            }
+        }
+        // The art and what it is.
+        Rectangle {
+            height: 78px;
             Rectangle {
-                width: 72px;
-                height: 72px;
+                x: 14px;
+                width: 78px;
+                height: 78px;
                 border-radius: Theme.r-sm;
                 clip: true;
                 background: Theme.hover;
-                if root.media.has-art: Image { width: 72px; height: 72px; source: root.media.art; image-fit: cover; }
-                if !root.media.has-art: Glyph { x: 22px; y: 22px; data: Icons.music; size: 28px; }
+                if root.media.has-art: Image { width: 78px; height: 78px; source: root.media.art; image-fit: cover; }
+                if !root.media.has-art: Glyph { x: 25px; y: 25px; data: Icons.music; size: 28px; ink: Theme.ink3; }
             }
             VerticalLayout {
+                x: 106px;
+                width: parent.width - 120px;
                 alignment: center;
-                spacing: 3px;
-                Text { text: root.media.title; overflow: elide; font-size: Theme.fs(14); font-weight: 600; color: Theme.ink; }
-                Text { text: root.media.artist; overflow: elide; font-size: Theme.fs(12); color: Theme.ink2; }
-                Text { text: root.media.player; overflow: elide; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
+                spacing: 6px;
+                Text { text: root.media.title; wrap: word-wrap; overflow: elide; max-height: 40px; font-size: Theme.fs(16); font-weight: 700; letter-spacing: -0.16px; color: Theme.ink; }
+                if root.media.artist != "": Text { text: root.media.artist; overflow: elide; font-size: Theme.fs(12); font-weight: 500; color: Theme.ink2; }
+                if root.media.album != "": Text { text: root.media.album; overflow: elide; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
             }
         }
-        if root.media.has-length: VerticalLayout {
-            spacing: 4px;
-            Rectangle {
-                height: 6px;
-                border-radius: 3px;
-                background: Theme.sel;
+        // The seek bar and the two times.
+        Rectangle {
+            height: 45px;
+            seek := Rectangle {
+                x: 14px;
+                y: 14px;
+                width: parent.width - 28px;
+                height: 14px;
                 Rectangle {
-                    x: 0;
-                    width: parent.width * root.media.progress;
+                    y: (parent.height - self.height) / 2;
+                    height: 4px;
                     border-radius: 3px;
-                    background: Theme.accent;
+                    background: Theme.div;
+                    Rectangle { width: round(parent.width / 1px * root.shown) * 1px; border-radius: 3px; background: Theme.accent; }
+                    if root.media.has-length: Rectangle {
+                        x: round(parent.width / 1px * root.shown) * 1px - 8px;
+                        y: (parent.height - self.height) / 2;
+                        width: 16px;
+                        height: 16px;
+                        border-radius: 8px;
+                        background: Theme.panel;
+                        Rectangle { x: 3px; y: 3px; width: 10px; height: 10px; border-radius: 5px; background: Theme.accent; }
+                    }
                 }
                 TouchArea {
-                    y: -6px;
-                    height: 18px;
-                    enabled: root.media.can-seek;
+                    enabled: root.media.can-seek && root.media.has-length;
                     mouse-cursor: pointer;
-                    clicked => { root.seek(self.mouse-x / self.width); }
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.down) { root.dragging = true; root.drag-at = clamp(self.mouse-x / max(1px, self.width), 0, 1); }
+                        if (e.kind == PointerEventKind.up && root.dragging) { root.dragging = false; root.seek(clamp(self.mouse-x / max(1px, self.width), 0, 1)); }
+                        if (e.kind == PointerEventKind.cancel) { root.dragging = false; }
+                    }
+                    moved => { if (self.pressed) { root.drag-at = clamp(self.mouse-x / max(1px, self.width), 0, 1); } }
                 }
             }
+            Text { x: 14px; y: 34px; text: root.dragging ? root.media.position : root.media.position; font-size: Theme.fs(10.5); font-weight: 600; color: Theme.ink2; }
+            Text { x: parent.width - self.width - 14px; y: 34px; text: root.media.has-length ? root.media.length : "--:--"; font-size: Theme.fs(10.5); font-weight: 500; color: Theme.ink3; }
+        }
+        // Shuffle, back, play, forward, repeat.
+        Rectangle {
+            height: 68px;
             HorizontalLayout {
-                Text { text: root.media.position; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
-                Text { horizontal-alignment: right; text: root.media.length; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
+                alignment: center;
+                spacing: 6px;
+                IconButton { y: (68px - self.height) / 2; size: 30px; icon-size: 14px; icon: Icons.shuffle; active: root.media.shuffle; enabled: root.media.can-shuffle; ink: Theme.ink3; activated => { root.shuffle(); } }
+                IconButton { y: (68px - self.height) / 2; size: 34px; icon-size: 17px; icon: Icons.skip-back; enabled: root.media.can-prev; activated => { root.prev(); } }
+                IconButton { y: (68px - self.height) / 2; size: 44px; icon-size: 19px; accent: true; icon: root.media.playing ? Icons.pause : Icons.play; enabled: root.media.can-toggle; activated => { root.toggle(); } }
+                IconButton { y: (68px - self.height) / 2; size: 34px; icon-size: 17px; icon: Icons.skip-forward; enabled: root.media.can-next; activated => { root.next(); } }
+                IconButton { y: (68px - self.height) / 2; size: 30px; icon-size: 14px; icon: root.media.loop-state == "track" ? Icons.repeat-one : Icons.repeat; active: root.media.loop-state != "none"; enabled: root.media.can-loop; ink: Theme.ink3; activated => { root.cycle-loop(); } }
             }
         }
-        HorizontalLayout {
-            alignment: center;
-            spacing: 10px;
-            IconButton { size: 34px; icon-size: 16px; icon: Icons.skip-back; enabled: root.media.can-prev; activated => { root.prev(); } }
-            IconButton {
-                size: 40px; icon-size: 18px; accent: true;
-                icon: root.media.playing ? Icons.pause : Icons.play;
-                enabled: root.media.can-toggle;
-                activated => { root.toggle(); }
+        // The player's volume (or the system's when it has none of its own).
+        Rectangle {
+            height: 40px;
+            Rectangle { y: 0; height: 1px; background: Theme.rule; }
+            Glyph { x: 14px; y: (parent.height - self.height) / 2 + 0.5px; data: Icons.speaker; size: 15px; monochrome: true; ink: Theme.ink2; }
+            FillSlider {
+                x: 14px + 15px + 10px;
+                y: (parent.height - self.height) / 2 + 0.5px;
+                width: parent.width - self.x - 10px - 30px - 14px;
+                trough: 4px;
+                value: root.media.volume;
+                fill: Theme.ink2;
+                track: Theme.div;
+                moved(v) => { root.volume(v); }
             }
-            IconButton { size: 34px; icon-size: 16px; icon: Icons.skip-forward; enabled: root.media.can-next; activated => { root.next(); } }
+            Text { x: parent.width - 30px - 14px; y: (parent.height - self.height) / 2 + 0.5px; width: 30px; horizontal-alignment: right; text: round(root.media.volume * 100) + "%"; font-size: Theme.fs(10.5); font-weight: 600; color: Theme.ink3; }
         }
     }
 }
@@ -1864,6 +1919,9 @@ export component Panels inherits Window {
     callback media-toggle();
     callback media-next();
     callback media-seek(float);
+    callback media-shuffle();
+    callback media-loop();
+    callback media-volume(float);
     // drives, timers, updates, privacy
     in property <[DriveRow]> drives;
     callback drive-open(string);
@@ -1985,13 +2043,16 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "media"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 340px;
+        shown: root.which == "media"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 352px;
         MediaPanel {
             media: root.media;
             prev => { root.media-prev(); }
             toggle => { root.media-toggle(); }
             next => { root.media-next(); }
             seek(f) => { root.media-seek(f); }
+            shuffle => { root.media-shuffle(); }
+            cycle-loop => { root.media-loop(); }
+            volume(v) => { root.media-volume(v); }
         }
     }
     Drop {

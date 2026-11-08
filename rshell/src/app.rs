@@ -2734,6 +2734,14 @@ impl App {
             can_next: m.can_next,
             can_toggle: m.can_toggle,
             can_seek: m.can_seek,
+            album: m.album.clone().into(),
+            identity: m.identity.clone().into(),
+            shuffle: m.shuffle,
+            can_shuffle: m.can_shuffle,
+            loop_state: m.loop_state.clone().into(),
+            can_loop: m.can_loop,
+            volume: m.volume as f32,
+            can_volume: m.can_volume,
         };
         for b in &self.bars {
             b.bar.set_media(info.clone());
@@ -2918,6 +2926,10 @@ impl App {
             self.month_offset = 0;
             self.refresh_month();
         }
+        if which == "media" {
+            // The seek bar is on screen: read the player twice a second.
+            let _ = self.media_cmd.send(mpris::Cmd::Watch(true));
+        }
         if which == "power" {
             self.refresh_session();
         }
@@ -2969,6 +2981,9 @@ impl App {
 
     fn close_panel(&mut self) {
         let Some((bar, which)) = self.open.take() else { return };
+        if which == "media" {
+            let _ = self.media_cmd.send(mpris::Cmd::Watch(false));
+        }
         if which == "control" {
             self.daemon.send(json!({ "cmd": "bl-watch", "on": false }));
             self.set_cc_pane("");
@@ -4386,6 +4401,7 @@ impl App {
             "toggleCalendar" => self.toggle_from_key(shell, qh, "calendar"),
             "togglePower" => self.toggle_from_key(shell, qh, "power"),
             "toggleTimers" => self.toggle_from_key(shell, qh, "timers"),
+            "toggleMedia" => self.toggle_from_key(shell, qh, "media"),
             "toggleUpdates" => self.toggle_from_key(shell, qh, "updates"),
             "closePanels" => self.close_panel(),
             // The control center open on its Wi-Fi or Bluetooth list
@@ -4590,6 +4606,9 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_media_toggle, | | Action::Media(mpris::Cmd::Toggle));
     on!(on_media_next, | | Action::Media(mpris::Cmd::Next));
     on!(on_media_seek, |f| Action::Media(mpris::Cmd::Seek(f as f64)));
+    on!(on_media_shuffle, | | Action::Media(mpris::Cmd::Shuffle));
+    on!(on_media_loop, | | Action::Media(mpris::Cmd::Loop));
+    on!(on_media_volume, |v| Action::Media(mpris::Cmd::Volume(v as f64)));
     on!(on_drive_open, |m| Action::DriveOpen(m.to_string()));
     on!(on_drive_mount, |p| Action::DriveMount(p.to_string()));
     on!(on_drive_eject, |d| Action::DriveEject(d.to_string()));

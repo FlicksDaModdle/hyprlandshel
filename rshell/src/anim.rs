@@ -442,16 +442,38 @@ fn cells(c: &Ctx, x: usize, y: usize) -> V3 {
     col
 }
 
-fn stars(c: &Ctx, x: usize, y: usize) -> V3 {
+/// The nebula is smooth over many pixels: worked out on a coarse grid, read off bilinearly.
+fn nebula_grid(c: &Ctx) -> (Vec<(f32, f32)>, usize, usize, f32) {
+    let step = 8.0f32;
+    let (gw, gh) = ((c.rw as f32 / step).ceil() as usize + 2, (c.rh as f32 / step).ceil() as usize + 2);
+    let s = c.s;
+    let t = c.time;
+    let mut g = vec![(0.0, 0.0); gw * gh];
+    for gy in 0..gh {
+        for gx in 0..gw {
+            let (u, v) = (gx as f32 * step / c.rw as f32, gy as f32 * step / c.rh as f32);
+            let px = (s.origin.0 + u * c.size.0, s.origin.1 + v * c.size.1);
+            let np = (px.0 / s.unit * 1.3 + s.seed.0, px.1 / s.unit * 1.3 + s.seed.1);
+            g[gy * gw + gx] = (fbm((np.0 + t * 0.015, np.1 - t * 0.01)), fbm((np.0 * 1.7 - 4.0 - t * 0.01, np.1 * 1.7 - 4.0 + t * 0.012)));
+        }
+    }
+    (g, gw, gh, step)
+}
+
+fn stars(c: &Ctx, grid: &(Vec<(f32, f32)>, usize, usize, f32), x: usize, y: usize) -> V3 {
     let s = c.s;
     let (u, v) = ((x as f32 + 0.5) / c.rw as f32, (y as f32 + 0.5) / c.rh as f32);
     let px = (s.origin.0 + u * c.size.0, s.origin.1 + v * c.size.1);
     let p = &s.pal;
     let mut col = mix3(p.bg1, p.bg2, v);
-    let np = (px.0 / s.unit * 1.3 + s.seed.0, px.1 / s.unit * 1.3 + s.seed.1);
     let t = c.time;
-    let neb = fbm((np.0 + t * 0.015, np.1 - t * 0.01));
-    let neb2 = fbm((np.0 * 1.7 - 4.0 - t * 0.01, np.1 * 1.7 - 4.0 + t * 0.012));
+    let (g, gw, gh, step) = grid;
+    let (fx, fy) = (x as f32 / step, y as f32 / step);
+    let (gx, gy, tx, ty) = (fx as usize, fy as usize, fract(fx), fract(fy));
+    let at = |a: usize, b: usize| g[b.min(gh - 1) * gw + a.min(gw - 1)];
+    let (q00, q10, q01, q11) = (at(gx, gy), at(gx + 1, gy), at(gx, gy + 1), at(gx + 1, gy + 1));
+    let neb = mix(mix(q00.0, q10.0, tx), mix(q01.0, q11.0, tx), ty);
+    let neb2 = mix(mix(q00.1, q10.1, tx), mix(q01.1, q11.1, tx), ty);
     let nc = mix3(p.c1, p.c2, smoothstep(0.3, 0.7, neb2));
     col = mix3(col, nc, smoothstep(0.42, 0.85, neb) * s.glow * 0.75);
     let chance = 0.05 + s.density * 0.30;
@@ -662,11 +684,14 @@ pub fn render(s: &Screen, time: f32, rise: f32, rw: usize, rh: usize) -> Vec<u8>
                 put(row, x, dither(cells(&c, x, y), x, y, time));
             }
         }),
-        "stars" => par_rows(&mut out, rw, rh, &|y, row| {
-            for x in 0..rw {
-                put(row, x, dither(stars(&c, x, y), x, y, time));
-            }
-        }),
+        "stars" => {
+            let grid = nebula_grid(&c);
+            par_rows(&mut out, rw, rh, &|y, row| {
+                for x in 0..rw {
+                    put(row, x, dither(stars(&c, &grid, x, y), x, y, time));
+                }
+            });
+        }
         "waves" => {
             let cols = waves_columns(&c);
             par_rows(&mut out, rw, rh, &|y, row| {
@@ -793,10 +818,13 @@ fn run(rx: Receiver<Cmd>, tx: SyncSender<Frame>, mut wake: std::os::unix::net::U
     let mut screens: Vec<Live> = Vec::new();
     let mut still: Vec<usize> = Vec::new();
     let mut last = Instant::now();
+    // What the slowest frame cost lately: the frame rate gives way to it, so the picture never has to.
+    let mut frame_cost = 0.0f32;
     loop {
         let active = |l: &Live, still: &Vec<usize>| !still.contains(&l.s.bar) && (l.s.style != "topo" || l.s.topo.drift);
         let any = screens.iter().any(|l| active(l, &still));
-        let interval = Duration::from_micros(1_000_000 / screens.iter().map(|l| l.s.fps).max().unwrap_or(30).max(1) as u64);
+        let base = Duration::from_micros(1_000_000 / screens.iter().map(|l| l.s.fps).max().unwrap_or(30).max(1) as u64);
+        let interval = base.max(Duration::from_secs_f32((frame_cost * 1.25).min(1.0)));
         let got = if any { rx.recv_timeout(Duration::ZERO) } else { rx.recv().map_err(|_| RecvTimeoutError::Disconnected) };
         match got {
             Ok(Cmd::Set(list)) => {
@@ -805,8 +833,10 @@ fn run(rx: Receiver<Cmd>, tx: SyncSender<Frame>, mut wake: std::os::unix::net::U
                     .into_iter()
                     .map(|s| {
                         let prev = old.iter().find(|o| o.s.bar == s.bar && o.s.style == s.style);
-                        // Soft styles can be drawn small; the ones made of thin lines need their pixels.
-                        let div = prev.map(|o| o.div).unwrap_or(match s.style.as_str() { "topo" => 1.0, "cells" | "synth" | "waves" => 0.85, _ => 0.5 });
+                        // At the screen's own pixels, always: lines and stars drawn smaller and stretched look
+                        // pixelated. Only blobs, a soft blur of colour, are drawn small. A slow frame lowers
+                        // the frame rate instead (below).
+                        let div = if s.style == "blobs" { 0.35 } else { 1.0 };
                         Live { time: prev.map(|o| o.time).unwrap_or(0.0), rise: prev.map(|o| o.rise).unwrap_or(0.0), div, s }
                     })
                     .collect();
@@ -831,6 +861,7 @@ fn run(rx: Receiver<Cmd>, tx: SyncSender<Frame>, mut wake: std::os::unix::net::U
             continue;
         }
         let began = Instant::now();
+        frame_cost *= 0.9;
         let dt = began.duration_since(last).as_secs_f32().min(0.25);
         last = began;
         for l in screens.iter_mut() {
@@ -849,13 +880,7 @@ fn run(rx: Receiver<Cmd>, tx: SyncSender<Frame>, mut wake: std::os::unix::net::U
                 l.time += dt * l.s.speed;
             }
             let cost = send_frame(l, &tx, &mut wake);
-            // Keep a frame inside the time there is for it.
-            let budget = interval.as_secs_f32() * 0.7;
-            if cost > budget && l.div > 0.25 {
-                l.div = (l.div * 0.88).max(0.25);
-            } else if cost < budget * 0.45 && l.div < if ["topo", "cells", "synth", "waves"].contains(&l.s.style.as_str()) { 1.0 } else { 0.8 } {
-                l.div = (l.div * 1.04).min(1.0);
-            }
+            frame_cost = frame_cost.max(cost);
         }
         let _ = wake.flush();
         let spent = began.elapsed();
@@ -897,6 +922,20 @@ mod tests {
             assert!(a.chunks(4).any(|p| p[0] != a[0] || p[1] != a[1] || p[2] != a[2]), "{style} is one flat colour");
             assert_ne!(a, b, "{style} doesn't move");
             assert!(a.chunks(4).all(|p| p[3] == 255));
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_full_size_frames() {
+        for style in ["topo", "aurora", "blobs", "cells", "stars", "synth", "waves"] {
+            let s = screen_for(&serde_json::json!({ "wallpaperStyle": style, "topoWidth": 1.2 }), true, ([0.2; 3], [0.1; 3]), [1.0, 0.3, 0.2], [0.9; 3], (0, 2880, 1800, 1.6667, (0.0, 0.0)));
+            let _ = render(&s, 1.0, 0.0, 2880, 1800);
+            let t = std::time::Instant::now();
+            for i in 0..3 {
+                let _ = render(&s, 1.0 + i as f32, 0.0, 2880, 1800);
+            }
+            eprintln!("BENCH {style}: {:.1} ms per full frame", t.elapsed().as_secs_f64() * 1000.0 / 3.0);
         }
     }
 

@@ -47,6 +47,8 @@ export component IconButton inherits Rectangle {
     in property <bool> accent;
     in property <bool> enabled: true;
     in property <color> ink: Theme.ink;
+    // A toggle that is on (shuffle, repeat): its glyph in the accent.
+    in property <bool> active;
     callback activated();
     width: size;
     height: size;
@@ -59,7 +61,7 @@ export component IconButton inherits Rectangle {
         data: root.icon;
         size: root.icon-size;
         monochrome: true;
-        ink: root.accent ? Theme.ink-on-accent : root.ink;
+        ink: root.accent ? Theme.ink-on-accent : (root.active ? Theme.accent : root.ink);
     }
     t := TouchArea {
         enabled: root.enabled;
@@ -127,6 +129,8 @@ export component Toggle inherits Rectangle {
 // clicked anywhere along it.
 export component FillSlider inherits Rectangle {
     in property <float> value;
+    in property <color> fill: Theme.accent;
+    in property <color> track: Theme.hover;
     in property <length> trough: 20px;
     callback moved(float);
     property <float> shown: touch.pressed ? self.dragged : root.value;
@@ -138,7 +142,7 @@ export component FillSlider inherits Rectangle {
     height: root.trough;
     border-radius: root.trough / 2;
     // The track is the hover tint, as QML's trackColor.
-    background: Theme.hover;
+    background: root.track;
     // The whole pill in the accent, cut off where the value is by a square
     // clip: round at the left, square at the value, and round again at the
     // right once the value reaches the end (what the rounded track clips).
@@ -147,9 +151,9 @@ export component FillSlider inherits Rectangle {
         width: root.w * 1px;
         height: root.trough;
         clip: true;
-        Rectangle { x: 0; width: root.trough; height: root.trough; border-radius: root.trough / 2; background: Theme.accent; }
-        Rectangle { x: root.trough / 2; width: max(0px, root.width - root.trough); height: root.trough; background: Theme.accent; }
-        Rectangle { x: root.width - root.trough; width: root.trough; height: root.trough; border-radius: root.trough / 2; background: Theme.accent; }
+        Rectangle { x: 0; width: root.trough; height: root.trough; border-radius: root.trough / 2; background: root.fill; }
+        Rectangle { x: root.trough / 2; width: max(0px, root.width - root.trough); height: root.trough; background: root.fill; }
+        Rectangle { x: root.width - root.trough; width: root.trough; height: root.trough; border-radius: root.trough / 2; background: root.fill; }
     }
     touch := TouchArea {
         mouse-cursor: pointer;

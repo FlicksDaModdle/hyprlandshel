@@ -25,6 +25,16 @@ pub struct Media {
     pub can_seek: bool,
     pub bus: String,
     pub track: String,
+    pub album: String,
+    /// The player's own name (org.mpris.MediaPlayer2 Identity).
+    pub identity: String,
+    pub shuffle: bool,
+    pub can_shuffle: bool,
+    /// "none", "playlist" or "track".
+    pub loop_state: String,
+    pub can_loop: bool,
+    pub volume: f64,
+    pub can_volume: bool,
 }
 
 pub enum Cmd {
@@ -32,13 +42,31 @@ pub enum Cmd {
     Toggle,
     Next,
     Seek(f64),
+    Shuffle,
+    /// None → the whole playlist → this track → none.
+    Loop,
+    Volume(f64),
+    /// The panel with its seek bar is open (or not): read twice a second rather than once.
+    Watch(bool),
 }
 
 const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
 
 fn prop(c: &Connection, bus: &str, name: &str) -> Option<OwnedValue> {
+    prop_of(c, bus, PLAYER, name)
+}
+
+fn prop_of(c: &Connection, bus: &str, iface: &str, name: &str) -> Option<OwnedValue> {
     let p = zbus::blocking::fdo::PropertiesProxy::builder(c).destination(bus).ok()?.path("/org/mpris/MediaPlayer2").ok()?.build().ok()?;
-    p.get(PLAYER.try_into().ok()?, name).ok()
+    p.get(iface.try_into().ok()?, name).ok()
+}
+
+fn set_prop(c: &Connection, bus: &str, name: &str, v: zbus::zvariant::Value<'_>) {
+    if let Some(p) = zbus::blocking::fdo::PropertiesProxy::builder(c).destination(bus).ok().and_then(|b| b.path("/org/mpris/MediaPlayer2").ok()).and_then(|b| b.build().ok()) {
+        if let Ok(i) = PLAYER.try_into() {
+            let _ = p.set(i, name, v);
+        }
+    }
 }
 
 fn read(c: &Connection) -> Media {
@@ -54,6 +82,7 @@ fn read(c: &Connection) -> Media {
     if let Some(md) = prop(c, bus, "Metadata").and_then(|v| std::collections::HashMap::<String, OwnedValue>::try_from(v).ok()) {
         let s = |k: &str| md.get(k).and_then(|v| String::try_from(v.try_clone().ok()?).ok()).unwrap_or_default();
         m.title = s("xesam:title");
+        m.album = s("xesam:album");
         m.art = s("mpris:artUrl");
         // An object path by the spec; some players send a string.
         m.track = md
@@ -80,6 +109,16 @@ fn read(c: &Connection) -> Media {
     m.can_next = b("CanGoNext");
     m.can_toggle = b("CanPause") || b("CanPlay");
     m.can_seek = b("CanSeek");
+    m.identity = prop_of(c, bus, "org.mpris.MediaPlayer2", "Identity").and_then(|v| String::try_from(v).ok()).unwrap_or_default();
+    let shuffle = prop(c, bus, "Shuffle");
+    m.can_shuffle = shuffle.is_some() && b("CanControl");
+    m.shuffle = shuffle.and_then(|v| bool::try_from(v).ok()).unwrap_or(false);
+    let looping = prop(c, bus, "LoopStatus").and_then(|v| String::try_from(v).ok());
+    m.can_loop = looping.is_some() && b("CanControl");
+    m.loop_state = looping.map(|l| l.to_lowercase()).unwrap_or_else(|| "none".into());
+    let volume = prop(c, bus, "Volume").and_then(|v| f64::try_from(v).ok());
+    m.can_volume = volume.is_some() && b("CanControl");
+    m.volume = volume.unwrap_or(0.0).clamp(0.0, 1.0);
     m.position_us = prop(c, bus, "Position").and_then(|v| i64::try_from(v).ok()).unwrap_or(0);
     m
 }
@@ -88,6 +127,7 @@ pub fn start(tx: Sender<Media>, cmds: Receiver<Cmd>, mut wake: UnixStream) {
     std::thread::spawn(move || {
         let Ok(c) = Connection::session() else { return };
         let mut last = Media::default();
+        let mut watching = false;
         loop {
             let now = read(&c);
             if now != last {
@@ -99,20 +139,43 @@ pub fn start(tx: Sender<Media>, cmds: Receiver<Cmd>, mut wake: UnixStream) {
             }
             // Once a second, or at once when a button is pressed — and read
             // again just after, so the play/pause glyph answers.
-            let cmd = match cmds.recv_timeout(Duration::from_secs(1)) {
+            let cmd = match cmds.recv_timeout(if watching { Duration::from_millis(500) } else { Duration::from_secs(1) }) {
                 Ok(cmd) => cmd,
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
             };
+            if let Cmd::Watch(on) = cmd {
+                watching = on;
+                continue;
+            }
             if last.bus.is_empty() {
                 continue;
             }
             let path = "/org/mpris/MediaPlayer2";
             let bus = last.bus.as_str();
+            // The ones that are a property set, not a method call.
+            match cmd {
+                Cmd::Shuffle => set_prop(&c, bus, "Shuffle", zbus::zvariant::Value::from(!last.shuffle)),
+                Cmd::Loop => {
+                    let next = match last.loop_state.as_str() {
+                        "none" => "Playlist",
+                        "playlist" => "Track",
+                        _ => "None",
+                    };
+                    set_prop(&c, bus, "LoopStatus", zbus::zvariant::Value::from(next));
+                }
+                Cmd::Volume(v) => set_prop(&c, bus, "Volume", zbus::zvariant::Value::from(v.clamp(0.0, 1.0))),
+                _ => {}
+            }
+            if matches!(cmd, Cmd::Shuffle | Cmd::Loop | Cmd::Volume(_)) {
+                std::thread::sleep(Duration::from_millis(120));
+                continue;
+            }
             let _ = match cmd {
                 Cmd::Prev => c.call_method(Some(bus), path, Some(PLAYER), "Previous", &()),
                 Cmd::Toggle => c.call_method(Some(bus), path, Some(PLAYER), "PlayPause", &()),
                 Cmd::Next => c.call_method(Some(bus), path, Some(PLAYER), "Next", &()),
+                Cmd::Shuffle | Cmd::Loop | Cmd::Volume(_) | Cmd::Watch(_) => unreachable!(),
                 Cmd::Seek(f) => {
                     let at = (f.clamp(0.0, 1.0) * last.length_us as f64) as i64;
                     match zbus::zvariant::ObjectPath::try_from(last.track.as_str()) {
