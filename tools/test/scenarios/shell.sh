@@ -313,6 +313,22 @@ test_panel_frames() {
     sleep 6
 }
 
+# The animated wallpapers: each style draws, and moves (two grabs a moment apart differ).
+test_wallpaper_animates() {
+    start_shell
+    sleep 1
+    local st
+    for st in topo aurora blobs cells stars synth waves; do
+        set_theme wallpaperStyle "\"$st\""
+        sleep 2.5
+        grim "$TT_DIR/$st-a.png"
+        sleep 1.5
+        grim "$TT_DIR/$st-b.png"
+        tt-diff "$TT_DIR/$st-a.png" "$TT_DIR/$st-b.png" "$TT_DIR/$st-d.png" 0.01 >/dev/null 2>&1
+        [ $? = 1 ] || fail "the $st wallpaper didn't move"
+    done
+}
+
 # Hovering a dock tile that has windows shows a card of them above it.
 test_dock_preview() {
     cat > "$TT_LOGS/clients.json" <<'JSON'

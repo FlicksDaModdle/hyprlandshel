@@ -662,6 +662,12 @@ pub struct App {
     said_rx: Receiver<crate::polkit::Said>,
     prompt_acts: Rc<RefCell<Vec<i32>>>,
     ground_spec: crate::ground::Spec,
+    /// The animated wallpapers (anim.rs): their thread, what it was last told, and when this was last looked at.
+    anim: crate::anim::Anim,
+    anim_key: String,
+    anim_still: Vec<usize>,
+    anim_checked: Instant,
+    anim_dirty: bool,
     ground_tx: Sender<(usize, crate::ground::Spec, u32, u32, Vec<u8>)>,
     ground_rx: Receiver<(usize, crate::ground::Spec, u32, u32, Vec<u8>)>,
     live: crate::ground::Live,
@@ -914,6 +920,11 @@ impl App {
             said_rx,
             prompt_acts,
             ground_spec: crate::ground::spec(&raw, look.dark),
+            anim: crate::anim::Anim::start(wake.try_clone().expect("wake")),
+            anim_key: String::new(),
+            anim_still: Vec::new(),
+            anim_checked: Instant::now() - Duration::from_secs(5),
+            anim_dirty: true,
             ground_tx,
             ground_rx,
             live: crate::ground::Live::new(),
@@ -2095,6 +2106,7 @@ impl App {
         self.dock_tiles();
         let raw = theme::raw();
         self.ground_spec = crate::ground::spec(&raw, self.look.dark);
+        self.anim_dirty = true;
         self.live.follow(&raw);
     }
 
@@ -3915,7 +3927,87 @@ impl App {
         self.lock.step(shell, qh, &world, dt, &new_view, &new_arrival);
     }
 
+    /// The animated wallpapers' frames onto their surfaces, and the thread told what to draw and
+    /// when the picture can't be seen (WallMotion.qml: on battery, or windows over it).
+    fn sync_anim(&mut self, shell: &mut wl::Shell) {
+        while let Ok(f) = self.anim.rx.try_recv() {
+            if let Some(b) = self.bars.get(f.bar) {
+                shell.set_picture(b.ground, f.w, f.h, |out| out.copy_from_slice(&f.px[..out.len()]));
+            }
+        }
+        if !self.anim_dirty && self.anim_checked.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        self.anim_checked = Instant::now();
+        self.anim_dirty = false;
+        let raw = theme::raw();
+        let style = raw["wallpaperStyle"].as_str().unwrap_or("gradient");
+        let picture = matches!(self.ground_spec, crate::ground::Spec::Picture(_));
+        let live = raw["liveWallpaper"].as_str().is_some_and(|p| !p.is_empty());
+        let v3 = |c: &theme::Rgba| [c.0 as f32 / 255.0, c.1 as f32 / 255.0, c.2 as f32 / 255.0];
+        let (tint_a, tint_b) = match &self.ground_spec {
+            crate::ground::Spec::Gradient { a, b, .. } => ([a[0] as f32 / 255.0, a[1] as f32 / 255.0, a[2] as f32 / 255.0], [b[0] as f32 / 255.0, b[1] as f32 / 255.0, b[2] as f32 / 255.0]),
+            _ => {
+                let s = crate::ground::spec(&{ let mut r = raw.clone(); r["wallpaper"] = serde_json::Value::String(String::new()); r }, self.look.dark);
+                match s {
+                    crate::ground::Spec::Gradient { a, b, .. } => ([a[0] as f32 / 255.0, a[1] as f32 / 255.0, a[2] as f32 / 255.0], [b[0] as f32 / 255.0, b[1] as f32 / 255.0, b[2] as f32 / 255.0]),
+                    _ => ([0.2; 3], [0.1; 3]),
+                }
+            }
+        };
+        let mons = hypr::json("j/monitors");
+        let mut screens = Vec::new();
+        if crate::anim::is_animated(style) && !picture && !live {
+            for (i, b) in self.bars.iter().enumerate() {
+                let Some(p) = shell.pictures.get(b.ground) else { continue };
+                let Some((w, h)) = p.pixel_size() else { continue };
+                let m = mons.as_array().and_then(|a| a.iter().find(|m| m["name"] == b.monitor.as_str()));
+                let origin = m.map(|m| (m["x"].as_f64().unwrap_or(0.0) as f32, m["y"].as_f64().unwrap_or(0.0) as f32)).unwrap_or((0.0, 0.0));
+                screens.push(crate::anim::screen_for(&raw, self.look.dark, (tint_a, tint_b), v3(&self.look.accent), v3(&self.look.ink), (i, w, h, p.scale as f32, origin)));
+            }
+        }
+        // Still while it can't be seen: off the mains if asked, or windows over the whole screen.
+        let on_battery = self.battery_now.is_some_and(|b| !b.1);
+        let hold_battery = on_battery && !raw["animOnBattery"].as_bool().unwrap_or(false);
+        let pause_covered = raw["animPauseCovered"].as_bool().unwrap_or(true);
+        let clients = hypr::json("j/clients");
+        let still: Vec<usize> = self
+            .bars
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| {
+                if hold_battery {
+                    return true;
+                }
+                if !pause_covered {
+                    return false;
+                }
+                let m = mons.as_array().and_then(|a| a.iter().find(|m| m["name"] == b.monitor.as_str()));
+                let (mid, ws) = (m.and_then(|m| m["id"].as_i64()), m.and_then(|m| m["activeWorkspace"]["id"].as_i64()));
+                clients.as_array().into_iter().flatten().any(|c| {
+                    c["mapped"] != false
+                        && c["hidden"] != true
+                        && c["monitor"].as_i64() == mid
+                        && c["workspace"]["id"].as_i64() == ws
+                        && !c["class"].as_str().unwrap_or("").to_lowercase().contains("quickshell")
+                        && (c["floating"] != true || c["fullscreen"].as_i64().unwrap_or(0) > 0)
+                })
+            })
+            .map(|(i, _)| i)
+            .collect();
+        let key = format!("{screens:?}");
+        if key != self.anim_key {
+            self.anim_key = key;
+            self.anim.send(crate::anim::Cmd::Set(screens));
+        }
+        if still != self.anim_still {
+            self.anim_still = still.clone();
+            self.anim.send(crate::anim::Cmd::Still(still));
+        }
+    }
+
     fn step_ground(&mut self, shell: &mut wl::Shell) {
+        self.sync_anim(shell);
         while let Ok((bar, spec, w, h, px)) = self.ground_rx.try_recv() {
             if let Some(b) = self.bars.get_mut(bar) {
                 b.ground_busy = false;

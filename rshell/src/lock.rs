@@ -806,7 +806,11 @@ impl Lock {
                     todo.push((s.name.clone(), pw, ph));
                 }
                 let face_px = (58.0 * look.screen_scale(&s.name) as f64 * sf.scale).round().max(16.0) as u32;
-                if self.face_show.value > 0.01 {
+                // Drawn again whenever the screen's pixels change under it (the compositor's scale
+                // arriving late, an output change), not only while it animates: a glyph left at an
+                // old size is stretched by the renderer, and its curves come out as hard corners.
+                let stale = v.get_face().size().width != face_px;
+                if self.face_show.value > 0.01 || (stale && !self.face_state.is_empty()) {
                     // White over a picture; the theme's ink over its gradient.
                     let vivid = self.grounds.iter().find(|g| g.0 == s.name).is_some_and(|g| g.5);
                     let ink = if vivid { (255, 255, 255) } else { rgb(look.ink) };

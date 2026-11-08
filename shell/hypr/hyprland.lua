@@ -625,6 +625,8 @@ hl.bind(mainMod .. " + SHIFT + F",
 hl.bind(mainMod .. " + SHIFT + P",   hl.dsp.window.pin())
 hl.bind(mainMod .. " + P",           hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J",           hl.dsp.layout("togglesplit"))
+-- Super+R: the same, easier to find: two windows stacked top and bottom go side by side, and back.
+hl.bind(mainMod .. " + R",           hl.dsp.layout("togglesplit"))
 
 -- The launcher, on Super by itself.
 --
