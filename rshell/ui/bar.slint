@@ -605,6 +605,8 @@ export component Bar inherits Window {
     in property <int> mail-unread: -1;
     in property <bool> has-drives;
 
+    // Right-click on the bar itself: its settings.
+    callback settings();
     callback workspace-go(int);
     callback workspace-step(int);
     callback volume-step(int);
@@ -647,6 +649,12 @@ export component Bar inherits Window {
             y: parent.height - 1px;
             height: 1px;
             background: Theme.edge;
+        }
+        // The bar's own right-click (what is on it answers its own): Settings, on the bar's page.
+        TouchArea {
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) { root.settings(); }
+            }
         }
     }
 

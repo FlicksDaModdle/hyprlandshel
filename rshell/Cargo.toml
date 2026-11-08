@@ -27,6 +27,10 @@ regex = { version = "1", default-features = false, features = ["std", "unicode-c
 # JPEG decoded, SVG drawn at the size it is shown.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 resvg = { version = "0.48", default-features = false }
+khronos-egl = { version = "6", features = ["dynamic"] }
+glow = "0.17"
+wayland-egl = "0.32"
+wayland-backend = { version = "0.3", features = ["client_system"] }
 
 [features]
 # The automated tests' stand-ins (src/testhooks.rs): never in a normal build.

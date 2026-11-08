@@ -668,6 +668,13 @@ pub struct App {
     anim_still: Vec<usize>,
     anim_checked: Instant,
     anim_dirty: bool,
+    /// The animated wallpapers on the card (gpuwall.rs): the connection's display, the card, the screens it
+    /// draws, and whether it has failed (then the processor draws them).
+    pub display_ptr: usize,
+    gpu: Option<crate::gpuwall::Gpu>,
+    gpu_bars: Vec<usize>,
+    gpu_off: bool,
+    lock_backdrops: Vec<usize>,
     ground_tx: Sender<(usize, crate::ground::Spec, u32, u32, Vec<u8>)>,
     ground_rx: Receiver<(usize, crate::ground::Spec, u32, u32, Vec<u8>)>,
     live: crate::ground::Live,
@@ -925,6 +932,11 @@ impl App {
             anim_still: Vec::new(),
             anim_checked: Instant::now() - Duration::from_secs(5),
             anim_dirty: true,
+            display_ptr: 0,
+            gpu: None,
+            gpu_bars: Vec::new(),
+            gpu_off: false,
+            lock_backdrops: Vec::new(),
             ground_tx,
             ground_rx,
             live: crate::ground::Live::new(),
@@ -1055,6 +1067,10 @@ impl App {
             d = d.min(Duration::from_millis(7));
         }
         if let Some(t) = self.switcher.next_due() {
+            d = d.min(t);
+        }
+        // The next frame of an animated wallpaper on the card.
+        if let Some(t) = self.gpu.as_ref().and_then(|g| g.next_due()) {
             d = d.min(t);
         }
         if self.osd_until.is_some() || self.osd_springs.iter().any(|s| s.moving) {
@@ -3905,6 +3921,7 @@ impl App {
     /// size or the wallpaper changes, then put on its surface.
     /// The lock screen: asked for, logind's word, and each frame of it.
     fn step_lock(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, dt: f64) {
+        self.sync_lock_wall(shell, qh);
         while let Ok(e) = self.logind.try_recv() {
             match e {
                 "lock" => self.lock_wanted = true,
@@ -3971,7 +3988,7 @@ impl App {
             }
         };
         let mons = hypr::json("j/monitors");
-        let mut screens = Vec::new();
+        let mut screens: Vec<crate::anim::Screen> = Vec::new();
         if crate::anim::is_animated(style) && !picture && !live {
             for (i, b) in self.bars.iter().enumerate() {
                 let Some(p) = shell.pictures.get(b.ground) else { continue };
@@ -4010,6 +4027,31 @@ impl App {
             })
             .map(|(i, _)| i)
             .collect();
+        // On the card where there is one; the screens it can't take go to the processor.
+        if !screens.is_empty() {
+            self.ensure_gpu();
+        }
+        if let Some(g) = self.gpu.as_mut().filter(|_| !self.gpu_off) {
+            let mut on_card = Vec::new();
+            let mut left = Vec::new();
+            for s in screens {
+                match self.bars.get(s.bar).and_then(|b| shell.picture_for_gpu(b.ground)) {
+                    Some(id) => on_card.push((s, id)),
+                    None => left.push(s),
+                }
+            }
+            let before = std::mem::take(&mut self.gpu_bars);
+            self.gpu_bars = on_card.iter().map(|o| o.0.bar).collect();
+            g.set_outputs(0, on_card);
+            g.set_still(still.clone());
+            // A screen the card has let go of draws its still wallpaper again.
+            for bar in before.into_iter().filter(|b| !self.gpu_bars.contains(b)) {
+                if let Some(b) = self.bars.get_mut(bar) {
+                    b.ground_done = None;
+                }
+            }
+            screens = left;
+        }
         let key = format!("{screens:?}");
         if key != self.anim_key {
             self.anim_key = key;
@@ -4021,8 +4063,72 @@ impl App {
         }
     }
 
+    /// The card, started the first time it is wanted; or not at all, and then the processor draws.
+    fn ensure_gpu(&mut self) {
+        if self.gpu.is_none() && !self.gpu_off && self.display_ptr != 0 {
+            match crate::gpuwall::Gpu::new(self.display_ptr as *mut std::ffi::c_void) {
+                Ok(g) => self.gpu = Some(g),
+                Err(e) => {
+                    eprintln!("hyprshell-rs: the animated wallpaper will use the processor: {e}");
+                    self.gpu_off = true;
+                }
+            }
+        }
+    }
+
+    /// The animated wallpaper behind the lock screen: a surface behind each lock surface, drawn on
+    /// by the card, and the lock screen's own picture put away. Gone again when it unlocks.
+    fn sync_lock_wall(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
+        let raw = theme::raw();
+        let want = self.lock.active && crate::anim::wanted(&raw);
+        if want {
+            self.ensure_gpu();
+        }
+        let Some(g) = self.gpu.as_mut().filter(|_| !self.gpu_off) else { return };
+        if !want {
+            if !self.lock_backdrops.is_empty() {
+                g.set_outputs(1, Vec::new());
+                for id in std::mem::take(&mut self.lock_backdrops) {
+                    shell.drop_backdrop(id);
+                }
+                self.lock.set_live(false);
+            }
+            return;
+        }
+        let mons = hypr::json("j/monitors");
+        let tint = crate::anim::tint(&raw, self.look.dark);
+        let v3 = |c: &theme::Rgba| [c.0 as f32 / 255.0, c.1 as f32 / 255.0, c.2 as f32 / 255.0];
+        let mut list = Vec::new();
+        let mut ids = Vec::new();
+        for (id, name) in self.lock.surfaces() {
+            let Some((oid, (w, h))) = shell.backdrop_for(qh, id) else { continue };
+            let scale = shell.surfaces.get(id).and_then(|s| s.as_ref()).map(|s| s.scale as f32).unwrap_or(1.0);
+            let m = mons.as_array().and_then(|a| a.iter().find(|m| m["name"] == name.as_str()));
+            let origin = m.map(|m| (m["x"].as_f64().unwrap_or(0.0) as f32, m["y"].as_f64().unwrap_or(0.0) as f32)).unwrap_or((0.0, 0.0));
+            list.push((crate::anim::screen_for(&raw, self.look.dark, tint, v3(&self.look.accent), v3(&self.look.ink), (id, w, h, scale, origin)), oid));
+            ids.push(id);
+        }
+        g.set_outputs(1, list);
+        self.lock_backdrops = ids;
+        self.lock.set_live(!self.lock_backdrops.is_empty());
+    }
+
     fn step_ground(&mut self, shell: &mut wl::Shell) {
         self.sync_anim(shell);
+        if let Some(g) = self.gpu.as_mut() {
+            if !g.frame(&|group, key, child| shell.draws_on(group, key, child)).is_empty() {
+                // The card couldn't build a style's program: all of it goes to the processor.
+                eprintln!("hyprshell-rs: the card couldn't draw the wallpaper; the processor will");
+                self.gpu = None;
+                self.gpu_off = true;
+                self.anim_dirty = true;
+                for bar in std::mem::take(&mut self.gpu_bars) {
+                    if let Some(b) = self.bars.get_mut(bar) {
+                        b.ground_done = None;
+                    }
+                }
+            }
+        }
         while let Ok((bar, spec, w, h, px)) = self.ground_rx.try_recv() {
             if let Some(b) = self.bars.get_mut(bar) {
                 b.ground_busy = false;
@@ -4030,10 +4136,11 @@ impl App {
                 b.ground_done = Some((spec, w, h));
             }
         }
+        let gpu_bars = self.gpu_bars.clone();
         for (i, b) in self.bars.iter_mut().enumerate() {
             let Some((w, h)) = shell.pictures.get(b.ground).and_then(|p| p.pixel_size()) else { continue };
             let want = (self.ground_spec.clone(), w, h);
-            if b.ground_busy || b.ground_done.as_ref() == Some(&want) {
+            if b.ground_busy || b.ground_done.as_ref() == Some(&want) || gpu_bars.contains(&i) {
                 continue;
             }
             b.ground_busy = true;
@@ -4529,6 +4636,7 @@ fn wire_bar(bar: &Bar, i: usize, q: &Queue) {
             bar.$set(move |$($a),*| q.borrow_mut().push($act));
         }};
     }
+    on!(on_settings, | | Action::OpenSettingsPane("Bar".into()));
     on!(on_workspace_go, |id| Action::Workspace(id));
     on!(on_workspace_step, |d| Action::WorkspaceStep(d));
     on!(on_volume_step, |d| Action::VolumeStep(d));
@@ -4564,6 +4672,7 @@ fn wire_taskbar(dock: &crate::Dock, i: usize, q: &Queue) {
     on!(on_tray_menu, |k, x| Action::TrayMenu(i, k.to_string(), x));
     on!(on_tray_scroll, |k, d| Action::TrayScroll(k.to_string(), d));
     on!(on_show_desktop, | | Action::ShowDesktop);
+    on!(on_settings, | | Action::OpenSettingsPane("Dock".into()));
 }
 
 fn wire_panels(p: &Panels, q: &Queue) {

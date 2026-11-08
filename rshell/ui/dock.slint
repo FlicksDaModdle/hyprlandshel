@@ -276,6 +276,8 @@ export component Dock inherits Window {
     callback tray-menu(string, length);
     callback tray-scroll(string, int);
     callback show-desktop();
+    // Right-click on the taskbar's own strip: Settings, on the dock's page.
+    callback settings();
     // On the left edge rather than the bottom.
     in property <bool> left;
     // The launcher is out and on top of this pill (it grew out of it): the glass steps aside
@@ -333,6 +335,9 @@ export component Dock inherits Window {
 
         hover := TouchArea {
             changed has-hover => { root.hovered(self.has-hover); }
+            pointer-event(e) => {
+                if (root.taskbar && e.kind == PointerEventKind.up && e.button == PointerEventButton.right) { root.settings(); }
+            }
             row := HorizontalLayout {
                 visible: !root.left && self.opacity > 0.01;
                 opacity: root.covered ? 0 : 1;

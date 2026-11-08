@@ -336,6 +336,18 @@ pub fn rgb(c: crate::theme::Rgba) -> (u8, u8, u8) {
 }
 
 impl Lock {
+    /// The lock surfaces and the screens they are on, for the card to draw behind.
+    pub fn surfaces(&self) -> Vec<(usize, String)> {
+        self.screens.iter().map(|s| (s.id, s.name.clone())).collect()
+    }
+
+    /// The animated wallpaper is behind the lock screen: it draws no picture of its own.
+    pub fn set_live(&self, on: bool) {
+        for s in &self.screens {
+            s.view.set_live(on);
+        }
+    }
+
     pub fn new(wake: &std::os::unix::net::UnixStream) -> Lock {
         let user = user();
         let display = full_name(&user);

@@ -55,6 +55,8 @@ component PowerButton inherits Rectangle {
 export component LockView inherits Window {
     // ── the ground ──
     in property <image> ground;
+    // The animated wallpaper is on the card, on a surface behind this one: nothing of the picture here.
+    in property <bool> live;
     in property <image> frost;
     in property <bool> vivid;
     in property <image> scrim;
@@ -134,10 +136,10 @@ export component LockView inherits Window {
         keys.focus();
     }
 
-    background: root.ground-colour;
+    background: root.live ? transparent : root.ground-colour;
     default-font-family: Theme.font;
 
-    Image { width: 100%; height: 100%; source: root.ground; image-fit: cover; }
+    Image { visible: !root.live; width: 100%; height: 100%; source: root.ground; image-fit: cover; }
     // The scrim: a little darker at the top behind the clock, more at the
     // bottom behind the corner line, clear between.
     // (Drawn as a one-pixel-wide picture, stretched: a gradient with stops
@@ -264,6 +266,7 @@ export component LockView inherits Window {
                 y: -card.y;
                 width: stage.width;
                 height: stage.height;
+                visible: !root.live;
                 source: root.frost;
                 image-fit: cover;
             }
@@ -444,7 +447,7 @@ export component LockView inherits Window {
                 height: parent.height;
                 border-radius: parent.border-radius - 1px;
                 clip: true;
-                Image { x: -spill.x; y: -spill.y; width: stage.width; height: stage.height; source: root.frost; image-fit: cover; }
+                Image { visible: !root.live; x: -spill.x; y: -spill.y; width: stage.width; height: stage.height; source: root.frost; image-fit: cover; }
             }
             Rectangle { border-radius: parent.border-radius; background: sta.has-hover ? root.pill-hover : root.pill; border-width: 1px; border-color: root.pill-edge; }
             srow := HorizontalLayout {
@@ -473,7 +476,7 @@ export component LockView inherits Window {
                 height: parent.height;
                 border-radius: parent.border-radius - 1px;
                 clip: true;
-                Image { x: -ppill.x; y: -ppill.y; width: stage.width; height: stage.height; source: root.frost; image-fit: cover; }
+                Image { visible: !root.live; x: -ppill.x; y: -ppill.y; width: stage.width; height: stage.height; source: root.frost; image-fit: cover; }
             }
             Rectangle { border-radius: parent.border-radius; background: root.pill; border-width: 1px; border-color: root.pill-edge; }
             prow := HorizontalLayout {

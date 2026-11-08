@@ -12,7 +12,7 @@ use slint::platform::{PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{LogicalPosition, PhysicalSize};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
+    delegate_compositor, delegate_keyboard, delegate_subcompositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
     delegate_session_lock, delegate_shm,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
@@ -114,6 +114,14 @@ pub struct ShellSurface {
     asked: (u32, u32),
     pixels: Vec<Bgra>,
     sized: (u32, u32, f64),
+    /// A surface behind this one for the card to draw the animated wallpaper on.
+    backdrop: Option<Backdrop>,
+}
+
+struct Backdrop {
+    sub: wayland_client::protocol::wl_subsurface::WlSubsurface,
+    surface: wl_surface::WlSurface,
+    viewport: Option<wp_viewport::WpViewport>,
 }
 
 /// A surface showing one still picture, drawn by the caller straight into
@@ -145,6 +153,7 @@ pub struct Shell {
     pub outputs: OutputState,
     seats: SeatState,
     compositor: CompositorState,
+    subcompositor: Option<smithay_client_toolkit::subcompositor::SubcompositorState>,
     layer_shell: LayerShell,
     shm: Shm,
     fractional: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
@@ -201,6 +210,7 @@ impl Shell {
             registry: RegistryState::new(globals),
             outputs: OutputState::new(globals, qh),
             seats: SeatState::new(globals, qh),
+            subcompositor: smithay_client_toolkit::subcompositor::SubcompositorState::bind(compositor.wl_compositor().clone(), globals, qh).ok(),
             compositor,
             layer_shell,
             shm,
@@ -279,6 +289,7 @@ impl Shell {
             asked: (p.width, p.height),
             pixels,
             sized: (0, 0, 0.0),
+            backdrop: None,
         };
         if let Some(free) = self.surfaces.iter().position(|s| s.is_none()) {
             self.surfaces[free] = Some(s);
@@ -336,6 +347,7 @@ impl Shell {
             asked: (0, 0),
             pixels: Vec::new(),
             sized: (0, 0, 0.0),
+            backdrop: None,
         };
         Some(if let Some(free) = self.surfaces.iter().position(|s| s.is_none()) {
             self.surfaces[free] = Some(s);
@@ -399,11 +411,14 @@ impl Shell {
         let Some(p) = self.pictures.get_mut(id) else { return };
         let stride = w as i32 * 4;
         let len = (stride * h as i32) as usize;
-        // The last one goes first, so there is only ever the one.
-        p.buffer = None;
-        let pool = p.pool.get_or_insert_with(|| SlotPool::new(len, shm).expect("shm pool"));
-        if pool.len() < len {
-            let _ = pool.resize(len);
+        // Room for three: the one on screen, the compositor's last, and the one being drawn (a
+        // moving wallpaper hands a frame over every few milliseconds). The picture on screen stays
+        // until the next is ready: if there is no room this time, this frame is skipped rather
+        // than leaving the screen with nothing.
+        let want = len * 3;
+        let pool = p.pool.get_or_insert_with(|| SlotPool::new(want, shm).expect("shm pool"));
+        if pool.len() < want {
+            let _ = pool.resize(want);
         }
         let Ok((buffer, canvas)) = pool.create_buffer(w as i32, h as i32, stride, wl_shm::Format::Xrgb8888) else { return };
         fill(&mut canvas[..len]);
@@ -418,7 +433,83 @@ impl Shell {
         if buffer.attach_to(surface).is_ok() {
             p.layer.commit();
         }
+        // Only now does the one before it go.
         p.buffer = Some(buffer);
+    }
+
+    /// A surface behind surface `id` (a lock screen, the login screen) for the card to draw the
+    /// animated wallpaper on: its id and its size in device pixels. Made once, then kept.
+    pub fn backdrop_for(&mut self, qh: &QueueHandle<Self>, id: usize) -> Option<(wayland_backend::client::ObjectId, (u32, u32))> {
+        let (w, h, scale, parent) = {
+            let s = self.surfaces.get(id)?.as_ref()?;
+            (s.width, s.height, s.scale, s.layer.wl_surface().clone())
+        };
+        if w == 0 || h == 0 {
+            return None;
+        }
+        let made = self.surfaces.get(id)?.as_ref()?.backdrop.is_some();
+        if !made {
+            let (sub, surface) = self.subcompositor.as_ref()?.create_subsurface(parent.clone(), qh);
+            sub.set_position(0, 0);
+            sub.place_below(&parent);
+            sub.set_desync();
+            // Clicks and keys go to the surface above.
+            if let Ok(region) = smithay_client_toolkit::compositor::Region::new(&self.compositor) {
+                surface.set_input_region(Some(region.wl_region()));
+            }
+            let viewport = self.viewporter.as_ref().map(|v| v.get_viewport(&surface, qh, ()));
+            self.surfaces.get_mut(id)?.as_mut()?.backdrop = Some(Backdrop { sub, surface, viewport });
+        }
+        let b = self.surfaces.get(id)?.as_ref()?.backdrop.as_ref()?;
+        match &b.viewport {
+            Some(vp) => {
+                b.surface.set_buffer_scale(1);
+                vp.set_destination(w as i32, h as i32);
+            }
+            None => b.surface.set_buffer_scale(scale.round().max(1.0) as i32),
+        }
+        // The parent's pending state (its place in the stack) applies with its next commit, which
+        // is its next frame: committing it now, before it has a buffer, would be an error.
+        Some((b.surface.id(), (((w as f64) * scale).round() as u32, ((h as f64) * scale).round() as u32)))
+    }
+
+    /// Whether what the card draws on is still there: the surface it was given is still the one a
+    /// backdrop (group 1) or a wallpaper picture (group 0) of that number has.
+    pub fn draws_on(&self, group: u8, key: usize, child: &wayland_backend::client::ObjectId) -> bool {
+        if group == 0 {
+            self.pictures.get(key).is_some_and(|p| p.layer.wl_surface().id() == *child)
+        } else {
+            self.surfaces.get(key).and_then(|s| s.as_ref()).and_then(|s| s.backdrop.as_ref()).is_some_and(|b| b.surface.id() == *child)
+        }
+    }
+
+    /// Takes the backdrop away again (the lock screen going, the style changing).
+    pub fn drop_backdrop(&mut self, id: usize) {
+        if let Some(s) = self.surfaces.get_mut(id).and_then(|s| s.as_mut()) {
+            if let Some(b) = s.backdrop.take() {
+                if let Some(vp) = b.viewport {
+                    vp.destroy();
+                }
+                b.sub.destroy();
+                b.surface.destroy();
+            }
+        }
+    }
+
+    /// For the card to draw on: the wallpaper surface's id, with its size set as the shared-memory
+    /// pictures have it (the compositor stretches the buffer to the logical size).
+    pub fn picture_for_gpu(&mut self, id: usize) -> Option<wayland_backend::client::ObjectId> {
+        let p = self.pictures.get_mut(id)?;
+        let surface = p.layer.wl_surface();
+        if let Some(vp) = &p.viewport {
+            surface.set_buffer_scale(1);
+            vp.set_destination(p.width as i32, p.height as i32);
+        } else {
+            surface.set_buffer_scale(p.scale.round().max(1.0) as i32);
+        }
+        let sid = surface.id();
+        p.buffer = None;
+        Some(sid)
     }
 
     fn picture_of(&self, surface: &wl_surface::WlSurface) -> Option<usize> {
@@ -957,6 +1048,7 @@ impl ProvidesRegistryState for Shell {
 }
 
 delegate_compositor!(Shell);
+delegate_subcompositor!(Shell);
 delegate_output!(Shell);
 delegate_shm!(Shell);
 delegate_seat!(Shell);

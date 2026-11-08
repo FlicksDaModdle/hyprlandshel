@@ -124,6 +124,24 @@ pub fn is_animated(style: &str) -> bool {
     ["topo", "aurora", "blobs", "cells", "stars", "synth", "waves"].contains(&style)
 }
 
+/// Whether the theme asks for an animated wallpaper (no picture, no video over it).
+pub fn wanted(raw: &Value) -> bool {
+    let style = raw["wallpaperStyle"].as_str().unwrap_or("gradient");
+    let picture = raw["wallpaper"].as_str().is_some_and(|p| !p.is_empty() && std::path::Path::new(p).exists());
+    let video = raw["liveWallpaper"].as_str().is_some_and(|p| !p.is_empty());
+    is_animated(style) && !picture && !video
+}
+
+/// The theme's two ground colours (Appearance.tintSpec a and b), as the gradient has them.
+pub fn tint(raw: &Value, dark: bool) -> (V3, V3) {
+    let mut r = raw.clone();
+    r["wallpaper"] = Value::String(String::new());
+    match crate::ground::spec(&r, dark) {
+        crate::ground::Spec::Gradient { a, b, .. } => ([a[0] as f32 / 255.0, a[1] as f32 / 255.0, a[2] as f32 / 255.0], [b[0] as f32 / 255.0, b[1] as f32 / 255.0, b[2] as f32 / 255.0]),
+        _ => ([0.2; 3], [0.1; 3]),
+    }
+}
+
 /// Palettes.js
 const PRESETS: [(&str, &str, &str, &str, &str, &str); 10] = [
     ("aurora", "#040c18", "#0b2536", "#3cffb4", "#3fa7ff", "#b46cff"),

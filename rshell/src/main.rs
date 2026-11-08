@@ -16,6 +16,7 @@
 #[macro_use]
 mod app;
 mod anim;
+mod gpuwall;
 mod blur;
 mod art;
 mod daemon;
@@ -92,6 +93,8 @@ fn main() {
     wake_rx.set_nonblocking(true).ok();
 
     let mut app = app::App::new(&mut shell, &qh, wake_tx);
+    // The card draws the animated wallpapers on this connection.
+    app.display_ptr = conn.backend().display_ptr() as usize;
     // Up: $XDG_RUNTIME_DIR/hyprshell-ready, once the first frame is on
     // screen, as the Quickshell shell says it (start-shell.sh, the tests).
     let ready = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap_or_else(|| "/tmp".into())).join("hyprshell-ready");

@@ -705,6 +705,43 @@ impl Greeter {
     }
 
     // ── each frame ──────────────────────────────────────────────────────
+    /// The animated wallpaper behind the login screen: a surface behind each of its surfaces, drawn
+    /// on by the card, and the screen's own picture put away. Where there is no card to be had the
+    /// still wallpaper stays, as it was.
+    fn sync_wall(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, gpu: &mut Option<crate::gpuwall::Gpu>, off: &mut bool, display: usize) {
+        let raw = theme::raw();
+        if !crate::anim::wanted(&raw) || *off || display == 0 {
+            return;
+        }
+        if gpu.is_none() {
+            match crate::gpuwall::Gpu::new(display as *mut std::ffi::c_void) {
+                Ok(g) => *gpu = Some(g),
+                Err(e) => {
+                    eprintln!("hyprshell-greeter: the animated wallpaper isn't available here ({e})");
+                    *off = true;
+                    return;
+                }
+            }
+        }
+        let Some(g) = gpu.as_mut() else { return };
+        let mons = crate::hypr::json("j/monitors");
+        let tint = crate::anim::tint(&raw, self.look.dark);
+        let v3 = |c: &theme::Rgba| [c.0 as f32 / 255.0, c.1 as f32 / 255.0, c.2 as f32 / 255.0];
+        let mut list = Vec::new();
+        for s in &self.screens {
+            let Some((oid, (w, h))) = shell.backdrop_for(qh, s.id) else { continue };
+            let scale = shell.surfaces.get(s.id).and_then(|x| x.as_ref()).map(|x| x.scale as f32).unwrap_or(1.0);
+            let m = mons.as_array().and_then(|a| a.iter().find(|m| m["name"] == s.name.as_str()));
+            let origin = m.map(|m| (m["x"].as_f64().unwrap_or(0.0) as f32, m["y"].as_f64().unwrap_or(0.0) as f32)).unwrap_or((0.0, 0.0));
+            list.push((crate::anim::screen_for(&raw, self.look.dark, tint, v3(&self.look.accent), v3(&self.look.ink), (s.id, w, h, scale, origin)), oid));
+        }
+        let live = !list.is_empty();
+        g.set_outputs(1, list);
+        for s in &self.screens {
+            s.view.set_live(live);
+        }
+    }
+
     fn step(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, dt: f64) {
         let now = Instant::now();
         let m = self.look.motion;
@@ -1030,6 +1067,10 @@ pub fn run() {
     wake_rx.set_nonblocking(true).ok();
 
     let mut g = Greeter::new(&wake_tx);
+    // The card, for the animated wallpaper, if the theme has one and there is a card.
+    let display = conn.backend().display_ptr() as usize;
+    let mut gpu: Option<crate::gpuwall::Gpu> = None;
+    let mut gpu_off = false;
     if g.preview {
         eprintln!("hyprshell-greeter: no GREETD_SOCK — a preview; Escape on an empty field leaves");
     }
@@ -1064,6 +1105,17 @@ pub fn run() {
         let dt = last.elapsed().as_secs_f64();
         last = Instant::now();
         g.step(&mut shell, &qh, dt);
+        g.sync_wall(&mut shell, &qh, &mut gpu, &mut gpu_off, display);
+        if let Some(card) = gpu.as_mut() {
+            if !card.frame(&|group, key, child| shell.draws_on(group, key, child)).is_empty() {
+                eprintln!("hyprshell-greeter: the card couldn't draw the wallpaper");
+                gpu_off = true;
+                card.set_outputs(1, Vec::new());
+                for s in &g.screens {
+                    s.view.set_live(false);
+                }
+            }
+        }
         slint::platform::update_timers_and_animations();
         // What a key or click asked for just now, not at the next wake.
         if !g.actions.borrow().is_empty() {

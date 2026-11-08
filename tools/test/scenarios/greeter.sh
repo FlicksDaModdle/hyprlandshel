@@ -23,7 +23,7 @@ test_password_then_code_logs_in() {
     shot code-asked
     keys "123456" enter
     wait_for 5 gone hyprshell-rs || fail "the greeter didn't finish"
-    in_log greetd.log '"cmd": \["Hyprland"\]' || fail "no session was started"
+    in_log greetd.log '"Hyprland"\], "env"' || fail "no session was started"
     in_log greetd.log 'XDG_CURRENT_DESKTOP=Hyprland' || fail "the session's desktop wasn't said"
     check "the choice wasn't remembered" grep -q '"session":"hyprland"' "$TT_ROOT/greeter-state/cache/state.json"
 }
