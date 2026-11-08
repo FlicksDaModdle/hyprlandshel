@@ -110,8 +110,12 @@ impl Host {
 
     fn rebuild(&mut self) {
         let cw = (312.0 * self.us as f64).round();
-        let sx = cw / self.mon.2;
-        let sy = (cw * self.mon.3 / self.mon.2).round() / self.mon.3;
+        // Windows sit a little in from the card's edge, so that none pokes out past
+        // its rounded corners (a clip can't round what is inside it).
+        let pad = (5.0 * self.us as f64).round();
+        let ch = (cw * self.mon.3 / self.mon.2).round();
+        let sx = (cw - pad * 2.0) / self.mon.2;
+        let sy = (ch - pad * 2.0) / self.mon.3;
         let spaces: Vec<OvWs> = self
             .spaces
             .iter()
@@ -123,8 +127,8 @@ impl Host {
                         let pic = self.pictures.get(&c.stable);
                         OvWin {
                             idx: *i as i32,
-                            px: ((c.at.0 - self.mon.0) * sx).round() as f32,
-                            py: ((c.at.1 - self.mon.1) * sy).round() as f32,
+                            px: (pad + (c.at.0 - self.mon.0) * sx).round() as f32,
+                            py: (pad + (c.at.1 - self.mon.1) * sy).round() as f32,
                             pw: (c.size.0 * sx).round() as f32,
                             ph: (c.size.1 * sy).round() as f32,
                             label: dock::label_for(&c.class).into(),

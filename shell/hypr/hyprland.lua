@@ -844,6 +844,23 @@ pcall(hl.window_rule, {
     size  = { 900, 620 },
 })
 
+-- Settings and the Task Manager are their own applications now, each with its
+-- own app id, and open as floating, centred windows rather than tiled ones.
+hl.window_rule({
+    name   = "hyprshell-settings-app",
+    match  = { class = "^(hyprshell-settings)$" },
+    float  = true,
+    center = true,
+    size   = { 900, 620 },
+})
+hl.window_rule({
+    name   = "hyprshell-tasks-app",
+    match  = { class = "^(hyprshell-tasks)$" },
+    float  = true,
+    center = true,
+    size   = { 980, 640 },
+})
+
 -- The shell's terminal. The size is a sensible number of columns and rows
 -- at the default font, and applies only in a floating layout — tiled, the
 -- layout decides and this is ignored.

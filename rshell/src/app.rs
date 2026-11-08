@@ -334,6 +334,7 @@ struct BarOn {
     fullscreen: bool,
     /// The height and room last given the dock's surface.
     applied: (u32, i32),
+    applied_left: bool,
     /// The wallpaper's surface, what was last drawn on it, and whether a
     /// drawing is under way.
     ground: usize,
@@ -358,6 +359,7 @@ struct DockGeom {
     edge: f32,
     exclusive: i32,
     hides: bool,
+    left: bool,
 }
 
 fn dock_geom(raw: &serde_json::Value, us: f32) -> (DockGeom, f32, f32, f32, f32, f32, f32) {
@@ -371,7 +373,8 @@ fn dock_geom(raw: &serde_json::Value, us: f32) -> (DockGeom, f32, f32, f32, f32,
     let hides = raw["dockHide"].as_bool().unwrap_or(false);
     let gaps_out = num("gapsOut", 8.0).max(0.0);
     let exclusive = if hides { 0 } else { breadth.max(breadth + edge * 2.0 - gaps_out).round() as i32 };
-    (DockGeom { head: u(46.0), breadth, edge, exclusive, hides }, tile, icon, u(7.0), u(5.0), u(3.0), num("dockLabelSize", 12.0))
+    let left = raw["dockPosition"].as_str() == Some("Left");
+    (DockGeom { head: u(46.0), breadth, edge, exclusive, hides, left }, tile, icon, u(7.0), u(5.0), u(3.0), num("dockLabelSize", 12.0))
 }
 
 fn shell_input_off(id: usize, pending: &mut Vec<usize>) {
@@ -727,13 +730,14 @@ impl App {
             dock.set_pad_v(pad_v);
             dock.set_gap(gap);
             dock.set_label_size(label);
-            dock.set_pill_y(geom.head);
+            dock.set_left(geom.left);
+            dock.set_pos(if geom.left { geom.edge } else { geom.head });
             let dock_surface = shell.add(qh, Some(output), &wl::Placement {
                 namespace: "quickshell:dock",
                 layer: Layer::Top,
-                anchor: Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
-                width: 0,
-                height: (geom.head + geom.breadth + geom.edge) as u32,
+                anchor: if geom.left { Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT } else { Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT },
+                width: if geom.left { (geom.head + geom.breadth + geom.edge) as u32 } else { 0 },
+                height: if geom.left { 0 } else { (geom.head + geom.breadth + geom.edge) as u32 },
                 exclusive: geom.exclusive,
                 keyboard: KeyboardInteractivity::None,
             });
@@ -758,6 +762,7 @@ impl App {
                 dock_input: None,
                 over: false,
                 fullscreen: false,
+                applied_left: geom.left,
                 applied: ((geom.head + geom.breadth + geom.edge) as u32, geom.exclusive),
                 ground,
                 ground_done: None,
@@ -1365,7 +1370,7 @@ impl App {
         self.pinned = crate::launcher::pinned(&raw);
         let scope_all = raw["dockScope"].as_str() == Some("all");
         let desktop = raw["dockDesktopTile"].as_bool().unwrap_or(true);
-        let labels = raw["dockLabels"].as_bool().unwrap_or(true);
+        let labels = raw["dockLabels"].as_bool().unwrap_or(true) && raw["dockPosition"].as_str() != Some("Left");
         let launcher_open = self.launcher.is_open();
         for b in &mut self.bars {
             let shown = crate::dock::shown_on(&self.clients, &b.monitor, scope_all);
@@ -1451,7 +1456,14 @@ impl App {
             let g = b.dock_geom;
             let hides = g.hides || b.fullscreen;
             let revealed = !hides || b.latch || launcher_here == Some(i);
-            let to = if revealed { g.head as f64 } else { (g.head + g.breadth + 20.0) as f64 };
+            // Where the pill's near edge goes: its top at the bottom (the room above is
+            // for the names), its left edge on the left, sliding off the screen to hide.
+            let to = match (g.left, revealed) {
+                (false, true) => g.head as f64,
+                (false, false) => (g.head + g.breadth + 20.0) as f64,
+                (true, true) => g.edge as f64,
+                (true, false) => -((g.breadth + 20.0) as f64),
+            };
             if to != b.reveal_to {
                 b.reveal_to = to;
                 if revealed {
@@ -1463,13 +1475,22 @@ impl App {
             if b.reveal.moving {
                 b.reveal.step(dt, &m);
             }
-            b.dock.set_pill_y(b.reveal.value as f32);
+            b.dock.set_pos(b.reveal.value as f32);
             // Over a fullscreen window it takes the overlay layer and keeps
             // no room; otherwise the top layer and its strip.
             let want = ((g.head + g.breadth + g.edge) as u32, g.exclusive);
+            if g.left != b.applied_left {
+                b.applied_left = g.left;
+                let size = (g.head + g.breadth + g.edge) as u32;
+                shell.set_anchor(b.dock_surface, if g.left { Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT } else { Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT }, if g.left { size } else { 0 }, if g.left { 0 } else { size });
+            }
             if want != b.applied {
                 b.applied = want;
-                shell.resize(b.dock_surface, 0, want.0);
+                if g.left {
+                    shell.resize(b.dock_surface, want.0, 0);
+                } else {
+                    shell.resize(b.dock_surface, 0, want.0);
+                }
                 if !b.over {
                     shell.set_layer(b.dock_surface, Layer::Top, want.1);
                 }
@@ -1480,7 +1501,15 @@ impl App {
                 shell.set_layer(b.dock_surface, layer, ex);
             }
             let total = (g.head + g.breadth + g.edge) as i32;
-            let input = if revealed {
+            let input = if g.left {
+                if revealed {
+                    let (y, h) = (b.dock.get_pill_y() as i32, b.dock.get_pill_height() as i32);
+                    let x = b.reveal.value as i32;
+                    Some((0, y - 40, total.min(x + b.dock.get_pill_width() as i32 + 40), h + 80))
+                } else {
+                    Some((0, 0, 3, 100_000))
+                }
+            } else if revealed {
                 let (x, w) = (b.dock.get_pill_x() as i32, b.dock.get_pill_width() as i32);
                 let y = b.reveal.value as i32;
                 Some((x - 40, y, w + 80, total - y))
@@ -1651,10 +1680,12 @@ impl App {
                     r.push(row("open", "Open new window", "plus", false, false));
                 }
                 if *index > 0 {
-                    r.push(row("left", "Move left", "chevronLeft", !r.is_empty(), false));
+                    let vertical = theme::raw()["dockPosition"].as_str() == Some("Left");
+                    r.push(row("left", if vertical { "Move up" } else { "Move left" }, if vertical { "chevronUp" } else { "chevronLeft" }, !r.is_empty(), false));
                 }
                 if *index + 1 < self.pinned.len() {
-                    r.push(row("right", "Move right", "chevronRight", !r.is_empty() && *index == 0, false));
+                    let vertical = theme::raw()["dockPosition"].as_str() == Some("Left");
+                    r.push(row("right", if vertical { "Move down" } else { "Move right" }, if vertical { "chevronDown" } else { "chevronRight" }, !r.is_empty() && *index == 0, false));
                 }
                 r.push(row("icon", "Change icon…", "palette", !r.is_empty(), false));
                 if !matches!(p.key.as_str(), "appSettings" | "appFiles" | "appTerm" | "appMusic") {
@@ -1684,6 +1715,9 @@ impl App {
         b.panels.set_app_menu_heading(heading.into());
         b.panels.set_app_menu(model(rows));
         b.panels.set_dock_gap(g.breadth + g.edge + 10.0);
+        // Beside a dock on the left, pointing at the tile, rather than above one at the bottom.
+        b.panels.set_dock_left(if g.left { g.edge + g.breadth + 16.0 } else { -1.0 });
+        b.panels.set_dock_point(if g.left { x } else { -1.0 });
         self.menu_for = Some((bar, t));
         self.menu_x = x;
         self.toggle_panel(shell, qh, bar, "appmenu", x);
@@ -1791,6 +1825,7 @@ impl App {
             b.dock.set_pad_v(pad_v);
             b.dock.set_gap(gap);
             b.dock.set_label_size(label);
+            b.dock.set_left(geom.left);
             b.dock_geom = geom;
             b.reveal_to = -1.0;
             b.bar.set_quiet(self.look.dnd);
@@ -3606,7 +3641,7 @@ impl App {
         self.osd.set_muted(muted);
         let bar = self.focused_bar();
         let g = self.bars.get(bar).map(|b| b.dock_geom).unwrap_or_default();
-        let inset = g.breadth + g.edge + 40.0;
+        let inset = if g.left { 40.0 } else { g.breadth + g.edge + 40.0 };
         self.osd.set_inset(inset);
         let m = self.look.motion;
         if self.osd_surface.is_none() {
@@ -4049,6 +4084,7 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_mix_out, |i| Action::MixOut(i));
     on!(on_mix_eq, |i| Action::MixEq(i));
     on!(on_open_sound_settings, | | Action::OpenSettingsPane("Sound".into()));
+    on!(on_open_pane_settings, |p| Action::OpenSettingsPane(p.to_string()));
     on!(on_nc_view_changed, |v| Action::NcView(v.to_string()));
     on!(on_media_prev, | | Action::Media(mpris::Cmd::Prev));
     on!(on_media_toggle, | | Action::Media(mpris::Cmd::Toggle));

@@ -67,6 +67,8 @@ tt_setup() {
     export HOME="$TT_ROOT/home"
     export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share" XDG_CACHE_HOME="$HOME/.cache"
     export XDG_RUNTIME_DIR="$TT_ROOT/run"
+    # Not the real login session: your own shell is its polkit agent, and a second one can't register.
+    unset XDG_SESSION_ID
     mkdir -p "$TT_LOGS" "$XDG_CONFIG_HOME/quickshell/hyprshell" "$XDG_DATA_HOME" "$XDG_RUNTIME_DIR"
     chmod 700 "$XDG_RUNTIME_DIR"
     export PATH="$REPO/tools/test/fakes/bin:$BIN:$PATH"

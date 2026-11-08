@@ -170,7 +170,11 @@ macro_rules! setup {
 /// Set the Wayland app id (what Hyprland's window rules and the dock match)
 /// before the first window is made.
 pub fn init(app_id: &str) {
-    let _ = slint::set_xdg_app_id(app_id);
+    // The id can only be set on a platform that exists: choose the default one first.
+    let _ = slint::BackendSelector::new().select();
+    if let Err(e) = slint::set_xdg_app_id(app_id) {
+        eprintln!("hyprshell: couldn't set the app id {app_id}: {e}");
+    }
 }
 
 #[doc(hidden)]

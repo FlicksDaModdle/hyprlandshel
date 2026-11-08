@@ -28,6 +28,9 @@ component Drop inherits Rectangle {
     in property <bool> from-bottom;
     in property <length> bottom;
     in property <length> screen-height;
+    // Beside a dock on the left: the panel's left edge, and the height it points at.
+    in property <length> left-edge: -1px;
+    in property <length> point-y: -1px;
     // The springs: frame width and height as fractions, the lift, the
     // sheet's opacity and the content's.
     in property <float> sx: 1;
@@ -38,8 +41,8 @@ component Drop inherits Rectangle {
     property <length> h: l.preferred-height;
     // Grown from under the button.
     property <length> origin: clamp(anchor - self.x, 0px, panel-width);
-    x: max(12px, min(anchor - panel-width / 2, screen-width - panel-width - 12px));
-    y: (from-bottom ? screen-height - bottom - h : top) + lift;
+    x: left-edge >= 0px ? left-edge : max(12px, min(anchor - panel-width / 2, screen-width - panel-width - 12px));
+    y: (point-y >= 0px ? max(top, min(point-y - h / 2, screen-height - h - 12px)) : from-bottom ? screen-height - bottom - h : top) + lift;
     width: panel-width;
     height: h;
     visible: shown && glass > 0.004;
@@ -402,6 +405,7 @@ component RadioPane inherits VerticalLayout {
     in property <bool> on;
     callback back();
     callback toggled(bool);
+    callback more();
     HorizontalLayout {
         height: 50px;
         padding-left: 10px;
@@ -427,6 +431,21 @@ component RadioPane inherits VerticalLayout {
     }
     Rule {}
     @children
+    Rule {}
+    // The way on to the full page in Settings.
+    Rectangle {
+        height: 40px;
+        Rectangle {
+            x: parent.width - self.width - 12px;
+            y: 7px;
+            width: ml.preferred-width + 20px;
+            height: 26px;
+            border-radius: Theme.r-sm;
+            background: mt.has-hover ? Theme.sel : transparent;
+            ml := Text { x: 10px; y: (parent.height - self.height) / 2; text: "More settings"; font-size: Theme.fs(11); font-weight: 600; color: mt.has-hover ? Theme.ink : Theme.ink3; }
+            mt := TouchArea { mouse-cursor: pointer; clicked => { root.more(); } }
+        }
+    }
 }
 
 // Signal as bars: 1–4.
@@ -618,6 +637,7 @@ component ControlCenter inherits PanelSurface {
     callback mix-out(int);
     callback mix-eq(int);
     callback open-sound-settings();
+    callback open-pane-settings(string);
     callback cycle-theme();
     callback tile(string);
     callback set-volume(float);
@@ -718,6 +738,7 @@ component ControlCenter inherits PanelSurface {
         on: root.wifi-on;
         back => { root.show-pane(""); }
         toggled(v) => { root.wifi(v); }
+        more => { root.open-pane-settings("Network"); }
         Flickable {
             height: min(list.preferred-height, 300px);
             content-height: list.preferred-height;
@@ -845,6 +866,7 @@ component ControlCenter inherits PanelSurface {
         on: root.bt-on;
         back => { root.show-pane(""); }
         toggled(v) => { root.bt(v); }
+        more => { root.open-pane-settings("Bluetooth"); }
         if root.pair-name != "": Rectangle {
             height: pv.preferred-height;
             background: Theme.hover;
@@ -1772,6 +1794,7 @@ export component Panels inherits Window {
     callback mix-out(int);
     callback mix-eq(int);
     callback open-sound-settings();
+    callback open-pane-settings(string);
     callback show-pane(string);
     callback wifi(bool);
     callback bt(bool);
@@ -1843,6 +1866,8 @@ export component Panels inherits Window {
     in property <string> app-menu-heading;
     in property <[AppMenuRow]> app-menu;
     in property <length> dock-gap: 80px;
+    in property <length> dock-left: -1px;
+    in property <length> dock-point: -1px;
     callback app-menu-pick(string);
     // the icon picker
     in property <string> icon-title;
@@ -1903,6 +1928,7 @@ export component Panels inherits Window {
             mix-out(i) => { root.mix-out(i); }
             mix-eq(i) => { root.mix-eq(i); }
             open-sound-settings => { root.open-sound-settings(); }
+            open-pane-settings(p) => { root.open-pane-settings(p); }
             wifi(v) => { root.wifi(v); }
             bt(v) => { root.bt(v); }
             join(n) => { root.join(n); }
@@ -1966,13 +1992,13 @@ export component Panels inherits Window {
         PrivacyPanel { rows: root.privacy; }
     }
     Drop {
-        shown: root.which == "appmenu"; seam: false; from-bottom: true; bottom: root.dock-gap; screen-height: root.height;
+        shown: root.which == "appmenu"; seam: false; from-bottom: true; bottom: root.dock-gap; screen-height: root.height; left-edge: root.dock-left; point-y: root.dock-point;
         anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner;
         panel-width: 230px;
         AppMenu { heading: root.app-menu-heading; rows: root.app-menu; pick(k) => { root.app-menu-pick(k); } }
     }
     Drop {
-        shown: root.which == "iconpick"; seam: false; from-bottom: true; bottom: root.dock-gap; screen-height: root.height;
+        shown: root.which == "iconpick"; seam: false; from-bottom: true; bottom: root.dock-gap; screen-height: root.height; left-edge: root.dock-left; point-y: root.dock-point;
         anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner;
         panel-width: 396px;
         icons := IconPicker {

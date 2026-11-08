@@ -185,6 +185,18 @@ test_screenshot_screen() {
     wait_for 5 sh -c 'ls "$HOME"/Pictures/Screenshots/Screenshot_*.png' >/dev/null 2>&1 || fail "no screenshot was saved: $(tail -n 3 "$TT_LOGS/shell.log")"
 }
 
+# The dock on the left edge: a column along it, its menu beside it.
+test_dock_left() {
+    start_shell
+    sleep 1
+    set_theme dockPosition "\"Left\""
+    sleep 1.5
+    shot left-dock
+    click 40 450 right
+    sleep 0.8
+    shot left-dock-menu
+}
+
 # Right-click a dock tile: its menu; Change icon… opens the icon picker, which
 # takes what is typed, and a click on a glyph changes the tile.
 test_dock_menu_icon_picker() {

@@ -26,6 +26,8 @@ component DockTile inherits Rectangle {
     in property <length> tile;
     in property <length> icon;
     in property <length> label-size;
+    // On the left edge: the name comes out to the right instead of above.
+    in property <bool> left;
     callback activated(length);
     callback secondary(length);
     callback middle();
@@ -90,8 +92,8 @@ component DockTile inherits Rectangle {
     // doesn't clip), unless its name already shows.
     in property <length> lift: 5px;
     if t.has-hover && !root.data.named: Rectangle {
-        x: (root.width - self.width) / 2;
-        y: -self.height - 12px - root.lift;
+        x: root.left ? root.width + 12px + root.lift : (root.width - self.width) / 2;
+        y: root.left ? (root.height - self.height) / 2 : -self.height - 12px - root.lift;
         height: 30px;
         width: tip.preferred-width + 22px;
         border-radius: Theme.r-sm;
@@ -120,10 +122,10 @@ component DockTile inherits Rectangle {
 
     t := TouchArea {
         mouse-cursor: pointer;
-        clicked => { root.activated(root.absolute-position.x + root.width / 2); }
+        clicked => { root.activated(root.left ? root.absolute-position.y + root.height / 2 : root.absolute-position.x + root.width / 2); }
         pointer-event(e) => {
             if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
-                root.secondary(root.absolute-position.x + root.width / 2);
+                root.secondary(root.left ? root.absolute-position.y + root.height / 2 : root.absolute-position.x + root.width / 2);
             }
             if (e.kind == PointerEventKind.up && e.button == PointerEventButton.middle) { root.middle(); }
         }
@@ -138,10 +140,15 @@ export component Dock inherits Window {
     in property <length> pad-v: 5px;
     in property <length> gap: 3px;
     in property <length> label-size: 12px;
-    // Where the pill's top is (the reveal spring, from app.rs).
-    in property <length> pill-y;
+    // On the left edge rather than the bottom.
+    in property <bool> left;
+    // Where the pill's near edge is (the reveal spring, from app.rs): its top at
+    // the bottom, its left on the left.
+    in property <length> pos;
     out property <length> pill-width: pill.width;
+    out property <length> pill-height: pill.height;
     out property <length> pill-x: pill.x;
+    out property <length> pill-y: pill.y;
     callback activate(int, length);
     callback secondary(int, length);
     callback middle(int);
@@ -153,16 +160,18 @@ export component Dock inherits Window {
 
     // The strip along the bottom edge that brings a hidden dock back.
     TouchArea {
-        y: root.height - 3px;
-        height: 3px;
+        x: 0;
+        y: root.left ? 0 : root.height - 3px;
+        width: root.left ? 3px : root.width;
+        height: root.left ? root.height : 3px;
         changed has-hover => { root.hovered(self.has-hover); }
     }
 
     pill := Rectangle {
-        x: round((root.width - self.width) / 2 / 1px) * 1px;
-        y: root.pill-y;
-        width: row.preferred-width + root.pad-h * 2;
-        height: root.tile + root.pad-v * 2;
+        x: root.left ? root.pos : round((root.width - self.width) / 2 / 1px) * 1px;
+        y: root.left ? round((root.height - self.height) / 2 / 1px) * 1px : root.pos;
+        width: root.left ? root.tile + root.pad-h * 2 : row.preferred-width + root.pad-h * 2;
+        height: root.left ? col.preferred-height + root.pad-v * 2 : root.tile + root.pad-v * 2;
         border-radius: Theme.r-cap;
         background: Theme.panel;
         border-width: 1px;
@@ -171,6 +180,7 @@ export component Dock inherits Window {
         hover := TouchArea {
             changed has-hover => { root.hovered(self.has-hover); }
             row := HorizontalLayout {
+                visible: !root.left;
                 x: root.pad-h;
                 y: root.pad-v;
                 width: self.preferred-width;
@@ -195,6 +205,34 @@ export component Dock inherits Window {
                         secondary(x) => { root.secondary(i, x); }
                         middle => { root.middle(i); }
                         lift: root.pad-v;
+                    }
+                }
+            }
+            col := VerticalLayout {
+                visible: root.left;
+                x: root.pad-h;
+                y: root.pad-v;
+                width: root.tile;
+                spacing: root.gap;
+                for d[i] in root.tiles: Rectangle {
+                    height: d.kind == "divider" ? 7px : root.tile;
+                    if d.kind == "divider": Rectangle {
+                        x: (root.tile - 26px) / 2;
+                        y: 3px;
+                        width: 26px;
+                        height: 1px;
+                        background: Theme.div;
+                    }
+                    if d.kind != "divider": DockTile {
+                        left: true;
+                        data: d;
+                        tile: root.tile;
+                        icon: root.icon-size;
+                        label-size: root.label-size;
+                        activated(y) => { root.activate(i, y); }
+                        secondary(y) => { root.secondary(i, y); }
+                        middle => { root.middle(i); }
+                        lift: root.pad-h;
                     }
                 }
             }

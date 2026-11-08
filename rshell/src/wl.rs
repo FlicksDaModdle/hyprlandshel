@@ -480,6 +480,19 @@ impl Shell {
         }
     }
 
+    /// Which edges a surface sits on (the dock moving from the bottom to the left).
+    pub fn set_anchor(&mut self, id: usize, anchor: Anchor, width: u32, height: u32) {
+        if let Some(Some(s)) = self.surfaces.get_mut(id) {
+            s.asked = (width, height);
+            if let Role::Layer(l) = &s.layer {
+                // Together, in one commit: a size of 0 is only allowed along an edge pair.
+                l.set_anchor(anchor);
+                l.set_size(width, height);
+            }
+            s.layer.commit();
+        }
+    }
+
     /// Whether a surface takes the keyboard.
     pub fn set_keyboard(&mut self, id: usize, k: KeyboardInteractivity) {
         if let Some(Some(s)) = self.surfaces.get(id) {
