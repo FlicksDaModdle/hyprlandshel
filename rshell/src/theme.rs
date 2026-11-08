@@ -79,6 +79,11 @@ pub struct Theme {
     pub corner_radius: u32,
     pub corners_all: bool,
     pub corners_fullscreen: bool,
+    /// Windows 11's taskbar in place of the top bar and the dock's pill (Settings → Dock → Style).
+    pub taskbar: bool,
+    /// A dock hidden by a fullscreen window keeps its strip along the edge to bring it back.
+    pub dock_over_fullscreen: bool,
+    pub taskbar_left: bool,
     pub corner_on: [bool; 4],
     pub badges: bool,
     screen_scales: Vec<(String, f32)>,
@@ -260,6 +265,9 @@ pub fn load() -> Theme {
         bar_auto_hide: flag("barHide", false),
         bar_reveal_delay: num("barRevealDelay", 350.0).max(0.0) as u64,
         dock_auto_hide: flag("dockHide", false),
+        dock_over_fullscreen: flag("dockOverFullscreen", true),
+        taskbar: v["dockStyle"].as_str() == Some("taskbar"),
+        taskbar_left: v["taskbarAlign"].as_str() == Some("left"),
         corners: flag("screenCorners", false),
         corner_radius: num("screenCornerRadius", 14.0).clamp(0.0, 256.0) as u32,
         corners_all: text("screenCornerScreens") == "all",

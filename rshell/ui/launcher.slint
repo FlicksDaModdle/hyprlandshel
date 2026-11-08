@@ -48,6 +48,8 @@ export component Launcher inherits Window {
     // (the exit), and how fast it is moving (the glass gives as it travels).
     in property <bool> morphing;
     in property <bool> is-left;
+    // Windows 11's Start menu: at the left with a left-aligned taskbar.
+    in property <bool> start-left;
     in property <length> pill-gap;
     in property <length> pill-w;
     in property <length> pill-h;
@@ -119,7 +121,7 @@ export component Launcher inherits Window {
     property <length> pill-x: root.is-left ? root.pill-gap : round((root.width - root.pill-w) / 2 / 1px) * 1px;
     property <length> pill-y: root.is-left ? round((root.height - root.pill-h) / 2 / 1px) * 1px : root.height - root.pill-gap - root.pill-h;
     // Where the finished panel sits: above the dock, or beside it on the left.
-    property <length> tx: root.is-left ? root.near-edge : max(12px, min(root.width - root.w - 12px, round((root.width - root.w) / 2 / 1px) * 1px));
+    property <length> tx: root.is-left ? root.near-edge : root.start-left ? 12px : max(12px, min(root.width - root.w - 12px, round((root.width - root.w) / 2 / 1px) * 1px));
     property <length> ty: root.is-left ? max(root.bar-h + 12px, min(root.height - root.h - 12px, round((root.height - root.h) / 2 / 1px) * 1px)) : root.height - root.near-edge - root.h;
     property <length> squeeze-max: root.over-dock ? max(0px, 2 * (root.dock-pad - 3px)) : sz(28);
     property <bool> over-dock: root.morphing && !root.is-left && root.dock-tile > 0px;

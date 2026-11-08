@@ -6,6 +6,8 @@
 import { Icons, GlyphData } from "icons.slint";
 import { Theme } from "theme.slint";
 import { Glyph } from "glyph.slint";
+import { BarRight } from "bar.slint";
+import { TrayItem } from "types.slint";
 
 export struct DockTileData {
     // start, divider, pin, app, desktop
@@ -235,6 +237,45 @@ export component Dock inherits Window {
     in property <length> pad-v: 5px;
     in property <length> gap: 3px;
     in property <length> label-size: 12px;
+    // Windows 11's taskbar (Dock.qml's `taskbar`): the pill is the whole width of the screen, square,
+    // with a hairline on top, the tiles centred or at the left, and the bar's status area at its right end.
+    in property <bool> taskbar;
+    in property <bool> tb-left;
+    in property <string> time;
+    in property <string> date;
+    in property <string> net-label;
+    in property <string> net-icon: "wifi";
+    in property <string> volume-label;
+    in property <string> volume-icon: "volume";
+    in property <int> battery: -1;
+    in property <bool> charging;
+    in property <int> notifications;
+    in property <bool> quiet;
+    in property <string> open-panel;
+    in property <[TrayItem]> tray;
+    in property <bool> show-tray: true;
+    in property <bool> tray-open;
+    in property <bool> mic-in-use;
+    in property <bool> camera-in-use;
+    in property <bool> screen-shared;
+    in property <bool> has-timer;
+    in property <string> timer-text;
+    in property <bool> timer-running;
+    in property <bool> timer-pomodoro;
+    in property <int> updates;
+    in property <bool> show-updates;
+    in property <int> mail-unread: -1;
+    in property <bool> has-drives;
+    callback volume-step(int);
+    callback toggle-panel(string, length);
+    callback toggle-dnd();
+    callback open-mail();
+    callback tray-toggle();
+    callback tray-activate(string, length);
+    callback tray-secondary(string);
+    callback tray-menu(string, length);
+    callback tray-scroll(string, int);
+    callback show-desktop();
     // On the left edge rather than the bottom.
     in property <bool> left;
     // The launcher is out and on top of this pill (it grew out of it): the glass steps aside
@@ -281,13 +322,13 @@ export component Dock inherits Window {
     }
 
     pill := Rectangle {
-        x: root.left ? root.pos : round((root.width - self.width) / 2 / 1px) * 1px;
+        x: root.taskbar ? 0px : root.left ? root.pos : round((root.width - self.width) / 2 / 1px) * 1px;
         y: root.left ? round((root.height - self.height) / 2 / 1px) * 1px : root.pos;
-        width: root.left ? root.tile + root.pad-h * 2 : row.preferred-width + root.pad-h * 2;
+        width: root.taskbar ? root.width : root.left ? root.tile + root.pad-h * 2 : row.preferred-width + root.pad-h * 2;
         height: root.left ? col.preferred-height + root.pad-v * 2 : root.tile + root.pad-v * 2;
-        border-radius: Theme.r-cap;
-        background: root.covered ? transparent : Theme.panel;
-        border-width: root.covered ? 0px : 1px;
+        border-radius: root.taskbar ? 0px : Theme.r-cap;
+        background: root.covered && !root.taskbar ? transparent : Theme.panel;
+        border-width: root.covered || root.taskbar ? 0px : 1px;
         border-color: Theme.edge;
 
         hover := TouchArea {
@@ -296,7 +337,7 @@ export component Dock inherits Window {
                 visible: !root.left && self.opacity > 0.01;
                 opacity: root.covered ? 0 : 1;
                 animate opacity { duration: root.covered ? 140ms : 240ms; }
-                x: root.pad-h;
+                x: root.taskbar ? (root.tb-left ? root.pad-h : round((root.width - self.preferred-width) / 2 / 1px) * 1px) : root.pad-h;
                 y: root.pad-v;
                 width: self.preferred-width;
                 height: root.tile;
@@ -356,6 +397,41 @@ export component Dock inherits Window {
                 }
             }
         }
+    }
+
+    // The taskbar's top edge, one hairline as Windows draws it, and the status area at its right end
+    // (with the show-desktop sliver after it).
+    if root.taskbar: Rectangle { x: 0; y: pill.y; width: root.width; height: 1px; background: Theme.edge; }
+    if root.taskbar: tb-right := BarRight {
+        x: root.width - self.preferred-width - 12px;
+        y: pill.y;
+        width: self.preferred-width;
+        height: pill.height;
+        time: root.time; date: root.date; net-label: root.net-label; net-icon: root.net-icon;
+        volume-label: root.volume-label; volume-icon: root.volume-icon; battery: root.battery; charging: root.charging;
+        notifications: root.notifications; quiet: root.quiet; open-panel: root.open-panel; tray: root.tray;
+        show-tray: root.show-tray; tray-open: root.tray-open; mic-in-use: root.mic-in-use; camera-in-use: root.camera-in-use;
+        screen-shared: root.screen-shared; has-timer: root.has-timer; timer-text: root.timer-text; timer-running: root.timer-running;
+        timer-pomodoro: root.timer-pomodoro; updates: root.updates; show-updates: root.show-updates; mail-unread: root.mail-unread;
+        has-drives: root.has-drives;
+        volume-step(d) => { root.volume-step(d); }
+        toggle-panel(n, x) => { root.toggle-panel(n, x); }
+        toggle-dnd => { root.toggle-dnd(); }
+        open-mail => { root.open-mail(); }
+        tray-toggle => { root.tray-toggle(); }
+        tray-activate(k, x) => { root.tray-activate(k, x); }
+        tray-secondary(k) => { root.tray-secondary(k); }
+        tray-menu(k, x) => { root.tray-menu(k, x); }
+        tray-scroll(k, d) => { root.tray-scroll(k, d); }
+    }
+    if root.taskbar: Rectangle {
+        x: root.width - 6px;
+        y: pill.y;
+        width: 6px;
+        height: pill.height;
+        background: sd.has-hover ? Theme.hover : transparent;
+        Rectangle { x: 0; width: 1px; background: Theme.edge; }
+        sd := TouchArea { mouse-cursor: pointer; clicked => { root.show-desktop(); } }
     }
 
     // The preview card, centred over its tile and kept a margin inside the screen.

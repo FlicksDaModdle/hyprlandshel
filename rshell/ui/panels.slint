@@ -27,6 +27,10 @@ component Drop inherits Rectangle {
     // Rising from the dock rather than hanging from the bar: placed by its
     // bottom edge, `bottom` above the screen's.
     in property <bool> from-bottom;
+    // The taskbar's panels rise from just above it, `tb-bottom` up from the screen's bottom edge.
+    in property <bool> tb;
+    in property <length> tb-bottom;
+    property <bool> up: root.from-bottom || root.tb;
     in property <length> bottom;
     in property <length> screen-height;
     // Beside a dock on the left: the panel's left edge, and the height it points at.
@@ -39,11 +43,12 @@ component Drop inherits Rectangle {
     in property <length> lift;
     in property <float> glass: 1;
     in property <float> inner: 1;
+    in property <float> flow;
     property <length> h: l.preferred-height;
     // Grown from under the button.
     property <length> origin: clamp(anchor - self.x, 0px, panel-width);
     x: left-edge >= 0px ? left-edge : max(12px, min(anchor - panel-width / 2, screen-width - panel-width - 12px));
-    y: (point-y >= 0px ? max(top, min(point-y - h / 2, screen-height - h - 12px)) : from-bottom ? screen-height - bottom - h : top) + lift;
+    y: (point-y >= 0px ? max(top, min(point-y - h / 2, screen-height - h - 12px)) : root.up ? screen-height - (root.from-bottom ? bottom : root.tb-bottom) - h : top) + lift;
     width: panel-width;
     height: h;
     visible: shown && glass > 0.004;
@@ -51,14 +56,16 @@ component Drop inherits Rectangle {
     frame := Rectangle {
         x: root.origin * (1 - root.sx);
         width: root.panel-width * root.sx;
-        y: root.from-bottom ? root.h * (1 - root.sy) : 0;
+        y: root.up ? root.h * (1 - root.sy) : 0;
         height: root.h * root.sy;
-        border-radius: min(Theme.r-cap, self.height / 2, self.width / 2);
+        // Softer while it moves, back to the panel's own corner at rest.
+        border-radius: min(Theme.r-cap + root.flow * 8px, self.height / 2, self.width / 2);
         background: Theme.panel;
         clip: true;
         Rectangle {
             x: -frame.x;
-            y: -frame.y;
+            // The contents rise into place as they appear.
+            y: -frame.y + (root.up ? 1 : -1) * (1 - clamp(root.inner, 0, 1)) * 14px;
             width: root.panel-width;
             height: root.h;
             opacity: clamp(root.inner, 0, 1);
@@ -75,7 +82,7 @@ component Drop inherits Rectangle {
         border-color: Theme.edge;
     }
     // Between the corners: the software renderer doesn't clip to them.
-    if root.seam: HorizontalLayout {
+    if root.seam && !root.tb: HorizontalLayout {
         x: frame.x + frame.border-radius;
         width: max(0px, frame.width - 2 * frame.border-radius);
         y: frame.y;
@@ -1877,7 +1884,11 @@ export component Panels inherits Window {
     // the dock's menu
     in property <string> app-menu-heading;
     in property <[AppMenuRow]> app-menu;
+    in property <float> flow;
     in property <length> dock-gap: 80px;
+    // Windows 11's taskbar: panels rise from it instead of hanging from the top bar.
+    in property <bool> taskbar;
+    in property <length> tb-bottom: 60px;
     in property <length> dock-left: -1px;
     in property <length> dock-point: -1px;
     callback app-menu-pick(string);
@@ -1904,15 +1915,15 @@ export component Panels inherits Window {
     }
 
     Drop {
-        shown: root.which == "power"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 248px;
+        shown: root.which == "power"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 248px;
         PowerMenu { user: root.user; uptime: root.uptime; hyprland: root.hyprland; act(a) => { root.power(a); } }
     }
     Drop {
-        shown: root.which == "window"; seam: false; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 262px;
+        shown: root.which == "window"; seam: false; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 262px;
         WindowMenu { act(a) => { root.window-act(a); } snap(i) => { root.window-snap(i); } }
     }
     Drop {
-        shown: root.which == "calendar"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 320px;
+        shown: root.which == "calendar"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 320px;
         CalendarPanel {
             month: root.month; cells: root.cells; away: root.month-away;
             step(d) => { root.month-step(d); }
@@ -1920,7 +1931,7 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "control"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 384px;
+        shown: root.which == "control"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 384px;
         ControlCenter {
             user: root.user; session: root.session; theme-mode: root.theme-mode; tiles: root.tiles;
             volume: root.volume; muted: root.muted;
@@ -1958,7 +1969,7 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "notifications"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 396px;
+        shown: root.which == "notifications"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 396px;
         nc := NotificationCenter {
             notes: root.notes; quiet: root.quiet;
             history-on: root.history-on; hist: root.hist; hist-total: root.hist-total; hist-query <=> root.hist-query; view <=> root.nc-view;
@@ -1974,7 +1985,7 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "media"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 340px;
+        shown: root.which == "media"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 340px;
         MediaPanel {
             media: root.media;
             prev => { root.media-prev(); }
@@ -1984,7 +1995,7 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "drives"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 300px;
+        shown: root.which == "drives"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 300px;
         DrivesPanel {
             drives: root.drives;
             open-mount(m) => { root.drive-open(m); }
@@ -1993,26 +2004,26 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "timers"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 280px;
+        shown: root.which == "timers"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 280px;
         TimersPanel { timers: root.timers; }
     }
     Drop {
-        shown: root.which == "updates"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 300px;
+        shown: root.which == "updates"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 300px;
         UpdatesPanel { count: root.update-count; packages: root.update-names; run => { root.run-updates(); } }
     }
     Drop {
-        shown: root.which == "privacy"; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 280px;
+        shown: root.which == "privacy"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 280px;
         PrivacyPanel { rows: root.privacy; }
     }
     Drop {
         shown: root.which == "appmenu"; seam: false; from-bottom: true; bottom: root.dock-gap; screen-height: root.height; left-edge: root.dock-left; point-y: root.dock-point;
-        anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner;
+        anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow;
         panel-width: 230px;
         AppMenu { heading: root.app-menu-heading; rows: root.app-menu; pick(k) => { root.app-menu-pick(k); } }
     }
     Drop {
         shown: root.which == "iconpick"; seam: false; from-bottom: true; bottom: root.dock-gap; screen-height: root.height; left-edge: root.dock-left; point-y: root.dock-point;
-        anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner;
+        anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow;
         panel-width: 396px;
         icons := IconPicker {
             title: root.icon-title; current: root.icon-current; cells: root.icon-cells; query <=> root.icon-query;
@@ -2021,7 +2032,7 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "tray"; seam: false; anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; panel-width: 240px;
+        shown: root.which == "tray"; seam: false; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 240px;
         TrayMenu {
             heading: root.menu-heading; entries: root.menu; nested: root.menu-nested; toggles: root.menu-toggles;
             pick(id, sub) => { root.menu-pick(id, sub); }

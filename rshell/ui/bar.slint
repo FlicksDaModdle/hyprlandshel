@@ -236,6 +236,339 @@ component MediaPill inherits Rectangle {
 }
 
 // modules/bar/Bar.qml.
+// The status area (Bar.qml's right end; in taskbar mode, TaskbarTray.qml at the taskbar's): tray,
+// recording / privacy / timer / updates / mail / drives, network and sound, clock, notifications, power.
+export component BarRight inherits HorizontalLayout {
+    in property <string> time;
+    in property <string> date;
+    in property <string> net-label;
+    in property <string> net-icon: "wifi";
+    in property <string> volume-label;
+    in property <string> volume-icon: "volume";
+    in property <int> battery: -1;
+    in property <bool> charging;
+    in property <int> notifications;
+    in property <bool> quiet;
+    in property <string> open-panel;
+    in property <[TrayItem]> tray;
+    in property <bool> show-tray: true;
+    in property <bool> tray-open;
+    in property <bool> mic-in-use;
+    in property <bool> camera-in-use;
+    in property <bool> screen-shared;
+    in property <bool> has-timer;
+    in property <string> timer-text;
+    in property <bool> timer-running;
+    in property <bool> timer-pomodoro;
+    in property <int> updates;
+    in property <bool> show-updates;
+    in property <int> mail-unread: -1;
+    in property <bool> has-drives;
+    callback volume-step(int);
+    callback toggle-panel(string, length);
+    callback toggle-dnd();
+    callback open-mail();
+    callback tray-toggle();
+    callback tray-activate(string, length);
+    callback tray-secondary(string);
+    callback tray-menu(string, length);
+    callback tray-scroll(string, int);
+    spacing: 2px;
+    alignment: end;
+
+        // The tray (TrayRow.qml): a chevron, the items when open, a divider.
+    if root.show-tray && root.tray.length > 0: HorizontalLayout {
+        spacing: 2px;
+        Rectangle {
+            y: (root.height - 26px) / 2;
+            width: 22px;
+            height: 26px;
+            border-radius: Theme.r-cap;
+            background: chev.has-hover ? Theme.hover : transparent;
+            Glyph {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                data: root.tray-open ? Icons.chevron-right : Icons.chevron-left;
+                size: Theme.u(Theme.bar-icon);
+                monochrome: true;
+                ink: root.tray-open ? Theme.ink2 : Theme.ink;
+            }
+            chev := TouchArea { mouse-cursor: pointer; clicked => { root.tray-toggle(); } }
+        }
+        if root.tray-open: HorizontalLayout {
+            spacing: 2px;
+            for item in root.tray: Rectangle {
+                y: (root.height - 26px) / 2;
+                width: 26px;
+                height: 26px;
+                border-radius: Theme.r-cap;
+                background: ta.has-hover ? Theme.hover : transparent;
+                opacity: item.passive ? 0.55 : 1;
+                if item.has-icon: Image {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: 15px;
+                    height: 15px;
+                    source: item.icon;
+                    image-fit: contain;
+                }
+                if !item.has-icon: Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: item.letter;
+                    font-size: Theme.fs(11);
+                    font-weight: 700;
+                    color: Theme.ink2;
+                }
+                ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.tray-activate(item.key, parent.absolute-position.x + parent.width / 2); }
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
+                            root.tray-menu(item.key, parent.absolute-position.x + parent.width / 2);
+                        }
+                        if (e.kind == PointerEventKind.up && e.button == PointerEventButton.middle) {
+                            root.tray-secondary(item.key);
+                        }
+                    }
+                    scroll-event(e) => { root.tray-scroll(item.key, e.delta-y > 0 ? 1 : -1); accept }
+                }
+            }
+        }
+        Rectangle {
+            width: 13px;
+            Rectangle {
+                x: 6px;
+                y: (root.height - 18px) / 2;
+                width: 1px;
+                height: 18px;
+                background: Theme.div;
+            }
+        }
+    }
+
+    // Privacy: who has the microphone, the camera, the screen.
+    if root.mic-in-use || root.camera-in-use || root.screen-shared: BarButton {
+        y: (root.height - self.height) / 2;
+        gap: 3px;
+        open: root.open-panel == "privacy";
+        activated(x) => { root.toggle-panel("privacy", x); }
+        if root.mic-in-use: Rectangle {
+            y: (26px - self.height) / 2;
+            width: Theme.u(Theme.bar-icon) + 8px; height: self.width; border-radius: self.width / 2;
+            background: Theme.accent;
+            Glyph { x: 4px; y: 4px; data: Icons.mic; size: Theme.u(Theme.bar-icon) - 2px; monochrome: true; ink: Theme.ink-on-accent; }
+        }
+        if root.camera-in-use: Rectangle {
+            y: (26px - self.height) / 2;
+            width: Theme.u(Theme.bar-icon) + 8px; height: self.width; border-radius: self.width / 2;
+            background: Theme.accent;
+            Glyph { x: 4px; y: 4px; data: Icons.camera; size: Theme.u(Theme.bar-icon) - 2px; monochrome: true; ink: Theme.ink-on-accent; }
+        }
+        if root.screen-shared: Rectangle {
+            y: (26px - self.height) / 2;
+            width: Theme.u(Theme.bar-icon) + 8px; height: self.width; border-radius: self.width / 2;
+            background: Theme.accent;
+            Glyph { x: 4px; y: 4px; data: Icons.monitor; size: Theme.u(Theme.bar-icon) - 2px; monochrome: true; ink: Theme.ink-on-accent; }
+        }
+    }
+
+    // Timers: the soonest countdown.
+    if root.has-timer: BarButton {
+        y: (root.height - self.height) / 2;
+        gap: 6px;
+        open: root.open-panel == "timers";
+        activated(x) => { root.toggle-panel("timers", x); }
+        Glyph {
+            y: (26px - self.height) / 2;
+            data: root.timer-pomodoro ? Icons.pomodoro : Icons.timer;
+            size: Theme.u(Theme.bar-icon);
+        }
+        Text {
+            vertical-alignment: center;
+            text: root.timer-text;
+            font-weight: 600;
+            color: root.timer-running ? Theme.ink : Theme.ink3;
+        }
+    }
+
+    // Updates waiting.
+    if root.show-updates && root.updates > 0: BarButton {
+        y: (root.height - self.height) / 2;
+        gap: 5px;
+        open: root.open-panel == "updates";
+        activated(x) => { root.toggle-panel("updates", x); }
+        Glyph { y: (26px - self.height) / 2; data: Icons.package; size: Theme.u(Theme.bar-icon); }
+        Text { vertical-alignment: center; text: root.updates; font-weight: 600; color: Theme.ink; }
+    }
+
+    // Mail, while it runs: unread count.
+    if root.mail-unread >= 0: BarButton {
+        y: (root.height - self.height) / 2;
+        gap: 5px;
+        activated => { root.open-mail(); }
+        Glyph {
+            y: (26px - self.height) / 2;
+            data: Icons.mail;
+            size: Theme.u(Theme.bar-icon);
+            accent: root.mail-unread > 0 ? Theme.accent : Theme.ink;
+        }
+        if root.mail-unread > 0: Text {
+            vertical-alignment: center;
+            text: root.mail-unread > 99 ? "99+" : root.mail-unread;
+            font-weight: 600;
+            color: Theme.ink;
+        }
+    }
+
+    // USB drives plugged in.
+    if root.has-drives: BarButton {
+        y: (root.height - self.height) / 2;
+        open: root.open-panel == "drives";
+        activated(x) => { root.toggle-panel("drives", x); }
+        Glyph { y: (26px - self.height) / 2; data: Icons.drive; size: Theme.u(Theme.bar-icon); monochrome: true; }
+    }
+
+    // Notifications
+    BarButton {
+        y: (root.height - self.height) / 2;
+        open: root.open-panel == "notifications";
+        activated(x) => { root.toggle-panel("notifications", x); }
+        secondary => { root.toggle-dnd(); }
+        gap: 7px;
+        Glyph {
+            y: (26px - self.height) / 2;
+            data: root.quiet ? Icons.bell-off : Icons.bell;
+            size: Theme.u(Theme.bar-icon);
+            monochrome: true;
+            ink: root.quiet ? Theme.ink3 : Theme.ink;
+        }
+        if Theme.badges && root.notifications > 0: Rectangle {
+            y: (26px - self.height) / 2;
+            width: max(17px, badge.preferred-width + 10px);
+            height: 17px;
+            border-radius: 9px;
+            background: Theme.accent;
+            badge := Text {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                text: root.notifications;
+                font-size: Theme.fs(Theme.u(Theme.bar-badge) / 1px);
+                font-weight: 700;
+                color: Theme.ink-on-accent;
+            }
+        }
+    }
+
+    // Status capsule → control center
+    BarButton {
+        y: (root.height - self.height) / 2;
+        gap: 13px;
+        pad: 12px;
+        open: root.open-panel == "control";
+        activated(x) => { root.toggle-panel("control", x); }
+        scrolled(d) => { root.volume-step(d); }
+
+        HorizontalLayout {
+            spacing: 6px;
+            Glyph {
+                y: (26px - self.height) / 2;
+                data: root.net-icon == "wifi-off" ? Icons.wifi-off : Icons.wifi;
+                size: Theme.u(Theme.bar-icon);
+                monochrome: true;
+            }
+            if root.net-label != "": Text {
+                vertical-alignment: center;
+                text: root.net-label;
+                color: Theme.ink2;
+                overflow: elide;
+                max-width: 120px;
+            }
+        }
+
+        if root.volume-label != "": HorizontalLayout {
+            spacing: 6px;
+            Glyph {
+                y: (26px - self.height) / 2;
+                data: root.volume-icon == "volume-x" ? Icons.volume-x : root.volume-icon == "volume-low" ? Icons.volume-low : Icons.volume;
+                size: Theme.u(Theme.bar-icon);
+                monochrome: true;
+            }
+            Text {
+                vertical-alignment: center;
+                text: root.volume-label;
+                font-weight: 600;
+                color: Theme.ink2;
+            }
+        }
+
+        if root.battery >= 0: HorizontalLayout {
+            spacing: 6px;
+            Rectangle {
+                y: (26px - 16px) / 2;
+                width: 16px;
+                height: 16px;
+                Glyph {
+                    size: Theme.u(Theme.bar-icon);
+                    data: root.charging ? Icons.battery-charging : Icons.battery;
+                }
+                // The real level inside the outline.
+                if !root.charging: Rectangle {
+                    x: 2.8px;
+                    y: 6.2px;
+                    height: 3.6px;
+                    width: max(1px, 9px * root.battery / 100);
+                    border-radius: 1px;
+                    background: root.battery <= 15 ? Theme.accent : Theme.ink;
+                }
+            }
+            Text {
+                vertical-alignment: center;
+                text: root.battery + "%";
+                font-weight: 600;
+                color: Theme.ink2;
+            }
+        }
+    }
+
+    // Clock → calendar
+    BarButton {
+        y: (root.height - self.height) / 2;
+        gap: 10px;
+        pad: 12px;
+        open: root.open-panel == "calendar";
+        activated(x) => { root.toggle-panel("calendar", x); }
+        Text {
+            vertical-alignment: center;
+            text: root.time;
+            font-size: Theme.fs(Theme.u(Theme.bar-clock) / 1px);
+            font-weight: 600;
+            color: Theme.ink;
+        }
+        Text {
+            vertical-alignment: center;
+            text: root.date;
+            color: Theme.ink2;
+        }
+    }
+
+    // Power menu
+    BarButton {
+        y: (root.height - self.height) / 2;
+        pad: 5px;
+        open: root.open-panel == "power";
+        accent-when-open: true;
+        activated(x) => { root.toggle-panel("power", x); }
+        Glyph {
+            y: (26px - self.height) / 2;
+            data: Icons.power;
+            size: Theme.u(Theme.bar-icon);
+            monochrome: true;
+            ink: root.open-panel == "power" ? Theme.ink-on-accent : Theme.ink;
+        }
+    }
+}
+
 export component Bar inherits Window {
     in property <[Workspace]> workspaces;
     in property <string> app-class;
@@ -419,303 +752,26 @@ export component Bar inherits Window {
     }
 
     // ══ right cluster ════════════════════════════════════════════════════
-    right := HorizontalLayout {
+    right := BarRight {
         x: root.width - self.preferred-width - 10px;
         width: self.preferred-width;
-        spacing: 2px;
-        alignment: end;
-
-        // The tray (TrayRow.qml): a chevron, the items when open, a divider.
-        if root.show-tray && root.tray.length > 0: HorizontalLayout {
-            spacing: 2px;
-            Rectangle {
-                y: (root.height - 26px) / 2;
-                width: 22px;
-                height: 26px;
-                border-radius: Theme.r-cap;
-                background: chev.has-hover ? Theme.hover : transparent;
-                Glyph {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    data: root.tray-open ? Icons.chevron-right : Icons.chevron-left;
-                    size: Theme.u(Theme.bar-icon);
-                    monochrome: true;
-                    ink: root.tray-open ? Theme.ink2 : Theme.ink;
-                }
-                chev := TouchArea { mouse-cursor: pointer; clicked => { root.tray-toggle(); } }
-            }
-            if root.tray-open: HorizontalLayout {
-                spacing: 2px;
-                for item in root.tray: Rectangle {
-                    y: (root.height - 26px) / 2;
-                    width: 26px;
-                    height: 26px;
-                    border-radius: Theme.r-cap;
-                    background: ta.has-hover ? Theme.hover : transparent;
-                    opacity: item.passive ? 0.55 : 1;
-                    if item.has-icon: Image {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        width: 15px;
-                        height: 15px;
-                        source: item.icon;
-                        image-fit: contain;
-                    }
-                    if !item.has-icon: Text {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        text: item.letter;
-                        font-size: Theme.fs(11);
-                        font-weight: 700;
-                        color: Theme.ink2;
-                    }
-                    ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.tray-activate(item.key, parent.absolute-position.x + parent.width / 2); }
-                        pointer-event(e) => {
-                            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
-                                root.tray-menu(item.key, parent.absolute-position.x + parent.width / 2);
-                            }
-                            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.middle) {
-                                root.tray-secondary(item.key);
-                            }
-                        }
-                        scroll-event(e) => { root.tray-scroll(item.key, e.delta-y > 0 ? 1 : -1); accept }
-                    }
-                }
-            }
-            Rectangle {
-                width: 13px;
-                Rectangle {
-                    x: 6px;
-                    y: (root.height - 18px) / 2;
-                    width: 1px;
-                    height: 18px;
-                    background: Theme.div;
-                }
-            }
-        }
-
-        // Privacy: who has the microphone, the camera, the screen.
-        if root.mic-in-use || root.camera-in-use || root.screen-shared: BarButton {
-            y: (root.height - self.height) / 2;
-            gap: 3px;
-            open: root.open-panel == "privacy";
-            activated(x) => { root.toggle-panel("privacy", x); }
-            if root.mic-in-use: Rectangle {
-                y: (26px - self.height) / 2;
-                width: Theme.u(Theme.bar-icon) + 8px; height: self.width; border-radius: self.width / 2;
-                background: Theme.accent;
-                Glyph { x: 4px; y: 4px; data: Icons.mic; size: Theme.u(Theme.bar-icon) - 2px; monochrome: true; ink: Theme.ink-on-accent; }
-            }
-            if root.camera-in-use: Rectangle {
-                y: (26px - self.height) / 2;
-                width: Theme.u(Theme.bar-icon) + 8px; height: self.width; border-radius: self.width / 2;
-                background: Theme.accent;
-                Glyph { x: 4px; y: 4px; data: Icons.camera; size: Theme.u(Theme.bar-icon) - 2px; monochrome: true; ink: Theme.ink-on-accent; }
-            }
-            if root.screen-shared: Rectangle {
-                y: (26px - self.height) / 2;
-                width: Theme.u(Theme.bar-icon) + 8px; height: self.width; border-radius: self.width / 2;
-                background: Theme.accent;
-                Glyph { x: 4px; y: 4px; data: Icons.monitor; size: Theme.u(Theme.bar-icon) - 2px; monochrome: true; ink: Theme.ink-on-accent; }
-            }
-        }
-
-        // Timers: the soonest countdown.
-        if root.has-timer: BarButton {
-            y: (root.height - self.height) / 2;
-            gap: 6px;
-            open: root.open-panel == "timers";
-            activated(x) => { root.toggle-panel("timers", x); }
-            Glyph {
-                y: (26px - self.height) / 2;
-                data: root.timer-pomodoro ? Icons.pomodoro : Icons.timer;
-                size: Theme.u(Theme.bar-icon);
-            }
-            Text {
-                vertical-alignment: center;
-                text: root.timer-text;
-                font-weight: 600;
-                color: root.timer-running ? Theme.ink : Theme.ink3;
-            }
-        }
-
-        // Updates waiting.
-        if root.show-updates && root.updates > 0: BarButton {
-            y: (root.height - self.height) / 2;
-            gap: 5px;
-            open: root.open-panel == "updates";
-            activated(x) => { root.toggle-panel("updates", x); }
-            Glyph { y: (26px - self.height) / 2; data: Icons.package; size: Theme.u(Theme.bar-icon); }
-            Text { vertical-alignment: center; text: root.updates; font-weight: 600; color: Theme.ink; }
-        }
-
-        // Mail, while it runs: unread count.
-        if root.mail-unread >= 0: BarButton {
-            y: (root.height - self.height) / 2;
-            gap: 5px;
-            activated => { root.open-mail(); }
-            Glyph {
-                y: (26px - self.height) / 2;
-                data: Icons.mail;
-                size: Theme.u(Theme.bar-icon);
-                accent: root.mail-unread > 0 ? Theme.accent : Theme.ink;
-            }
-            if root.mail-unread > 0: Text {
-                vertical-alignment: center;
-                text: root.mail-unread > 99 ? "99+" : root.mail-unread;
-                font-weight: 600;
-                color: Theme.ink;
-            }
-        }
-
-        // USB drives plugged in.
-        if root.has-drives: BarButton {
-            y: (root.height - self.height) / 2;
-            open: root.open-panel == "drives";
-            activated(x) => { root.toggle-panel("drives", x); }
-            Glyph { y: (26px - self.height) / 2; data: Icons.drive; size: Theme.u(Theme.bar-icon); monochrome: true; }
-        }
-
-        // Notifications
-        BarButton {
-            y: (root.height - self.height) / 2;
-            open: root.open-panel == "notifications";
-            activated(x) => { root.toggle-panel("notifications", x); }
-            secondary => { root.toggle-dnd(); }
-            gap: 7px;
-            Glyph {
-                y: (26px - self.height) / 2;
-                data: root.quiet ? Icons.bell-off : Icons.bell;
-                size: Theme.u(Theme.bar-icon);
-                monochrome: true;
-                ink: root.quiet ? Theme.ink3 : Theme.ink;
-            }
-            if Theme.badges && root.notifications > 0: Rectangle {
-                y: (26px - self.height) / 2;
-                width: max(17px, badge.preferred-width + 10px);
-                height: 17px;
-                border-radius: 9px;
-                background: Theme.accent;
-                badge := Text {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    text: root.notifications;
-                    font-size: Theme.fs(Theme.u(Theme.bar-badge) / 1px);
-                    font-weight: 700;
-                    color: Theme.ink-on-accent;
-                }
-            }
-        }
-
-        // Status capsule → control center
-        BarButton {
-            y: (root.height - self.height) / 2;
-            gap: 13px;
-            pad: 12px;
-            open: root.open-panel == "control";
-            activated(x) => { root.toggle-panel("control", x); }
-            scrolled(d) => { root.volume-step(d); }
-
-            HorizontalLayout {
-                spacing: 6px;
-                Glyph {
-                    y: (26px - self.height) / 2;
-                    data: root.net-icon == "wifi-off" ? Icons.wifi-off : Icons.wifi;
-                    size: Theme.u(Theme.bar-icon);
-                    monochrome: true;
-                }
-                if root.net-label != "": Text {
-                    vertical-alignment: center;
-                    text: root.net-label;
-                    color: Theme.ink2;
-                    overflow: elide;
-                    max-width: 120px;
-                }
-            }
-
-            if root.volume-label != "": HorizontalLayout {
-                spacing: 6px;
-                Glyph {
-                    y: (26px - self.height) / 2;
-                    data: root.volume-icon == "volume-x" ? Icons.volume-x : root.volume-icon == "volume-low" ? Icons.volume-low : Icons.volume;
-                    size: Theme.u(Theme.bar-icon);
-                    monochrome: true;
-                }
-                Text {
-                    vertical-alignment: center;
-                    text: root.volume-label;
-                    font-weight: 600;
-                    color: Theme.ink2;
-                }
-            }
-
-            if root.battery >= 0: HorizontalLayout {
-                spacing: 6px;
-                Rectangle {
-                    y: (26px - 16px) / 2;
-                    width: 16px;
-                    height: 16px;
-                    Glyph {
-                        size: Theme.u(Theme.bar-icon);
-                        data: root.charging ? Icons.battery-charging : Icons.battery;
-                    }
-                    // The real level inside the outline.
-                    if !root.charging: Rectangle {
-                        x: 2.8px;
-                        y: 6.2px;
-                        height: 3.6px;
-                        width: max(1px, 9px * root.battery / 100);
-                        border-radius: 1px;
-                        background: root.battery <= 15 ? Theme.accent : Theme.ink;
-                    }
-                }
-                Text {
-                    vertical-alignment: center;
-                    text: root.battery + "%";
-                    font-weight: 600;
-                    color: Theme.ink2;
-                }
-            }
-        }
-
-        // Clock → calendar
-        BarButton {
-            y: (root.height - self.height) / 2;
-            gap: 10px;
-            pad: 12px;
-            open: root.open-panel == "calendar";
-            activated(x) => { root.toggle-panel("calendar", x); }
-            Text {
-                vertical-alignment: center;
-                text: root.time;
-                font-size: Theme.fs(Theme.u(Theme.bar-clock) / 1px);
-                font-weight: 600;
-                color: Theme.ink;
-            }
-            Text {
-                vertical-alignment: center;
-                text: root.date;
-                color: Theme.ink2;
-            }
-        }
-
-        // Power menu
-        BarButton {
-            y: (root.height - self.height) / 2;
-            pad: 5px;
-            open: root.open-panel == "power";
-            accent-when-open: true;
-            activated(x) => { root.toggle-panel("power", x); }
-            Glyph {
-                y: (26px - self.height) / 2;
-                data: Icons.power;
-                size: Theme.u(Theme.bar-icon);
-                monochrome: true;
-                ink: root.open-panel == "power" ? Theme.ink-on-accent : Theme.ink;
-            }
-        }
+        height: root.height;
+        time: root.time; date: root.date; net-label: root.net-label; net-icon: root.net-icon;
+        volume-label: root.volume-label; volume-icon: root.volume-icon; battery: root.battery; charging: root.charging;
+        notifications: root.notifications; quiet: root.quiet; open-panel: root.open-panel; tray: root.tray;
+        show-tray: root.show-tray; tray-open: root.tray-open; mic-in-use: root.mic-in-use; camera-in-use: root.camera-in-use;
+        screen-shared: root.screen-shared; has-timer: root.has-timer; timer-text: root.timer-text; timer-running: root.timer-running;
+        timer-pomodoro: root.timer-pomodoro; updates: root.updates; show-updates: root.show-updates; mail-unread: root.mail-unread;
+        has-drives: root.has-drives;
+        volume-step(d) => { root.volume-step(d); }
+        toggle-panel(n, x) => { root.toggle-panel(n, x); }
+        toggle-dnd => { root.toggle-dnd(); }
+        open-mail => { root.open-mail(); }
+        tray-toggle => { root.tray-toggle(); }
+        tray-activate(k, x) => { root.tray-activate(k, x); }
+        tray-secondary(k) => { root.tray-secondary(k); }
+        tray-menu(k, x) => { root.tray-menu(k, x); }
+        tray-scroll(k, d) => { root.tray-scroll(k, d); }
     }
     }
 }

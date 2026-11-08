@@ -186,7 +186,10 @@ impl Host {
         let gap = u(num("dockGap", 16.0).clamp(0.0, 40.0));
         // Growing out of the dock, it takes the dock's room as well: the pill has faded
         // out by then. Otherwise the dock is still there and the panel clears it.
-        let near = if pill.is_some() { gap } else { gap + u(num("dockSize", 42.0) + 10.0) + 12.0 };
+        let taskbar = raw["dockStyle"].as_str() == Some("taskbar");
+        // The taskbar's Start menu floats above the taskbar, 12 clear of it.
+        let near = if pill.is_some() { gap } else if taskbar { u(48.0) + 12.0 } else { gap + u(num("dockSize", 42.0) + 10.0) + 12.0 };
+        self.ui.set_start_left(taskbar && raw["taskbarAlign"].as_str() == Some("left"));
         let ui = &self.ui;
         ui.set_zoom(zoom as f32);
         // As wide as the dock, whenever there is one along the bottom to measure, so the

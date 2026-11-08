@@ -277,6 +277,42 @@ test_panel_animates_every_time() {
     done
 }
 
+# Windows 11's taskbar: a full-width strip along the bottom with the status area at its right
+# end and no top bar; the control center rises from it, the launcher is a Start menu above it.
+test_taskbar() {
+    start_shell
+    sleep 1
+    set_theme dockStyle '"taskbar"'
+    sleep 2
+    shot taskbar
+    cmd toggleControlCenter
+    sleep 1.2
+    shot control
+    cmd toggleControlCenter
+    sleep 1
+    cmd toggleLauncher
+    sleep 1.5
+    shot start
+    cmd toggleLauncher
+    sleep 1
+    set_theme taskbarAlign '"left"'
+    sleep 1.5
+    shot left
+}
+
+# Frames of a bar panel opening, slowed right down (kept to look at, not compared).
+test_panel_frames() {
+    start_shell
+    sleep 1
+    set_theme animSpeed 12
+    sleep 0.5
+    cmd toggleControlCenter
+    local pids="" t
+    for t in 0.05 0.12 0.2 0.3 0.45 0.65; do ( sleep $t; grim "$TT_DIR/open-$t.png" ) & pids="$pids $!"; done
+    wait $pids
+    sleep 6
+}
+
 # Hovering a dock tile that has windows shows a card of them above it.
 test_dock_preview() {
     cat > "$TT_LOGS/clients.json" <<'JSON'

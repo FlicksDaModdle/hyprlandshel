@@ -6,6 +6,8 @@ import { Note } from "types.slint";
 
 export component Toasts inherits Window {
     in property <[Note]> notes;
+    // Taskbar mode: bottom right, above the taskbar, as Windows 11 shows them.
+    in property <bool> bottom;
     callback dismiss(int);
     callback act(int, string);
     callback hovered(bool);
@@ -18,8 +20,9 @@ export component Toasts inherits Window {
     TouchArea {
         changed has-hover => { root.hovered(self.has-hover); }
         col := VerticalLayout {
-            alignment: start;
-            padding-top: 10px;
+            alignment: root.bottom ? end : start;
+            padding-top: root.bottom ? 0px : 10px;
+            padding-bottom: root.bottom ? 10px : 0px;
             padding-right: 12px;
             spacing: 10px;
             for n in root.notes: NoteCard {

@@ -72,6 +72,7 @@ pub enum Action {
     DockMenu(usize, usize, f32),
     DockMiddle(usize, usize),
     TileHover(usize, usize, bool, f32),
+    ShowDesktop,
     PreviewHover(usize, bool),
     PreviewPick(usize, usize),
     PreviewClose(usize, usize),
@@ -367,6 +368,9 @@ struct DockGeom {
     left: bool,
     /// Hovering a tile with windows shows a card of them (above the pill, so the dock's surface has room for it).
     previews: bool,
+    /// Windows 11's taskbar: the dock as a full-width strip along the bottom, the top bar gone.
+    taskbar: bool,
+    tb_left: bool,
 }
 
 /// A DDC monitor's slider from its backlight (0..100) and any software dim (Monitors.ddcSlider).
@@ -381,20 +385,21 @@ fn ddc_slider(backlight: f64, dim: Option<f64>) -> f64 {
 fn dock_geom(raw: &serde_json::Value, us: f32) -> (DockGeom, f32, f32, f32, f32, f32, f32) {
     let num = |k: &str, d: f64| raw[k].as_f64().unwrap_or(d) as f32;
     let u = |px: f32| (px * us).round().max(1.0);
-    let size = num("dockSize", 42.0);
+    let taskbar = raw["dockStyle"].as_str() == Some("taskbar");
+    let size = if taskbar { 40.0 } else { num("dockSize", 42.0) };
     let tile = u(size);
-    let icon = u((size * num("dockIcon", 50.0) / 100.0).round().max(8.0));
-    let breadth = u(size + 10.0);
-    let edge = u(num("dockGap", 16.0).clamp(0.0, 40.0));
+    let icon = if taskbar { u(24.0) } else { u((size * num("dockIcon", 50.0) / 100.0).round().max(8.0)) };
+    let breadth = if taskbar { u(48.0) } else { u(size + 10.0) };
+    let edge = if taskbar { 0.0 } else { u(num("dockGap", 16.0).clamp(0.0, 40.0)) };
     let hides = raw["dockHide"].as_bool().unwrap_or(false);
     let gaps_out = num("gapsOut", 8.0).max(0.0);
-    let exclusive = if hides { 0 } else { breadth.max(breadth + edge * 2.0 - gaps_out).round() as i32 };
-    let left = raw["dockPosition"].as_str() == Some("Left");
+    let exclusive = if hides { 0 } else if taskbar { breadth.round() as i32 } else { breadth.max(breadth + edge * 2.0 - gaps_out).round() as i32 };
+    let left = raw["dockPosition"].as_str() == Some("Left") && !taskbar;
     let previews = raw["dockPreviews"].as_bool().unwrap_or(true) && !left;
     // Room above the pill: for the names, or for the preview card if it is on (DockPreview.fullHeight + gap).
     let card = u(8.0) * 2.0 + u(28.0) + (u(200.0) * 0.6).ceil() + u(6.0) + u(10.0) + u(4.0);
     let head = if previews { u(46.0).max(card) } else { u(46.0) };
-    (DockGeom { head, breadth, edge, exclusive, hides, left, previews }, tile, icon, u(7.0), u(5.0), u(3.0), num("dockLabelSize", 12.0))
+    (DockGeom { head, breadth, edge, exclusive, hides, left, previews, taskbar, tb_left: raw["taskbarAlign"].as_str() == Some("left") }, tile, icon, if taskbar { u(12.0) } else { u(7.0) }, if taskbar { ((breadth - tile) / 2.0).round() } else { u(5.0) }, if taskbar { u(4.0) } else { u(3.0) }, num("dockLabelSize", 12.0))
 }
 
 fn shell_input_off(id: usize, pending: &mut Vec<usize>) {
@@ -426,7 +431,9 @@ impl PanelAnim {
 
     fn start(&self, grows: bool) -> (f64, f64, f64) {
         if grows {
-            (0.74, 0.5, self.from_y() * 0.4)
+            // A small drop at the button: narrower and much shorter than the panel, which
+            // then swells to size on the springs below.
+            (0.62, 0.30, self.from_y() * 0.55)
         } else {
             (0.97, 0.97, self.from_y() * 1.2)
         }
@@ -441,26 +448,30 @@ impl PanelAnim {
             self.sx.snap(x0);
             self.sy.snap(y0);
             self.lift.snap(l0);
-            self.inner.snap(-0.45);
+            self.inner.snap(-1.1);
             if fresh {
                 self.glass.snap(0.0);
             }
         }
-        self.sx.go(1.0, 340.0, 0.9, m);
-        self.sy.go(1.0, 400.0, 0.8, m);
-        self.lift.go(0.0, 360.0, 0.8, m);
-        self.glass.go(1.0, 150.0, 0.0, m);
-        self.inner.go(1.0, 260.0, 0.0, m);
+        // The width leads, the height follows a beat behind (the glass pours down out of the
+        // button), each landing with a little give; the contents wait for the shape to be most
+        // of the way there, then come up into place.
+        self.sx.go(1.0, 380.0, 0.72, m);
+        self.sy.go(1.0, 450.0, 0.74, m);
+        self.lift.go(0.0, 400.0, 0.8, m);
+        self.glass.go(1.0, 110.0, 0.0, m);
+        self.inner.go(1.0, 340.0, 0.0, m);
     }
 
     fn hide(&mut self, grows: bool, m: &Motion) {
         let grows = grows && m.springy && m.speed > 0.0;
         let (x0, y0, l0) = self.start(grows);
-        self.sx.go(x0, 230.0, 0.0, m);
-        self.sy.go(y0, 210.0, 0.0, m);
-        self.lift.go(l0, 210.0, 0.0, m);
-        self.glass.go(0.0, 170.0, 0.0, m);
-        self.inner.go(0.0, 120.0, 0.0, m);
+        // Going: the contents first and quickly, then the shape draws back into the button.
+        self.sx.go(x0.max(0.8), 250.0, 0.0, m);
+        self.sy.go(y0.max(0.55), 230.0, 0.0, m);
+        self.lift.go(l0, 230.0, 0.0, m);
+        self.glass.go(0.0, 190.0, 0.0, m);
+        self.inner.go(0.0, 90.0, 0.0, m);
     }
 
     fn moving(&self) -> bool {
@@ -479,6 +490,8 @@ impl PanelAnim {
         p.set_lift(self.lift.value as f32);
         p.set_glass(self.glass.value as f32);
         p.set_inner(self.inner.value as f32);
+        // How fast the shape is changing: the corners soften and the sides draw in while it travels.
+        p.set_flow((self.sy.speed().abs().max(self.sx.speed().abs()) / 5.0).min(1.0) as f32);
     }
 }
 
@@ -750,6 +763,7 @@ impl App {
             });
             // The dock, under everything on this monitor.
             let dock = crate::Dock::new().expect("the dock");
+            wire_taskbar(&dock, i, &actions);
             theme_into!(dock, &look, us);
             dock.set_us(us);
             {
@@ -778,6 +792,8 @@ impl App {
             dock.set_gap(gap);
             dock.set_label_size(label);
             dock.set_left(geom.left);
+            dock.set_taskbar(geom.taskbar);
+            dock.set_tb_left(geom.tb_left);
             dock.set_pos(if geom.left { geom.edge } else { geom.head });
             let dock_surface = shell.add(qh, Some(output), &wl::Placement {
                 namespace: "quickshell:dock",
@@ -1450,12 +1466,13 @@ impl App {
         self.pinned = crate::launcher::pinned(&raw);
         let scope_all = raw["dockScope"].as_str() == Some("all");
         let desktop = raw["dockDesktopTile"].as_bool().unwrap_or(true);
+        let taskbar = raw["dockStyle"].as_str() == Some("taskbar");
         let labels = raw["dockLabels"].as_bool().unwrap_or(true) && raw["dockPosition"].as_str() != Some("Left");
         let launcher_open = self.launcher.is_open();
         for b in &mut self.bars {
             let shown = crate::dock::shown_on(&self.clients, &b.monitor, scope_all);
             b.fullscreen = shown.iter().any(|c| c.fullscreen == 2 && !c.minimised);
-            let tiles = crate::dock::tiles(&self.pinned, &shown, desktop);
+            let tiles = crate::dock::tiles(&self.pinned, &shown, desktop, taskbar);
             let count = |n: usize| match n {
                 0 => "not running".to_string(),
                 1 => "1 window".to_string(),
@@ -1484,6 +1501,11 @@ impl App {
                             d.active = launcher_open;
                         }
                         Tile::Divider => d.kind = "divider".into(),
+                        Tile::Search => {
+                            d.kind = "search".into();
+                            d.label = "Search".into();
+                            d.glyph = crate::glyphs::glyph("search");
+                        }
                         Tile::Pin { index, windows } => {
                             let p = &self.pinned[*index];
                             d.kind = "pin".into();
@@ -1611,20 +1633,23 @@ impl App {
                 shell.set_layer(b.dock_surface, layer, ex);
             }
             let total = (g.head + g.breadth + g.edge) as i32;
+            // While hidden, the strip along the edge that brings it back — not under a fullscreen window
+            // unless Settings says the dock may come over it (Dock.qml's edgeStrip).
+            let edge_strip = |r: Vec<(i32, i32, i32, i32)>| if b.fullscreen && !self.look.dock_over_fullscreen { Vec::new() } else { r };
             let mut input: Vec<(i32, i32, i32, i32)> = if g.left {
                 if revealed {
                     let (y, h) = (b.dock.get_pill_y() as i32, b.dock.get_pill_height() as i32);
                     let x = b.reveal.value as i32;
                     vec![(0, y - 40, total.min(x + b.dock.get_pill_width() as i32 + 40), h + 80)]
                 } else {
-                    vec![(0, 0, 3, 100_000)]
+                    edge_strip(vec![(0, 0, 3, 100_000)])
                 }
             } else if revealed {
                 let (x, w) = (b.dock.get_pill_x() as i32, b.dock.get_pill_width() as i32);
                 let y = b.reveal.value as i32;
                 vec![(x - 40, y, w + 80, total - y)]
             } else {
-                vec![(0, total - 3, 100_000, 3)]
+                edge_strip(vec![(0, total - 3, 100_000, 3)])
             };
             // Over the pill, the preview card where it is showing.
             if b.dock.get_preview_open() && revealed {
@@ -1647,7 +1672,9 @@ impl App {
     /// up, keeping no room, taking clicks only along the very top.
     fn step_bars(&mut self, shell: &mut wl::Shell, dt: f64) {
         let m = self.look.motion;
-        let (auto, dock_hides) = (self.look.bar_auto_hide, self.look.dock_auto_hide);
+        // No top bar in taskbar mode: it is away for good, keeping no room and taking no clicks.
+        let taskbar = self.look.taskbar;
+        let (auto, dock_hides) = (self.look.bar_auto_hide || taskbar, self.look.dock_auto_hide);
         let delay = Duration::from_millis(self.look.bar_reveal_delay);
         let open_on = self.open.as_ref().map(|o| o.0);
         let launcher_on = self.launcher.is_open().then_some(self.focused_bar_cached);
@@ -1674,6 +1701,7 @@ impl App {
                 }
             }
             let revealed = !self.lock.active
+                && !taskbar
                 && (!auto || b.bar_latch || open_on == Some(i) || (dock_hides && launcher_on == Some(i)));
             let to = if revealed { 0.0 } else { -(b.height as f64) - 4.0 };
             if to != b.bar_to {
@@ -1693,7 +1721,7 @@ impl App {
             if b.bar_applied != Some(want) {
                 b.bar_applied = Some(want);
                 shell.set_layer(b.bar_surface, Layer::Top, want.0);
-                shell.set_input_rect(b.bar_surface, if revealed { Some((0, 0, 100_000, b.height as i32)) } else { Some((0, 0, 100_000, 3)) });
+                shell.set_input_rect(b.bar_surface, if revealed { Some((0, 0, 100_000, b.height as i32)) } else if taskbar { None } else { Some((0, 0, 100_000, 3)) });
             }
         }
     }
@@ -1857,7 +1885,7 @@ impl App {
         let windows_mode = raw["windowMode"].as_str() == Some("windows");
         let ws = crate::dock::monitor(&self.bars[bar].monitor).1;
         match tile {
-            Tile::Start => self.toggle_launcher(shell, qh),
+            Tile::Start | Tile::Search => self.toggle_launcher(shell, qh),
             Tile::Divider => {}
             Tile::Pin { index, windows } => {
                 if windows.is_empty() {
@@ -2038,11 +2066,17 @@ impl App {
             b.dock.set_gap(gap);
             b.dock.set_label_size(label);
             b.dock.set_left(geom.left);
+            b.dock.set_taskbar(geom.taskbar);
+            b.dock.set_tb_left(geom.tb_left);
             b.dock_geom = geom;
             b.reveal_to = -1.0;
+            b.bar_applied = None;
             b.bar.set_quiet(self.look.dnd);
+            b.dock.set_quiet(self.look.dnd);
             b.bar.set_show_tray(self.look.show_tray);
+            b.dock.set_show_tray(self.look.show_tray);
             b.bar.set_tray_open(self.look.tray_open);
+            b.dock.set_tray_open(self.look.tray_open);
             b.panels.set_quiet(self.look.dnd);
             b.panels.set_theme_mode(self.look.mode.clone().into());
         }
@@ -2338,13 +2372,21 @@ impl App {
             .collect();
         for b in &self.bars {
             b.bar.set_time(time.clone().into());
+            b.dock.set_time(time.clone().into());
             b.bar.set_date(date.clone().into());
+            b.dock.set_date(date.clone().into());
             b.bar.set_battery(battery.as_ref().map(|x| x.percent).unwrap_or(-1));
+            b.dock.set_battery(battery.as_ref().map(|x| x.percent).unwrap_or(-1));
             b.bar.set_charging(battery.as_ref().is_some_and(|x| x.charging));
+            b.dock.set_charging(battery.as_ref().is_some_and(|x| x.charging));
             b.bar.set_has_timer(!timers.is_empty());
+            b.dock.set_has_timer(!timers.is_empty());
             b.bar.set_timer_text(timer_text.clone().into());
+            b.dock.set_timer_text(timer_text.clone().into());
             b.bar.set_timer_running(soonest.is_some());
+            b.dock.set_timer_running(soonest.is_some());
             b.bar.set_timer_pomodoro(soonest.is_some_and(|t| t.pomodoro));
+            b.dock.set_timer_pomodoro(soonest.is_some_and(|t| t.pomodoro));
             b.panels.set_timers(model(rows.clone()));
         }
         // "5 min" on the cards moves on.
@@ -2459,9 +2501,13 @@ impl App {
             .collect();
         for b in &self.bars {
             b.bar.set_net_label(s.net_label.clone().into());
+            b.dock.set_net_label(s.net_label.clone().into());
             b.bar.set_net_icon(s.net_icon.into());
+            b.dock.set_net_icon(s.net_icon.into());
             b.bar.set_volume_label(vol_label.clone().into());
+            b.dock.set_volume_label(vol_label.clone().into());
             b.bar.set_volume_icon(vol_icon.into());
+            b.dock.set_volume_icon(vol_icon.into());
             let p = &b.panels;
             p.set_tiles(model(tiles.clone()));
             p.set_mixer(model(mixer.clone()));
@@ -2600,8 +2646,11 @@ impl App {
         }
         for b in &self.bars {
             b.bar.set_mic_in_use(!s.mic_apps.is_empty());
+            b.dock.set_mic_in_use(!s.mic_apps.is_empty());
             b.bar.set_camera_in_use(!s.camera_apps.is_empty());
+            b.dock.set_camera_in_use(!s.camera_apps.is_empty());
             b.bar.set_screen_shared(self.sharing);
+            b.dock.set_screen_shared(self.sharing);
             b.panels.set_privacy(model(rows.clone()));
         }
     }
@@ -2622,6 +2671,7 @@ impl App {
             .collect();
         for b in &self.bars {
             b.bar.set_has_drives(!rows.is_empty());
+            b.dock.set_has_drives(!rows.is_empty());
             b.panels.set_drives(model(rows.clone()));
         }
     }
@@ -2630,8 +2680,11 @@ impl App {
         let names: Vec<SharedString> = self.updates.iter().take(12).map(|n| n.clone().into()).collect();
         for b in &self.bars {
             b.bar.set_updates(self.updates.len() as i32);
+            b.dock.set_updates(self.updates.len() as i32);
             b.bar.set_show_updates(self.look.updates_in_bar);
+            b.dock.set_show_updates(self.look.updates_in_bar);
             b.bar.set_mail_unread(if self.look.mail_in_bar { self.mail.map(|n| n as i32).unwrap_or(-1) } else { -1 });
+            b.dock.set_mail_unread(if self.look.mail_in_bar { self.mail.map(|n| n as i32).unwrap_or(-1) } else { -1 });
             b.panels.set_update_count(self.updates.len() as i32);
             b.panels.set_update_names(model(names.clone()));
         }
@@ -2709,6 +2762,7 @@ impl App {
             .collect();
         for b in &self.bars {
             b.bar.set_tray(model(items.clone()));
+            b.dock.set_tray(model(items.clone()));
         }
     }
 
@@ -2736,6 +2790,7 @@ impl App {
         let rows: Vec<Note> = self.notes.iter().map(Self::note_row).collect();
         for b in &self.bars {
             b.bar.set_notifications(rows.len() as i32);
+            b.dock.set_notifications(rows.len() as i32);
             b.panels.set_notes(model(rows.clone()));
         }
     }
@@ -2766,6 +2821,7 @@ impl App {
             return;
         }
         let width = 376 + 12;
+        self.toasts.set_bottom(self.look.taskbar);
         let height = (self.toasts.get_wanted_height().ceil() as u32).max(1);
         match self.toast_surface {
             Some(id) => shell.resize(id, width, height),
@@ -2776,7 +2832,7 @@ impl App {
                 self.toast_surface = Some(shell.add_window(qh, self.toast_window.clone(), output.as_ref(), &wl::Placement {
                     namespace: "quickshell:panel",
                     layer: Layer::Overlay,
-                    anchor: Anchor::TOP | Anchor::RIGHT,
+                    anchor: if self.look.taskbar { Anchor::BOTTOM | Anchor::RIGHT } else { Anchor::TOP | Anchor::RIGHT },
                     width,
                     height,
                     exclusive: 0,
@@ -2869,10 +2925,13 @@ impl App {
         host.panels.set_anchor(x);
         // Appearance.panelTop: the bar's setting plus a gap, not the scaled surface.
         host.panels.set_top(self.look.bar_height + 10.0);
+        host.panels.set_taskbar(host.dock_geom.taskbar);
+        host.panels.set_tb_bottom(host.dock_geom.breadth + 10.0);
         // Switching from one panel to another starts the new one afresh.
         let fresh = host.panels.get_which().as_str() != which;
         host.panels.set_which(which.into());
         host.bar.set_open_panel(which.into());
+        host.dock.set_open_panel(which.into());
         host.closing = false;
         host.anim.up = which == "appmenu";
         host.anim.show(fresh, grows, &m);
@@ -2919,6 +2978,7 @@ impl App {
         self.last_frame = Instant::now();
         if let Some(host) = self.bars.get_mut(bar) {
             host.bar.set_open_panel("".into());
+            host.dock.set_open_panel("".into());
             host.closing = true;
             host.anim.hide(grows, &m);
             // Clicks go through to what's under it while it fades.
@@ -3348,6 +3408,7 @@ impl App {
             }
             Action::DockActivate(bar, t) => self.dock_activate(shell, qh, bar, t),
             Action::DockMenu(bar, t, x) => self.dock_menu(shell, qh, bar, t, x),
+            Action::ShowDesktop => crate::dock::toggle_desktop(),
             Action::TileHover(bar, t, on, x) => self.dock_hover(bar, t, on, x),
             Action::PreviewHover(_, on) => {
                 self.prev_card_hover = on;
@@ -3577,7 +3638,7 @@ impl App {
         theme_into!(self.launcher.ui, &self.look, us);
         let raw = theme::raw();
         // The dock's pill it grows out of, if the morph is on and there is one.
-        let pill = self.bars.get(bar).filter(|_| raw["launcherMorph"].as_bool().unwrap_or(true)).and_then(|b| {
+        let pill = self.bars.get(bar).filter(|_| raw["launcherMorph"].as_bool().unwrap_or(true) && !self.look.taskbar).and_then(|b| {
             let g = b.dock_geom;
             let (w, h) = (b.dock.get_pill_width(), b.dock.get_pill_height());
             (w > 0.0 && h > 0.0).then_some(crate::launch_ui::Pill { gap: g.edge, w, h, tile: b.dock.get_tile(), icon: b.dock.get_icon_size(), pad: b.dock.get_pad_h(), left: g.left })
@@ -4375,6 +4436,26 @@ fn wire_bar(bar: &Bar, i: usize, q: &Queue) {
     on!(on_tray_secondary, |k| Action::TraySecondary(k.to_string()));
     on!(on_tray_menu, |k, x| Action::TrayMenu(i, k.to_string(), x));
     on!(on_tray_scroll, |k, d| Action::TrayScroll(k.to_string(), d));
+}
+
+/// The taskbar's status area: the same buttons as the bar's right end, on the dock's window.
+fn wire_taskbar(dock: &crate::Dock, i: usize, q: &Queue) {
+    macro_rules! on {
+        ($set:ident, |$($a:ident),*| $act:expr) => {{
+            let q = q.clone();
+            dock.$set(move |$($a),*| q.borrow_mut().push($act));
+        }};
+    }
+    on!(on_volume_step, |d| Action::VolumeStep(d));
+    on!(on_toggle_panel, |w, x| Action::TogglePanel(i, w.to_string(), x));
+    on!(on_toggle_dnd, | | Action::ToggleDnd);
+    on!(on_open_mail, | | Action::OpenMail);
+    on!(on_tray_toggle, | | Action::TrayToggle);
+    on!(on_tray_activate, |k, x| Action::TrayActivate(i, k.to_string(), x));
+    on!(on_tray_secondary, |k| Action::TraySecondary(k.to_string()));
+    on!(on_tray_menu, |k, x| Action::TrayMenu(i, k.to_string(), x));
+    on!(on_tray_scroll, |k, d| Action::TrayScroll(k.to_string(), d));
+    on!(on_show_desktop, | | Action::ShowDesktop);
 }
 
 fn wire_panels(p: &Panels, q: &Queue) {

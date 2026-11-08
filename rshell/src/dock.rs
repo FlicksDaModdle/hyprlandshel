@@ -74,6 +74,8 @@ pub fn label_for(cls: &str) -> String {
 pub enum Tile {
     Start,
     Divider,
+    /// The taskbar's search tile (it opens the launcher, Windows 11's Start menu with its field).
+    Search,
     Pin { index: usize, windows: Vec<String> },
     App { class: String, windows: Vec<String> },
     Desktop,
@@ -81,8 +83,11 @@ pub enum Tile {
 
 /// The tiles: Start, the pinned apps, the running apps not pinned, show
 /// desktop; dividers between.
-pub fn tiles(pinned: &[Pinned], shown: &[Client], desktop_tile: bool) -> Vec<Tile> {
+pub fn tiles(pinned: &[Pinned], shown: &[Client], desktop_tile: bool, taskbar: bool) -> Vec<Tile> {
     let mut out = vec![Tile::Start];
+    if taskbar {
+        out.push(Tile::Search);
+    }
     let mut unpinned: Vec<String> = Vec::new();
     for c in shown {
         if !pinned.iter().any(|p| p.matches(&c.class)) && !unpinned.contains(&c.class) {
@@ -103,7 +108,8 @@ pub fn tiles(pinned: &[Pinned], shown: &[Client], desktop_tile: bool) -> Vec<Til
         let windows = shown.iter().filter(|c| c.class == cls).map(|c| c.address.clone()).collect();
         out.push(Tile::App { class: cls, windows });
     }
-    if desktop_tile {
+    // The taskbar has a sliver for it at its far end instead.
+    if desktop_tile && !taskbar {
         out.push(Tile::Divider);
         out.push(Tile::Desktop);
     }
