@@ -168,11 +168,14 @@ export component OverviewWin inherits Window {
                     }
                     if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) {
                         if (root.drag-active) {
+                            // Read before the drag is ended: `over` is -1 once it is.
+                            let target = root.over;
+                            let was-carrying = root.carrying;
                             root.drag-active = false;
                             // Dropped on another workspace, or the new one.
-                            if (root.over >= 0 && root.over < root.n && root.spaces[root.over].id != root.drag-from) {
-                                root.move-window(w.idx, root.spaces[root.over].id);
-                            } else if (root.over == root.n && root.carrying) {
+                            if (target >= 0 && target < root.n && root.spaces[target].id != root.drag-from) {
+                                root.move-window(w.idx, root.spaces[target].id);
+                            } else if (target == root.n && was-carrying) {
                                 root.move-window(w.idx, root.new-ws);
                             }
                         } else {
