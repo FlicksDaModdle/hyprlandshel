@@ -607,6 +607,7 @@ pub struct App {
     overview_refresh: Option<Instant>,
     /// The timers panel's custom length was unreadable.
     bad_custom: bool,
+    opened: HashMap<String, Instant>,
     updates_checked: Option<Instant>,
     updates_checking: bool,
     /// The on-screen keyboard while it is up: its view, surface and state.
@@ -1059,6 +1060,7 @@ impl App {
             hypr_rx,
             overview_refresh: None,
             bad_custom: false,
+            opened: HashMap::new(),
             updates_checked: None,
             updates_checking: false,
             osk: None,
@@ -1157,6 +1159,31 @@ impl App {
             // An app's own minimise button (the shell's Hyprland plugin
             // passes it on), or a taskbar's request: "ADDRESS,1" puts it
             // away, "ADDRESS,0" brings it back.
+            // When each window opened: an app that starts out asking to be
+            // maximised is left as the layout has it.
+            if let Some(d) = line.strip_prefix("openwindow>>") {
+                if let Some(a) = d.split(',').next() {
+                    self.opened.retain(|_, t| t.elapsed() < Duration::from_secs(10));
+                    self.opened.insert(a.trim().trim_start_matches("0x").to_string(), Instant::now());
+                }
+            }
+            // An app's own maximise button (the plugin passes the request
+            // on; Hyprland itself ignores it): fill the screen above the
+            // bar and dock, or give it back.
+            if let Some(d) = line.strip_prefix("maximize>>") {
+                if let Some((addr, state)) = d.split_once(',') {
+                    let key = addr.trim().trim_start_matches("0x");
+                    let fresh = self.opened.get(key).is_some_and(|t| t.elapsed() < Duration::from_millis(1500));
+                    if !fresh {
+                        let sel = hypr::lua_str(&format!("address:0x{key}"));
+                        let action = if state.trim() == "0" { "unset" } else { "set" };
+                        hypr::dispatch(
+                            &format!("hl.dsp.window.fullscreen({{ mode = \"maximized\", action = \"{action}\", window = {sel} }})"),
+                            "fullscreen 1",
+                        );
+                    }
+                }
+            }
             if let Some(d) = line.strip_prefix("minimized>>") {
                 if let Some((addr, state)) = d.split_once(',') {
                     let addr = format!("0x{}", addr.trim().trim_start_matches("0x"));

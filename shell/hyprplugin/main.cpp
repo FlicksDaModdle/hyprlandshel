@@ -40,16 +40,18 @@ namespace {
     CHyprSignalListener                                         g_onClose;
     std::unordered_map<const void*, CHyprSignalListener>       g_watch;
 
-    void announce(const PHLWINDOW& w, bool minimised) {
+    // `event` is "minimized" (an app's minimise button) or "maximize" (its
+    // maximise button: ADDRESS,1 to fill the screen, ADDRESS,0 to give it back).
+    void announce(const PHLWINDOW& w, bool on, const char* event = "minimized") {
         if (!w)
             return;
-        const auto data = std::format("{:x},{}", reinterpret_cast<uintptr_t>(w.get()), minimised ? 1 : 0);
+        const auto data = std::format("{:x},{}", reinterpret_cast<uintptr_t>(w.get()), on ? 1 : 0);
 #ifdef HYPRSHELL_BACKENDS
         if (const auto& sock = IPC::Socket2::sock())
-            sock->postEvent({.event = "minimized", .data = data});
+            sock->postEvent({.event = event, .data = data});
 #else
         if (g_pEventManager)
-            g_pEventManager->postEvent(SHyprIPCEvent{.event = "minimized", .data = data});
+            g_pEventManager->postEvent(SHyprIPCEvent{.event = event, .data = data});
 #endif
     }
 
@@ -61,6 +63,10 @@ namespace {
         g_watch[w.get()] = w->backend().m_events.stateRequest.listen([ref](const Desktop::View::SBackendStateRequest& r) {
             if (r.minimized.value_or(false))
                 announce(ref.lock(), true);
+            // Hyprland's own answer to a maximise request is to flip the
+            // window between floating and tiled; the shell does the real one.
+            if (r.maximized.has_value())
+                announce(ref.lock(), *r.maximized, "maximize");
         });
 #else
         if (const auto xdg = w->m_xdgSurface.lock(); xdg && xdg->m_toplevel) {

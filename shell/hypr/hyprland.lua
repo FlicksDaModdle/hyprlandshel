@@ -769,10 +769,16 @@ do
     end
 end
 
--- An app's own maximise button does what it says, in every mode: the
--- window fills the screen (above the bar and dock), and a second press puts
--- it back. (It used to be ignored while tiling, which left the title bar's
--- maximise button of Firefox, the terminal and the rest dead.)
+-- An app's own maximise button: Hyprland's answer to it is to flip the
+-- window between floating and tiled, so that request is ignored here and
+-- the shell's plugin (shell/hyprplugin) passes it on, and the shell does
+-- the real thing: the window fills the screen above the bar and dock, and
+-- a second press puts it back.
+hl.window_rule({
+    name  = "suppress-maximize-events",
+    match = { class = ".*" },
+    suppress_event = "maximize",
+})
 
 -- No blur rule for kitty. Windows are not layer surfaces: decoration.blur
 -- above already blurs behind any window with transparency, so kitty's
