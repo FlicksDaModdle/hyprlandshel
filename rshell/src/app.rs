@@ -1154,6 +1154,20 @@ impl App {
             if self.overview.open && ["movewindow", "openwindow", "closewindow", "workspace", "createworkspace", "destroyworkspace", "changefloatingmode"].iter().any(|k| line.starts_with(k)) {
                 self.overview_refresh = Some(Instant::now() + Duration::from_millis(120));
             }
+            // An app's own minimise button (the shell's Hyprland plugin
+            // passes it on), or a taskbar's request: "ADDRESS,1" puts it
+            // away, "ADDRESS,0" brings it back.
+            if let Some(d) = line.strip_prefix("minimized>>") {
+                if let Some((addr, state)) = d.split_once(',') {
+                    let addr = format!("0x{}", addr.trim().trim_start_matches("0x"));
+                    if state.trim() == "0" {
+                        let ws = hypr::json("j/activeworkspace")["id"].as_i64().unwrap_or(1);
+                        crate::dock::focus(&addr, true, ws);
+                    } else {
+                        crate::dock::minimise(&addr);
+                    }
+                }
+            }
             if let Some(d) = line.strip_prefix("screencast>>") {
                 self.sharing = d.starts_with('1');
                 self.refresh_privacy();

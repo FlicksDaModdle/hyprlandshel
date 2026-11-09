@@ -769,17 +769,10 @@ do
     end
 end
 
--- Tiling: an app's own maximise is ignored, the layout decides sizes
--- (Super+Shift+F maximises). In the Windows 11 behaviour the maximise
--- button in an app's title bar does what it says, as on Windows: the
--- window fills the screen above the dock, and a second press puts it back.
-if window_mode ~= "windows" then
-    hl.window_rule({
-        name  = "suppress-maximize-events",
-        match = { class = ".*" },
-        suppress_event = "maximize",
-    })
-end
+-- An app's own maximise button does what it says, in every mode: the
+-- window fills the screen (above the bar and dock), and a second press puts
+-- it back. (It used to be ignored while tiling, which left the title bar's
+-- maximise button of Firefox, the terminal and the rest dead.)
 
 -- No blur rule for kitty. Windows are not layer surfaces: decoration.blur
 -- above already blurs behind any window with transparency, so kitty's
