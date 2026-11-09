@@ -29,12 +29,12 @@ fn state_home() -> PathBuf {
 const CHECK: &str = r#"db="${XDG_CACHE_HOME:-$HOME/.cache}/hyprshell/checkup-db"
 mkdir -p "$db"
 if command -v checkupdates >/dev/null 2>&1; then
-  CHECKUPDATES_DB="$db" checkupdates 2>/dev/null | awk 'NF>=4 {print "R", $1}'
+  CHECKUPDATES_DB="$db" checkupdates 2>/dev/null | awk 'NF>=4 {print "R", $1, $2, $4}'
 fi
 for h in paru yay; do
   if command -v "$h" >/dev/null 2>&1; then
     echo "H $h"
-    "$h" -Qua 2>/dev/null | awk 'NF>=4 && $1 !~ /^::/ {print "A", $1}'
+    "$h" -Qua 2>/dev/null | awk 'NF>=4 && $1 !~ /^::/ {print "A", $1, $2, $4}'
     break
   fi
 done"#;
@@ -61,10 +61,12 @@ pub fn updates(tx: Sender<Event>, now: std::sync::mpsc::Receiver<()>, mut wake: 
             let mut names = Vec::new();
             let mut helper = String::new();
             for l in text.lines() {
-                let mut f = l.split_whitespace();
-                match (f.next(), f.next()) {
-                    (Some("R" | "A"), Some(n)) => names.push(n.to_string()),
-                    (Some("H"), Some(h)) => helper = h.to_string(),
+                let f: Vec<&str> = l.split_whitespace().collect();
+                match f.as_slice() {
+                    // "name  1.0 → 1.1", the AUR's marked.
+                    [k @ ("R" | "A"), n, from, to] => names.push(format!("{n}  {from} → {to}{}", if *k == "A" { "  · AUR" } else { "" })),
+                    [k @ ("R" | "A"), n] => names.push(format!("{n}{}", if *k == "A" { "  · AUR" } else { "" })),
+                    ["H", h] => helper = h.to_string(),
                     _ => {}
                 }
             }

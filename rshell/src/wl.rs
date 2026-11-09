@@ -170,6 +170,8 @@ pub struct Shell {
     pointer: Option<wl_pointer::WlPointer>,
     /// The surface the pointer is over, if one of ours.
     pub pointer_on: Option<usize>,
+    /// Right clicks on a wallpaper: (picture id, x, y) logical, for the shell to answer.
+    pub desktop_clicks: Vec<(usize, f64, f64)>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     cursor_shapes: Option<wp_cursor_shape_manager_v1::WpCursorShapeManagerV1>,
     cursor: Option<wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
@@ -230,6 +232,7 @@ impl Shell {
             kept: Vec::new(),
             pointer: None,
             pointer_on: None,
+            desktop_clicks: Vec::new(),
             keyboard: None,
             cursor_shapes,
             cursor: None,
@@ -399,11 +402,8 @@ impl Shell {
             (Some(_), Some(v)) => Some(v.get_viewport(&surface, qh, ())),
             _ => None,
         };
-        // It takes no input: clicks on the desktop go to the panel layer or
-        // nowhere.
-        if let Ok(r) = smithay_client_toolkit::compositor::Region::new(&self.compositor) {
-            surface.set_input_region(Some(r.wl_region()));
-        }
+        // It takes the pointer, for the right-click menu on the desktop;
+        // under every window, so nothing else loses a click to it.
         let layer = self.layer_shell.create_layer_surface(qh, surface, p.layer, Some(p.namespace), output);
         layer.set_anchor(p.anchor);
         layer.set_size(p.width, p.height);
@@ -859,6 +859,12 @@ impl Shell {
 impl PointerHandler for Shell {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         for ev in events {
+            if let Some(pic) = self.pictures.iter().position(|p| p.layer.wl_surface() == &ev.surface) {
+                if let PointerEventKind::Press { button: 0x111, .. } = ev.kind {
+                    self.desktop_clicks.push((pic, ev.position.0, ev.position.1));
+                }
+                continue;
+            }
             let Some(i) = self.index_of(&ev.surface) else { continue };
             let at = LogicalPosition::new(ev.position.0 as f32, ev.position.1 as f32);
             let adapter = self.at(i).adapter.clone();

@@ -48,6 +48,7 @@ pub enum ClipCmd {
 }
 
 pub enum Action {
+    Desktop(String),
     OskKey(i32, i32),
     OskClose,
     Clip(ClipCmd),
@@ -606,6 +607,8 @@ pub struct App {
     overview_refresh: Option<Instant>,
     /// The timers panel's custom length was unreadable.
     bad_custom: bool,
+    updates_checked: Option<Instant>,
+    updates_checking: bool,
     /// The on-screen keyboard while it is up: its view, surface and state.
     osk: Option<(crate::Osk, usize, crate::osk::Osk)>,
     osk_acts: Queue,
@@ -1056,6 +1059,8 @@ impl App {
             hypr_rx,
             overview_refresh: None,
             bad_custom: false,
+            updates_checked: None,
+            updates_checking: false,
             osk: None,
             osk_acts: osk_acts_q,
             clip: (false, true, String::new(), Vec::new()),
@@ -1156,6 +1161,11 @@ impl App {
         }
         if hypr_changed {
             self.refresh_hypr();
+        }
+        for (pic, x, y) in std::mem::take(&mut shell.desktop_clicks) {
+            if let Some(bar) = self.bars.iter().position(|b| b.ground == pic) {
+                self.desktop_menu(shell, qh, bar, x as f32, y as f32);
+            }
         }
         if self.overview_refresh.is_some_and(|t| Instant::now() >= t) {
             self.overview_refresh = None;
@@ -1417,6 +1427,8 @@ impl App {
         while let Ok(ev) = self.extras_rx.try_recv() {
             match ev {
                 extras::Event::Updates { names, helper } => {
+                    self.updates_checked = Some(Instant::now());
+                    self.updates_checking = false;
                     self.updates = names;
                     self.update_helper = helper;
                 }
@@ -2606,6 +2618,36 @@ impl App {
             .collect()
     }
 
+    /// Asks the supervisor for a fresh shell (Session.reloadShell).
+    fn reload_shell(&self) {
+        let script = std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share/hyprshell/start-shell.sh"));
+        if let Some(sc) = script.filter(|p| p.exists()) {
+            extras::spawn(&[&sc.to_string_lossy(), "--restart"]);
+        }
+    }
+
+    /// Right click on the desktop: the menu where it was clicked.
+    fn desktop_menu(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, bar: usize, x: f32, y: f32) {
+        let row = |key: &str, label: &str, glyph: &str, rule: bool| crate::AppMenuRow { key: key.into(), label: label.into(), glyph: crate::glyphs::glyph(glyph), rule, danger: false };
+        let rows = vec![
+            row("terminal", "Open terminal here", "terminal", false),
+            row("files", "Open file manager", "folder", false),
+            row("overview", "Overview", "panelsTopLeft", true),
+            row("wallpaper", "Change wallpaper", "image", false),
+            row("display", "Display settings", "monitor", false),
+            row("theme", "Toggle theme", "moon", true),
+            row("reload", "Reload shell", "refresh", false),
+        ];
+        let Some(b) = self.bars.get(bar) else { return };
+        b.panels.set_desktop_rows(model(rows));
+        b.panels.set_desktop_x(x);
+        b.panels.set_desktop_y(y);
+        if self.open.is_some() {
+            self.close_panel();
+        }
+        self.open_panel(shell, qh, bar, "desktop", x);
+    }
+
     fn toggle_osk(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>) {
         if let Some((_, id, _)) = self.osk.take() {
             shell.remove(id);
@@ -3041,6 +3083,14 @@ impl App {
     }
 
     fn refresh_extras(&mut self) {
+        let note = if self.updates_checking {
+            "Checking…".to_string()
+        } else if let Some(t) = self.updates_checked {
+            let m = t.elapsed().as_secs() / 60;
+            if m < 1 { "Checked just now".into() } else if m < 60 { format!("Checked {m} min ago") } else { format!("Checked {} h ago", m / 60) }
+        } else {
+            "Not checked yet".to_string()
+        };
         let names: Vec<SharedString> = self.updates.iter().take(12).map(|n| n.clone().into()).collect();
         for b in &self.bars {
             b.bar.set_updates(self.updates.len() as i32);
@@ -3051,6 +3101,7 @@ impl App {
             b.dock.set_mail_unread(if self.look.mail_in_bar { self.mail.map(|n| n as i32).unwrap_or(-1) } else { -1 });
             b.panels.set_update_count(self.updates.len() as i32);
             b.panels.set_update_names(model(names.clone()));
+            b.panels.set_update_note(note.clone().into());
         }
     }
 
@@ -3731,6 +3782,12 @@ impl App {
             }
             Action::DriveMount(p) => self.daemon.send(json!({ "cmd": "usb-mount", "path": p })),
             Action::DriveEject(d) => self.daemon.send(json!({ "cmd": "usb-eject", "drive": d })),
+            Action::RunUpdates if self.updates.is_empty() => {
+                // Nothing waiting: the button asks again instead.
+                self.updates_checking = true;
+                let _ = self.updates_now.send(());
+                self.refresh_extras();
+            }
             Action::RunUpdates => {
                 self.close_panel();
                 let step = if self.update_helper.is_empty() { "sudo pacman -Syu".to_string() } else { format!("{} -Syu", self.update_helper) };
@@ -3869,6 +3926,19 @@ impl App {
                     self.asking = if self.asking == ssid { String::new() } else { ssid };
                 }
                 self.refresh_lists();
+            }
+            Action::Desktop(k) => {
+                self.close_panel();
+                match k.as_str() {
+                    "terminal" => self.command(shell, qh, "openTerminal"),
+                    "files" => self.command(shell, qh, "openFiles"),
+                    "overview" => self.command(shell, qh, "toggleOverview"),
+                    "wallpaper" => self.command(shell, qh, "openSettings Wallpaper"),
+                    "display" => self.command(shell, qh, "openSettings Display"),
+                    "theme" => self.command(shell, qh, "toggleTheme"),
+                    "reload" => self.reload_shell(),
+                    _ => {}
+                }
             }
             Action::OskKey(r, c) => self.osk_key(r, c),
             Action::OskClose => {
@@ -5027,6 +5097,7 @@ impl App {
             }
             "openMail" => self.act(shell, qh, Action::OpenMail),
             "checkUpdates" => {
+                self.updates_checking = true;
                 let _ = self.updates_now.send(());
             }
             "openTerminal" => {
@@ -5242,6 +5313,7 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_wifi, |v| Action::Wifi(v));
     on!(on_bt, |v| Action::Bt(v));
     on!(on_join, |n| Action::Join(n.to_string()));
+    on!(on_desktop_pick, |k| Action::Desktop(k.to_string()));
     on!(on_clip_edited, |t| Action::Clip(ClipCmd::Edited(t.to_string())));
     on!(on_clip_choose, |i| Action::Clip(ClipCmd::Choose(i)));
     on!(on_clip_forget, |i| Action::Clip(ClipCmd::Forget(i)));

@@ -1543,6 +1543,7 @@ component DrivesPanel inherits PanelSurface {
         padding: 6px;
         padding-top: 12px;
         Caps { x: 8px; text: "DRIVES"; height: 24px; vertical-alignment: center; }
+        if root.drives.length == 0: Text { height: 44px; x: 8px; vertical-alignment: center; text: "Nothing plugged in"; font-size: Theme.fs(12); color: Theme.ink3; }
         for d in root.drives: Rectangle {
             height: 48px;
             border-radius: Theme.r-sm;
@@ -2043,6 +2044,7 @@ component ClipboardPanel inherits PanelSurface {
 
 component UpdatesPanel inherits PanelSurface {
     in property <int> count;
+    in property <string> note;
     in property <[string]> packages;
     callback run();
     VerticalLayout {
@@ -2050,7 +2052,7 @@ component UpdatesPanel inherits PanelSurface {
         spacing: 8px;
         HorizontalLayout {
             Caps { vertical-alignment: center; text: "UPDATES"; }
-            Text { horizontal-alignment: right; vertical-alignment: center; text: root.count + " waiting"; font-size: Theme.fs(11); color: Theme.ink3; }
+            Text { horizontal-alignment: right; vertical-alignment: center; text: root.note != "" ? root.note + " · " + root.count + " waiting" : root.count + " waiting"; font-size: Theme.fs(11); color: Theme.ink3; }
         }
         VerticalLayout {
             spacing: 2px;
@@ -2068,7 +2070,7 @@ component UpdatesPanel inherits PanelSurface {
             Text {
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
-                text: "Install in a terminal";
+                text: root.count > 0 ? "Update now" : "Check for updates";
                 font-size: Theme.fs(12.5);
                 font-weight: 600;
                 color: ut.has-hover ? Theme.ink-on-accent : Theme.ink;
@@ -2080,10 +2082,13 @@ component UpdatesPanel inherits PanelSurface {
 
 component PrivacyPanel inherits PanelSurface {
     in property <[PrivacyRow]> rows;
+    in property <bool> mic-muted;
+    callback mute();
     VerticalLayout {
         padding: 14px;
         spacing: 6px;
         Caps { text: "IN USE"; }
+        if root.rows.length == 0: Text { height: 30px; vertical-alignment: center; text: "Nothing is using the microphone, camera or screen."; wrap: word-wrap; font-size: Theme.fs(12); color: Theme.ink3; }
         for r in root.rows: HorizontalLayout {
             height: 30px;
             spacing: 10px;
@@ -2103,6 +2108,13 @@ component PrivacyPanel inherits PanelSurface {
                 font-size: Theme.fs(12.5);
                 color: Theme.ink;
             }
+        }
+        if root.rows.length > 0 && root.rows[0].kind == "mic": Rectangle {
+            height: 30px;
+            border-radius: Theme.r-sm;
+            background: mt.has-hover ? Theme.accent : Theme.sel;
+            Text { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; text: root.mic-muted ? "Unmute microphone" : "Mute microphone"; font-size: Theme.fs(12); font-weight: 600; color: mt.has-hover ? Theme.ink-on-accent : Theme.ink; }
+            mt := TouchArea { mouse-cursor: pointer; clicked => { root.mute(); } }
         }
     }
 }
@@ -2399,6 +2411,7 @@ export component Panels inherits Window {
     callback clip-forget(int);
     callback clip-clear();
     in property <int> update-count;
+    in property <string> update-note;
     in property <[string]> update-names;
     callback run-updates();
     in property <[PrivacyRow]> privacy;
@@ -2420,6 +2433,11 @@ export component Panels inherits Window {
     in property <length> dock-left: -1px;
     in property <length> dock-point: -1px;
     callback app-menu-pick(string);
+    // The desktop's right-click menu, where it was clicked.
+    in property <[AppMenuRow]> desktop-rows;
+    in property <length> desktop-x;
+    in property <length> desktop-y;
+    callback desktop-pick(string);
     // the icon picker
     in property <string> icon-title;
     in property <string> icon-current;
@@ -2570,18 +2588,22 @@ export component Panels inherits Window {
         }
     }
     Drop {
-        shown: root.which == "updates"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 300px;
-        UpdatesPanel { count: root.update-count; packages: root.update-names; run => { root.run-updates(); } }
+        shown: root.which == "updates"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 380px;
+        UpdatesPanel { count: root.update-count; note: root.update-note; packages: root.update-names; run => { root.run-updates(); } }
     }
     Drop {
         shown: root.which == "privacy"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 280px;
-        PrivacyPanel { rows: root.privacy; }
+        PrivacyPanel { rows: root.privacy; mic-muted: root.mic-muted; mute => { root.toggle-mic(); } }
     }
     Drop {
         shown: root.which == "appmenu"; seam: false; from-bottom: true; bottom: root.dock-gap; screen-height: root.height; left-edge: root.dock-left; point-y: root.dock-point;
         anchor: root.anchor; top: root.top; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow;
         panel-width: 230px;
         AppMenu { heading: root.app-menu-heading; rows: root.app-menu; pick(k) => { root.app-menu-pick(k); } }
+    }
+    Drop {
+        shown: root.which == "desktop"; anchor: root.anchor; top: min(root.desktop-y, root.height - 330px); left-edge: min(root.desktop-x, root.width - 264px); seam: false; tb: false; tb-bottom: 0px; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 252px;
+        AppMenu { heading: ""; rows: root.desktop-rows; pick(k) => { root.desktop-pick(k); } }
     }
     Drop {
         shown: root.which == "iconpick"; seam: false; from-bottom: true; bottom: root.dock-gap; screen-height: root.height; left-edge: root.dock-left; point-y: root.dock-point;
