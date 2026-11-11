@@ -87,17 +87,24 @@ export component Snipper inherits Window {
         image-fit: fill;
     }
 
-    // The dimming, with the chosen part left clear: four pieces around it
-    // (a cut-out path left streaks behind as it was redrawn in parts).
-    property <brush> dim: root.has-pick ? #00000075 : #00000052;
-    property <length> hx: root.has-pick ? pick.x : 0px;
-    property <length> hy: root.has-pick ? pick.y : 0px;
-    property <length> hw: root.has-pick ? pick.w : 0px;
-    property <length> hh: root.has-pick ? pick.h : 0px;
-    Rectangle { x: 0; y: 0; width: root.width; height: root.hy; background: root.dim; }
-    Rectangle { x: 0; y: root.hy + root.hh; width: root.width; height: max(0px, root.height - root.hy - root.hh); background: root.dim; }
-    Rectangle { x: 0; y: root.hy; width: root.hx; height: root.hh; background: root.dim; }
-    Rectangle { x: root.hx + root.hw; y: root.hy; width: max(0px, root.width - root.hx - root.hw); height: root.hh; background: root.dim; }
+    // The dimming is one sheet over the whole picture, which never changes
+    // shape; the chosen part is the same picture again on top, cut to it
+    // (`source-clip`), so choosing redraws only what was chosen and what is
+    // chosen now, not every piece of dimming out to the screen's edges.
+    property <brush> dim: #00000066;
+    Rectangle { x: 0; y: 0; width: root.width; height: root.height; background: root.dim; }
+    if root.has-pick: Image {
+        x: pick.x;
+        y: pick.y;
+        width: pick.w;
+        height: pick.h;
+        source: root.still;
+        source-clip-x: round(pick.x / 1px * root.ratio);
+        source-clip-y: round(pick.y / 1px * root.ratio);
+        source-clip-width: max(1, round(pick.w / 1px * root.ratio));
+        source-clip-height: max(1, round(pick.h / 1px * root.ratio));
+        image-fit: fill;
+    }
 
     if root.has-pick: Rectangle {
         x: pick.x - 4px;

@@ -170,6 +170,8 @@ pub struct Shell {
     pointer: Option<wl_pointer::WlPointer>,
     /// The surface the pointer is over, if one of ours.
     pub pointer_on: Option<usize>,
+    /// Where the pointer last was on that surface, logical.
+    pub pointer_at: (f32, f32),
     /// Right clicks on a wallpaper: (picture id, x, y) logical, for the shell to answer.
     pub desktop_clicks: Vec<(usize, f64, f64)>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
@@ -232,6 +234,7 @@ impl Shell {
             kept: Vec::new(),
             pointer: None,
             pointer_on: None,
+            pointer_at: (0.0, 0.0),
             desktop_clicks: Vec::new(),
             keyboard: None,
             cursor_shapes,
@@ -664,13 +667,21 @@ impl Shell {
             }
             let pixels = &mut s.pixels;
             let mut damage = (0, 0, 0, 0);
+            let t0 = std::time::Instant::now();
             let drew = s.adapter.draw_if_needed(|r| {
                 let region = r.render(pixels.as_mut_slice(), pw as usize);
                 let (o, z) = (region.bounding_box_origin(), region.bounding_box_size());
                 damage = (o.x, o.y, z.width as i32, z.height as i32);
+                if std::env::var_os("HYPRSHELL_DRAWLOG").is_some() {
+                    let area: i64 = region.iter().map(|(_, sz)| sz.width as i64 * sz.height as i64).sum();
+                    eprintln!("draw: region area {} px of {} ({} rects)", area, pw as i64 * ph as i64, region.iter().count());
+                }
             });
             if !drew || damage.2 <= 0 || damage.3 <= 0 {
                 continue;
+            }
+            if std::env::var_os("HYPRSHELL_DRAWLOG").is_some() {
+                eprintln!("draw: {}x{} surface, damage {}x{} at {},{}, render {:.1} ms", pw, ph, damage.2, damage.3, damage.0, damage.1, t0.elapsed().as_secs_f64() * 1000.0);
             }
             let stride = pw as i32 * 4;
             let full = (0, 0, pw as i32, ph as i32);
@@ -867,6 +878,7 @@ impl PointerHandler for Shell {
             }
             let Some(i) = self.index_of(&ev.surface) else { continue };
             let at = LogicalPosition::new(ev.position.0 as f32, ev.position.1 as f32);
+            self.pointer_at = (at.x, at.y);
             let adapter = self.at(i).adapter.clone();
             let window = adapter.window();
             match ev.kind {

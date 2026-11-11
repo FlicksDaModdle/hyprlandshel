@@ -1836,8 +1836,13 @@ impl App {
         let launcher_on = self.launcher.is_open().then_some(self.focused_bar_cached);
         let now = Instant::now();
         let pointer = shell.pointer_on;
+        let pointer_y = shell.pointer_at.1;
         for (i, b) in self.bars.iter_mut().enumerate() {
-            let hovered = pointer == Some(b.bar_surface);
+            // A panel covers the bar while it is open (and as it fades): the
+            // pointer still along the bar's strip counts as being on the bar,
+            // so closing a menu doesn't drop the bar from under it.
+            let on_panel_strip = b.panel_surface.is_some() && pointer == b.panel_surface && pointer_y <= b.height + 8.0;
+            let hovered = pointer == Some(b.bar_surface) || on_panel_strip;
             if hovered {
                 b.bar_hide_at = None;
                 if !b.bar_latch {
