@@ -123,6 +123,25 @@ test_launcher_reopened_types() {
     shot searched-again
 }
 
+# The launcher's search field takes the usual text shortcuts: Ctrl+A selects
+# all (so the next letter replaces it), Ctrl+Left jumps a word, Ctrl+Backspace
+# deletes one.
+test_launcher_text_shortcuts() {
+    start_shell
+    cmd toggleLauncher
+    sleep 0.6
+    keys "hello world" ctrl-a
+    keys "files"
+    sleep 0.5
+    shot ctrl-a-replaced
+    keys "" ctrl-back
+    sleep 0.3
+    keys "term" ctrl-left
+    keys "my "
+    sleep 0.5
+    shot word-jump
+}
+
 # Settings → Appearance → Screen corners: black rounded corners, all four,
 # on every screen (the test's isn't a built-in panel); one turned off.
 test_screen_corners() {

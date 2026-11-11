@@ -54,9 +54,21 @@ fn main() {
     q.roundtrip(&mut S).expect("roundtrip");
     std::thread::sleep(Duration::from_millis(100));
     let mut t = 10u32;
-    let mut press = |key: u32, shift: bool| {
-        if shift {
-            kb.modifiers(1, 0, 0, 0);
+    // `mods`: 1 Shift, 4 Control, held as a real keyboard holds them: the key
+    // itself goes down first, then the state, then the key typed.
+    let mut press = |key: u32, mods: u32| {
+        if mods & 4 != 0 {
+            kb.key(t, 29, 1);
+            t += 5;
+        }
+        if mods & 1 != 0 {
+            kb.key(t, 42, 1);
+            t += 5;
+        }
+        if mods != 0 {
+            kb.modifiers(mods, 0, 0, 0);
+            q.roundtrip(&mut S).expect("roundtrip");
+            std::thread::sleep(Duration::from_millis(20));
         }
         kb.key(t, key, 1);
         t += 5;
@@ -64,7 +76,15 @@ fn main() {
         std::thread::sleep(Duration::from_millis(20));
         kb.key(t, key, 0);
         t += 5;
-        if shift {
+        if mods & 1 != 0 {
+            kb.key(t, 42, 0);
+            t += 5;
+        }
+        if mods & 4 != 0 {
+            kb.key(t, 29, 0);
+            t += 5;
+        }
+        if mods != 0 {
             kb.modifiers(0, 0, 0, 0);
         }
         q.roundtrip(&mut S).expect("roundtrip");
@@ -72,10 +92,28 @@ fn main() {
     };
     for c in a.get(1).cloned().unwrap_or_default().chars() {
         if let Some((k, sh)) = code(c) {
-            press(k, sh);
+            press(k, if sh { 1 } else { 0 });
         }
     }
     for n in a.iter().skip(2) {
+        // "ctrl-a", "ctrl-left", "ctrl-shift-z": with Control (and Shift) held.
+        if let Some(rest) = n.strip_prefix("ctrl-") {
+            let (shift, rest) = rest.strip_prefix("shift-").map(|r| (true, r)).unwrap_or((false, rest));
+            let k = match rest {
+                "left" => Some(105),
+                "right" => Some(106),
+                "back" => Some(14),
+                "home" => Some(102),
+                "end" => Some(107),
+                c if c.chars().count() == 1 => code(c.chars().next().unwrap()).map(|(k, _)| k),
+                _ => None,
+            };
+            match k {
+                Some(k) => press(k, 4 | if shift { 1 } else { 0 }),
+                None => eprintln!("tt-kbd: no key called {n}"),
+            }
+            continue;
+        }
         let k = match n.as_str() {
             "down" => 108,
             "up" => 103,
@@ -90,7 +128,7 @@ fn main() {
                 continue;
             }
         };
-        press(k, false);
+        press(k, 0);
     }
     std::thread::sleep(Duration::from_millis(150));
 }

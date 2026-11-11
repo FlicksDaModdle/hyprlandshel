@@ -170,6 +170,9 @@ pub struct Shell {
     pointer: Option<wl_pointer::WlPointer>,
     /// The surface the pointer is over, if one of ours.
     pub pointer_on: Option<usize>,
+    /// Which modifiers are down, for a character typed with Ctrl (Ctrl+A is
+    /// the letter A with Control held, not the control character).
+    mods: Modifiers,
     /// Where the pointer last was on that surface, logical.
     pub pointer_at: (f32, f32),
     /// Right clicks on a wallpaper: (picture id, x, y) logical, for the shell to answer.
@@ -234,6 +237,7 @@ impl Shell {
             kept: Vec::new(),
             pointer: None,
             pointer_on: None,
+            mods: Modifiers::default(),
             pointer_at: (0.0, 0.0),
             desktop_clicks: Vec::new(),
             keyboard: None,
@@ -1008,6 +1012,23 @@ impl Shell {
         self.held.as_ref().map(|(_, _, at)| at.saturating_duration_since(now))
     }
 
+    /// What Slint is told a key typed. With Ctrl down the keymap gives a
+    /// control character (Ctrl+A is U+0001), which Slint can't use: it wants
+    /// the letter, and the Control key held, to know it is a shortcut (select
+    /// all, copy, paste, undo, word by word).
+    fn key_text(&self, e: &KeyEvent) -> Option<slint::SharedString> {
+        if let Some(special) = slint_key(e.keysym, None) {
+            return Some(special);
+        }
+        if self.mods.ctrl && !self.mods.alt {
+            let c = e.keysym.key_char()?;
+            if !c.is_control() {
+                return Some(c.to_lowercase().collect::<String>().into());
+            }
+        }
+        slint_key(e.keysym, e.utf8.as_deref())
+    }
+
     fn key_window(&self) -> Option<&ShellSurface> {
         self.focus.and_then(|i| self.surfaces.get(i)?.as_ref())
     }
@@ -1040,7 +1061,7 @@ impl KeyboardHandler for Shell {
         if e.keysym == Keysym::Escape {
             self.keys.push((i, Key::Escape));
         }
-        let Some(text) = slint_key(e.keysym, e.utf8.as_deref()) else { return };
+        let Some(text) = self.key_text(&e) else { return };
         if let Some(s) = self.key_window() {
             s.adapter.window().dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
         }
@@ -1063,7 +1084,9 @@ impl KeyboardHandler for Shell {
         }
     }
 
-    fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: Modifiers, _: u32) {}
+    fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, m: Modifiers, _: u32) {
+        self.mods = m;
+    }
 
     fn update_repeat_info(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, info: RepeatInfo) {
         self.repeat = match info {

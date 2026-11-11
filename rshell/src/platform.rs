@@ -27,6 +27,41 @@ thread_local! {
 pub struct ShellPlatform;
 
 impl Platform for ShellPlatform {
+    // The text fields' copy, cut and paste (Ctrl+C, X, V), through wl-clipboard.
+    fn set_clipboard_text(&self, text: &str, clipboard: slint::platform::Clipboard) {
+        use std::io::Write;
+        if !matches!(clipboard, slint::platform::Clipboard::DefaultClipboard) {
+            return;
+        }
+        let child = std::process::Command::new("wl-copy")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        if let Ok(mut c) = child {
+            if let Some(mut i) = c.stdin.take() {
+                let _ = i.write_all(text.as_bytes());
+            }
+            std::thread::spawn(move || {
+                let _ = c.wait();
+            });
+        }
+    }
+
+    fn clipboard_text(&self, clipboard: slint::platform::Clipboard) -> Option<String> {
+        if !matches!(clipboard, slint::platform::Clipboard::DefaultClipboard) {
+            return None;
+        }
+        let out = std::process::Command::new("timeout")
+            .args(["1", "wl-paste", "--no-newline", "--type", "text"])
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        let t = String::from_utf8_lossy(&out.stdout).to_string();
+        (out.status.success() && !t.is_empty()).then_some(t)
+    }
+
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
         let w = ShellWindow::new();
         MADE.with(|m| m.borrow_mut().push(w.clone()));
