@@ -283,6 +283,8 @@ impl Net {
         let mut ev = json!({
             "ev": "net", "available": true,
             "wifiEnabled": b(&nm, "WirelessEnabled"),
+            // False when a hardware switch (or the firmware) holds the radio off.
+            "wifiHardware": nm.contains_key("WirelessHardwareEnabled").then(|| b(&nm, "WirelessHardwareEnabled")).unwrap_or(true),
             "full": self.full,
             "active": active, "wifi": wifi, "aps": aps
         });
@@ -303,6 +305,21 @@ impl Net {
             Some("net-wifi") => {
                 let on = cmd["on"].as_bool().unwrap_or(true);
                 self.conn.call_method(Some(NM), NM_PATH, Some("org.freedesktop.DBus.Properties"), "Set", &(NM, "WirelessEnabled", Value::from(on)))?;
+                // Looked at again a moment later, off this thread (it has the
+                // signals to answer): a change that didn't take, because
+                // the card was busy waking, is made once more.
+                let conn = self.conn.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(1500));
+                    let now = conn
+                        .call_method(Some(NM), NM_PATH, Some("org.freedesktop.DBus.Properties"), "Get", &(NM, "WirelessEnabled"))
+                        .ok()
+                        .and_then(|m| m.body().deserialize::<OwnedValue>().ok())
+                        .and_then(|v| bool::try_from(v).ok());
+                    if now.is_some_and(|n| n != on) {
+                        let _ = conn.call_method(Some(NM), NM_PATH, Some("org.freedesktop.DBus.Properties"), "Set", &(NM, "WirelessEnabled", Value::from(on)));
+                    }
+                });
             }
             _ => {}
         }

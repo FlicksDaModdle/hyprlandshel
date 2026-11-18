@@ -27,6 +27,7 @@ use std::io::{Read, Write};
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use wayland_client::globals::{registry_queue_init, GlobalListContents};
@@ -51,9 +52,12 @@ const PREVIEW: usize = 400;
 
 enum Msg {
     Cmd(Value),
-    Got { mime: String, bytes: Vec<u8> },
-    /// The clipboard went empty (its owner closed).
-    Empty,
+    /// Something copied; `seq` counts the clipboard's changes, so a copy
+    /// whose data was slow to arrive is known to be older than a later one.
+    Got { seq: u64, mime: String, bytes: Vec<u8> },
+    /// The clipboard went empty (its owner closed, or is about to put
+    /// something new there); `seq` is the change it was.
+    Empty(u64),
     Lost(String),
 }
 
@@ -61,6 +65,8 @@ enum Msg {
 
 struct State {
     tx: Sender<Msg>,
+    /// Counts every change of the clipboard that is seen.
+    seq: Arc<AtomicU64>,
 }
 
 struct Wl {
@@ -68,6 +74,7 @@ struct Wl {
     qh: QueueHandle<State>,
     mgr: ZwlrDataControlManagerV1,
     dev: ZwlrDataControlDeviceV1,
+    seq: Arc<AtomicU64>,
 }
 
 struct SourceData {
@@ -95,14 +102,16 @@ impl Dispatch<ZwlrDataControlDeviceV1, ()> for State {
     fn event(st: &mut Self, _: &ZwlrDataControlDeviceV1, ev: zwlr_data_control_device_v1::Event, _: &(), conn: &Connection, _: &QueueHandle<Self>) {
         match ev {
             zwlr_data_control_device_v1::Event::Selection { id: Some(offer) } => {
+                let n = st.seq.fetch_add(1, Ordering::SeqCst) + 1;
                 let mimes = offer.data::<Mutex<Vec<String>>>().map(|m| m.lock().unwrap().clone()).unwrap_or_default();
                 if let Some(mime) = pick(&mimes) {
-                    receive(conn, &offer, mime, st.tx.clone());
+                    receive(conn, &offer, mime, n, st.tx.clone());
                 }
                 offer.destroy();
             }
             zwlr_data_control_device_v1::Event::Selection { id: None } => {
-                let _ = st.tx.send(Msg::Empty);
+                let n = st.seq.fetch_add(1, Ordering::SeqCst) + 1;
+                let _ = st.tx.send(Msg::Empty(n));
             }
             zwlr_data_control_device_v1::Event::PrimarySelection { id: Some(offer) } => offer.destroy(),
             zwlr_data_control_device_v1::Event::Finished => {
@@ -151,7 +160,7 @@ fn pick(mimes: &[String]) -> Option<String> {
 
 /// Ask the owner for the data and read it on a thread of its own: the
 /// owner may be slow, or never close the pipe at all.
-fn receive(conn: &Connection, offer: &ZwlrDataControlOfferV1, mime: String, tx: Sender<Msg>) {
+fn receive(conn: &Connection, offer: &ZwlrDataControlOfferV1, mime: String, seq: u64, tx: Sender<Msg>) {
     let mut fds = [0; 2];
     if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
         return;
@@ -188,7 +197,7 @@ fn receive(conn: &Connection, offer: &ZwlrDataControlOfferV1, mime: String, tx: 
             }
         }
         if !bytes.is_empty() {
-            let _ = tx.send(Msg::Got { mime, bytes });
+            let _ = tx.send(Msg::Got { seq, mime, bytes });
         }
     });
 }
@@ -202,8 +211,9 @@ fn connect(tx: Sender<Msg>) -> Result<Arc<Wl>, String> {
         .bind(&qh, 1..=2, ())
         .map_err(|_| "the compositor has no clipboard-manager protocol (wlr-data-control)".to_string())?;
     let dev = mgr.get_data_device(&seat, &qh, ());
-    let wl = Arc::new(Wl { conn: conn.clone(), qh, mgr, dev });
-    let mut st = State { tx: tx.clone() };
+    let seq = Arc::new(AtomicU64::new(0));
+    let wl = Arc::new(Wl { conn: conn.clone(), qh, mgr, dev, seq: seq.clone() });
+    let mut st = State { tx: tx.clone(), seq };
     std::thread::spawn(move || loop {
         if let Err(e) = queue.blocking_dispatch(&mut st) {
             let _ = st.tx.send(Msg::Lost(e.to_string()));
@@ -354,10 +364,12 @@ impl History {
         }
     }
     /// Something copied: to the top, or moved there if it was already in.
-    fn add(&mut self, mime: String, bytes: Vec<u8>) -> bool {
+    /// `front` false for a copy that arrived after a newer one (its data
+    /// was slow): it goes just behind the newest, not over it.
+    fn add(&mut self, mime: String, bytes: Vec<u8>, front: bool) -> bool {
         let h = hash(&bytes);
         if let Some(i) = self.entries.iter().position(|e| e.hash == h) {
-            if i == 0 {
+            if i == 0 || !front {
                 return false;
             }
             let mut e = self.entries.remove(i).unwrap();
@@ -383,7 +395,12 @@ impl History {
             }
             (Some(t), None)
         };
-        self.entries.push_front(Entry { id, hash: h, mime, text, path, size, time: now() });
+        let entry = Entry { id, hash: h, mime, text, path, size, time: now() };
+        if front || self.entries.is_empty() {
+            self.entries.push_front(entry);
+        } else {
+            self.entries.insert(1, entry);
+        }
         self.trim();
         true
     }
@@ -432,10 +449,30 @@ fn run(rx: Receiver<Msg>, tx: Sender<Msg>) {
     let mut error: Option<String> = None;
     // One write per burst of changes, not one per copy.
     let mut dirty = false;
+    // The newest copy seen, and an empty clipboard waiting to see whether
+    // something follows it.
+    let mut top_seq = 0u64;
+    let mut empty_at: Option<(Instant, u64)> = None;
     loop {
-        let msg = match rx.recv_timeout(Duration::from_millis(if dirty { 300 } else { 3_600_000 })) {
+        let mut wait = Duration::from_millis(if dirty { 300 } else { 3_600_000 });
+        if let Some((at, _)) = empty_at {
+            wait = wait.min(at.saturating_duration_since(Instant::now()));
+        }
+        let msg = match rx.recv_timeout(wait) {
             Ok(m) => m,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // Still empty after the wait, and nothing new copied: now
+                // the newest entry goes back, so a paste works.
+                if let Some((at, n)) = empty_at {
+                    if Instant::now() >= at {
+                        empty_at = None;
+                        if let (true, Some(w), Some(e)) = (enabled, &wl, hist.entries.front()) {
+                            if w.seq.load(Ordering::SeqCst) == n {
+                                offer(w, e);
+                            }
+                        }
+                    }
+                }
                 if dirty {
                     hist.save();
                     dirty = false;
@@ -498,17 +535,20 @@ fn run(rx: Receiver<Msg>, tx: Sender<Msg>) {
                 "clip-list" => changed = true,
                 _ => {}
             },
-            Msg::Got { mime, bytes } => {
+            Msg::Got { seq, mime, bytes } => {
                 if enabled {
-                    changed = hist.add(mime, bytes);
+                    let front = seq >= top_seq;
+                    top_seq = top_seq.max(seq);
+                    changed = hist.add(mime, bytes, front);
                 }
             }
-            Msg::Empty => {
+            Msg::Empty(n) => {
                 // Its owner closed: offer the newest entry instead, so
-                // what was copied can still be pasted.
-                if let (true, Some(w), Some(e)) = (enabled, &wl, hist.entries.front()) {
-                    offer(w, e);
-                }
+                // what was copied can still be pasted. Not at once: an app
+                // that clears the clipboard and then puts a new copy there
+                // (a web page's copy button) would have its copy written
+                // over by the old one.
+                empty_at = Some((Instant::now() + Duration::from_millis(400), n));
             }
             Msg::Lost(e) => {
                 wl = None;
@@ -524,5 +564,33 @@ fn run(rx: Receiver<Msg>, tx: Sender<Msg>) {
             hist.save();
             dirty = false;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn history() -> History {
+        History { entries: VecDeque::new(), next: 1, max: 100 }
+    }
+    fn texts(h: &History) -> Vec<String> {
+        h.entries.iter().filter_map(|e| e.text.clone()).collect()
+    }
+
+    #[test]
+    fn a_slow_older_copy_goes_behind_the_newest() {
+        let mut h = history();
+        assert!(h.add("text/plain".into(), b"first".to_vec(), true));
+        assert!(h.add("text/plain".into(), b"third".to_vec(), true));
+        // "second" was copied between them but its data came last.
+        assert!(h.add("text/plain".into(), b"second".to_vec(), false));
+        assert_eq!(texts(&h), ["third", "second", "first"]);
+        // A late copy already in the history isn't moved over the newest.
+        assert!(!h.add("text/plain".into(), b"first".to_vec(), false));
+        assert_eq!(texts(&h), ["third", "second", "first"]);
+        // A fresh copy of an old one brings it to the top.
+        assert!(h.add("text/plain".into(), b"first".to_vec(), true));
+        assert_eq!(texts(&h), ["first", "third", "second"]);
     }
 }
