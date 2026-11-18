@@ -970,8 +970,8 @@ void rollup(int pid, qint64 &pss, qint64 &rss) {
 }
 
 // Which part of hyprshell a process is, if any: "core" for the shell and
-// the services it runs on, "app" for one of its own apps, "" for anything
-// else. Your own processes only.
+// the services it runs on, "app" for one of its own apps, "related" for
+// the compositor and portal it sits on, "" for anything else. Your own processes only.
 QString ProcessModel::shellRole(const Proc &p, QString *key, QString *label) const {
     if (p.dead || p.kernel || p.uid != m_myUid) return {};
     const QString exe = QFileInfo(p.exe).fileName();
@@ -991,6 +991,27 @@ QString ProcessModel::shellRole(const Proc &p, QString *key, QString *label) con
         if (key) *key = "shell";
         if (label) *label = "Shell (Rust)";
         return "core";
+    }
+    // What the shell sits on: the compositor it runs in and its portal.
+    // Counted apart from the shell itself.
+    static const struct { const char *exe, *key, *label; } related[] = {
+        {"Hyprland", "hyprland", "Hyprland (compositor)"},
+        {".Hyprland-wrapped", "hyprland", "Hyprland (compositor)"},
+        {"start-hyprland", "hyprland-start", "Hyprland launcher"},
+        {"xdg-desktop-portal-hyprland", "hyprland-portal", "Screen-share portal"},
+    };
+    for (const auto &r : related) if (exe == QLatin1String(r.exe)) {
+        if (key) *key = QString::fromLatin1(r.key);
+        if (label) *label = QString::fromLatin1(r.label);
+        return "related";
+    }
+    // The browser is Firefox under another name: its main process and its
+    // helpers (crash reporter and all) are found by where they live.
+    if (p.exe.contains("/hyprshell-browser/") || p.cmd.contains("--name hyprshell-browser")
+        || p.cmd.contains("/hyprshell-browser/")) {
+        if (key) *key = "hyprshell-browser";
+        if (label) *label = "Browser";
+        return "app";
     }
     const QString name = p.name.startsWith("hyprshell-") ? p.name : exe;
     if (!name.startsWith("hyprshell-") || name == "hyprshell-greeter") return {};
@@ -1053,11 +1074,11 @@ QSet<int> ProcessModel::shellCorePids() const {
 
 QVariantMap ProcessModel::shellUsage() const {
     QMap<QString, QVariantMap> parts;
-    auto add = [&](const QString &key, const QString &label, bool app, const Proc &p) {
+    auto add = [&](const QString &key, const QString &label, const QString &role, const Proc &p) {
         QVariantMap &m = parts[key];
         m["key"] = key;
         m["label"] = label;
-        m["role"] = app ? "app" : "core";
+        m["role"] = role;
         QVariantList pids = m.value("pids").toList();
         pids << p.pid;
         m["pids"] = pids;
@@ -1073,15 +1094,33 @@ QVariantMap ProcessModel::shellUsage() const {
     for (const Proc &p : m_procs) {
         QString key, label;
         const QString role = shellRole(p, &key, &label);
-        if (!role.isEmpty()) add(key, label, role == "app", p);
-        else if (core.contains(p.pid)) add("helpers", "Helpers", false, p);
+        if (!role.isEmpty()) { add(key, label, role, p); continue; }
+        if (p.dead || p.kernel || p.uid != m_myUid) continue;
+        if (core.contains(p.pid)) { add("helpers", "Helpers", "core", p); continue; }
+        // What an app of the shell started and is still running for it (a
+        // browser's content processes, say) is that app's. The terminal's
+        // is not: that is whatever you ran in it.
+        if (m_windowsByPid.contains(p.pid)) continue;
+        int pp = p.ppid;
+        for (int hops = 0; pp > 1 && hops < 32 && m_procs.contains(pp); ++hops) {
+            const Proc &parent = m_procs[pp];
+            QString k, l;
+            const QString r = shellRole(parent, &k, &l);
+            if (!r.isEmpty()) {
+                if (r == "app" && k != "hyprshell-term") add(k, l, r, p);
+                break;
+            }
+            pp = parent.ppid;
+        }
     }
 
     QVariantList list;
-    double mem = 0, pss = 0, gpu = 0, cpu = 0, appMem = 0;
+    double mem = 0, pss = 0, gpu = 0, cpu = 0, appMem = 0, relMem = 0;
     for (const QVariantMap &m : parts) {
         list << m;
-        if (m.value("role").toString() == "core") {
+        if (m.value("role").toString() == "related") {
+            relMem += m.value("mem").toDouble();
+        } else if (m.value("role").toString() == "core") {
             mem += m.value("mem").toDouble();
             pss += m.value("pss").toDouble();
             gpu += m.value("gpuMem").toDouble();
@@ -1094,12 +1133,15 @@ QVariantMap ProcessModel::shellUsage() const {
     // within each.
     std::sort(list.begin(), list.end(), [](const QVariant &a, const QVariant &b) {
         const QVariantMap x = a.toMap(), y = b.toMap();
-        const int rx = x.value("key").toString() == "shell" ? 0 : x.value("role").toString() == "core" ? 1 : 2;
-        const int ry = y.value("key").toString() == "shell" ? 0 : y.value("role").toString() == "core" ? 1 : 2;
+        auto rank = [](const QVariantMap &m) {
+            const QString r = m.value("role").toString();
+            return m.value("key").toString() == "shell" ? 0 : r == "core" ? 1 : r == "app" ? 2 : 3;
+        };
+        const int rx = rank(x), ry = rank(y);
         if (rx != ry) return rx < ry;
         return x.value("mem").toDouble() > y.value("mem").toDouble();
     });
-    return {{"mem", mem}, {"pss", pss}, {"gpuMem", gpu}, {"cpu", cpu}, {"appMem", appMem}, {"parts", list}};
+    return {{"mem", mem}, {"pss", pss}, {"gpuMem", gpu}, {"cpu", cpu}, {"appMem", appMem}, {"relMem", relMem}, {"parts", list}};
 }
 
 QVariantList ProcessModel::appTotals() const {

@@ -193,7 +193,7 @@ Item {
     // What hyprshell itself costs, in one place: the shell, its background
     // services, and (apart, since they are apps you chose to open) its own
     // apps. Read each sample while it is shown, and not at all otherwise.
-    property var shellUse: ({ mem: 0, pss: 0, gpuMem: 0, cpu: 0, appMem: 0, parts: [] })
+    property var shellUse: ({ mem: 0, pss: 0, gpuMem: 0, cpu: 0, appMem: 0, relMem: 0, parts: [] })
     function readShell() { if (Tasks.settings.shellMemory) view.shellUse = view.model.shellUsage(); }
     Connections {
         target: Monitor
@@ -202,7 +202,8 @@ Item {
     }
     function shellGlyph(key) {
         const own = { shell: "monitor", "hyprshell-daemon": "settings", "hyprshell-maild": "stickyNote",
-                      "hyprshell-agent": "wifi", helpers: "package" };
+                      "hyprshell-agent": "wifi", helpers: "package", hyprland: "monitor",
+                      "hyprland-start": "monitor", "hyprland-portal": "monitor" };
         return own[key] || Tasks.glyph(key);
     }
 
@@ -373,6 +374,75 @@ Item {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: chip.modelData.label + (chip.app ? " (app)" : "")
+                                font.pixelSize: Appearance.fs(12)
+                                color: Appearance.ink2
+                            }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: Tasks.bytes(chip.modelData.mem)
+                                font.pixelSize: Appearance.fs(12)
+                                font.weight: Font.DemiBold
+                                color: Appearance.ink
+                            }
+                        }
+                        MouseArea {
+                            id: chipArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                view.select("p:" + chip.modelData.pids[0]);
+                                view.selectedPid = chip.modelData.pids[0];
+                                view.detailsOpen = true;
+                            }
+                        }
+                    }
+
+                    }
+                }
+            }
+            // What it sits on, counted apart.
+            Row {
+                spacing: 8
+                visible: view.shellUse.parts.some(m => m.role === "related")
+                StyledText {
+                    width: 92
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Around · " + Tasks.bytes(view.shellUse.relMem)
+                    font.pixelSize: Appearance.fs(11)
+                    font.weight: Font.DemiBold
+                    color: Appearance.ink2
+                }
+                Flow {
+                    width: chips.width - 100
+                    spacing: 6
+                    Repeater {
+                        model: view.shellUse.parts.filter(m => m.role === "related")
+                    Rectangle {
+                        id: chip
+                        required property var modelData
+                        readonly property bool app: modelData.role === "app"
+                        width: chipRow.implicitWidth + 20
+                        height: 30
+                        radius: Appearance.rSm
+                        color: chipArea.containsMouse ? Appearance.hover : "transparent"
+                        border.width: 1
+                        border.color: Appearance.rule
+                        opacity: app ? 0.75 : 1
+                        Row {
+                            id: chipRow
+                            anchors.centerIn: parent
+                            spacing: 7
+                            MonoIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: view.shellGlyph(chip.modelData.key)
+                                size: 14
+                                inkColor: Appearance.ink2
+                                accentColor: Appearance.accent
+                            }
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: chip.modelData.label
                                 font.pixelSize: Appearance.fs(12)
                                 color: Appearance.ink2
                             }
