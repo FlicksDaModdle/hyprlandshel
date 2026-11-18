@@ -1,0 +1,9 @@
+{
+  "name": "CPU load",
+  "side": "right",
+  "exec": "./cpu.sh",
+  "interval": 3,
+  "icon": "cpu",
+  "on_click": ["start kitty htop"],
+  "menu": []
+}

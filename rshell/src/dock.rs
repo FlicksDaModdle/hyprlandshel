@@ -134,6 +134,15 @@ pub fn focus(address: &str, minimised: bool, current_ws: i64) {
     hypr::dispatch(&format!("hl.dsp.focus({{ window = {s} }})"), &format!("focuswindow address:{address}"));
 }
 
+/// Back from the minimised workspace to workspace `ws`, without focusing it.
+pub fn restore(address: &str, ws: i64) {
+    let s = sel(address);
+    hypr::dispatch(
+        &format!("hl.dsp.window.move({{ workspace = {ws}, follow = false, window = {s} }})"),
+        &format!("movetoworkspacesilent {ws},address:{address}"),
+    );
+}
+
 pub fn minimise(address: &str) {
     let s = sel(address);
     hypr::dispatch(

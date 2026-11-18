@@ -32,7 +32,7 @@ component ModeButton inherits Rectangle {
         width: parent.width - 30px;
         height: parent.height;
         spacing: 7px;
-        Glyph { y: (42px - 16px) / 2; data: root.glyph; size: 16px; monochrome: true; ink: root.on ? Theme.ink-on-accent : Theme.ink; }
+        Glyph { y: (42px - 16px) / 2; data: root.glyph; size: 16px; monochrome: (root.on); ink: root.on ? Theme.ink-on-accent : Theme.ink; }
         t := Text { vertical-alignment: center; text: root.label; font-size: 13px; font-weight: 600; color: root.on ? Theme.ink-on-accent : Theme.ink; }
     }
     ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
@@ -151,7 +151,7 @@ export component Snipper inherits Window {
             x: 11px;
             height: parent.height;
             spacing: 7px;
-            Glyph { y: (30px - 13px) / 2; data: root.g-crop; size: 13px; monochrome: true; ink: Theme.ink2; }
+            Glyph { y: (30px - 13px) / 2; data: root.g-crop; size: 13px; ink: Theme.ink2; }
             Text {
                 vertical-alignment: center;
                 text: round(pick.w / 1px * root.ratio) + " × " + round(pick.h / 1px * root.ratio);
@@ -268,7 +268,7 @@ export component Snipper inherits Window {
                 height: 42px;
                 border-radius: 21px;
                 background: close-ta.has-hover ? Theme.sel : transparent;
-                Glyph { x: 13px; y: 13px; data: root.g-close; size: 16px; monochrome: true; ink: Theme.ink2; }
+                Glyph { x: 13px; y: 13px; data: root.g-close; size: 16px; ink: Theme.ink2; }
                 close-ta := TouchArea { mouse-cursor: pointer; clicked => { root.cancel(); } }
             }
         }

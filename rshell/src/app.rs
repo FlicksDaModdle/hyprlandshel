@@ -7,8 +7,8 @@
 
 use crate::art::Pixels;
 use crate::spring::{Motion, Spring};
-use crate::{launcher, daemon, extras, hypr, mpris, notify, sys, theme, timers, tray, wl};
-use crate::{OskKey, OskRow, ClipItem, Bar, DayCell, DriveRow, MediaInfo, MenuEntry, Note, NoteAction, Panels, PrivacyRow, Theme, Tile, TimerItem, AlarmItem, TimerRow, Toasts, TrayItem, Workspace};
+use crate::{appmenu, launcher, daemon, extras, glyphs, hypr, mpris, notify, shortcuts, sys, theme, timers, tray, wl};
+use crate::{AppTop, OskKey, OskRow, ClipItem, Bar, DayCell, DriveRow, MediaInfo, MenuEntry, Note, NoteAction, Panels, PrivacyRow, Theme, Tile, TimerItem, AlarmItem, TimerRow, Toasts, TrayItem, Workspace};
 use serde_json::json;
 use crate::platform::ShellWindow;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
@@ -72,6 +72,31 @@ pub enum Action {
     MonthReset,
     CycleTheme,
     Tile(String),
+    /// The control center rearranged: a tile moved, taken off, put on.
+    TileMove(i32, i32),
+    /// A button on an applet's panel.
+    AppletAct(String),
+    /// A tool's input changed: widget id, value. And a tool's button pressed: its index.
+    ToolSet(String, String),
+    ToolPress(i32),
+    /// A bar plugin: clicked (bar, id, x), right-clicked, scrolled (up is positive).
+    PluginClick(usize, String, f32),
+    PluginSecondary(String),
+    /// The bar's own menu (right-click on it): bar, x. And editing the layout where it
+    /// is: the pointer on the bar (0 down, 1 moved, 2 up), on the palette's chips
+    /// (the module, and where, in the screen's own coordinates), the palette's
+    /// buttons, and a module's width as the bar lays it out.
+    BarMenu(usize, f32),
+    BarEditPointer(i32, f32, f32),
+    PalettePointer(i32, String, f32, f32),
+    PaletteDone,
+    PaletteReset,
+    PaletteNewPlugin,
+    PalettePluginsFolder,
+    ModuleWidth(String, f32),
+    PluginScroll(String, i32),
+    TileRemove(String),
+    TileAdd(String),
     NoteDismiss(i32),
     NoteAct(i32, String),
     NotesClear,
@@ -94,6 +119,8 @@ pub enum Action {
     TrayActivate(usize, String, f32),
     TraySecondary(String),
     TrayMenu(usize, String, f32),
+    /// One of the focused app's own menus on the bar: bar, id, label, x.
+    BarAppMenu(usize, i32, String, f32),
     TrayScroll(String, i32),
     MenuPick(i32, bool),
     MenuBack,
@@ -122,6 +149,75 @@ pub enum Action {
 }
 
 type Queue = Rc<RefCell<Vec<Action>>>;
+
+/// The control center's tiles by id, in order: `ccTiles` in theme.json, or the
+/// usual ones until it is changed.
+const CC_DEFAULT: &[&str] = &["wifi", "bluetooth", "nightlight", "airplane", "capture", "gamemode", "keepawake", "performance", "keyboard"];
+
+fn cc_layout() -> Vec<String> {
+    match theme::raw()["ccTiles"].as_array() {
+        Some(a) => a.iter().filter_map(|v| v.as_str()).map(String::from).collect(),
+        None => CC_DEFAULT.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+/// `ids` (the tiles shown, in order) with the one at `from` moved to `to`, put
+/// back into the saved list: ones saved but not shown (no Bluetooth just now)
+/// keep their places.
+fn cc_move(saved: &[String], shown: &[String], from: usize, to: usize) -> Vec<String> {
+    let mut order = shown.to_vec();
+    if from >= order.len() || to >= order.len() {
+        return saved.to_vec();
+    }
+    let item = order.remove(from);
+    order.insert(to, item);
+    let mut next = order.into_iter();
+    saved.iter().map(|id| if shown.contains(id) { next.next().unwrap_or_else(|| id.clone()) } else { id.clone() }).collect()
+}
+
+/// The shell's own app menus (ids below 0 on the bar): from the app's name,
+/// and the Edit menu an app without menus of its own gets.
+const MENU_APP: i32 = -1;
+const MENU_EDIT: i32 = -2;
+const B_SETTINGS: i32 = 1;
+const B_HIDE: i32 = 2;
+const B_HIDE_OTHERS: i32 = 3;
+const B_SHOW_ALL: i32 = 4;
+const B_QUIT: i32 = 5;
+const B_UNDO: i32 = 10;
+const B_REDO: i32 = 11;
+const B_CUT: i32 = 12;
+const B_COPY: i32 = 13;
+const B_PASTE: i32 = 14;
+const B_SELECT_ALL: i32 = 15;
+const B_FIND: i32 = 16;
+
+/// A shortcut for the window with focus, as if typed: Hyprland's own
+/// `send_shortcut` (which names the window), else wtype.
+fn send_shortcut(mods: &str, key: &str) {
+    let lua = format!("hl.dsp.send_shortcut({{ mods = \"{mods}\", key = \"{key}\", window = \"activewindow\" }})");
+    if hypr::ask(&format!("dispatch {lua}")).is_some_and(|t| t.trim() == "ok") {
+        return;
+    }
+    let mut args: Vec<String> = Vec::new();
+    for m in mods.split_whitespace() {
+        args.extend(["-M".into(), m.to_lowercase()]);
+    }
+    args.extend(["-k".into(), key.to_string()]);
+    for m in mods.split_whitespace().rev() {
+        args.extend(["-m".into(), m.to_lowercase()]);
+    }
+    let _ = std::process::Command::new("wtype").args(&args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+}
+
+/// Whether Wi-Fi counts as on: what it was asked to be if that was a moment
+/// ago and NetworkManager hasn't caught up, else what NetworkManager says.
+fn wifi_shown(want: Option<(bool, Instant)>, actual: bool, now: Instant) -> bool {
+    match want {
+        Some((w, at)) if now.duration_since(at) < Duration::from_secs(5) => w,
+        _ => actual,
+    }
+}
 
 fn model<T: Clone + 'static>(v: Vec<T>) -> ModelRc<T> {
     ModelRc::from(Rc::new(VecModel::from(v)))
@@ -569,6 +665,38 @@ pub struct App {
     idle_sent: String,
     idle_holds: (bool, bool),
     keep_awake: bool,
+    /// What the Wi-Fi radio was last asked to be, and when: shown at once, as the
+    /// state to press from, until NetworkManager says it (or a few seconds pass).
+    wifi_want: Option<(bool, Instant)>,
+    shortcuts: shortcuts::Shortcuts,
+    /// Applets (a Pomodoro, a counter): their state, and the one whose panel is open.
+    applets: crate::applets::Applets,
+    applet_open: Option<String>,
+    /// Bar plugins (plugins.rs), and what the bar's module lists were last made from.
+    bar_plugins: crate::plugins::Plugins,
+    bar_sig: String,
+    /// The bar is being edited: a mock bar of chips over it.
+    bar_edit: bool,
+    /// The bar being edited where it is: each module's width as laid out, which are on
+    /// show on each side (in order), the drag under way, and what the bar and palette
+    /// are told of it.
+    bar_widths: HashMap<String, f32>,
+    bar_on_left: Vec<String>,
+    bar_on_right: Vec<String>,
+    edit_drag: Option<(String, bool)>,
+    edit_hint: f32,
+    edit_removing: bool,
+    edit_ghost: Option<(f32, f32, String)>,
+    palette_ghost: Option<(f32, f32, String)>,
+    edit_bar: usize,
+    /// What a tool button's steps printed, from the thread that ran them: (shortcut, output widget, text).
+    tool_rx: Receiver<(String, Vec<String>, Option<String>)>,
+    tool_tx: Sender<(String, Vec<String>, Option<String>)>,
+    tool_wake: std::sync::Arc<std::sync::Mutex<UnixStream>>,
+    /// The login screen's copy of the screens and theme.
+    greeter_sync: crate::greeter_sync::GreeterSync,
+    /// The ids of the control center tiles as last shown, in order.
+    cc_shown: Vec<String>,
     /// The daemon's gamma module (Night light, extra dim): its last report, whether it
     /// turned out not to be usable, the config sent, and the extra-dim level of the
     /// laptop's panel (1 for none) with the panel's name.
@@ -626,6 +754,12 @@ pub struct App {
     notify_ready: Receiver<zbus::blocking::Connection>,
     tray_rx: Receiver<tray::Event>,
     tray_cmd: Sender<tray::Cmd>,
+    appmenu_rx: Receiver<appmenu::Event>,
+    appmenu_cmd: Sender<appmenu::Cmd>,
+    /// The focused app's menu bar, its process, and which top menu is open.
+    app_tops: Vec<tray::Entry>,
+    active_pid: i32,
+    menu_top: i32,
     extras_rx: Receiver<extras::Event>,
     updates_now: Sender<()>,
 
@@ -766,6 +900,10 @@ impl App {
         let (tray_tx, tray_rx) = channel();
         let (tray_cmd, tray_cmd_rx) = channel();
         tray::start(tray_tx, tray_cmd_rx, w());
+        let (tool_tx, tool_rx) = channel();
+        let (appmenu_tx, appmenu_rx) = channel();
+        let (appmenu_cmd, appmenu_cmd_rx) = channel();
+        appmenu::start(appmenu_tx, appmenu_cmd_rx, w());
         let (extras_tx, extras_rx) = channel();
         let (updates_now, updates_now_rx) = channel();
         extras::updates(extras_tx.clone(), updates_now_rx, w());
@@ -1034,6 +1172,27 @@ impl App {
             idle_sent: String::new(),
             idle_holds: (false, false),
             keep_awake: false,
+            wifi_want: None,
+            shortcuts: shortcuts::Shortcuts::load(),
+            applets: crate::applets::Applets::load(),
+            applet_open: None,
+            bar_plugins: crate::plugins::Plugins::new(),
+            bar_sig: String::new(),
+            bar_edit: false,
+            bar_widths: HashMap::new(),
+            bar_on_left: Vec::new(),
+            bar_on_right: Vec::new(),
+            edit_drag: None,
+            edit_hint: -1.0,
+            edit_removing: false,
+            edit_ghost: None,
+            palette_ghost: None,
+            edit_bar: 0,
+            tool_rx,
+            tool_tx,
+            tool_wake: std::sync::Arc::new(std::sync::Mutex::new(w())),
+            greeter_sync: crate::greeter_sync::GreeterSync::new(),
+            cc_shown: Vec::new(),
             gamma: None,
             displays: Vec::new(),
             ddc_asked: usize::MAX,
@@ -1077,6 +1236,11 @@ impl App {
             notify_ready,
             tray_rx,
             tray_cmd,
+            appmenu_rx,
+            appmenu_cmd,
+            app_tops: Vec::new(),
+            active_pid: 0,
+            menu_top: -1,
             extras_rx,
             updates_now,
             tray_items: Vec::new(),
@@ -1426,41 +1590,31 @@ impl App {
                     self.tray_items = items;
                     self.refresh_tray();
                 }
-                tray::Event::Menu { key, heading, nested, entries } => {
-                    if entries.is_empty() && !nested {
-                        continue;
+                tray::Event::Menu { key, heading, nested, entries } => self.show_menu(shell, qh, key, heading, nested, entries),
+            }
+        }
+
+        // A tool button's run came back.
+        while let Ok((id, var, out)) = self.tool_rx.try_recv() {
+            if let Some(o) = out {
+                self.applets.tool_done(&id, &var, &o);
+            }
+            if self.applet_open.as_deref() == Some(id.as_str()) {
+                self.refresh_applet(true);
+            }
+        }
+
+        // The focused app's own menus.
+        while let Ok(ev) = self.appmenu_rx.try_recv() {
+            match ev {
+                appmenu::Event::Tops(tops) => {
+                    if std::env::var_os("HYPRSHELL_APPMENU_LOG").is_some() {
+                        eprintln!("app menu: {}", tops.iter().map(|t| t.label.as_str()).collect::<Vec<_>>().join(" | "));
                     }
-                    if !nested {
-                        self.menu_stack.clear();
-                    }
-                    self.menu_key = key;
-                    self.menu_entries = entries.clone();
-                    let rows: Vec<MenuEntry> = entries
-                        .iter()
-                        .map(|e| MenuEntry {
-                            id: e.id,
-                            label: e.label.clone().into(),
-                            enabled: e.enabled,
-                            separator: e.separator,
-                            toggle: e.toggle,
-                            checked: e.checked,
-                            submenu: e.submenu,
-                            icon: Default::default(),
-                            has_icon: false,
-                        })
-                        .collect();
-                    for b in &self.bars {
-                        b.panels.set_menu(model(rows.clone()));
-                        b.panels.set_menu_heading(heading.clone().into());
-                        b.panels.set_menu_nested(nested);
-                        b.panels.set_menu_toggles(entries.iter().any(|e| e.toggle > 0));
-                    }
-                    if let Some((bar, x)) = self.menu_at {
-                        if self.open.as_ref().map(|o| o.1.as_str()) != Some("tray") {
-                            self.open_panel(shell, qh, bar, "tray", x);
-                        }
-                    }
+                    self.app_tops = tops;
+                    self.refresh_app_tops();
                 }
+                appmenu::Event::Menu { heading, nested, entries } => self.show_menu(shell, qh, "app:menu".into(), heading, nested, entries),
             }
         }
 
@@ -1612,6 +1766,11 @@ impl App {
         let active = hypr::json("j/activewindow");
         self.active_addr = active["address"].as_str().unwrap_or("").to_string();
         self.active_class = active["class"].as_str().unwrap_or("").to_string();
+        let pid = active["pid"].as_i64().unwrap_or(0) as i32;
+        if pid != self.active_pid {
+            self.active_pid = pid;
+            let _ = self.appmenu_cmd.send(appmenu::Cmd::Focus(pid));
+        }
         self.dock_tiles();
     }
 
@@ -1833,6 +1992,7 @@ impl App {
         let (auto, dock_hides) = (self.look.bar_auto_hide || taskbar, self.look.dock_auto_hide);
         let delay = Duration::from_millis(self.look.bar_reveal_delay);
         let open_on = self.open.as_ref().map(|o| o.0);
+        let editing = self.bar_edit;
         let launcher_on = self.launcher.is_open().then_some(self.focused_bar_cached);
         let now = Instant::now();
         let pointer = shell.pointer_on;
@@ -1863,7 +2023,7 @@ impl App {
             }
             let revealed = !self.lock.active
                 && !taskbar
-                && (!auto || b.bar_latch || open_on == Some(i) || (dock_hides && launcher_on == Some(i)));
+                && (!auto || editing || b.bar_latch || open_on == Some(i) || (dock_hides && launcher_on == Some(i)));
             let to = if revealed { 0.0 } else { -(b.height as f64) - 4.0 };
             if to != b.bar_to {
                 b.bar_to = to;
@@ -2772,6 +2932,35 @@ impl App {
     }
 
     fn refresh_second(&mut self) {
+        // Shortcuts: the file read again when it changes, and a toggle's state
+        // looked at while the control center is open to show it.
+        self.bar_plugins.refresh();
+        self.refresh_bar_modules();
+        self.greeter_sync.tick();
+        // Applets: their clocks moved on; what is shown, kept up to date.
+        {
+            let specs: Vec<(String, String, crate::applets::Spec)> = self.shortcuts.list.iter().filter_map(|s| s.applet.clone().map(|a| (s.id.clone(), s.name.clone(), a))).collect();
+            if !specs.is_empty() {
+                let fx = self.applets.tick(&specs);
+                self.apply_effects(fx);
+                if self.applets.any_running() || self.applet_open.is_some() {
+                    self.refresh_applet(false);
+                    self.refresh_sound();
+                }
+            }
+        }
+        // A Wi-Fi switch NetworkManager never confirmed stops showing as done.
+        if self.wifi_want.is_some_and(|(_, at)| at.elapsed() >= Duration::from_secs(5)) {
+            self.refresh_sound();
+        }
+        let changed = self.shortcuts.reload();
+        let open_cc = self.open.as_ref().is_some_and(|o| o.1 == "control");
+        if open_cc {
+            self.shortcuts.poll(false);
+        }
+        if changed || (open_cc && self.shortcuts.list.iter().any(|s| s.toggle)) {
+            self.refresh_sound();
+        }
         let mode = theme::raw()["shellBlurMode"].as_str().unwrap_or("auto").to_string();
         self.blur.sync(&mode);
         self.sync_idle();
@@ -2860,19 +3049,50 @@ impl App {
         }
     }
 
+    /// Wi-Fi as it should show: see `wifi_shown`.
+    fn wifi_now(&self) -> bool {
+        wifi_shown(self.wifi_want, self.sound.wifi_on, Instant::now())
+    }
+
+    /// Ask the radio for a state, and show it now.
+    fn set_wifi(&mut self, on: bool) {
+        self.wifi_want = Some((on, Instant::now()));
+        self.daemon.send(json!({ "cmd": "net-wifi", "on": on }));
+        self.refresh_sound();
+        self.refresh_lists();
+    }
+
     fn refresh_sound(&mut self) {
+        // NetworkManager caught up (or the wait is over): back to what it says.
+        if self.wifi_want.is_some_and(|(w, at)| w == self.sound.wifi_on || at.elapsed() >= Duration::from_secs(5)) {
+            self.wifi_want = None;
+        }
+        let wifi_on = self.wifi_now();
         let s = &self.sound;
         let pct = (s.volume * 100.0).round() as i32;
         let vol_label = if !s.have_audio { String::new() } else if s.muted { "muted".into() } else { format!("{pct}%") };
         let vol_icon = if s.muted || s.volume <= 0.001 { "volume-x" } else if s.volume < 0.5 { "volume-low" } else { "volume" };
-        let mut tiles = vec![Tile {
-            kind: if s.wifi_on { "wifi".into() } else { "wifi-off".into() },
-            name: "Wi-Fi".into(),
-            sub: if s.wired && !s.wifi_on { "wired".into() } else { s.net_label.clone().into() },
-            on: s.wifi_on,
-        }];
+        let mk = |kind: &str, name: &str, sub: String, on: bool, glyph: &str| Tile {
+            id: if kind == "wifi-off" { "wifi" } else { kind }.into(),
+            kind: kind.into(),
+            name: name.into(),
+            sub: sub.into(),
+            on,
+            glyph: glyphs::glyph(glyph),
+        };
+        let mut tiles = vec![mk(
+            if wifi_on { "wifi" } else { "wifi-off" },
+            "Wi-Fi",
+            if s.wifi_blocked && !wifi_on {
+                "blocked by a switch".into()
+            } else if !wifi_on {
+                if s.wired { "wired".into() } else { "off".into() }
+            } else if s.wifi_on { s.net_label.clone() } else { "turning on…".into() },
+            wifi_on,
+            if wifi_on { "wifi" } else { "wifi-off" },
+        )];
         if s.bt_available {
-            tiles.push(Tile { kind: "bluetooth".into(), name: "Bluetooth".into(), sub: s.bt_label.clone().into(), on: s.bt_on });
+            tiles.push(mk("bluetooth", "Bluetooth", s.bt_label.clone(), s.bt_on, "bluetooth"));
         }
         // Night light after Bluetooth, as ControlCenter.qml has them.
         {
@@ -2892,40 +3112,49 @@ impl App {
             } else {
                 "off".to_string()
             };
-            tiles.push(Tile { kind: "nightlight".into(), name: "Night light".into(), sub: sub.into(), on });
+            tiles.push(mk("nightlight", "Night light", sub, on, "moon"));
         }
-        let airplane = !s.wifi_on && (!s.bt_available || !s.bt_on);
-        tiles.push(Tile { kind: "airplane".into(), name: "Airplane".into(), sub: if airplane { "radios off".into() } else { "radios on".into() }, on: airplane });
-        tiles.push(Tile { kind: "capture".into(), name: "Capture".into(), sub: "region".into(), on: false });
+        let airplane = !wifi_on && (!s.bt_available || !s.bt_on);
+        tiles.push(mk("airplane", "Airplane", if airplane { "radios off" } else { "radios on" }.into(), airplane, "plane"));
+        tiles.push(mk("capture", "Capture", "region".into(), false, "camera"));
         {
             let game = theme::raw()["gameMode"].as_bool().unwrap_or(false);
             let cp = self.can_set_profile;
-            tiles.push(Tile {
-                kind: "gamemode".into(),
-                name: "Game mode".into(),
-                sub: if game { if cp { "performance · vrr" } else { "vrr" } } else if cp { "balanced" } else { "vrr off" }.into(),
-                on: game,
-            });
+            let sub = if game { if cp { "performance · vrr" } else { "vrr" } } else if cp { "balanced" } else { "vrr off" };
+            tiles.push(mk("gamemode", "Game mode", sub.into(), game, "gamepad"));
         }
         // No lock, screen off or sleep until switched off again.
-        tiles.push(Tile { kind: "keepawake".into(), name: "Keep awake".into(), sub: if self.keep_awake { "on" } else { "off" }.into(), on: self.keep_awake });
+        tiles.push(mk("keepawake", "Keep awake", if self.keep_awake { "on" } else { "off" }.into(), self.keep_awake, "sun"));
         if !s.rog_profiles.is_empty() {
-            tiles.push(Tile {
-                kind: "performance".into(),
-                name: "Performance".into(),
-                sub: daemon::profile_name(s.rog_profile).to_lowercase().into(),
-                on: s.rog_profile == 1,
-            });
+            tiles.push(mk("performance", "Performance", daemon::profile_name(s.rog_profile).to_lowercase(), s.rog_profile == 1, "zap"));
         }
         if s.kbd_level >= 0 {
             let levels = ["off", "low", "medium", "high"];
-            tiles.push(Tile {
-                kind: "keyboard".into(),
-                name: "Keyboard light".into(),
-                sub: levels.get(s.kbd_level as usize).copied().unwrap_or("").into(),
-                on: s.kbd_level > 0,
-            });
+            tiles.push(mk("keyboard", "Keyboard light", levels.get(s.kbd_level as usize).copied().unwrap_or("").into(), s.kbd_level > 0, "keyboard"));
         }
+        // More that can be put on: Do not disturb, the lock screen, the
+        // speakers' mute.
+        tiles.push(mk("dnd", "Do not disturb", if self.look.dnd { "on" } else { "off" }.into(), self.look.dnd, "bell-off"));
+        tiles.push(mk("lock", "Lock", "screen".into(), false, "lock"));
+        tiles.push(mk("mute", "Mute", if s.muted { "speakers off" } else { "speakers on" }.into(), s.muted, if s.muted { "volume-x" } else { "volume" }));
+        // And the shortcuts you made.
+        for sc in &self.shortcuts.list {
+            if let Some(spec) = &sc.applet {
+                let v = self.applets.view(&sc.id, spec);
+                tiles.push(Tile { id: format!("sc:{}", sc.id).into(), kind: "applet".into(), name: sc.name.clone().into(), sub: v.glance.into(), on: v.running, glyph: glyphs::glyph(&sc.icon) });
+                continue;
+            }
+            let on = sc.toggle && self.shortcuts.is_on(sc);
+            let sub = if sc.toggle { if on { "on" } else { "off" } } else { "shortcut" };
+            tiles.push(Tile { id: format!("sc:{}", sc.id).into(), kind: "shortcut".into(), name: sc.name.clone().into(), sub: sub.into(), on, glyph: glyphs::glyph(&sc.icon) });
+        }
+        // The control center shows the ones chosen, in the order chosen (what
+        // is installed until chosen); the rest are there to add.
+        let chosen = cc_layout();
+        let shown: Vec<Tile> = chosen.iter().filter_map(|id| tiles.iter().find(|t| t.id.as_str() == id.as_str()).cloned()).collect();
+        let more: Vec<Tile> = tiles.iter().filter(|t| !chosen.contains(&t.id.to_string())).cloned().collect();
+        self.cc_shown = shown.iter().map(|t| t.id.to_string()).collect();
+        let tiles = shown;
         let (bright, bright_label) = (self.brightness_slider(), self.brightness_label());
         // The equalizer on for some apps only: each stream gets its EQ switch.
         let raw_fx = theme::raw();
@@ -2962,6 +3191,7 @@ impl App {
             b.dock.set_volume_icon(vol_icon.into());
             let p = &b.panels;
             p.set_tiles(model(tiles.clone()));
+            p.set_more_tiles(model(more.clone()));
             p.set_mixer(model(mixer.clone()));
             p.set_mixer_device(if s.sink_desc.is_empty() { "Output".into() } else { s.sink_desc.clone().into() });
             p.set_mixer_sub(match s.streams.len() { 0 => "Nothing is playing".to_string(), 1 => "1 app playing".to_string(), n => format!("{n} apps playing") }.into());
@@ -2997,6 +3227,7 @@ impl App {
 
     /// The Wi-Fi and Bluetooth lists and the state around them.
     fn refresh_lists(&mut self) {
+        let wifi_on = self.wifi_now();
         let s = &self.sound;
         let nets: Vec<crate::WifiRow> = s
             .aps
@@ -3023,8 +3254,8 @@ impl App {
                 busy: self.bt_busy == d.mac,
             })
             .collect();
-        let wifi_sub = if !s.wifi_on {
-            "Wi-Fi is off".to_string()
+        let wifi_sub = if !wifi_on {
+            if s.wifi_blocked { "Blocked by a hardware switch".to_string() } else { "Wi-Fi is off".to_string() }
         } else if let Some(a) = s.aps.iter().find(|a| a.active) {
             format!("Connected to {}", a.ssid)
         } else {
@@ -3041,7 +3272,7 @@ impl App {
         for b in &self.bars {
             let p = &b.panels;
             p.set_cc_pane(self.cc_pane.clone().into());
-            p.set_wifi_on(s.wifi_on);
+            p.set_wifi_on(wifi_on);
             p.set_wifi_sub(wifi_sub.clone().into());
             p.set_networks(model(nets.clone()));
             p.set_asking(self.asking.clone().into());
@@ -3213,6 +3444,473 @@ impl App {
         }
         if !m.available && self.open.as_ref().is_some_and(|o| o.1 == "media") {
             self.close_panel();
+        }
+    }
+
+    /// A dbusmenu to show on the menu panel: a tray item's, or the focused
+    /// app's own (key "app:menu").
+    fn show_menu(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, key: String, heading: String, nested: bool, entries: Vec<tray::Entry>) {
+        if entries.is_empty() && !nested {
+            return;
+        }
+        if !nested {
+            self.menu_stack.clear();
+        }
+        self.menu_key = key;
+        self.menu_entries = entries.clone();
+        let rows: Vec<MenuEntry> = entries
+            .iter()
+            .map(|e| MenuEntry {
+                id: e.id,
+                label: e.label.clone().into(),
+                enabled: e.enabled,
+                separator: e.separator,
+                toggle: e.toggle,
+                checked: e.checked,
+                submenu: e.submenu,
+                icon: Default::default(),
+                has_icon: false,
+            })
+            .collect();
+        for b in &self.bars {
+            b.panels.set_menu(model(rows.clone()));
+            b.panels.set_menu_heading(heading.clone().into());
+            b.panels.set_menu_nested(nested);
+            b.panels.set_menu_toggles(entries.iter().any(|e| e.toggle > 0));
+        }
+        if let Some((bar, x)) = self.menu_at {
+            if self.open.as_ref().map(|o| o.1.as_str()) != Some("tray") {
+                self.open_panel(shell, qh, bar, "tray", x);
+            }
+        }
+        self.refresh_app_tops();
+    }
+
+    /// A module's name for a menu.
+    fn module_label(&self, id: &str) -> String {
+        if crate::barmods::is_builtin(id) {
+            crate::barmods::name(id).to_string()
+        } else {
+            self.bar_plugins.get(id).map(|m| format!("{} (plugin)", m.name)).unwrap_or_else(|| id.to_string())
+        }
+    }
+
+    /// The layout as it stands: every module, whether or not it has anything to show now.
+    fn edit_layout(&self) -> crate::barmods::Layout {
+        crate::barmods::layout(&theme::raw(), &self.bar_plugins.ids())
+    }
+
+    /// Write a layout, and show it at once on the bar and on the mock of it.
+    fn save_layout(&mut self, l: &crate::barmods::Layout) {
+        theme::set("barLeft", json!(l.left));
+        theme::set("barRight", json!(l.right));
+        theme::set("barHidden", json!(l.hidden));
+        self.bar_sig.clear();
+        self.refresh_bar_modules();
+        self.refresh_bar_edit();
+    }
+
+    /// The bar's width, in its own units.
+    fn bar_width(&self) -> f32 {
+        self.bars.get(self.edit_bar).or(self.bars.first()).map(|b| b.bar.window().size().width as f32 / b.bar.window().scale_factor()).unwrap_or(1000.0)
+    }
+
+    /// Where each module on show sits: (bar width, left, right).
+    fn edit_slots(&self) -> (f32, Vec<crate::barmods::Slot>, Vec<crate::barmods::Slot>) {
+        let w = self.bar_width();
+        (w, crate::barmods::slots(&self.bar_on_left, &self.bar_widths, w, false), crate::barmods::slots(&self.bar_on_right, &self.bar_widths, w, true))
+    }
+
+    /// A module's name on a chip.
+    fn chip_label(&self, id: &str) -> String {
+        if crate::barmods::is_builtin(id) {
+            crate::barmods::short(id).to_string()
+        } else {
+            self.bar_plugins.get(id).map(|m| m.name.chars().take(14).collect()).unwrap_or_else(|| id.to_string())
+        }
+    }
+
+    /// Start editing the bar where it is: an outline on each module, and the
+    /// palette under the bar to drag from.
+    fn start_bar_edit(&mut self, shell: &mut wl::Shell, qh: &QueueHandle<wl::Shell>, bar: usize) {
+        self.bar_edit = true;
+        self.edit_bar = bar;
+        self.refresh_bar_edit();
+        let w = self.bar_width();
+        self.open_panel(shell, qh, bar, "barpalette", w / 2.0);
+        self.constrain_palette_input(shell);
+    }
+
+    /// The palette's panel is over the whole screen; only its own sheet takes
+    /// clicks, so the bar underneath can be dragged on.
+    fn constrain_palette_input(&mut self, shell: &mut wl::Shell) {
+        let Some(host) = self.bars.get(self.edit_bar) else { return };
+        let Some(id) = host.panel_surface else { return };
+        let (w, bh) = (self.bar_width(), host.height);
+        shell.set_input_rects(id, &[(((w / 2.0) - 300.0) as i32, bh as i32, 600, 460)]);
+    }
+
+    fn stop_bar_edit(&mut self) {
+        self.bar_edit = false;
+        self.edit_drag = None;
+        self.edit_ghost = None;
+        self.palette_ghost = None;
+        self.edit_hint = -1.0;
+        if self.open.as_ref().is_some_and(|o| o.1 == "barpalette") {
+            self.close_panel();
+        }
+        self.refresh_bar_edit();
+    }
+
+    /// Where a drop at `x` would go: (side is the left, the index among that
+    /// side's modules on show, the drop line's x).
+    fn drop_at(&self, x: f32) -> (bool, usize, f32) {
+        let (w, left, right) = self.edit_slots();
+        let is_left = crate::barmods::is_left(&left, &right, w, x);
+        let side = if is_left { &left } else { &right };
+        let j = crate::barmods::index_for(side, x);
+        (is_left, j, crate::barmods::hint_x(side, j, w, !is_left))
+    }
+
+    /// Put `id` where a drop at `x` goes (the module may be new to the bar).
+    fn place_module(&mut self, id: &str, x: f32) {
+        let (is_left, j, _) = self.drop_at(x);
+        let (_, left, right) = self.edit_slots();
+        let mut l = self.edit_layout();
+        l.hidden.retain(|h| h != id);
+        l.left.retain(|m| m != id);
+        l.right.retain(|m| m != id);
+        // Rebuild each side from what the bar had, so a module that was on show elsewhere is moved.
+        if is_left {
+            crate::barmods::insert_at(&mut l.left, &left, j, id);
+        } else {
+            crate::barmods::insert_at(&mut l.right, &right, j, id);
+        }
+        self.save_layout(&l);
+    }
+
+    fn hide_module(&mut self, id: &str) {
+        let mut l = self.edit_layout();
+        l.left.retain(|m| m != id);
+        l.right.retain(|m| m != id);
+        if !l.hidden.iter().any(|h| h == id) {
+            l.hidden.push(id.to_string());
+        }
+        self.save_layout(&l);
+    }
+
+    /// The pointer on the bar while it is edited.
+    fn edit_pointer(&mut self, kind: i32, x: f32, y: f32) {
+        let bh = self.bars.get(self.edit_bar).map(|b| b.height).unwrap_or(40.0);
+        let (_, left, right) = self.edit_slots();
+        match kind {
+            0 => {
+                // The × at a module's corner takes it off.
+                if y < 15.0 {
+                    if let Some(s) = left.iter().chain(right.iter()).find(|s| x >= s.x - 5.0 && x <= s.x + 11.0) {
+                        let id = s.id.clone();
+                        self.hide_module(&id);
+                        return;
+                    }
+                }
+                if let Some(s) = crate::barmods::hit(&left, x).map(|i| &left[i]).or_else(|| crate::barmods::hit(&right, x).map(|i| &right[i])) {
+                    self.edit_drag = Some((s.id.clone(), true));
+                    self.edit_ghost = Some((x, s.w, self.chip_label(&s.id)));
+                    self.edit_hint = -1.0;
+                    self.refresh_bar_edit();
+                }
+            }
+            1 => {
+                let Some((id, _)) = self.edit_drag.clone() else { return };
+                let w = self.edit_slots().1.iter().chain(self.edit_slots().2.iter()).find(|s| s.id == id).map(|s| s.w).unwrap_or(80.0);
+                // Pulled down off the bar: it would be taken away.
+                self.edit_removing = y > bh + 14.0;
+                self.edit_ghost = Some((x, w, self.chip_label(&id)));
+                self.edit_hint = if self.edit_removing { -1.0 } else { self.drop_at(x).2 };
+                self.refresh_edit_drag();
+            }
+            _ => {
+                let Some((id, _)) = self.edit_drag.take() else { return };
+                let removing = self.edit_removing;
+                self.edit_removing = false;
+                self.edit_ghost = None;
+                self.edit_hint = -1.0;
+                if removing {
+                    self.hide_module(&id);
+                } else {
+                    self.place_module(&id, x);
+                }
+                self.refresh_bar_edit();
+            }
+        }
+    }
+
+    /// The pointer on a chip of the palette (screen coordinates).
+    fn palette_pointer(&mut self, kind: i32, id: &str, x: f32, y: f32) {
+        let bh = self.bars.get(self.edit_bar).map(|b| b.height).unwrap_or(40.0);
+        let over_bar = y <= bh + 6.0;
+        match kind {
+            0 | 1 => {
+                let first = self.palette_ghost.is_none();
+                self.edit_drag = Some((id.to_string(), false));
+                self.palette_ghost = Some((x, y, self.chip_label(id)));
+                self.edit_hint = if over_bar { self.drop_at(x).2 } else { -1.0 };
+                if !first {
+                    // Moving: only the drop line changes (the chip follows the pointer in
+                    // the panel itself).
+                    self.refresh_edit_drag();
+                    return;
+                }
+            }
+            _ => {
+                self.edit_drag = None;
+                self.palette_ghost = None;
+                self.edit_hint = -1.0;
+                if over_bar {
+                    self.place_module(id, x);
+                }
+            }
+        }
+        self.refresh_bar_edit();
+    }
+
+    /// While a drag goes on: only what changes with the pointer, which is little, so
+    /// the bar is not rebuilt at every move.
+    fn refresh_edit_drag(&mut self) {
+        for b in &self.bars {
+            b.bar.set_edit_hint(self.edit_hint);
+            b.bar.set_edit_removing(self.edit_removing);
+        }
+    }
+
+    /// What the bar and the palette show of the editing.
+    fn refresh_bar_edit(&mut self) {
+        let (_, left, right) = self.edit_slots();
+        let dragging = self.edit_drag.as_ref().filter(|d| d.1).map(|d| d.0.clone());
+        let slots: Vec<crate::EditSlot> = left
+            .iter()
+            .chain(right.iter())
+            .filter(|s| s.w > 0.0)
+            .map(|s| crate::EditSlot { id: s.id.clone().into(), label: self.chip_label(&s.id).into(), x: s.x, w: s.w, dragging: dragging.as_deref() == Some(s.id.as_str()) })
+            .collect();
+        // The palette: every module there is, the ones on the bar marked.
+        let l = self.edit_layout();
+        let mut ids: Vec<String> = crate::barmods::LEFT.iter().chain(crate::barmods::RIGHT.iter()).map(|s| s.to_string()).collect();
+        ids.extend(self.bar_plugins.ids());
+        let items: Vec<crate::PaletteItem> = ids
+            .iter()
+            .map(|id| crate::PaletteItem { id: id.clone().into(), label: self.chip_label(id).into(), plugin: !crate::barmods::is_builtin(id), on_bar: l.left.contains(id) || l.right.contains(id) })
+            .collect();
+        for b in &self.bars {
+            b.bar.set_editing(self.bar_edit);
+            b.bar.set_edit_slots(model(slots.clone()));
+            b.bar.set_edit_hint(self.edit_hint);
+            b.bar.set_edit_removing(self.edit_removing);
+            b.bar.set_edit_ghost_on(self.edit_ghost.is_some());
+            if let Some((gx, gw, label)) = &self.edit_ghost {
+                b.bar.set_edit_ghost_x(*gx);
+                b.bar.set_edit_ghost_w(*gw);
+                b.bar.set_edit_ghost_label(label.clone().into());
+            }
+            b.panels.set_palette(model(items.clone()));
+            b.panels.set_palette_ghost_on(self.palette_ghost.is_some());
+            if let Some((_, _, label)) = &self.palette_ghost {
+                b.panels.set_palette_ghost_label(label.clone().into());
+            }
+        }
+    }
+
+    /// The bar's modules, as each side has them: in the order of the layout
+    /// (theme.json, barmods.rs), the ones that have something to show, with
+    /// a plugin's last output. Sent to the bars only when they changed.
+    fn refresh_bar_modules(&mut self) {
+        use crate::barmods;
+        let Some(first) = self.bars.first() else { return };
+        let layout = barmods::layout(&theme::raw(), &self.bar_plugins.ids());
+        let b = &first.bar;
+        let present = |id: &str| -> bool {
+            match id {
+                "tray" => b.get_show_tray() && self.tray_items.len() > 0,
+                "privacy" => b.get_mic_in_use() || b.get_camera_in_use() || b.get_screen_shared(),
+                "timers" => b.get_has_timer(),
+                "updates" => b.get_show_updates() && b.get_updates() > 0,
+                "mail" => b.get_mail_unread() >= 0,
+                "drives" => b.get_has_drives(),
+                "appmenus" => slint::Model::row_count(&b.get_app_menus()) > 0,
+                _ => true,
+            }
+        };
+        let build = |ids: &[String]| -> Vec<crate::BarModule> {
+            ids.iter()
+                .filter(|id| present(id))
+                .filter_map(|id| {
+                    if id.starts_with("plugin:") {
+                        let o = self.bar_plugins.shown(id);
+                        // Nothing to show yet, or nothing to say now: not there.
+                        if o.text.is_empty() && o.icon.is_empty() {
+                            return None;
+                        }
+                        Some(crate::BarModule {
+                            id: id.clone().into(),
+                            kind: "plugin".into(),
+                            text: o.text.clone().into(),
+                            has_icon: !o.icon.is_empty(),
+                            icon: if o.icon.is_empty() { Default::default() } else { glyphs::glyph(&o.icon) },
+                            tint: o.tint,
+                            tooltip: o.tooltip.clone().into(),
+                        })
+                    } else {
+                        Some(crate::BarModule { id: id.clone().into(), kind: "builtin".into(), text: "".into(), icon: Default::default(), has_icon: false, tint: 0, tooltip: "".into() })
+                    }
+                })
+                .collect()
+        };
+        let (left, right) = (build(&layout.left), build(&layout.right));
+        self.bar_on_left = left.iter().map(|m| m.id.to_string()).collect();
+        self.bar_on_right = right.iter().map(|m| m.id.to_string()).collect();
+        let sig = format!(
+            "{}|{}|{}",
+            self.bars.len(),
+            left.iter().map(|m| format!("{}:{}:{}", m.id, m.text, m.tint)).collect::<Vec<_>>().join(","),
+            right.iter().map(|m| format!("{}:{}:{}:{}", m.id, m.text, m.tint, m.has_icon)).collect::<Vec<_>>().join(","),
+        );
+        if sig == self.bar_sig {
+            return;
+        }
+        self.bar_sig = sig;
+        for bar in &self.bars {
+            bar.bar.set_left_modules(model(left.clone()));
+            bar.bar.set_right_modules(model(right.clone()));
+            bar.dock.set_right_modules(model(right.clone()));
+        }
+    }
+
+    /// What a tick or a press of an applet asks of the shell.
+    fn apply_effects(&mut self, fx: Vec<crate::applets::Effect>) {
+        for e in fx {
+            match e {
+                crate::applets::Effect::Run(steps) => shortcuts::run(steps),
+                crate::applets::Effect::Notify(title, text) => shortcuts::run(vec![format!("notify {title} | {text}")]),
+            }
+        }
+    }
+
+    /// The open applet's panel, from its state now.
+    fn refresh_applet(&mut self, widgets: bool) {
+        let Some(id) = self.applet_open.clone() else { return };
+        let Some(sc) = self.shortcuts.get(&id).cloned() else { return };
+        let Some(spec) = &sc.applet else { return };
+        let v = self.applets.view(&id, spec);
+        let buttons: Vec<crate::AppletButton> = v.buttons.iter().map(|(i, l, p)| crate::AppletButton { id: i.clone().into(), label: l.clone().into(), primary: *p }).collect();
+        for b in &self.bars {
+            let p = &b.panels;
+            p.set_applet_title(sc.name.clone().into());
+            p.set_applet_big(v.big.clone().into());
+            p.set_applet_sub(v.sub.clone().into());
+            p.set_applet_progress(v.progress);
+            p.set_applet_buttons(model(buttons.clone()));
+        }
+        // A tool's widgets only when asked: they are rebuilt as a whole, which
+        // would take the cursor out of a field being typed in.
+        if widgets {
+            let rows: Vec<crate::AppletWidget> = v
+                .widgets
+                .iter()
+                .map(|w| crate::AppletWidget {
+                    kind: w.kind.clone().into(),
+                    id: w.id.clone().into(),
+                    label: w.label.clone().into(),
+                    text: w.text.clone().into(),
+                    value: w.value.clone().into(),
+                    options: model(w.options.iter().map(|o| SharedString::from(o.as_str())).collect()),
+                    pick: w.pick,
+                    num: w.num,
+                    min: w.min,
+                    max: w.max,
+                    step: w.step,
+                    unit: w.unit.clone().into(),
+                    on: w.on,
+                    primary: w.primary,
+                    placeholder: w.placeholder.clone().into(),
+                })
+                .collect();
+            for b in &self.bars {
+                b.panels.set_applet_widgets(model(rows.clone()));
+            }
+        }
+    }
+
+    /// The name of the focused app, as the bar shows it.
+    fn active_app_name(&self) -> String {
+        self.dock_labels.get(&self.active_class).cloned().unwrap_or_else(|| self.active_class.clone())
+    }
+
+    /// The menus the shell makes itself: the app's name menu (`MENU_APP`) and
+    /// the plain Edit menu (`MENU_EDIT`), as a heading and entries.
+    fn builtin_menu(&self, which: i32) -> (String, Vec<tray::Entry>) {
+        let item = |id: i32, label: String| tray::Entry { id, label, enabled: true, separator: false, toggle: 0, checked: false, submenu: false };
+        let sep = || tray::Entry { id: -1, label: String::new(), enabled: false, separator: true, toggle: 0, checked: false, submenu: false };
+        let name = self.active_app_name();
+        if which == MENU_APP {
+            let others = self.clients.iter().any(|c| !c.minimised && c.class != self.active_class);
+            let hidden = self.clients.iter().any(|c| c.minimised);
+            let mut hide_others = item(B_HIDE_OTHERS, "Hide Others".into());
+            hide_others.enabled = others;
+            let mut show_all = item(B_SHOW_ALL, "Show All".into());
+            show_all.enabled = hidden;
+            (name.clone(), vec![item(B_SETTINGS, "Settings…".into()), sep(), item(B_HIDE, format!("Hide {name}")), hide_others, show_all, sep(), item(B_QUIT, format!("Quit {name}"))])
+        } else {
+            (
+                "Edit".into(),
+                vec![item(B_UNDO, "Undo".into()), item(B_REDO, "Redo".into()), sep(), item(B_CUT, "Cut".into()), item(B_COPY, "Copy".into()), item(B_PASTE, "Paste".into()), item(B_SELECT_ALL, "Select All".into()), sep(), item(B_FIND, "Find".into())],
+            )
+        }
+    }
+
+    /// An entry of the shell's own app menus. The panel is already closed, so
+    /// the app is the window with focus again.
+    fn builtin_click(&mut self, id: i32) {
+        let same: Vec<String> = self.clients.iter().filter(|c| c.class == self.active_class).map(|c| c.address.clone()).collect();
+        let ws = hypr::json("j/activeworkspace")["id"].as_i64().unwrap_or(1);
+        match id {
+            B_SETTINGS => send_shortcut("CTRL", "comma"),
+            B_HIDE => same.iter().for_each(|a| crate::dock::minimise(a)),
+            B_HIDE_OTHERS => {
+                for c in self.clients.iter().filter(|c| !c.minimised && c.class != self.active_class && c.workspace == ws) {
+                    crate::dock::minimise(&c.address);
+                }
+            }
+            B_SHOW_ALL => {
+                for c in self.clients.iter().filter(|c| c.minimised) {
+                    crate::dock::restore(&c.address, ws);
+                }
+            }
+            B_QUIT => same.iter().for_each(|a| crate::dock::close(a)),
+            B_UNDO => send_shortcut("CTRL", "z"),
+            B_REDO => send_shortcut("CTRL SHIFT", "z"),
+            B_CUT => send_shortcut("CTRL", "x"),
+            B_COPY => send_shortcut("CTRL", "c"),
+            B_PASTE => send_shortcut("CTRL", "v"),
+            B_SELECT_ALL => send_shortcut("CTRL", "a"),
+            B_FIND => send_shortcut("CTRL", "f"),
+            _ => {}
+        }
+        self.refresh_dock();
+    }
+
+    /// The focused app's menus on every bar, and which is open.
+    fn refresh_app_tops(&mut self) {
+        let mut tops: Vec<AppTop> = self.app_tops.iter().filter(|t| !t.separator).map(|t| AppTop { id: t.id, label: t.label.clone().into(), enabled: t.enabled }).collect();
+        // An app that publishes no menu gets a plain Edit one, which sends the
+        // usual shortcuts to it.
+        if tops.is_empty() && !self.active_class.is_empty() {
+            tops.push(AppTop { id: MENU_EDIT, label: "Edit".into(), enabled: true });
+        }
+        let lit = self.open.as_ref().is_some_and(|o| o.1 == "tray") && (self.menu_key == "app:menu" || self.menu_key == "app:builtin");
+        let open = if lit { self.menu_top } else { -100 };
+        for b in &self.bars {
+            b.bar.set_app_menus(model(tops.clone()));
+            b.bar.set_app_menu_open(open);
         }
     }
 
@@ -3418,6 +4116,10 @@ impl App {
         host.anim.apply(&host.panels);
         if let Some(id) = host.panel_surface {
             shell.set_input(id, true);
+            // A panel that was just closed queued "no clicks" for its surface; this one
+            // is using it now, so that is withdrawn (or it would arrive a frame later and
+            // leave the new panel unclickable).
+            self.pending_input.retain(|p| *p != id);
         }
         if host.panel_surface.is_none() {
             host.panel_surface = Some(shell.add_window(qh, host.panel_window.clone(), Some(&host.output), &wl::Placement {
@@ -3437,6 +4139,17 @@ impl App {
 
     fn close_panel(&mut self) {
         let Some((bar, which)) = self.open.take() else { return };
+        if which == "tray" {
+            self.refresh_app_tops();
+        }
+        if which == "barpalette" && self.bar_edit {
+            self.bar_edit = false;
+            self.edit_drag = None;
+            self.edit_ghost = None;
+            self.palette_ghost = None;
+            self.edit_hint = -1.0;
+            self.refresh_bar_edit();
+        }
         if which == "media" {
             let _ = self.media_cmd.send(mpris::Cmd::Watch(false));
         }
@@ -3714,6 +4427,139 @@ impl App {
                 self.command(shell, qh, "toggleCapture");
             }
             Action::Tile(kind) => self.tile(&kind),
+            Action::ToolSet(var, value) => {
+                if let Some(id) = self.applet_open.clone() {
+                    self.applets.tool_set(&id, &var, &value);
+                }
+            }
+            Action::PluginClick(bar, id, x) => {
+                let Some(m) = self.bar_plugins.get(&id).cloned() else { return };
+                if !m.on_click.is_empty() {
+                    crate::plugins::act(&m, m.on_click.clone());
+                } else if !m.menu.is_empty() {
+                    let entries: Vec<tray::Entry> = m
+                        .menu
+                        .iter()
+                        .enumerate()
+                        .map(|(i, it)| tray::Entry { id: i as i32, label: it.label.clone(), enabled: true, separator: false, toggle: 0, checked: false, submenu: false })
+                        .collect();
+                    if self.open.as_ref().is_some_and(|o| o.1 == "tray") && self.menu_key == id {
+                        self.close_panel();
+                        return;
+                    }
+                    self.menu_at = Some((bar, x));
+                    self.show_menu(shell, qh, id, m.name.clone(), false, entries);
+                }
+            }
+            Action::BarMenu(bar, x) => {
+                if self.open.as_ref().is_some_and(|o| o.1 == "tray") && self.menu_key == "bar:menu" {
+                    self.close_panel();
+                    return;
+                }
+                let item = |id: i32, label: &str, toggle: i32, checked: bool| tray::Entry { id, label: label.into(), enabled: true, separator: false, toggle, checked, submenu: false };
+                let sep = tray::Entry { id: 0, label: String::new(), enabled: false, separator: true, toggle: 0, checked: false, submenu: false };
+                let entries = vec![
+                    item(1, if self.bar_edit { "Done editing" } else { "Edit bar" }, 0, false),
+                    item(2, "Bar settings…", 0, false),
+                    sep.clone(),
+                    item(3, "Auto-hide", 1, self.look.bar_auto_hide),
+                    sep,
+                    item(4, "Open the plugins folder", 0, false),
+                    item(5, "Reset the layout", 0, false),
+                ];
+                self.menu_at = Some((bar, x));
+                self.show_menu(shell, qh, "bar:menu".into(), "Top bar".into(), false, entries);
+            }
+            Action::BarEditPointer(kind, x, y) => self.edit_pointer(kind, x, y),
+            Action::PalettePointer(kind, id, x, y) => self.palette_pointer(kind, &id, x, y),
+            Action::PaletteDone => self.stop_bar_edit(),
+            Action::PaletteReset => {
+                for k in ["barLeft", "barRight", "barHidden"] {
+                    theme::set(k, serde_json::Value::Null);
+                }
+                self.reload_look();
+                self.bar_sig.clear();
+                self.refresh_bar_modules();
+                self.refresh_bar_edit();
+            }
+            Action::PaletteNewPlugin => {
+                if let Some(f) = crate::plugins::make_template() {
+                    extras::spawn(&["xdg-open", &f.display().to_string()]);
+                }
+            }
+            Action::PalettePluginsFolder => {
+                let d = crate::plugins::dir();
+                let _ = std::fs::create_dir_all(&d);
+                extras::spawn(&["xdg-open", &d.display().to_string()]);
+            }
+            Action::ModuleWidth(id, w) => {
+                if self.bar_widths.get(&id).copied() != Some(w) {
+                    self.bar_widths.insert(id, w);
+                    if self.bar_edit {
+                        self.refresh_bar_edit();
+                    }
+                }
+            }
+            Action::PluginSecondary(id) => {
+                if let Some(m) = self.bar_plugins.get(&id).cloned() {
+                    crate::plugins::act(&m, m.on_right_click.clone());
+                }
+            }
+            Action::PluginScroll(id, d) => {
+                if let Some(m) = self.bar_plugins.get(&id).cloned() {
+                    crate::plugins::act(&m, if d > 0 { m.on_scroll_up.clone() } else { m.on_scroll_down.clone() });
+                }
+            }
+            Action::ToolPress(i) => {
+                let Some(id) = self.applet_open.clone() else { return };
+                let Some(sc) = self.shortcuts.get(&id).cloned() else { return };
+                let Some(spec) = &sc.applet else { return };
+                if let Some(run) = self.applets.tool_press(&id, spec, i.max(0) as usize) {
+                    let (tx, wake) = (self.tool_tx.clone(), self.tool_wake.clone());
+                    std::thread::spawn(move || {
+                        let out = shortcuts::run_tool(&run.steps, &run.env);
+                        if tx.send((id, run.capture, out)).is_ok() {
+                            if let Ok(mut w) = wake.lock() {
+                                use std::io::Write;
+                                let _ = w.write_all(b"!");
+                            }
+                        }
+                    });
+                }
+            }
+            Action::AppletAct(a) => {
+                if let Some(id) = self.applet_open.clone() {
+                    if let Some(sc) = self.shortcuts.get(&id).cloned() {
+                        if let Some(spec) = &sc.applet {
+                            let fx = self.applets.act(&id, spec, &sc.name, &a);
+                            self.apply_effects(fx);
+                            self.refresh_applet(false);
+                            self.refresh_sound();
+                        }
+                    }
+                }
+            }
+            Action::TileMove(from, to) => {
+                let saved = cc_layout();
+                let shown = self.cc_shown.clone();
+                theme::set("ccTiles", json!(cc_move(&saved, &shown, from.max(0) as usize, to.max(0) as usize)));
+                self.reload_look();
+            }
+            Action::TileRemove(id) => {
+                let mut l = cc_layout();
+                l.retain(|t| *t != id);
+                theme::set("ccTiles", json!(l));
+                self.reload_look();
+            }
+            Action::TileAdd(id) => {
+                let mut l = cc_layout();
+                if !l.contains(&id) {
+                    l.push(id);
+                }
+                theme::set("ccTiles", json!(l));
+                self.set_cc_pane("");
+                self.reload_look();
+            }
             Action::NoteDismiss(id) => {
                 let id = id as u32;
                 self.forget(id);
@@ -3879,6 +4725,27 @@ impl App {
                 self.menu_at = Some((bar, x));
                 let _ = self.tray_cmd.send(tray::Cmd::Menu(key, 0, String::new()));
             }
+            Action::BarAppMenu(bar, id, label, x) => {
+                let key = if id < 0 { "app:builtin" } else { "app:menu" };
+                if self.open.as_ref().is_some_and(|o| o.1 == "tray") && self.menu_key == key && self.menu_top == id {
+                    self.close_panel();
+                    return;
+                }
+                self.menu_top = id;
+                self.menu_at = Some((bar, x));
+                if id < 0 {
+                    // The shell's own: the app's name menu, or the plain Edit one.
+                    self.menu_stack.clear();
+                    let (heading, entries) = self.builtin_menu(id);
+                    self.show_menu(shell, qh, key.into(), heading, false, entries);
+                    return;
+                }
+                // From another menu's open panel: the new one replaces it.
+                if self.open.as_ref().is_some_and(|o| o.1 == "tray") {
+                    self.menu_stack.clear();
+                }
+                let _ = self.appmenu_cmd.send(appmenu::Cmd::Open(id, label, false));
+            }
             Action::TrayScroll(key, d) => {
                 let _ = self.tray_cmd.send(tray::Cmd::Scroll(key, d));
             }
@@ -3886,16 +4753,83 @@ impl App {
                 if sub {
                     let label = self.menu_entries.iter().find(|e| e.id == id).map(|e| e.label.clone()).unwrap_or_default();
                     self.menu_stack.push((id, label.clone()));
-                    let _ = self.tray_cmd.send(tray::Cmd::Menu(self.menu_key.clone(), id, label));
+                    if self.menu_key == "app:menu" {
+                        let _ = self.appmenu_cmd.send(appmenu::Cmd::Open(id, label, true));
+                    } else {
+                        let _ = self.tray_cmd.send(tray::Cmd::Menu(self.menu_key.clone(), id, label));
+                    }
                 } else {
-                    let _ = self.tray_cmd.send(tray::Cmd::Click(self.menu_key.clone(), id));
+                    if self.menu_key == "bar:menu" {
+                        self.close_panel();
+                        match id {
+                            1 => {
+                                if self.bar_edit {
+                                    self.stop_bar_edit();
+                                } else {
+                                    let bar = self.menu_at.map(|m| m.0).unwrap_or(0);
+                                    self.start_bar_edit(shell, qh, bar);
+                                }
+                            }
+                            2 => self.act(shell, qh, Action::OpenSettingsPane("Bar".into())),
+                            3 => {
+                                theme::set("barHide", json!(!self.look.bar_auto_hide));
+                                self.reload_look();
+                            }
+                            4 => {
+                                let d = crate::plugins::dir();
+                                let _ = std::fs::create_dir_all(&d);
+                                extras::spawn(&["xdg-open", &d.display().to_string()]);
+                            }
+                            5 => {
+                                for k in ["barLeft", "barRight", "barHidden"] {
+                                    theme::set(k, serde_json::Value::Null);
+                                }
+                                self.reload_look();
+                                self.bar_sig.clear();
+                                self.refresh_bar_modules();
+                                self.refresh_bar_edit();
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+                    if self.menu_key.starts_with("plugin:") {
+                        let key = self.menu_key.clone();
+                        self.close_panel();
+                        if let Some(m) = self.bar_plugins.get(&key).cloned() {
+                            if let Some(item) = m.menu.get(id.max(0) as usize) {
+                                crate::plugins::act(&m, item.steps.clone());
+                            }
+                        }
+                        return;
+                    }
+                    if self.menu_key == "app:builtin" {
+                        self.close_panel();
+                        self.builtin_click(id);
+                        return;
+                    }
+                    if self.menu_key == "app:menu" {
+                        let _ = self.appmenu_cmd.send(appmenu::Cmd::Click(id));
+                    } else {
+                        let _ = self.tray_cmd.send(tray::Cmd::Click(self.menu_key.clone(), id));
+                    }
                     self.close_panel();
                 }
             }
             Action::MenuBack => {
                 self.menu_stack.pop();
                 let (id, label) = self.menu_stack.last().cloned().unwrap_or((0, String::new()));
-                let _ = self.tray_cmd.send(tray::Cmd::Menu(self.menu_key.clone(), id, label));
+                if self.menu_key == "app:menu" {
+                    // Back to the top menu's own entries (its id, under its label).
+                    let (id, label) = if self.menu_stack.is_empty() {
+                        (self.menu_top, self.app_tops.iter().find(|t| t.id == self.menu_top).map(|t| t.label.clone()).unwrap_or_default())
+                    } else {
+                        (id, label)
+                    };
+                    let _ = self.appmenu_cmd.send(appmenu::Cmd::Open(id, label, !self.menu_stack.is_empty()));
+                } else {
+                    let _ = self.tray_cmd.send(tray::Cmd::Menu(self.menu_key.clone(), id, label));
+                }
             }
             Action::DockActivate(bar, t) => self.dock_activate(shell, qh, bar, t),
             Action::DockMenu(bar, t, x) => self.dock_menu(shell, qh, bar, t, x),
@@ -3956,7 +4890,7 @@ impl App {
                 self.dock_tiles();
             }
             Action::CcPane(p) => self.set_cc_pane(&p),
-            Action::Wifi(on) => self.daemon.send(json!({ "cmd": "net-wifi", "on": on })),
+            Action::Wifi(on) => self.set_wifi(on),
             Action::Bt(on) => self.daemon.send(json!({ "cmd": "bt-power", "on": on })),
             Action::Join(ssid) => {
                 let Some(a) = self.sound.aps.iter().find(|a| a.ssid == ssid).cloned() else { return };
@@ -4053,18 +4987,42 @@ impl App {
     fn tile(&mut self, kind: &str) {
         let s = &self.sound;
         match kind {
-            "wifi" | "wifi-off" => self.daemon.send(json!({ "cmd": "net-wifi", "on": !s.wifi_on })),
+            "wifi" | "wifi-off" => {
+                let on = !self.wifi_now();
+                self.set_wifi(on);
+            }
             "bluetooth" => self.daemon.send(json!({ "cmd": "bt-power", "on": !s.bt_on })),
             "airplane" => {
-                let going_on = s.wifi_on || s.bt_on;
-                self.daemon.send(json!({ "cmd": "net-wifi", "on": !going_on }));
-                if s.bt_available {
+                let (bt_available, bt_on) = (s.bt_available, s.bt_on);
+                let going_on = self.wifi_now() || bt_on;
+                self.set_wifi(!going_on);
+                if bt_available {
                     self.daemon.send(json!({ "cmd": "bt-power", "on": !going_on }));
                 }
             }
             "dnd" => {
                 theme::set("dnd", json!(!self.look.dnd));
                 self.reload_look();
+            }
+            "lock" => self.power("lock"),
+            "mute" => {
+                if self.sound.have_audio {
+                    self.sound.muted = !self.sound.muted;
+                    self.daemon.send(json!({ "cmd": "pa-mute", "name": self.sound.sink, "mute": self.sound.muted }));
+                    self.refresh_sound();
+                }
+            }
+            k if k.starts_with("sc:") => {
+                let id = k[3..].to_string();
+                if self.shortcuts.get(&id).is_some_and(|s| s.applet.is_some()) {
+                    // An applet opens its panel.
+                    self.applet_open = Some(id);
+                    self.refresh_applet(true);
+                    self.set_cc_pane("applet");
+                } else {
+                    self.shortcuts.press(&id);
+                    self.refresh_sound();
+                }
             }
             "keepawake" => {
                 self.keep_awake = !self.keep_awake;
@@ -4988,6 +5946,14 @@ impl App {
                 self.step_overview(shell, qh);
             }
             "toggleControlCenter" => self.toggle_from_key(shell, qh, "control"),
+            "editBar" => {
+                if self.bar_edit {
+                    self.stop_bar_edit();
+                } else {
+                    let bar = self.focused_bar_cached.min(self.bars.len().saturating_sub(1));
+                    self.start_bar_edit(shell, qh, bar);
+                }
+            }
             "toggleNotifications" => self.toggle_from_key(shell, qh, "notifications"),
             "toggleCalendar" => self.toggle_from_key(shell, qh, "calendar"),
             "togglePower" => self.toggle_from_key(shell, qh, "power"),
@@ -5280,6 +6246,14 @@ fn wire_bar(bar: &Bar, i: usize, q: &Queue) {
     on!(on_tray_secondary, |k| Action::TraySecondary(k.to_string()));
     on!(on_tray_menu, |k, x| Action::TrayMenu(i, k.to_string(), x));
     on!(on_tray_scroll, |k, d| Action::TrayScroll(k.to_string(), d));
+    on!(on_app_menu, |id, label, x| Action::BarAppMenu(i, id, label.to_string(), x));
+    on!(on_app_name_menu, |x| Action::BarAppMenu(i, MENU_APP, String::new(), x));
+    on!(on_bar_menu, |x| Action::BarMenu(i, x));
+    on!(on_edit_pointer, |k, x, y| Action::BarEditPointer(k, x, y));
+    on!(on_module_width, |id, w| Action::ModuleWidth(id.to_string(), w));
+    on!(on_plugin_click, |id, x| Action::PluginClick(i, id.to_string(), x));
+    on!(on_plugin_secondary, |id| Action::PluginSecondary(id.to_string()));
+    on!(on_plugin_scroll, |id, d| Action::PluginScroll(id.to_string(), d));
 }
 
 /// The taskbar's status area: the same buttons as the bar's right end, on the dock's window.
@@ -5318,6 +6292,19 @@ fn wire_panels(p: &Panels, q: &Queue) {
     on!(on_month_reset, | | Action::MonthReset);
     on!(on_cycle_theme, | | Action::CycleTheme);
     on!(on_tile, |k| Action::Tile(k.to_string()));
+    on!(on_palette_ptr, |k, id, x, y| Action::PalettePointer(k, id.to_string(), x, y));
+    on!(on_palette_done, | | Action::PaletteDone);
+    on!(on_palette_reset, | | Action::PaletteReset);
+    on!(on_palette_new_plugin, | | Action::PaletteNewPlugin);
+    on!(on_palette_open_folder, | | Action::PalettePluginsFolder);
+    on!(on_tile_move, |a, b| Action::TileMove(a, b));
+    on!(on_applet_act, |a| Action::AppletAct(a.to_string()));
+    on!(on_applet_set, |a, b| Action::ToolSet(a.to_string(), b.to_string()));
+    on!(on_applet_press, |i| Action::ToolPress(i));
+    on!(on_tile_remove, |k| Action::TileRemove(k.to_string()));
+    on!(on_tile_add, |k| Action::TileAdd(k.to_string()));
+    on!(on_new_shortcut, | | Action::OpenSettingsPane("Shortcuts".into()));
+    on!(on_manage_shortcuts, | | Action::OpenSettingsPane("Shortcuts".into()));
     on!(on_set_volume, |v| Action::SetVolume(v));
     on!(on_toggle_mute, | | Action::ToggleMute);
     on!(on_set_brightness, |v| Action::SetBrightness(v));
@@ -5421,4 +6408,43 @@ fn local_parts(t: i64) -> (i32, u32, u32, u32, u32, u32) {
     let secs = t as libc::time_t;
     unsafe { libc::localtime_r(&secs, &mut tm) };
     (tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32, tm.tm_hour as u32, tm.tm_min as u32, tm.tm_sec as u32)
+}
+
+#[cfg(test)]
+mod cc_layout_tests {
+    use super::cc_move;
+
+    fn v(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_move_keeps_the_places_of_tiles_not_shown() {
+        // Bluetooth is saved but not on this machine just now.
+        let saved = v(&["wifi", "bluetooth", "dnd", "mute"]);
+        let shown = v(&["wifi", "dnd", "mute"]);
+        assert_eq!(cc_move(&saved, &shown, 2, 0), v(&["mute", "bluetooth", "wifi", "dnd"]));
+        assert_eq!(cc_move(&saved, &shown, 0, 0), saved);
+        assert_eq!(cc_move(&saved, &shown, 0, 9), saved);
+    }
+}
+
+
+#[cfg(test)]
+mod wifi_shown_tests {
+    use super::wifi_shown;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn what_was_asked_shows_until_it_is_confirmed_or_a_while_passes() {
+        let t0 = Instant::now();
+        // Asked to turn on while NetworkManager still says off: shown on.
+        assert!(wifi_shown(Some((true, t0)), false, t0 + Duration::from_millis(300)));
+        // Asked to turn off while it still says on: shown off, so the next press turns it on.
+        assert!(!wifi_shown(Some((false, t0)), true, t0 + Duration::from_secs(1)));
+        // Never confirmed: back to what NetworkManager says.
+        assert!(!wifi_shown(Some((true, t0)), false, t0 + Duration::from_secs(6)));
+        // Nothing asked: what it says.
+        assert!(wifi_shown(None, true, t0));
+    }
 }

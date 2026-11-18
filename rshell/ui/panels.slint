@@ -5,8 +5,12 @@ import { Icons, GlyphData } from "icons.slint";
 import { Theme } from "theme.slint";
 import { Glyph } from "glyph.slint";
 import { IconButton, PanelSurface, Caps, Toggle, FillSlider, MenuRow, Rule } from "widgets.slint";
-import { MediaInfo, MenuEntry, Note, NoteAction, DriveRow, TimerRow, TimerItem, AlarmItem, ClipItem, Tile, PrivacyRow, DayCell, WifiRow, BtRow } from "types.slint";
+import { MediaInfo, MenuEntry, Note, NoteAction, DriveRow, TimerRow, TimerItem, AlarmItem, ClipItem, Tile, PrivacyRow, DayCell, WifiRow, BtRow, PaletteItem } from "types.slint";
 
+// A button on an applet's panel (a timer's Start, a counter's +).
+export struct AppletButton { id: string, label: string, primary: bool }
+// One widget of a tool's panel (an input, a choice, a button, a result…).
+export struct AppletWidget { kind: string, id: string, label: string, text: string, value: string, options: [string], pick: int, num: float, min: float, max: float, step: float, unit: string, on: bool, primary: bool, placeholder: string }
 export struct MonSlider { output: string, name: string, value: float, label: string }
 export struct MixRow { index: int, title: string, sub: string, vol: float, muted: bool, pct: string, has-out: bool, out-label: string, has-eq: bool, eq-on: bool }
 export struct HistEntry { id: int, day: string, show-day: bool, head: string, summary: string, body: string, urgent: bool }
@@ -118,7 +122,7 @@ component PowerEntry inherits Rectangle {
                 x: 6px; y: 6px;
                 data: root.icon;
                 size: 14px;
-                monochrome: true;
+               
                 ink: t.has-hover ? Theme.accent : Theme.ink2;
             }
         }
@@ -322,34 +326,26 @@ component CalendarPanel inherits PanelSurface {
 // ── control center (ControlCenter.qml, the main view) ─────────────────────
 component CcTile inherits Rectangle {
     in property <Tile> tile;
+    // Rearranging: the tile can't be pressed, has a badge to take it away, and
+    // is dragged by its body.
+    in property <bool> editing;
     callback activated();
     // Wi-Fi and Bluetooth open their list from the chevron.
     callback more();
-    property <bool> has-more: tile.kind == "wifi" || tile.kind == "wifi-off" || tile.kind == "bluetooth";
-    pure function glyph(kind: string) -> GlyphData {
-        if (kind == "wifi") { return Icons.wifi; }
-        if (kind == "wifi-off") { return Icons.wifi-off; }
-        if (kind == "bluetooth") { return Icons.bluetooth; }
-        if (kind == "airplane") { return Icons.plane; }
-        if (kind == "performance") { return Icons.zap; }
-        if (kind == "keyboard") { return Icons.keyboard; }
-        if (kind == "dnd") { return Icons.bell-off; }
-        if (kind == "night") { return Icons.moon; }
-        if (kind == "nightlight") { return Icons.moon; }
-        if (kind == "capture") { return Icons.camera; }
-        if (kind == "gamemode") { return Icons.gamepad; }
-        if (kind == "keepawake") { return Icons.sun; }
-        return Icons.dot;
-    }
+    callback remove();
+    callback drag-start();
+    callback dragging(length, length);
+    callback drag-end();
+    property <bool> has-more: !root.editing && (tile.kind == "wifi" || tile.kind == "wifi-off" || tile.kind == "bluetooth");
     height: 88px;
     border-radius: Theme.r-cap;
     background: tile.on ? Theme.accent : (t.has-hover ? Theme.sel : Theme.hover);
     animate background { duration: 160ms; }
     Glyph {
         x: 12px; y: 12px;
-        data: root.glyph(root.tile.kind);
+        data: root.tile.glyph;
         size: 18px;
-        monochrome: true;
+        monochrome: (root.tile.on);
         ink: root.tile.on ? Theme.ink-on-accent : Theme.ink;
     }
     VerticalLayout {
@@ -382,7 +378,34 @@ component CcTile inherits Rectangle {
         background: root.tile.on ? Theme.ink-on-accent : Theme.div;
         opacity: root.tile.on ? 0.55 : 1;
     }
-    t := TouchArea { mouse-cursor: pointer; clicked => { root.activated(); } }
+    t := TouchArea {
+        mouse-cursor: root.editing ? (self.pressed ? MouseCursor.grabbing : MouseCursor.grab) : MouseCursor.pointer;
+        clicked => { if !root.editing { root.activated(); } }
+        pointer-event(e) => {
+            if root.editing && e.button == PointerEventButton.left {
+                if e.kind == PointerEventKind.down { root.drag-start(); }
+                if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel { root.drag-end(); }
+            }
+        }
+        moved => { if root.editing && self.pressed { root.dragging(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y); } }
+    }
+    Rectangle {
+        // Pops in as editing starts and back out as it ends.
+        property <float> k: root.editing ? 1 : 0;
+        animate k { duration: 200ms; easing: cubic-bezier(0.33, 1, 0.68, 1); }
+        opacity: self.k;
+        x: -5px + 11px * (1 - self.k);
+        y: -5px + 11px * (1 - self.k);
+        width: 22px * self.k;
+        height: 22px * self.k;
+        border-radius: self.width / 2;
+        background: rb.has-hover ? #d64545 : Theme.panel;
+        border-width: 1px;
+        border-color: Theme.div;
+        clip: true;
+        Rectangle { x: 6px; y: 10px; width: 10px; height: 2px; border-radius: 1px; background: rb.has-hover ? #ffffff : Theme.ink; }
+        rb := TouchArea { enabled: root.editing; mouse-cursor: pointer; clicked => { root.remove(); } }
+    }
     if root.has-more: Rectangle {
         x: parent.width - self.width - 8px;
         y: 8px;
@@ -394,7 +417,7 @@ component CcTile inherits Rectangle {
             x: 4px; y: 4px;
             data: Icons.chevron-right;
             size: 13px;
-            monochrome: true;
+            monochrome: (root.tile.on);
             ink: root.tile.on ? Theme.ink-on-accent : Theme.ink2;
         }
         mt := TouchArea {
@@ -425,7 +448,7 @@ component RadioPane inherits VerticalLayout {
             height: 30px;
             border-radius: Theme.r-sm;
             background: bk.has-hover ? Theme.hover : transparent;
-            Glyph { x: 7px; y: 7px; data: Icons.chevron-left; size: 15px; monochrome: true; ink: Theme.ink2; }
+            Glyph { x: 7px; y: 7px; data: Icons.chevron-left; size: 15px; ink: Theme.ink2; }
             bk := TouchArea { mouse-cursor: pointer; clicked => { root.back(); } }
         }
         VerticalLayout {
@@ -489,7 +512,7 @@ component CcSlider inherits VerticalLayout {
         Glyph {
             data: root.icon;
             size: 15px;
-            monochrome: true;
+           
             ink: Theme.ink2;
             TouchArea { mouse-cursor: pointer; clicked => { root.icon-clicked(); } }
         }
@@ -502,7 +525,7 @@ component CcSlider inherits VerticalLayout {
             border-radius: 10px;
             background: cha.has-hover ? Theme.sel : Theme.hover;
             cht := Text { x: 7px; y: (parent.height - self.height) / 2; text: root.chip; font-size: Theme.fs(10.5); font-weight: 600; color: cha.has-hover ? Theme.ink : Theme.ink3; }
-            Glyph { x: 7px + cht.preferred-width + 3px; y: (parent.height - 11px) / 2; data: Icons.chevron-right; size: 11px; monochrome: true; ink: Theme.ink3; }
+            Glyph { x: 7px + cht.preferred-width + 3px; y: (parent.height - 11px) / 2; data: Icons.chevron-right; size: 11px; ink: Theme.ink3; }
             cha := TouchArea { mouse-cursor: pointer; clicked => { root.chip-clicked(); } }
         }
         Rectangle { horizontal-stretch: 1; }
@@ -544,7 +567,7 @@ component MixLevel inherits VerticalLayout {
             height: 30px;
             border-radius: 15px;
             background: root.muted ? Theme.div : (ba.has-hover ? Theme.sel : Theme.hover);
-            Glyph { x: 7.5px; y: 7.5px; data: root.muted ? Icons.volume-x : Icons.volume; size: 15px; monochrome: true; ink: Theme.ink2; }
+            Glyph { x: 7.5px; y: 7.5px; data: root.muted ? Icons.volume-x : Icons.volume; size: 15px; ink: Theme.ink2; }
             ba := TouchArea { mouse-cursor: pointer; clicked => { root.badge-clicked(); } }
         }
         VerticalLayout {
@@ -565,7 +588,7 @@ component MixLevel inherits VerticalLayout {
                 background: oa.has-hover ? Theme.sel : transparent;
                 border-width: 1px;
                 border-color: Theme.rule;
-                Glyph { x: 7px; y: 5px; data: Icons.volume; size: 12px; monochrome: true; ink: Theme.ink2; }
+                Glyph { x: 7px; y: 5px; data: Icons.volume; size: 12px; ink: Theme.ink2; }
                 ol := Text { x: 23px; width: parent.width - 31px; y: (parent.height - self.height) / 2; overflow: elide; text: root.out-label; font-size: Theme.fs(10.5); font-weight: 600; color: Theme.ink2; }
                 oa := TouchArea { mouse-cursor: pointer; clicked => { root.out-clicked(); } }
             }
@@ -628,6 +651,49 @@ component ControlCenter inherits PanelSurface {
     in property <string> session;
     in property <string> theme-mode;
     in property <[Tile]> tiles;
+    // Tiles that could be added, and the layout being rearranged.
+    in property <[Tile]> more-tiles;
+    // The applet panel (a timer, a counter) a tile opened.
+    in property <string> applet-title;
+    in property <string> applet-big;
+    in property <string> applet-sub;
+    in property <float> applet-progress: -1;
+    in property <[AppletButton]> applet-buttons;
+    in property <[AppletWidget]> applet-widgets;
+    callback applet-act(string);
+    callback applet-set(string, string);
+    callback applet-press(int);
+    in-out property <bool> editing;
+    // Whether this is the panel on show: closing it ends editing, so it opens
+    // as it normally does.
+    in property <bool> open;
+    changed open => {
+        if (!root.open) {
+            root.editing = false;
+            root.drag-from = -1;
+        }
+    }
+    callback tile-move(int, int);
+    callback tile-remove(string);
+    callback tile-add(string);
+    callback new-shortcut();
+    callback manage-shortcuts();
+    property <int> drag-from: -1;
+    property <length> drag-base-x;
+    property <length> drag-base-y;
+    property <length> drag-x;
+    property <length> drag-y;
+    pure function slot-x(i: int) -> length { return 12px + mod(i, 3) * (root.tile-w + 6px); }
+    pure function slot-y(i: int) -> length { return floor(i / 3) * 94px; }
+    // The slot the dragged tile is over.
+    property <int> drag-to: min(root.tiles.length - 1, max(0, round(root.drag-y / 94px)) * 3 + max(0, min(2, round((root.drag-x - 12px) / (root.tile-w + 6px)))));
+    // Where tile j sits while another is dragged: the ones between shift over.
+    pure function slot-of(j: int, from: int, to: int) -> int {
+        if (from < 0 || j == from) { return j; }
+        if (from < to && j > from && j <= to) { return j - 1; }
+        if (from > to && j >= to && j < from) { return j + 1; }
+        return j;
+    }
     in property <float> volume;
     in property <bool> muted;
     in property <bool> has-brightness;
@@ -658,6 +724,260 @@ component ControlCenter inherits PanelSurface {
     property <length> tile-w: (root.width - 24px - 12px) / 3;
     // One layout over the panes, so the panel takes the shown one's height.
     VerticalLayout {
+    if root.pane == "applet": apane := VerticalLayout {
+        // A timer or counter keeps its settings behind a row under it; a tool is all widgets.
+        property <bool> settings-open: false;
+        property <bool> in: false;
+        init => { self.in = true; }
+        opacity: self.in ? 1 : 0;
+        animate opacity { duration: 180ms; easing: ease-out; }
+        HorizontalLayout {
+            height: 50px;
+            padding-left: 10px;
+            padding-right: 16px;
+            spacing: 10px;
+            Rectangle {
+                y: 10px;
+                width: 30px;
+                height: 30px;
+                horizontal-stretch: 0;
+                border-radius: Theme.r-sm;
+                background: apk.has-hover ? Theme.hover : transparent;
+                Glyph { x: 7.5px; y: 7.5px; data: Icons.chevron-left; size: 15px; ink: Theme.ink2; }
+                apk := TouchArea { mouse-cursor: pointer; clicked => { root.show-pane(""); } }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Text { text: root.applet-title; overflow: elide; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+            }
+        }
+        Rule {}
+        if root.applet-big != "": VerticalLayout {
+            padding-left: 20px;
+            padding-right: 20px;
+            padding-top: 18px;
+            padding-bottom: 20px;
+            spacing: 6px;
+            Text { horizontal-alignment: center; text: root.applet-big; font-size: Theme.fs(46); font-weight: 700; color: Theme.ink; }
+            Text { horizontal-alignment: center; text: root.applet-sub; overflow: elide; font-size: Theme.fs(12.5); color: Theme.ink3; }
+            if root.applet-progress >= 0: Rectangle {
+                height: 14px;
+                Rectangle {
+                    y: 4px;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: Theme.hover;
+                    Rectangle {
+                        width: parent.width * root.applet-progress;
+                        border-radius: 3px;
+                        background: Theme.accent;
+                        animate width { duration: 400ms; easing: ease-out; }
+                    }
+                }
+            }
+            Rectangle { height: 8px; }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: center;
+                for b in root.applet-buttons: Rectangle {
+                    height: 36px;
+                    width: max(56px, blabel.preferred-width + 28px);
+                    border-radius: 18px;
+                    background: b.primary ? (bt.has-hover ? Theme.accent.brighter(0.08) : Theme.accent) : (bt.has-hover ? Theme.sel : Theme.hover);
+                    blabel := Text { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; text: b.label; font-size: Theme.fs(13); font-weight: 600; color: b.primary ? Theme.ink-on-accent : Theme.ink; }
+                    bt := TouchArea { mouse-cursor: pointer; clicked => { root.applet-act(b.id); } }
+                }
+            }
+            // Its settings, under it.
+            if root.applet-widgets.length > 0: Rectangle {
+                height: 30px;
+                Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: apane.settings-open ? "Hide settings  ▴" : "Settings  ▾";
+                    font-size: Theme.fs(12);
+                    font-weight: 600;
+                    color: sto.has-hover ? Theme.accent : Theme.ink3;
+                }
+                sto := TouchArea { mouse-cursor: pointer; clicked => { apane.settings-open = !apane.settings-open; } }
+            }
+        }
+        // A tool: the layout its shortcut describes.
+        if root.applet-widgets.length > 0 && (root.applet-big == "" || apane.settings-open): Flickable {
+            height: min(tool-col.preferred-height, 300px);
+            content-height: tool-col.preferred-height;
+            tool-col := VerticalLayout {
+                padding: 16px;
+                spacing: 12px;
+                for w[i] in root.applet-widgets: VerticalLayout {
+                    spacing: 5px;
+                    if w.kind == "text": Text { wrap: word-wrap; text: w.text; font-size: Theme.fs(12.5); color: Theme.ink2; }
+                    if w.kind == "input": VerticalLayout {
+                        spacing: 5px;
+                        if w.label != "": Text { text: w.label; font-size: Theme.fs(11.5); font-weight: 600; color: Theme.ink3; }
+                        Rectangle {
+                            height: 34px;
+                            border-radius: Theme.r-sm;
+                            background: Theme.hover;
+                            border-width: tin.has-focus ? 1.5px : 1px;
+                            border-color: tin.has-focus ? Theme.accent : Theme.rule;
+                            tin := TextInput {
+                                x: 10px;
+                                width: parent.width - 20px;
+                                vertical-alignment: center;
+                                text: w.value;
+                                font-size: Theme.fs(13);
+                                color: Theme.ink;
+                                single-line: true;
+                                edited => { root.applet-set(w.id, self.text); }
+                            }
+                            if tin.text == "" && !tin.has-focus: Text { x: 10px; y: (parent.height - self.height) / 2; text: w.placeholder; font-size: Theme.fs(13); color: Theme.ink3; }
+                        }
+                    }
+                    if w.kind == "choice": choice := VerticalLayout {
+                        property <int> pick: w.pick;
+                        spacing: 5px;
+                        if w.label != "": Text { text: w.label; font-size: Theme.fs(11.5); font-weight: 600; color: Theme.ink3; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            alignment: start;
+                            for o[j] in w.options: Rectangle {
+                                height: 30px;
+                                width: ol.preferred-width + 24px;
+                                border-radius: 15px;
+                                background: j == choice.pick ? Theme.accent : (ot.has-hover ? Theme.sel : Theme.hover);
+                                ol := Text { x: 12px; y: (parent.height - self.height) / 2; text: o; font-size: Theme.fs(12); font-weight: 600; color: j == choice.pick ? Theme.ink-on-accent : Theme.ink; }
+                                ot := TouchArea { mouse-cursor: pointer; clicked => { choice.pick = j; root.applet-set(w.id, o); } }
+                            }
+                        }
+                    }
+                    if w.kind == "slider": slr := VerticalLayout {
+                        property <float> frac: w.max > w.min ? (w.num - w.min) / (w.max - w.min) : 0;
+                        property <float> cur: round((w.min + self.frac * (w.max - w.min)) / w.step) * w.step;
+                        spacing: 6px;
+                        HorizontalLayout {
+                            Text { horizontal-stretch: 1; text: w.label; font-size: Theme.fs(11.5); font-weight: 600; color: Theme.ink3; }
+                            Text { text: slr.cur + w.unit; font-size: Theme.fs(12); color: Theme.ink; }
+                        }
+                        FillSlider { value: slr.frac; moved(v) => { slr.frac = v; root.applet-set(w.id, "" + slr.cur); } }
+                    }
+                    if w.kind == "toggle": tg := HorizontalLayout {
+                        property <bool> on: w.on;
+                        spacing: 10px;
+                        Text { horizontal-stretch: 1; vertical-alignment: center; text: w.label; font-size: Theme.fs(12.5); color: Theme.ink; }
+                        VerticalLayout { alignment: center; Toggle { checked: tg.on; toggled(v) => { tg.on = v; root.applet-set(w.id, v ? "true" : "false"); } } }
+                    }
+                    if w.kind == "button": HorizontalLayout {
+                        alignment: start;
+                        Rectangle {
+                            height: 36px;
+                            width: max(72px, bl.preferred-width + 32px);
+                            border-radius: 18px;
+                            background: w.primary ? (bb.has-hover ? Theme.accent.brighter(0.08) : Theme.accent) : (bb.has-hover ? Theme.sel : Theme.hover);
+                            bl := Text { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; text: w.label; font-size: Theme.fs(13); font-weight: 600; color: w.primary ? Theme.ink-on-accent : Theme.ink; }
+                            bb := TouchArea { mouse-cursor: pointer; clicked => { root.applet-press(i); } }
+                        }
+                    }
+                    if w.kind == "output": VerticalLayout {
+                        spacing: 4px;
+                        if w.label != "": Text { text: w.label; font-size: Theme.fs(11.5); font-weight: 600; color: Theme.ink3; }
+                        Rectangle {
+                            height: ot2.preferred-height + 20px;
+                            border-radius: Theme.r-sm;
+                            background: Theme.hover;
+                            ot2 := Text { x: 10px; y: 10px; width: parent.width - 20px; wrap: word-wrap; text: w.text == "" ? "—" : w.text; font-size: Theme.fs(14); font-weight: 600; color: Theme.ink; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if root.pane == "add": VerticalLayout {
+        // Fades in as it opens.
+        property <bool> in: false;
+        init => { self.in = true; }
+        opacity: self.in ? 1 : 0;
+        animate opacity { duration: 180ms; easing: ease-out; }
+        HorizontalLayout {
+            height: 50px;
+            padding-left: 10px;
+            padding-right: 16px;
+            spacing: 10px;
+            Rectangle {
+                y: 10px;
+                width: 30px;
+                height: 30px;
+                horizontal-stretch: 0;
+                border-radius: Theme.r-sm;
+                background: abk.has-hover ? Theme.hover : transparent;
+                Glyph { x: 7.5px; y: 7.5px; data: Icons.chevron-left; size: 15px; ink: Theme.ink2; }
+                abk := TouchArea { mouse-cursor: pointer; clicked => { root.show-pane(""); } }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 2px;
+                Text { text: "Add to the control center"; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+                Text { text: root.more-tiles.length == 0 ? "Everything is already on it" : "Tap one to put it on"; font-size: Theme.fs(11); color: Theme.ink3; }
+            }
+        }
+        Rule {}
+        Flickable {
+            height: min(addlist.preferred-height, 300px);
+            content-height: addlist.preferred-height;
+            addlist := VerticalLayout {
+                padding: 6px;
+                spacing: 2px;
+                for m in root.more-tiles: Rectangle {
+                    height: 48px;
+                    border-radius: Theme.r-sm;
+                    background: mat.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 12px;
+                        Glyph { y: 15px; data: m.glyph; size: 18px; ink: Theme.ink; }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 1px;
+                            Text { text: m.name; overflow: elide; font-size: Theme.fs(12.5); font-weight: 600; color: Theme.ink; }
+                            Text { text: m.sub; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
+                        }
+                        Glyph { y: 15px; data: Icons.plus; size: 18px; ink: Theme.accent; }
+                    }
+                    mat := TouchArea { mouse-cursor: pointer; clicked => { root.tile-add(m.id); } }
+                }
+            }
+        }
+        Rule {}
+        // Shortcuts are tiles you make yourself, in Settings.
+        HorizontalLayout {
+            height: 46px;
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 8px;
+            Rectangle {
+                y: 8px;
+                height: 30px;
+                width: nsl.preferred-width + 24px;
+                border-radius: 9px;
+                background: nst.has-hover ? Theme.accent : Theme.hover;
+                nsl := Text { x: 12px; y: (parent.height - self.height) / 2; text: "New shortcut…"; font-size: Theme.fs(12); font-weight: 600; color: nst.has-hover ? Theme.ink-on-accent : Theme.ink; }
+                nst := TouchArea { mouse-cursor: pointer; clicked => { root.new-shortcut(); } }
+            }
+            Rectangle {
+                y: 8px;
+                height: 30px;
+                width: msl.preferred-width + 24px;
+                border-radius: 9px;
+                background: mst.has-hover ? Theme.sel : transparent;
+                msl := Text { x: 12px; y: (parent.height - self.height) / 2; text: "Manage shortcuts"; font-size: Theme.fs(12); font-weight: 600; color: Theme.ink2; }
+                mst := TouchArea { mouse-cursor: pointer; clicked => { root.manage-shortcuts(); } }
+            }
+        }
+    }
     if root.pane == "mixer": VerticalLayout {
         // AppMixer.qml: back, the title, the output's level, then each app's.
         HorizontalLayout {
@@ -672,7 +992,7 @@ component ControlCenter inherits PanelSurface {
                 horizontal-stretch: 0;
                 border-radius: Theme.r-sm;
                 background: mbk.has-hover ? Theme.hover : transparent;
-                Glyph { x: 7.5px; y: 7.5px; data: Icons.chevron-left; size: 15px; monochrome: true; ink: Theme.ink2; }
+                Glyph { x: 7.5px; y: 7.5px; data: Icons.chevron-left; size: 15px; ink: Theme.ink2; }
                 mbk := TouchArea { mouse-cursor: pointer; clicked => { root.show-pane(""); } }
             }
             VerticalLayout {
@@ -800,7 +1120,7 @@ component ControlCenter inherits PanelSurface {
                                     color: n.active ? Theme.accent : Theme.ink3;
                                 }
                             }
-                            if n.secure: Glyph { y: 12px; data: Icons.lock; size: 14px; monochrome: true; ink: Theme.ink3; }
+                            if n.secure: Glyph { y: 12px; data: Icons.lock; size: 14px; ink: Theme.ink3; }
                             if n.active: Rectangle {
                                 y: 7px;
                                 height: 26px;
@@ -942,7 +1262,7 @@ component ControlCenter inherits PanelSurface {
                             y: 11px;
                             data: d.kind == "audio" ? Icons.headphones : d.kind == "input" ? Icons.keyboard : d.kind == "phone" ? Icons.bluetooth : Icons.bluetooth;
                             size: 17px;
-                            monochrome: true;
+                           
                             ink: d.connected ? Theme.accent : Theme.ink2;
                         }
                         VerticalLayout {
@@ -971,6 +1291,10 @@ component ControlCenter inherits PanelSurface {
         }
     }
     if root.pane == "": VerticalLayout {
+        property <bool> in: false;
+        init => { self.in = true; }
+        opacity: self.in ? 1 : 0;
+        animate opacity { duration: 180ms; easing: ease-out; }
         HorizontalLayout {
             height: 62px;
             padding-left: 16px;
@@ -988,8 +1312,32 @@ component ControlCenter inherits PanelSurface {
                 horizontal-stretch: 1;
                 alignment: center;
                 spacing: 2px;
-                Text { text: root.user; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
-                Text { text: root.session; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
+                Text { text: root.user; overflow: elide; font-size: Theme.fs(13); font-weight: 600; color: Theme.ink; }
+                Text { text: root.session; overflow: elide; font-size: Theme.fs(11); font-weight: 400; color: Theme.ink3; }
+            }
+            Rectangle {
+                y: 16px;
+                height: 30px;
+                width: root.editing ? echip.preferred-width + 24px : 30px;
+                animate width { duration: 220ms; easing: cubic-bezier(0.33, 1, 0.68, 1); }
+                horizontal-stretch: 0;
+                border-radius: 9px;
+                background: root.editing ? Theme.accent : (et.has-hover ? Theme.sel : Theme.hover);
+                animate background { duration: 180ms; }
+                clip: true;
+                // A pencil to start; "Done" while rearranging.
+                Glyph { x: 7px; y: 7px; data: Icons.pen; size: 16px; ink: Theme.ink; opacity: root.editing ? 0 : 1; animate opacity { duration: 140ms; } }
+                echip := Text {
+                    x: 12px;
+                    y: (parent.height - self.height) / 2;
+                    text: "Done";
+                    opacity: root.editing ? 1 : 0;
+                    animate opacity { duration: 180ms; }
+                    font-size: Theme.fs(12);
+                    font-weight: 600;
+                    color: Theme.ink-on-accent;
+                }
+                et := TouchArea { mouse-cursor: pointer; clicked => { root.editing = !root.editing; root.drag-from = -1; } }
             }
             Rectangle {
                 y: 16px;
@@ -1019,14 +1367,56 @@ component ControlCenter inherits PanelSurface {
             }
         }
         Rectangle {
-            height: ceil(root.tiles.length / 3) * 94px + 6px;
+            height: ceil((root.tiles.length + (root.editing ? 1 : 0)) / 3) * 94px + 6px;
+            animate height { duration: 220ms; easing: cubic-bezier(0.33, 1, 0.68, 1); }
             for t[i] in root.tiles: CcTile {
-                x: 12px + mod(i, 3) * (root.tile-w + 6px);
-                y: floor(i / 3) * 94px;
+                property <int> at: root.slot-of(i, root.drag-from, root.drag-to);
+                x: i == root.drag-from ? root.drag-x : root.slot-x(self.at);
+                y: i == root.drag-from ? root.drag-y : root.slot-y(self.at);
+                z: i == root.drag-from ? 10 : 0;
+                animate x { duration: i == root.drag-from ? 0ms : 150ms; easing: ease-out; }
+                animate y { duration: i == root.drag-from ? 0ms : 150ms; easing: ease-out; }
                 width: root.tile-w;
                 tile: t;
-                activated => { root.tile(t.kind); }
+                editing: root.editing;
+                opacity: i == root.drag-from ? 0.85 : 1;
+                activated => { root.tile(t.id); }
                 more => { root.show-pane(t.kind == "bluetooth" ? "bluetooth" : "wifi"); }
+                remove => { root.tile-remove(t.id); }
+                drag-start => {
+                    root.drag-from = i;
+                    root.drag-base-x = root.slot-x(i);
+                    root.drag-base-y = root.slot-y(i);
+                    root.drag-x = root.drag-base-x;
+                    root.drag-y = root.drag-base-y;
+                }
+                dragging(dx, dy) => {
+                    root.drag-x = root.drag-base-x + dx;
+                    root.drag-y = root.drag-base-y + dy;
+                }
+                drag-end => {
+                    if (root.drag-from >= 0 && root.drag-to != root.drag-from) { root.tile-move(root.drag-from, root.drag-to); }
+                    root.drag-from = -1;
+                }
+            }
+            // The way to put another on.
+            Rectangle {
+                property <float> k: root.editing ? 1 : 0;
+                animate k { duration: 240ms; easing: cubic-bezier(0.33, 1, 0.68, 1); }
+                opacity: self.k;
+                x: root.slot-x(root.tiles.length);
+                y: root.slot-y(root.tiles.length) + 10px * (1 - self.k);
+                animate x { duration: 150ms; easing: ease-out; }
+                animate y { duration: 150ms; easing: ease-out; }
+                width: root.tile-w;
+                height: 88px;
+                border-radius: Theme.r-cap;
+                border-width: 1.5px;
+                border-color: addt.has-hover ? Theme.accent : Theme.div;
+                background: addt.has-hover ? Theme.hover : transparent;
+                Glyph { x: (parent.width - 22px) / 2; y: 20px; data: Icons.plus; size: 22px; ink: addt.has-hover ? Theme.accent : Theme.ink2; }
+                Text { y: 54px; width: parent.width; horizontal-alignment: center; text: "Add"; font-size: Theme.fs(12); font-weight: 600; color: addt.has-hover ? Theme.accent : Theme.ink2; }
+                addt := TouchArea { enabled: root.editing; mouse-cursor: pointer; clicked => { root.show-pane("add"); } }
             }
         }
         VerticalLayout {
@@ -1229,7 +1619,7 @@ component NotificationCenter inherits PanelSurface {
                         y: 0;
                         height: parent.height;
                         spacing: 7px;
-                        VerticalLayout { alignment: center; Glyph { data: Icons.moon; size: 13px; monochrome: true; ink: root.quiet ? Theme.ink-on-accent : Theme.ink2; } }
+                        VerticalLayout { alignment: center; Glyph { data: Icons.moon; size: 13px; monochrome: (root.quiet); ink: root.quiet ? Theme.ink-on-accent : Theme.ink2; } }
                         Text { vertical-alignment: center; text: "Do not disturb"; font-size: Theme.fs(11); font-weight: 600; color: root.quiet ? Theme.ink-on-accent : Theme.ink2; }
                     }
                     dta := TouchArea { mouse-cursor: pointer; clicked => { root.toggle-dnd(); } }
@@ -1241,7 +1631,7 @@ component NotificationCenter inherits PanelSurface {
                     horizontal-stretch: 0;
                     border-radius: 9px;
                     background: gta.has-hover ? Theme.sel : Theme.hover;
-                    Glyph { x: 7px; y: 7px; data: Icons.settings; size: 14px; monochrome: true; ink: Theme.ink2; }
+                    Glyph { x: 7px; y: 7px; data: Icons.settings; size: 14px; ink: Theme.ink2; }
                     gta := TouchArea { mouse-cursor: pointer; clicked => { root.open-settings(); } }
                 }
                 if (root.in-history ? root.hist-total > 0 : root.notes.length > 0): Rectangle {
@@ -1315,7 +1705,7 @@ component NotificationCenter inherits PanelSurface {
                 background: Theme.sel;
                 border-width: 1px;
                 border-color: hq.has-focus ? Theme.accent : Theme.edge;
-                Glyph { x: 10px; y: (parent.height - self.height) / 2; data: Icons.search; size: 14px; monochrome: true; ink: hq.has-focus ? Theme.accent : Theme.ink3; }
+                Glyph { x: 10px; y: (parent.height - self.height) / 2; data: Icons.search; size: 14px; ink: hq.has-focus ? Theme.accent : Theme.ink3; }
                 FocusScope {
                     x: 32px;
                     width: parent.width - 42px;
@@ -1399,7 +1789,7 @@ component NotificationCenter inherits PanelSurface {
                             height: 22px;
                             border-radius: 7px;
                             background: fa.has-hover ? Theme.sel : transparent;
-                            Glyph { x: 4.5px; y: 4.5px; data: Icons.x; size: 13px; monochrome: true; ink: Theme.ink3; }
+                            Glyph { x: 4.5px; y: 4.5px; data: Icons.x; size: 13px; ink: Theme.ink3; }
                             fa := TouchArea { mouse-cursor: pointer; clicked => { root.hist-forget(e.id); } }
                         }
                     }
@@ -1517,7 +1907,7 @@ component MediaPanel inherits PanelSurface {
         Rectangle {
             height: 40px;
             Rectangle { y: 0; height: 1px; background: Theme.rule; }
-            Glyph { x: 14px; y: (parent.height - self.height) / 2 + 0.5px; data: Icons.speaker; size: 15px; monochrome: true; ink: Theme.ink2; }
+            Glyph { x: 14px; y: (parent.height - self.height) / 2 + 0.5px; data: Icons.speaker; size: 15px; ink: Theme.ink2; }
             FillSlider {
                 x: 14px + 15px + 10px;
                 y: (parent.height - self.height) / 2 + 0.5px;
@@ -1622,7 +2012,7 @@ component Round inherits Rectangle {
         y: (parent.height - self.height) / 2;
         data: root.icon;
         size: 14px;
-        monochrome: true;
+        monochrome: (root.primary);
         ink: root.primary ? Theme.ink-on-accent : Theme.ink;
     }
     ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
@@ -1719,7 +2109,7 @@ component TimersPanel inherits PanelSurface {
                 background: Theme.sel;
                 border-width: 1px;
                 border-color: custom-in.has-focus ? Theme.accent : (root.bad-custom ? #d93a2b : Theme.edge);
-                Glyph { x: 10px; y: 9px; data: Icons.timer; size: 14px; monochrome: true; ink: Theme.ink3; }
+                Glyph { x: 10px; y: 9px; data: Icons.timer; size: 14px; ink: Theme.ink3; }
                 FocusScope {
                     x: 32px;
                     width: parent.width - 32px - 70px;
@@ -1970,7 +2360,7 @@ component ClipboardPanel inherits PanelSurface {
                 background: Theme.sel;
                 border-width: 1px;
                 border-color: sf.has-focus ? Theme.accent : Theme.edge;
-                Glyph { x: 10px; y: 9px; data: Icons.search; size: 14px; monochrome: true; ink: sf.has-focus ? Theme.accent : Theme.ink3; }
+                Glyph { x: 10px; y: 9px; data: Icons.search; size: 14px; ink: sf.has-focus ? Theme.accent : Theme.ink3; }
                 FocusScope {
                     x: 32px;
                     width: parent.width - 42px;
@@ -2182,7 +2572,7 @@ component IconPicker inherits PanelSurface {
             background: Theme.sel;
             border-width: 1px;
             border-color: field.has-focus ? Theme.accent : Theme.edge;
-            Glyph { x: 10px; y: (parent.height - self.height) / 2; data: Icons.search; size: 14px; monochrome: true; ink: field.has-focus ? Theme.accent : Theme.ink3; }
+            Glyph { x: 10px; y: (parent.height - self.height) / 2; data: Icons.search; size: 14px; ink: field.has-focus ? Theme.accent : Theme.ink3; }
             FocusScope {
                 x: 32px;
                 width: parent.width - 42px;
@@ -2259,7 +2649,122 @@ component AppMenu inherits PanelSurface {
     }
 }
 
+// Customize the top bar: every module and plugin as a chip. Drag one up onto
+// the bar to put it there; drag a module off the bar to take it away. The
+// shell reads the pointer (kind 0 down, 1 moved, 2 up) in the screen's own
+// coordinates, so a drag can leave this panel for the bar.
+component BarPalette inherits PanelSurface {
+    in property <[PaletteItem]> items;
+    callback ptr(int, string, length, length);
+    callback done();
+    callback reset();
+    callback new-plugin();
+    callback open-folder();
+    property <length> cell: (root.width - 28px - 3 * 8px) / 4;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 10px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text { text: "Customize the top bar"; font-size: Theme.fs(14); font-weight: 700; color: Theme.ink; }
+                Text { text: "Drag a module onto the bar. Drag one off the bar to take it away."; font-size: Theme.fs(11.5); color: Theme.ink3; wrap: word-wrap; }
+            }
+            Rectangle {
+                y: 4px;
+                width: dl.preferred-width + 28px;
+                height: 32px;
+                border-radius: 16px;
+                background: dt.has-hover ? Theme.accent.brighter(0.08) : Theme.accent;
+                dl := Text { x: 14px; y: (parent.height - self.height) / 2; text: "Done"; font-size: Theme.fs(12.5); font-weight: 600; color: Theme.ink-on-accent; }
+                dt := TouchArea { mouse-cursor: pointer; clicked => { root.done(); } }
+            }
+        }
+        Rectangle {
+            height: ceil(root.items.length / 4) * 38px;
+            for it[i] in root.items: Rectangle {
+                x: mod(i, 4) * (root.cell + 8px);
+                y: floor(i / 4) * 38px;
+                width: root.cell;
+                height: 32px;
+                border-radius: Theme.r-cap;
+                background: pt.has-hover ? (it.plugin ? Theme.accent.transparentize(0.65) : Theme.sel) : (it.plugin ? Theme.accent.transparentize(0.8) : Theme.hover);
+                animate background { duration: 140ms; }
+                border-width: 1px;
+                border-color: it.on-bar ? Theme.accent : Theme.rule;
+                animate border-color { duration: 160ms; }
+                Text {
+                    x: 10px;
+                    width: parent.width - 20px;
+                    y: (parent.height - self.height) / 2;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                    text: it.label;
+                    font-size: Theme.fs(11.5);
+                    font-weight: 600;
+                    color: it.on-bar ? Theme.ink2 : Theme.ink;
+                }
+                // A dot for what is on the bar now.
+                if it.on-bar: Rectangle { x: 6px; y: 6px; width: 6px; height: 6px; border-radius: 3px; background: Theme.accent; }
+                pt := TouchArea {
+                    mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.grab;
+                    pointer-event(e) => {
+                        if e.button == PointerEventButton.left {
+                            if e.kind == PointerEventKind.down { root.ptr(0, it.id, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y); }
+                            if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel { root.ptr(2, it.id, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y); }
+                        }
+                    }
+                    moved => { if self.pressed { root.ptr(1, it.id, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y); } }
+                }
+            }
+        }
+        Rule {}
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Rectangle {
+                width: nl.preferred-width + 24px;
+                height: 30px;
+                border-radius: 15px;
+                background: nt.has-hover ? Theme.sel : Theme.hover;
+                nl := Text { x: 12px; y: (parent.height - self.height) / 2; text: "+ New plugin"; font-size: Theme.fs(12); font-weight: 600; color: Theme.ink; }
+                nt := TouchArea { mouse-cursor: pointer; clicked => { root.new-plugin(); } }
+            }
+            Rectangle {
+                width: fl.preferred-width + 24px;
+                height: 30px;
+                border-radius: 15px;
+                background: ft.has-hover ? Theme.sel : transparent;
+                fl := Text { x: 12px; y: (parent.height - self.height) / 2; text: "Plugins folder"; font-size: Theme.fs(12); font-weight: 600; color: Theme.ink2; }
+                ft := TouchArea { mouse-cursor: pointer; clicked => { root.open-folder(); } }
+            }
+            Rectangle {
+                width: rl.preferred-width + 24px;
+                height: 30px;
+                border-radius: 15px;
+                background: rt.has-hover ? Theme.sel : transparent;
+                rl := Text { x: 12px; y: (parent.height - self.height) / 2; text: "Reset to the usual"; font-size: Theme.fs(12); font-weight: 600; color: Theme.ink2; }
+                rt := TouchArea { mouse-cursor: pointer; clicked => { root.reset(); } }
+            }
+        }
+    }
+}
+
 export component Panels inherits Window {
+    // Customize the bar: what the palette offers, and the chip being dragged from it.
+    in property <[PaletteItem]> palette;
+    in property <bool> palette-ghost-on;
+    // Where the dragged chip is: kept here, set by the pointer itself, so it never lags.
+    property <length> pgx;
+    property <length> pgy;
+    in property <string> palette-ghost-label;
+    callback palette-ptr(int, string, length, length);
+    callback palette-done();
+    callback palette-reset();
+    callback palette-new-plugin();
+    callback palette-open-folder();
     // Which is open: power, window, calendar, control, notifications,
     // media, drives, timers, updates, privacy, tray; "" while closing.
     in property <string> which;
@@ -2322,6 +2827,21 @@ export component Panels inherits Window {
     callback device(string);
     callback pair-answer(bool);
     in property <[Tile]> tiles;
+    in property <[Tile]> more-tiles;
+    in property <string> applet-title;
+    in property <string> applet-big;
+    in property <string> applet-sub;
+    in property <float> applet-progress: -1;
+    in property <[AppletButton]> applet-buttons;
+    in property <[AppletWidget]> applet-widgets;
+    callback applet-act(string);
+    callback applet-set(string, string);
+    callback applet-press(int);
+    callback tile-move(int, int);
+    callback tile-remove(string);
+    callback tile-add(string);
+    callback new-shortcut();
+    callback manage-shortcuts();
     in property <float> volume;
     in property <bool> muted;
     in property <bool> has-brightness;
@@ -2469,6 +2989,17 @@ export component Panels inherits Window {
         WindowMenu { act(a) => { root.window-act(a); } snap(i) => { root.window-snap(i); } }
     }
     Drop {
+        shown: root.which == "barpalette"; seam: false; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 580px;
+        BarPalette {
+            items: root.palette;
+            ptr(k, id, x, y) => { root.pgx = x; root.pgy = y; root.palette-ptr(k, id, x, y); }
+            done => { root.palette-done(); }
+            reset => { root.palette-reset(); }
+            new-plugin => { root.palette-new-plugin(); }
+            open-folder => { root.palette-open-folder(); }
+        }
+    }
+    Drop {
         shown: root.which == "calendar"; anchor: root.anchor; top: root.top; tb: root.taskbar; tb-bottom: root.tb-bottom; screen-height: root.height; screen-width: root.width; sx: root.sx; sy: root.sy; lift: root.lift; glass: root.glass; inner: root.inner; flow: root.flow; panel-width: 320px;
         CalendarPanel {
             month: root.month; cells: root.cells; away: root.month-away;
@@ -2485,6 +3016,18 @@ export component Panels inherits Window {
             has-mic: root.has-mic; mic: root.mic; mic-muted: root.mic-muted;
             cycle-theme => { root.cycle-theme(); }
             tile(k) => { root.tile(k); }
+            more-tiles: root.more-tiles;
+            applet-title: root.applet-title; applet-big: root.applet-big; applet-sub: root.applet-sub; applet-progress: root.applet-progress; applet-buttons: root.applet-buttons;
+            applet-widgets: root.applet-widgets;
+            applet-act(a) => { root.applet-act(a); }
+            applet-set(a, b) => { root.applet-set(a, b); }
+            applet-press(i) => { root.applet-press(i); }
+            open: root.which == "control";
+            tile-move(a, b) => { root.tile-move(a, b); }
+            tile-remove(k) => { root.tile-remove(k); }
+            tile-add(k) => { root.tile-add(k); }
+            new-shortcut => { root.new-shortcut(); }
+            manage-shortcuts => { root.manage-shortcuts(); }
             pane: root.cc-pane;
             wifi-on: root.wifi-on; wifi-sub: root.wifi-sub; networks: root.networks;
             asking: root.asking; secret <=> root.secret; wifi-note: root.wifi-note;
@@ -2622,5 +3165,18 @@ export component Panels inherits Window {
             pick(id, sub) => { root.menu-pick(id, sub); }
             back => { root.menu-back(); }
         }
+    }
+    // The chip being dragged out of the palette, over the bar and the screen.
+    Rectangle {
+        x: root.pgx - self.width / 2;
+        y: root.pgy - self.height / 2;
+        width: 104px;
+        height: 30px;
+        border-radius: Theme.r-cap;
+        background: Theme.accent;
+        opacity: root.palette-ghost-on ? 0.92 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 120ms; }
+        Text { x: 8px; width: parent.width - 16px; y: (parent.height - self.height) / 2; horizontal-alignment: center; overflow: elide; text: root.palette-ghost-label; font-size: Theme.fs(11.5); font-weight: 600; color: Theme.ink-on-accent; }
     }
 }

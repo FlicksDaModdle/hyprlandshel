@@ -77,7 +77,7 @@ export component Osk inherits Window {
             height: 20px;
             border-radius: Theme.r-sm;
             background: cx.has-hover ? Theme.hover : transparent;
-            Glyph { x: 4px; y: 4px; data: Icons.x; size: 12px; monochrome: true; ink: Theme.ink3; }
+            Glyph { x: 4px; y: 4px; data: Icons.x; size: 12px; ink: Theme.ink3; }
             cx := TouchArea { mouse-cursor: pointer; clicked => { root.close(); } }
         }
         VerticalLayout {

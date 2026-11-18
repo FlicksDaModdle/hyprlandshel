@@ -145,3 +145,28 @@ Not yet: the per-app mixer, night light.
 4. The overview, Alt+Tab's live window pictures; the launcher's right-click menus (pin, unpin).
 5. Lock screen and face unlock.
 6. Settings' remaining pages: displays, input, keybinds, fonts, Hyprland.
+
+## The top bar: order and plugins
+
+The bar is a list of modules on each side. **Settings → Bar → Layout** reorders
+them (earlier / later), moves one to the other side, hides it, or puts
+everything back. It is stored in theme.json as `barLeft`, `barRight` and
+`barHidden` (lists of ids: `workspaces app window appmenus` on the left;
+`tray privacy timers updates mail drives notifications status clock power` on
+the right; `plugin:<name>` for a plugin). `src/barmods.rs` has the rules.
+
+**Plugins** are your own modules, in any language. Put a folder with a
+`plugin.json` (or one `<name>.json`) in `bar-plugins/` beside theme.json
+(Settings → Bar → Plugins has the folder and a "New plugin" button); it shows
+up within a few seconds, with no restart. `src/plugins.rs` documents the format:
+
+    { "name": "CPU load", "side": "right", "exec": "./cpu.sh", "interval": 3,
+      "icon": "cpu", "on_click": ["start kitty htop"],
+      "menu": [{ "label": "…", "steps": ["…"] }] }
+
+`exec` is run by `sh` in the plugin's folder every `interval` seconds (make a
+script executable with `chmod +x`). What it prints is the module: plain text
+(the first line), or one JSON object `{"text", "icon", "tooltip", "class"}`
+where `class` is `ok`, `warn`, `crit` or `accent`. Clicks, right-clicks and
+scrolling run *steps*, the same small language shortcuts use; a click opens
+`menu` when there is one and no `on_click`. Examples: `examples/bar-plugins/`.

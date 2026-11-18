@@ -7,7 +7,7 @@ import { Icons, GlyphData } from "icons.slint";
 import { Theme } from "theme.slint";
 import { Glyph } from "glyph.slint";
 import { BarRight } from "bar.slint";
-import { TrayItem } from "types.slint";
+import { TrayItem, BarModule } from "types.slint";
 
 export struct DockTileData {
     // start, divider, pin, app, desktop
@@ -73,7 +73,7 @@ component PreviewCard inherits Rectangle {
             width: parent.width - u(7) - u(20) - u(13);
             height: root.title-h;
             spacing: u(6);
-            Glyph { y: (root.title-h - self.height) / 2; data: root.glyph; size: u(15); monochrome: true; ink: w.current ? Theme.ink : Theme.ink2; }
+            Glyph { y: (root.title-h - self.height) / 2; data: root.glyph; size: u(15); ink: w.current ? Theme.ink : Theme.ink2; }
             Text {
                 vertical-alignment: center;
                 text: w.title;
@@ -109,7 +109,7 @@ component PreviewCard inherits Rectangle {
             height: self.width;
             border-radius: Theme.r-sm;
             background: xt.has-hover ? Theme.accent : transparent;
-            Glyph { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; data: Icons.x; size: u(13); monochrome: true; ink: xt.has-hover ? Theme.ink-on-accent : Theme.ink2; }
+            Glyph { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; data: Icons.x; size: u(13); monochrome: (xt.has-hover); ink: xt.has-hover ? Theme.ink-on-accent : Theme.ink2; }
             xt := TouchArea { mouse-cursor: pointer; clicked => { root.close(i); } }
         }
     }
@@ -266,6 +266,11 @@ export component Dock inherits Window {
     in property <bool> show-updates;
     in property <int> mail-unread: -1;
     in property <bool> has-drives;
+    // The taskbar's status area: the modules in order, and a plugin's clicks.
+    in property <[BarModule]> right-modules;
+    callback plugin-click(string, length);
+    callback plugin-secondary(string);
+    callback plugin-scroll(string, int);
     callback volume-step(int);
     callback toggle-panel(string, length);
     callback toggle-dnd();
@@ -419,6 +424,10 @@ export component Dock inherits Window {
         screen-shared: root.screen-shared; has-timer: root.has-timer; timer-text: root.timer-text; timer-running: root.timer-running;
         timer-pomodoro: root.timer-pomodoro; updates: root.updates; show-updates: root.show-updates; mail-unread: root.mail-unread;
         has-drives: root.has-drives;
+        modules: root.right-modules;
+        plugin-click(id, x) => { root.plugin-click(id, x); }
+        plugin-secondary(id) => { root.plugin-secondary(id); }
+        plugin-scroll(id, d) => { root.plugin-scroll(id, d); }
         volume-step(d) => { root.volume-step(d); }
         toggle-panel(n, x) => { root.toggle-panel(n, x); }
         toggle-dnd => { root.toggle-dnd(); }

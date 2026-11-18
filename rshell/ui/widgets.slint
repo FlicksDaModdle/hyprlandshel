@@ -60,7 +60,7 @@ export component IconButton inherits Rectangle {
         y: (parent.height - self.height) / 2;
         data: root.icon;
         size: root.icon-size;
-        monochrome: true;
+        monochrome: (root.accent);
         ink: root.accent ? Theme.ink-on-accent : (root.active ? Theme.accent : root.ink);
     }
     t := TouchArea {

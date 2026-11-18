@@ -1,0 +1,10 @@
+{
+  "name": "Quick links",
+  "side": "left",
+  "icon": "globe",
+  "menu": [
+    { "label": "Open the browser", "steps": ["start hyprshell-browser"] },
+    { "label": "Open Downloads",   "steps": ["open ~/Downloads"] },
+    { "label": "Say hello",        "steps": ["notify Hello | from a bar plugin"] }
+  ]
+}

@@ -120,7 +120,7 @@ export component Switcher inherits Window {
                     y: (root.title-h - self.height) / 2;
                     data: e.glyph;
                     size: u(16);
-                    monochrome: true;
+                   
                     ink: tile.on ? Theme.ink : Theme.ink2;
                 }
                 Text {
@@ -236,7 +236,7 @@ export component Switcher inherits Window {
                     y: (parent.height - self.height) / 2;
                     data: Icons.x;
                     size: u(12);
-                    monochrome: true;
+                   
                     ink: ct.has-hover ? Theme.accent : Theme.ink2;
                 }
                 ct := TouchArea { mouse-cursor: pointer; clicked => { root.close-entry(i); } }

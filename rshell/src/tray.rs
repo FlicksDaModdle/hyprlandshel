@@ -244,9 +244,15 @@ fn menu(c: &Connection, k: &Known, parent: i32) -> Vec<Entry> {
     if k.menu.is_empty() {
         return Vec::new();
     }
-    let _ = c.call_method(Some(k.bus.as_str()), k.menu.as_str(), Some(MENU), "AboutToShow", &(parent,));
+    menu_at(c, &k.bus, &k.menu, parent)
+}
+
+/// A dbusmenu's entries one level under `parent` (0 for the top), from the
+/// object at `path` on `bus`: a tray item's menu, or an app's menu bar.
+pub(crate) fn menu_at(c: &Connection, bus: &str, path: &str, parent: i32) -> Vec<Entry> {
+    let _ = c.call_method(Some(bus), path, Some(MENU), "AboutToShow", &(parent,));
     let props: Vec<&str> = Vec::new();
-    let Ok(reply) = c.call_method(Some(k.bus.as_str()), k.menu.as_str(), Some(MENU), "GetLayout", &(parent, 1i32, props)) else {
+    let Ok(reply) = c.call_method(Some(bus), path, Some(MENU), "GetLayout", &(parent, 1i32, props)) else {
         return Vec::new();
     };
     let Ok((_rev, (_, _, kids))) = reply.body().deserialize::<(u32, (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>))>() else {
@@ -401,6 +407,12 @@ pub fn start(tx: Sender<Event>, cmds: Receiver<Cmd>, wake: UnixStream) {
             }
         }
     });
+}
+
+/// Press entry `id` of the dbusmenu at `path` on `bus`.
+pub(crate) fn click_at(c: &Connection, bus: &str, path: &str, id: i32) {
+    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as u32).unwrap_or(0);
+    let _ = c.call_method(Some(bus), path, Some(MENU), "Event", &(id, "clicked", Value::from(""), ts));
 }
 
 fn run(conn: &Connection, known: &[Known], c: Cmd, send: &mut impl FnMut(Event), headings: &mut HashMap<(String, i32), String>) {

@@ -176,7 +176,7 @@ export component Launcher inherits Window {
                             y: (parent.height - self.height) / 2;
                             data: Icons.search;
                             size: sz(15);
-                            monochrome: true;
+                           
                             ink: field.has-focus ? Theme.accent : Theme.ink3;
                         }
                         keys := FocusScope {
@@ -259,7 +259,7 @@ export component Launcher inherits Window {
                                     y: (sz(25) - self.height) / 2;
                                     data: Icons.chevron-right;
                                     size: sz(12);
-                                    monochrome: true;
+                                    monochrome: (all-touch.has-hover);
                                     ink: all-touch.has-hover ? Theme.ink-on-accent : Theme.ink2;
                                 }
                             }
@@ -407,7 +407,7 @@ export component Launcher inherits Window {
                                 x: 11px;
                                 width: self.preferred-width;
                                 spacing: sz(7);
-                                Glyph { y: (sz(28) - self.height) / 2; data: Icons.chevron-left; size: sz(13); monochrome: true; ink: Theme.ink2; }
+                                Glyph { y: (sz(28) - self.height) / 2; data: Icons.chevron-left; size: sz(13); ink: Theme.ink2; }
                                 Text {
                                     vertical-alignment: center;
                                     text: "Back to pinned";
@@ -546,7 +546,7 @@ export component Launcher inherits Window {
                         y: (parent.height - self.height) / 2;
                         data: Icons.grid;
                         size: root.over-dock ? root.dock-icon : sz(15);
-                        monochrome: true;
+                        monochrome: (root.over-dock || st.has-hover);
                         ink: root.over-dock || st.has-hover ? Theme.ink-on-accent : Theme.ink2;
                     }
                     st := TouchArea { mouse-cursor: pointer; clicked => { root.dismiss-into-dock(); } }
@@ -600,7 +600,7 @@ export component Launcher inherits Window {
                         y: (parent.height - self.height) / 2;
                         data: Icons.power;
                         size: sz(15);
-                        monochrome: true;
+                        monochrome: (pw.has-hover || root.power-open);
                         ink: pw.has-hover || root.power-open ? Theme.ink-on-accent : Theme.ink2;
                     }
                     pw := TouchArea { mouse-cursor: pointer; clicked => { root.toggle-power(); } }
@@ -637,7 +637,7 @@ export component Launcher inherits Window {
                                 y: (sz(32) - self.height) / 2;
                                 data: e.g;
                                 size: sz(14);
-                                monochrome: true;
+                                monochrome: (mt.has-hover);
                                 ink: mt.has-hover ? Theme.ink-on-accent : Theme.ink;
                             }
                             Text {

@@ -46,6 +46,8 @@ pub struct State {
     pub bt_devices: Vec<BtDevice>,
     pub bt_scanning: bool,
     pub wifi_on: bool,
+    /// A hardware switch (or the firmware) is holding the Wi-Fi radio off.
+    pub wifi_blocked: bool,
     pub net_available: bool,
     pub wired: bool,
     /// Backlight, 0..1; None without one.
@@ -166,6 +168,7 @@ pub fn apply(s: &mut State, ev: &Value) -> bool {
             }
             let wifi_on = ev["wifiEnabled"].as_bool().unwrap_or(true);
             s.wifi_on = wifi_on;
+            s.wifi_blocked = ev["wifiHardware"].as_bool() == Some(false);
             let active = ev["active"].as_array().cloned().unwrap_or_default();
             let wifi = active.iter().find(|a| a["type"] == "802-11-wireless");
             let wired = active.iter().find(|a| a["type"] == "802-3-ethernet");

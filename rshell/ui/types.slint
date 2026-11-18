@@ -1,5 +1,7 @@
 // The data the Rust side hands the bar and its panels.
 
+import { GlyphData } from "icons.slint";
+
 export struct Workspace { id: int, focused: bool, occupied: bool, urgent: bool }
 
 export struct MediaInfo {
@@ -41,7 +43,22 @@ export struct TimerItem { id: int, label: string, left: string, running: bool, f
 export struct AlarmItem { id: int, time: string, about: string, on: bool }
 
 // A control center tile; `kind` picks its glyph.
-export struct Tile { kind: string, name: string, sub: string, on: bool }
+// A control center tile: `id` is what it is called in the saved layout, `kind` what
+// it does ("shortcut" for one you made), `glyph` its picture.
+export struct Tile { id: string, kind: string, name: string, sub: string, on: bool, glyph: GlyphData }
+
+// One of the focused app's own menus on the bar (File, Edit…).
+export struct AppTop { id: int, label: string, enabled: bool }
+
+// One module of the bar, in order: `kind` "builtin" (named by `id`, drawn by the
+// bar) or "plugin" (drawn from these fields). `tint`: 0 none, 1 ok, 2 warn, 3 crit, 4 accent.
+export struct BarModule { id: string, kind: string, text: string, icon: GlyphData, has-icon: bool, tint: int, tooltip: string }
+
+// A module on the bar while it is edited: where it sits (x, w), and whether it is being dragged.
+export struct EditSlot { id: string, label: string, x: length, w: length, dragging: bool }
+
+// One of the modules the palette offers: `on-bar` when it is on the bar already.
+export struct PaletteItem { id: string, label: string, plugin: bool, on-bar: bool }
 
 export struct PrivacyRow { kind: string, name: string }
 
