@@ -12,7 +12,10 @@ import "." as Services
 Singleton {
     id: root
 
-    readonly property string script: Services.Agent.shellDir + "/scripts/wifi-tune.sh"
+    // Run as root, so only from a root-owned copy (a script in the home folder
+    // could be edited by anything of yours): install it once with
+    //   sudo install -m 755 -o root -g root shell/quickshell/scripts/wifi-tune.sh /usr/local/libexec/hyprshell-wifi-tune
+    readonly property string script: "/usr/local/libexec/hyprshell-wifi-tune"
 
     property string backend: ""          // "iwd" | "wpa_supplicant"
     property bool iwdInstalled: false
@@ -27,7 +30,7 @@ Singleton {
 
     Process {
         id: check
-        command: ["bash", root.script, "--status"]
+        command: [root.script, "--status"]
         stdout: StdioCollector {
             onStreamFinished: {
                 for (const line of text.split("\n")) {
@@ -57,7 +60,7 @@ Singleton {
         root.failed = false;
         root.status = working;
         proc.done = done;
-        proc.command = ["pkexec", "bash", root.script].concat(args);
+        proc.command = ["pkexec", root.script].concat(args);
         proc.running = true;
     }
     Process {

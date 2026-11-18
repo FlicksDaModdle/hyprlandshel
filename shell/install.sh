@@ -804,6 +804,14 @@ if [ -d "$GREETER_SHARE" ] && [ -f "$SRC/../greeter/source-sum.sh" ]; then
     fi
 fi
 
+# Settings → Network's Wi-Fi performance runs this as root, so it is only run
+# from a root-owned copy; it needs installing (and updating) with sudo.
+WIFI_HELPER=/usr/local/libexec/hyprshell-wifi-tune
+if ! cmp -s "$SRC/quickshell/scripts/wifi-tune.sh" "$WIFI_HELPER" 2>/dev/null; then
+    printf '\n  %s•%s The Wi-Fi performance helper (Settings → Network) is %s. To install it:\n' "$YEL" "$RST" "$([ -e "$WIFI_HELPER" ] && echo "older than this one" || echo "not installed")"
+    printf '      %ssudo install -m 755 -o root -g root %s/quickshell/scripts/wifi-tune.sh %s%s\n' "$BOLD" "$SRC" "$WIFI_HELPER" "$RST"
+fi
+
 cat <<EOF
 
   If the lock screen ever traps you: Ctrl+Alt+F2, log in, ${BOLD}pkill qs${RST}.

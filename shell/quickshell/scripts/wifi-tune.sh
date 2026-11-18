@@ -10,13 +10,17 @@
 # undoing one removes its file: nothing else of NetworkManager's is touched,
 # and your saved networks stay where they are.
 #
-# iwd scans and joins faster than wpa_supplicant; NetworkManager starts it
-# itself (D-Bus activation), so iwd.service is not enabled. Power saving
-# off is the usual cure for dropouts and slow wake-ups on MediaTek cards
-# (the G14's), at a little battery.
+# iwd scans and joins faster than wpa_supplicant. NetworkManager does NOT
+# start iwd for you (it only watches for it on D-Bus), so turning the backend
+# on enables and starts iwd.service, and turning it off disables it again;
+# with iwd not running NetworkManager has no Wi-Fi device at all. Each switch
+# checks that the Wi-Fi device comes back, and puts everything back as it was
+# if it doesn't. Power saving off is the usual cure for dropouts and slow
+# wake-ups on MediaTek cards (the G14's), at a little battery.
 set -u
 
-CONF=/etc/NetworkManager/conf.d
+# (WIFI_TUNE_CONF is for the tests; pkexec clears the environment.)
+CONF=${WIFI_TUNE_CONF:-/etc/NetworkManager/conf.d}
 BACKEND=$CONF/90-hyprshell-wifi-backend.conf
 POWER=$CONF/90-hyprshell-wifi-powersave.conf
 
@@ -39,6 +43,15 @@ powersave() {
         3) echo on ;;
         *) echo default ;;
     esac
+}
+# Wait for NetworkManager to list a Wi-Fi device (up to $1 seconds).
+wait_wifi() {
+    local i
+    for i in $(seq 1 "${1:-20}"); do
+        [ -n "$(wifi_device)" ] && return 0
+        sleep 1
+    done
+    return 1
 }
 wifi_device() {
     nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2 == "wifi" { print $1; exit }'
@@ -65,16 +78,33 @@ case ${1:-} in
                     pacman -S --needed --noconfirm iwd >/dev/null || die "couldn't install iwd (pacman -S iwd)"
                 fi
                 printf '%s\n' "# Hyprshell: Wi-Fi through iwd (Settings → Wi-Fi & network)" "[device]" "wifi.backend=iwd" > "$BACKEND"
-                # wpa_supplicant would hold the card: stopped. NetworkManager
-                # starts iwd itself.
+                # wpa_supplicant would hold the card: stopped. iwd has to be
+                # running before NetworkManager looks for the Wi-Fi device,
+                # and at every boot after.
                 systemctl stop wpa_supplicant.service 2>/dev/null
-                systemctl restart NetworkManager.service || die "NetworkManager wouldn't restart"
-                echo "iwd" ;;
+                if systemctl enable --now iwd.service && systemctl restart NetworkManager.service && wait_wifi 20; then
+                    echo "iwd"
+                else
+                    # Not coming up: back to how it was, with Wi-Fi.
+                    rm -f "$BACKEND"
+                    systemctl disable --now iwd.service 2>/dev/null
+                    systemctl start wpa_supplicant.service 2>/dev/null
+                    systemctl restart NetworkManager.service 2>/dev/null
+                    wait_wifi 20 || true
+                    die "iwd didn't bring the Wi-Fi up, so it was put back to wpa_supplicant"
+                fi ;;
             off)
                 rm -f "$BACKEND"
-                systemctl stop iwd.service 2>/dev/null
+                systemctl disable --now iwd.service 2>/dev/null
+                # It was stopped on the way to iwd; D-Bus would start it, but
+                # not before NetworkManager has looked.
+                systemctl start wpa_supplicant.service 2>/dev/null
                 systemctl restart NetworkManager.service || die "NetworkManager wouldn't restart"
-                echo "wpa_supplicant" ;;
+                if wait_wifi 20; then
+                    echo "wpa_supplicant"
+                else
+                    die "the Wi-Fi device didn't come back. Reload the driver (modprobe -r, then modprobe, the Wi-Fi module: see lspci -k), then restart NetworkManager"
+                fi ;;
             *) die "--iwd on|off" ;;
         esac
         exit 0 ;;
