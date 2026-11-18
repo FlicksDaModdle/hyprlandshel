@@ -53,6 +53,9 @@ pub struct Ui {
     /// picked for ("" for all).
     pub live_pick: String,
     pub adv_open: std::collections::HashSet<String>,
+    /// Sections the user opened (true) or folded (false), by `fold_key`; one not
+    /// here is as `fold_sections` starts it.
+    pub sections: std::collections::HashMap<String, bool>,
     /// Settings → Login screen: what face unlock is, as last looked at, and
     /// what the rows asked of it.
     pub face: crate::face::Snap,
@@ -218,6 +221,15 @@ pub(crate) fn text(n: &str, s: &str, v: &str, placeholder: &str, label: &str, f:
     r.row.label = label.into();
     r
 }
+/// A text box over the whole width that grows as the text does (a sentence to
+/// describe something in): Enter, or the button, sends it; Shift+Enter is a
+/// new line.
+pub(crate) fn textarea(n: &str, s: &str, v: &str, placeholder: &str, label: &str, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
+    let mut r = base("textarea", n, s).on(move |c, v| f(c, v.s())).value(v);
+    r.row.placeholder = placeholder.into();
+    r.row.label = label.into();
+    r
+}
 pub(crate) fn color_row(n: &str, s: &str, hex: &str, f: impl Fn(&mut Ctx, String) + 'static) -> Spec {
     let mut r = base("color", n, s).on(move |c, v| f(c, v.s())).value(hex);
     r.row.colour = parse_hex(hex).unwrap_or(Color::from_rgb_u8(0, 0, 0));
@@ -255,6 +267,8 @@ pub const PANES: &[(&str, &str, &str, &str)] = &[
     ("Laptop", "zap", "", "This ASUS laptop's own controls, through asusd: performance, charge limit, keyboard light, graphics and panel."),
     ("Hyprland", "grid", "Windows & workspaces", "The compositor itself — gaps, borders, blur, animations and layout, applied live."),
     ("Login screen", "lock", "", "Unlocking with your face, at the lock screen and when you log in."),
+    ("Shortcuts", "zap", "Control center shortcuts", "Tiles you make for the control center: a name, an icon and steps that run when pressed."),
+    ("Flatpak access", "shield", "", "Which folders each Flatpak app can reach, and the same for every app at once."),
     ("Updates", "download", "", "New versions of the shell, its login screen and its apps, from GitHub — installed when you say."),
     ("About", "cpu", "", "This machine and the shell running on it."),
     ("Appearance", "palette", "", "How the shell looks and moves. Every change shows at once — in the preview, and everywhere else."),
@@ -297,10 +311,20 @@ pub fn categories() -> Vec<Category> {
             note: "How the shell looks: colours, wallpaper, fonts and icons, and theming other apps.",
             items: vec!["Appearance", "Wallpaper", "Fonts", "Icons", "App theming"],
         },
-        Category { id: "Taskbar & menus", icon: "dock", note: "The bar, the dock, the launcher and Alt+Tab.", items: vec!["Bar", "Dock", "Launcher", "Alt+Tab"] },
-        Category { id: "Windows", icon: "grid", note: "", items: vec!["Hyprland"] },
-        Category { id: "Apps & tools", icon: "package", note: "The clipboard history and screenshots.", items: vec!["Clipboard", "Screenshots"] },
-        Category { id: "Privacy & security", icon: "lock", note: "", items: vec!["Login screen"] },
+        Category { id: "Taskbar & menus", icon: "dock", note: "The bar, the dock, the launcher, and the shortcuts on the control center.", items: vec!["Bar", "Dock", "Launcher", "Shortcuts"] },
+        Category {
+            id: "Windows",
+            icon: "grid",
+            note: "How windows are placed and drawn, and how you switch between them.",
+            items: vec!["Hyprland", "Alt+Tab"],
+        },
+        Category { id: "Apps & tools", icon: "package", note: "Screenshots.", items: vec!["Screenshots"] },
+        Category {
+            id: "Privacy & security",
+            icon: "lock",
+            note: "Who can get in, what apps can reach, and what is kept.",
+            items: vec!["Login screen", "Flatpak access", "Clipboard"],
+        },
         Category { id: "About", icon: "cpu", note: "This machine, the shell, and updates to it.", items: vec!["About", "Updates"] },
     ]
 }
@@ -366,6 +390,8 @@ pub fn rows_for(pane: &str, c: &Ctx) -> Vec<Spec> {
         "Mouse" => mouse(p),
         "Touchpad" => touchpad(p),
         "Updates" => vec![panel("shellUpdates")],
+        "Flatpak access" => vec![panel("flatpak")],
+        "Shortcuts" => crate::shortcuts::rows(),
         "About" => about(p),
         _ => vec![],
     }
@@ -1240,7 +1266,7 @@ fn app_theming(p: &Prefs) -> Vec<Spec> {
 }
 
 fn bar(p: &Prefs) -> Vec<Spec> {
-    vec![
+    let mut r = vec![
         slider(p, "Workspace switcher size", "The pills at the bar's left — usually the first thing to feel too big", 60.0, 160.0, "%", "workspaceScale"),
         slider(p, "Bar height", "Top bar thickness", 32.0, 56.0, "px", "barHeight"),
         toggle(p, "Auto-hide", "Slides away until the pointer reaches the top edge; windows get the space back", "barAutoHide"),
@@ -1269,7 +1295,9 @@ fn bar(p: &Prefs) -> Vec<Spec> {
         toggle(p, "Tray expanded", "Start with the tray group revealed", "trayOpen"),
         toggle(p, "Mail", "Unread mail in every inbox, while Mail is set up", "mailInBar"),
         toggle(p, "Task buttons", "Window list beside the app name", "showTasks"),
-    ]
+    ];
+    r.extend(crate::barlayout::rows(p));
+    r
 }
 
 fn alt_tab(p: &Prefs) -> Vec<Spec> {
@@ -1640,20 +1668,32 @@ fn notifications(p: &Prefs) -> Vec<Spec> {
     ]
 }
 
-/// Settings → Network: the Wi-Fi panel, and Wi-Fi performance through
-/// scripts/wifi-tune.sh (WifiTune.qml).
-fn wifi_tune() -> std::path::PathBuf {
-    hyprshell_kit::config_dir().join("quickshell/hyprshell/scripts/wifi-tune.sh")
-}
+/// Settings → Network: the Wi-Fi panel, and Wi-Fi performance through the
+/// helper (shell/quickshell/scripts/wifi-tune.sh, WifiTune.qml).
+///
+/// It changes NetworkManager's files and services as root, so it is run only
+/// from a root-owned place: a script in the home folder could be edited by
+/// anything of yours, and would then run as root.
+const WIFI_HELPER: &str = "/usr/local/libexec/hyprshell-wifi-tune";
+const WIFI_HELPER_INSTALL: &str = "sudo install -m 755 -o root -g root <hyprlandshel>/shell/quickshell/scripts/wifi-tune.sh /usr/local/libexec/hyprshell-wifi-tune";
 fn network() -> Vec<Spec> {
     let mut r = vec![panel("wifi")];
-    let Some(status) = system::run("bash", &[&wifi_tune().display().to_string(), "--status"]) else { return r };
+    if !std::path::Path::new(WIFI_HELPER).exists() {
+        r.push(header("Wi-Fi performance", ""));
+        r.push(info(
+            "Faster Wi-Fi (iwd) and power saving",
+            &format!("These need a small helper that runs as root, installed once from the hyprlandshel folder: {WIFI_HELPER_INSTALL}"),
+            "not installed",
+        ));
+        return r;
+    }
+    let Some(status) = system::run(WIFI_HELPER, &["--status"]) else { return r };
     let field = |k: &str| status.lines().find_map(|l| l.split_once('\t').filter(|(a, _)| *a == k).map(|(_, b)| b.to_string())).unwrap_or_default();
     let (backend, iwd, powersave) = (field("backend"), field("iwd") == "yes", field("powersave"));
     let tune = |args: Vec<&'static str>, done: &'static str| {
         move |c: &mut Ctx, _v: bool| {
             let mut cmd = std::process::Command::new("pkexec");
-            cmd.arg("bash").arg(wifi_tune()).args(&args);
+            cmd.arg(WIFI_HELPER).args(&args);
             let ok = cmd.status().map(|s| s.code());
             c.ui.toast = Some(match ok {
                 Ok(Some(0)) => done.to_string(),
@@ -1852,6 +1892,29 @@ fn hyprland(p: &Prefs) -> Vec<Spec> {
         slider_with("Blur size", "Radius of each pass", 1.0, 20.0, 1.0, "", p.f("hyprBlurSize"), set_frame("hyprBlurSize")),
         slider_with("Blur passes", "More passes look smoother and cost more", 1.0, 5.0, 1.0, "", p.f("hyprBlurPasses"), set_frame("hyprBlurPasses")),
         seg_with(
+            "Glass style",
+            "How blurred surfaces look. Liquid glass bends what is behind it at the edges, like a lens. It costs the GPU more, and needs Hyprland 0.57 or newer",
+            &[("Standard", "kawase"), ("Frosted", "frost"), ("Liquid glass", "acrylic"), ("Prism", "prism")],
+            &if p.s("hyprBlurVariant").is_empty() { "kawase".to_string() } else { p.s("hyprBlurVariant") },
+            |c, v| {
+                c.set("hyprBlurVariant", json!(v));
+                frame(c);
+            },
+        ),
+    ]
+    .into_iter()
+    .chain(if p.s("hyprBlurVariant") == "acrylic" {
+        vec![
+            slider_with("Glass bend", "How far the edge pulls what is behind it", 0.0, 48.0, 1.0, "px", p.f("acrylicRefraction"), set_frame("acrylicRefraction")),
+            slider_with("Glass edge", "How wide the curved rim is", 4.0, 256.0, 1.0, "px", p.f("acrylicBulb"), set_frame("acrylicBulb")),
+            slider_with("Glass clarity", "How much of what is behind stays sharp; lower is frostier", 0.0, 100.0, 1.0, "%", p.f("acrylicClarity"), set_frame("acrylicClarity")),
+            slider_with("Colour fringing", "Rainbow edges where the glass bends light", 0.0, 100.0, 1.0, "%", p.f("acrylicAberration"), set_frame("acrylicAberration")),
+        ]
+    } else {
+        vec![]
+    })
+    .chain(vec![
+        seg_with(
             "Blur behind the shell",
             match blur_mode.as_str() {
                 "live" => "Bar, dock and menus blur whatever is behind them, always — menus may drop frames opening on a high refresh rate",
@@ -1878,7 +1941,8 @@ fn hyprland(p: &Prefs) -> Vec<Spec> {
             hypr::apply_all(&c.p);
         })
         .adv(),
-    ]
+    ])
+    .collect()
 }
 
 fn keyboard(p: &Prefs) -> Vec<Spec> {
@@ -1889,7 +1953,26 @@ fn keyboard(p: &Prefs) -> Vec<Spec> {
         input(c);
     };
     vec![
-        info("Layout", "xkb layout list, comma-separated — e.g. us,de", &keymap),
+        text(
+            "Layouts",
+            "xkb layouts, comma-separated, e.g. us,de. Empty keeps what hyprland.lua says",
+            &p.s("kbLayout"),
+            &keymap,
+            "Apply",
+            |c, v| {
+                let v: String = v.chars().filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ',' | '_' | '-')).collect();
+                c.set("kbLayout", json!(v));
+                input(c);
+            },
+        ),
+        text("Variants", "One per layout, comma-separated, e.g. ,dvorak. Empty for none", &p.s("kbVariant"), "", "Apply", |c, v| {
+            let v: String = v.chars().filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ',' | '_' | '-')).collect();
+            c.set("kbVariant", json!(v));
+            input(c);
+        }),
+        kb_menu(p, "Caps Lock key", "What the Caps Lock key does", "kbCaps", CAPS),
+        kb_menu(p, "Compose key", "Hold it and type two keys for an accented letter or a symbol", "kbCompose", COMPOSE),
+        kb_menu(p, "Switch layout with", "A shortcut that cycles through the layouts above", "kbToggle", TOGGLE),
         slider_with("Repeat rate", "Repeats per second while a key is held", 10.0, 60.0, 1.0, "/s", p.f("repeatRate"), set_in("repeatRate")),
         slider_with("Repeat delay", "Milliseconds before a held key starts repeating", 150.0, 900.0, 1.0, "ms", p.f("repeatDelay"), set_in("repeatDelay")),
         toggle_with("Num Lock at start-up", "Turn the numeric keypad on when Hyprland starts", p.b("numlock"), |c, v| {
@@ -1912,6 +1995,34 @@ fn keyboard(p: &Prefs) -> Vec<Spec> {
         ),
         info("Keymap", "What the compositor currently has loaded", &keymap),
     ]
+}
+
+/// A key-option choice: what it is called, and the xkb option it sets.
+const CAPS: &[(&str, &str)] = &[
+    ("As configured", ""),
+    ("Escape", "caps:escape"),
+    ("Control", "ctrl:nocaps"),
+    ("Swap with Escape", "caps:swapescape"),
+    ("Nothing", "caps:none"),
+];
+const COMPOSE: &[(&str, &str)] = &[("As configured", ""), ("Right Alt", "compose:ralt"), ("Menu", "compose:menu"), ("Caps Lock", "compose:caps"), ("Right Ctrl", "compose:rctrl")];
+const TOGGLE: &[(&str, &str)] = &[
+    ("As configured", ""),
+    ("Alt + Shift", "grp:alt_shift_toggle"),
+    ("Ctrl + Shift", "grp:ctrl_shift_toggle"),
+    ("Super + Space", "grp:win_space_toggle"),
+    ("Caps Lock", "grp:caps_toggle"),
+];
+
+/// A menu over xkb options, kept as the option itself in theme.json.
+fn kb_menu(p: &Prefs, n: &str, s: &str, key: &'static str, opts: &'static [(&'static str, &'static str)]) -> Spec {
+    let cur = p.s(key);
+    let label = opts.iter().find(|o| o.1 == cur).map(|o| o.0).unwrap_or(opts[0].0);
+    menu_with(n, s, opts.iter().map(|o| o.0.to_string()).collect(), label, move |c, v| {
+        let option = opts.iter().find(|o| o.0 == v).map(|o| o.1).unwrap_or("");
+        c.set(key, json!(option));
+        input(c);
+    })
 }
 
 fn tog_in(key: &'static str) -> impl Fn(&mut Ctx, bool) {
@@ -1952,6 +2063,12 @@ fn mouse(p: &Prefs) -> Vec<Spec> {
             c.set("mouseScrollFactor", json!(v / 100.0));
             input(c);
         }),
+        toggle_with(
+            "Keep the pointer in place",
+            "Don't move the pointer to a window when it takes focus (from the keyboard, say)",
+            p.b("noWarps"),
+            tog_in("noWarps"),
+        ),
         toggle_with("Pointer hides while typing", "Hide the cursor on the next key press", p.b("hideCursorOnKey"), tog_in("hideCursorOnKey")),
         slider_with("Hide when idle", "Seconds of stillness before the pointer disappears — 0 never", 0.0, 30.0, 1.0, "s", p.f("cursorTimeout"), |c, v| {
             c.set("cursorTimeout", json!(v.round() as i64));
@@ -2138,6 +2255,102 @@ pub fn shown_rows(pane: &str, mut rows: Vec<Spec>, open: bool) -> Vec<Spec> {
         tidy.extend(adv);
     }
     tidy
+}
+
+pub fn fold_key(pane: &str, section: &str) -> String {
+    format!("{pane}\u{1f}{section}")
+}
+
+/// Where what has been folded is kept, so it is the same next time Settings opens.
+fn sections_file() -> std::path::PathBuf {
+    let state = std::env::var_os("XDG_STATE_HOME").filter(|s| !s.is_empty()).map(std::path::PathBuf::from).unwrap_or_else(|| hyprshell_kit::home().join(".local/state"));
+    state.join("hyprshell/settings-sections.json")
+}
+
+/// The folds from last time ({ "<pane>\u{1f}<section>": open }).
+pub fn load_sections() -> std::collections::HashMap<String, bool> {
+    std::fs::read_to_string(sections_file())
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&t).ok())
+        .map(|m| m.into_iter().filter_map(|(k, v)| v.as_bool().map(|b| (k, b))).collect())
+        .unwrap_or_default()
+}
+
+pub fn save_sections(state: &std::collections::HashMap<String, bool>) {
+    let p = sections_file();
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let map: serde_json::Map<String, serde_json::Value> = state.iter().map(|(k, v)| (k.clone(), serde_json::Value::Bool(*v))).collect();
+    let tmp = p.with_extension("json.tmp");
+    if std::fs::write(&tmp, serde_json::Value::Object(map).to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &p);
+    }
+}
+
+/// Sections that fold: a header click shows or hides the rows under it
+/// (`pick` on a header: -1 can't fold, 0 folded, 1 open; `value` how many
+/// settings it holds). Every section starts open: folding is yours to do, and
+/// what you folded is kept (`load_sections`, `save_sections`). A section with
+/// nothing in it has no fold. `want` is a setting the search is taking you to:
+/// its section opens.
+pub fn fold_sections(pane: &str, rows: Vec<Spec>, state: &mut std::collections::HashMap<String, bool>, want: Option<&str>) -> Vec<Spec> {
+    // How many settings each section holds, counted before any are hidden.
+    let mut counts: Vec<usize> = vec![];
+    for r in &rows {
+        if r.row.kind == "header" {
+            counts.push(0);
+        } else if let Some(c) = counts.last_mut() {
+            *c += 1;
+        }
+    }
+    // A header that can fold: not "Advanced" (it carries the switch for the
+    // advanced settings), and with something under it.
+    let mut hn = 0usize;
+    let mut foldable_at: Vec<bool> = Vec::new();
+    for r in &rows {
+        if r.row.kind == "header" {
+            foldable_at.push(r.row.n != "Advanced" && counts[hn] > 0);
+            hn += 1;
+        }
+    }
+    if foldable_at.iter().filter(|f| **f).count() < 2 {
+        return rows;
+    }
+    let foldable = |r: &Spec| r.row.kind == "header" && r.row.n != "Advanced";
+    let default = |_: &str| true;
+    if let Some(w) = want {
+        let mut section: Option<String> = None;
+        for r in &rows {
+            if foldable(r) {
+                section = Some(r.row.n.to_string());
+            } else if r.row.kind != "header" && r.row.n == w {
+                if let Some(s) = &section {
+                    state.insert(fold_key(pane, s), true);
+                }
+            }
+        }
+    }
+    let (mut out, mut h, mut hidden) = (vec![], 0usize, false);
+    for mut r in rows {
+        if r.row.kind == "header" {
+            let n = counts[h];
+            let can = foldable_at[h];
+            h += 1;
+            if can && foldable(&r) {
+                let open = state.get(&fold_key(pane, &r.row.n)).copied().unwrap_or_else(|| default(&r.row.n));
+                r.row.pick = open as i32;
+                r.row.value = if n == 1 { "1 setting".into() } else { format!("{n} settings") }.into();
+                hidden = !open;
+            } else {
+                hidden = false;
+            }
+        } else if hidden {
+            continue;
+        }
+        out.push(r);
+    }
+    out
 }
 
 pub fn card_positions(rows: &mut [Spec]) {
@@ -2744,3 +2957,81 @@ fn keyring_rows(k: &crate::keyring::Snap) -> Vec<Spec> {
     ));
     r
 }
+
+#[cfg(test)]
+mod fold_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn page(sections: usize) -> Vec<Spec> {
+        let mut v = vec![];
+        for s in 0..sections {
+            v.push(header(&format!("S{s}"), ""));
+            v.push(base("toggle", &format!("a{s}"), ""));
+            v.push(base("toggle", &format!("b{s}"), ""));
+            // Enough rows that a page of several sections is a long one.
+            for k in 0..4 {
+                v.push(base("toggle", &format!("x{s}{k}"), ""));
+            }
+        }
+        v
+    }
+    fn names(v: &[Spec]) -> Vec<String> {
+        v.iter().map(|r| r.row.n.to_string()).collect()
+    }
+
+    #[test]
+    fn every_section_starts_open_and_a_fold_hides_only_its_own_rows() {
+        let mut st = HashMap::new();
+        for n in [3, 5, 8] {
+            let v = fold_sections("P", page(n), &mut st, None);
+            assert_eq!(v.len(), n * 7, "{n} sections, all there");
+            assert!(v.iter().filter(|r| r.row.kind == "header").all(|h| h.row.pick == 1));
+        }
+        st.insert(fold_key("P", "S1"), false);
+        let v = fold_sections("P", page(3), &mut st, None);
+        assert_eq!(v.len(), 14 + 1);
+        assert_eq!(v.iter().find(|r| r.row.n == "S1").unwrap().row.pick, 0);
+        assert_eq!(v.iter().find(|r| r.row.n == "S1").unwrap().row.value.as_str(), "6 settings");
+    }
+
+    #[test]
+    fn a_section_with_nothing_in_it_has_no_fold() {
+        let mut v = page(2);
+        v.insert(0, header("Empty", "just a note"));
+        let out = fold_sections("P", v, &mut HashMap::new(), None);
+        assert_eq!(out[0].row.pick, -1);
+        assert_eq!(out.iter().filter(|r| r.row.pick >= 0).count(), 2);
+    }
+
+    #[test]
+    fn what_was_folded_is_kept_between_launches() {
+        let dir = std::env::temp_dir().join(format!("hs-fold-{}", std::process::id()));
+        std::env::set_var("XDG_STATE_HOME", &dir);
+        let mut st = HashMap::new();
+        st.insert(fold_key("Appearance", "Colour"), false);
+        st.insert(fold_key("Bar", "Plugins"), true);
+        save_sections(&st);
+        assert_eq!(load_sections(), st);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_choice_sticks_and_a_search_target_opens_its_section() {
+        let mut st = HashMap::new();
+        st.insert(fold_key("P", "S0"), false);
+        let v = fold_sections("P", page(5), &mut st, Some("b3"));
+        // S0 was folded by choice; the search target's section is open as it always was.
+        assert_eq!(v.iter().find(|r| r.row.n == "S0").unwrap().row.pick, 0);
+        assert!(v.iter().any(|r| r.row.n == "b3"));
+    }
+
+    #[test]
+    fn one_section_does_not_fold() {
+        let mut st = HashMap::new();
+        let v = fold_sections("P", page(1), &mut st, None);
+        assert_eq!(v.len(), 7);
+        assert_eq!(v[0].row.pick, -1);
+    }
+}
+

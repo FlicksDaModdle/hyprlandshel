@@ -77,7 +77,7 @@ pub fn reload() {
 
 // ── input (Devices.inputTree) ────────────────────────────────────────────
 fn input_tree(p: &Prefs) -> Value {
-    json!({
+    let mut tree = json!({
         "input": {
             "repeat_rate": p.i("repeatRate"),
             "repeat_delay": p.i("repeatDelay"),
@@ -104,8 +104,23 @@ fn input_tree(p: &Prefs) -> Value {
         "cursor": {
             "hide_on_key_press": p.b("hideCursorOnKey"),
             "inactive_timeout": p.i("cursorTimeout"),
+            "no_warps": p.b("noWarps"),
         }
-    })
+    });
+    // The keyboard's layout and options are only written once they are
+    // chosen here, so what hyprland.lua says stands until then.
+    let kb = &mut tree["input"];
+    for (key, name) in [("kbLayout", "kb_layout"), ("kbVariant", "kb_variant")] {
+        let v = p.s(key);
+        if !v.is_empty() {
+            kb[name] = json!(v);
+        }
+    }
+    let options: Vec<String> = ["kbCaps", "kbCompose", "kbToggle"].iter().map(|k| p.s(k)).filter(|o| !o.is_empty()).collect();
+    if !options.is_empty() {
+        kb["kb_options"] = json!(options.join(","));
+    }
+    tree
 }
 
 /// The pointers Hyprland has, and which of them are touchpads (by name, as
@@ -135,6 +150,17 @@ pub fn apply_input(p: &Prefs) {
 }
 
 // ── frame (Devices.frameTree, motionLua, applyShellBlur) ────────────────
+/// Hyprland's number for a blur variant (decoration:blur:variant); the plain
+/// blur for a name it doesn't know.
+fn blur_variant(name: &str) -> i64 {
+    match name {
+        "frost" => 1,
+        "prism" => 6,
+        "acrylic" => 8,
+        _ => 0,
+    }
+}
+
 fn frame_tree(p: &Prefs) -> Value {
     let mut col = json!({ "inactive_border": hypr_color(shade(p.div(), p.f("inactiveBorderPct")), "aa") });
     if p.b("borderFollowsAccent") {
@@ -151,7 +177,19 @@ fn frame_tree(p: &Prefs) -> Value {
         "decoration": {
             "rounding": (p.f("hyprRounding") * p.rf()).round() as i64,
             "inactive_opacity": (p.f("hyprInactiveOpacity") / 100.0).clamp(0.4, 1.0),
-            "blur": { "enabled": p.b("hyprBlur"), "size": p.i("hyprBlurSize"), "passes": p.i("hyprBlurPasses") },
+            "blur": {
+                "enabled": p.b("hyprBlur"),
+                "size": p.i("hyprBlurSize"),
+                "passes": p.i("hyprBlurPasses"),
+                "variant": blur_variant(&p.s("hyprBlurVariant")),
+                "acrylic": {
+                    "refraction": p.f("acrylicRefraction").clamp(0.0, 48.0),
+                    "bulb": p.f("acrylicBulb").clamp(4.0, 256.0),
+                    "clarity": (p.f("acrylicClarity") / 100.0).clamp(0.0, 1.0),
+                    // The slider is a percent of the most Hyprland allows, 0.25.
+                    "aberration": (p.f("acrylicAberration") / 100.0 * 0.25).clamp(0.0, 0.25),
+                },
+            },
             "shadow": { "enabled": p.b("hyprShadow") },
         },
         "animations": { "enabled": p.b("hyprAnimEnabled") },

@@ -596,6 +596,13 @@ Singleton {
             property string shellBlurMode: "auto"
             property int hyprBlurSize: 4
             property int hyprBlurPasses: 2
+            // The compositor's glass: "kawase" is the plain blur; "acrylic" a lens
+            // that bends what is behind (Hyprland 0.57+); "frost" and "prism" too.
+            property string hyprBlurVariant: "kawase"
+            property int acrylicRefraction: 24        // px, how far the edge bends what is behind
+            property int acrylicBulb: 48              // px, how wide the curved edge is
+            property int acrylicClarity: 82           // %, how much of the backdrop stays sharp
+            property int acrylicAberration: 10        // % of the most, colour fringing at the edge
             property bool hyprShadow: true
             property int hyprAnimSpeed: 100          // 25-300 %
             property bool hyprAnimEnabled: true
@@ -924,6 +931,11 @@ Singleton {
     property alias hyprBlur: prefs.hyprBlur
     property alias hyprBlurSize: prefs.hyprBlurSize
     property alias hyprBlurPasses: prefs.hyprBlurPasses
+    property alias hyprBlurVariant: prefs.hyprBlurVariant
+    property alias acrylicRefraction: prefs.acrylicRefraction
+    property alias acrylicBulb: prefs.acrylicBulb
+    property alias acrylicClarity: prefs.acrylicClarity
+    property alias acrylicAberration: prefs.acrylicAberration
     property alias shellBlurMode: prefs.shellBlurMode
     property alias hyprShadow: prefs.hyprShadow
     property alias hyprAnimSpeed: prefs.hyprAnimSpeed

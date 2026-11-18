@@ -29,6 +29,9 @@ mod prefs;
 mod rows;
 mod sound;
 mod system;
+mod barlayout;
+mod flatpak;
+mod shortcuts;
 mod updates;
 
 use hyprshell_kit as kit;
@@ -63,6 +66,9 @@ struct State {
     videos: gallery::Videos,
     icons: focus::Icons,
     upd: updates::Updates,
+    fp: flatpak::Flatpak,
+    /// Flatpak access was on screen at the last draw: read again each time it opens.
+    fp_shown: bool,
     /// Settings → Login screen: face unlock; looked at when the pane is first opened.
     face: face::Face,
     face_started: bool,
@@ -143,7 +149,9 @@ fn show(ui: &AppWindow, st: &mut State) {
         // Not left looking through the camera with nobody on the page.
         st.face.stop_preview();
     }
-    let mut specs = rows::shown_rows(&pane, rows::rows_for(&pane, &st.c), open);
+    let specs = rows::shown_rows(&pane, rows::rows_for(&pane, &st.c), open);
+    let want = st.flash.clone();
+    let mut specs = rows::fold_sections(&pane, specs, &mut st.c.ui.sections, want.as_deref());
     rows::card_positions(&mut specs);
     if let Some(want) = st.flash.take() {
         if let Some(r) = specs.iter_mut().find(|r| r.row.n == want.as_str()) {
@@ -165,6 +173,9 @@ fn show(ui: &AppWindow, st: &mut State) {
         Some(c) if c.items.len() > 1 && !pane.starts_with("cat:") => c.id.into(),
         _ => SharedString::new(),
     });
+    let heads: Vec<i32> = specs.iter().filter(|r| r.row.kind == "header" && r.row.pick >= 0).map(|r| r.row.pick).collect();
+    g.set_foldable(!heads.is_empty());
+    g.set_all_open(heads.iter().all(|p| *p == 1));
     g.set_title(rows::pane_title(&pane).into());
     g.set_note(rows::pane_note(&pane).into());
     g.set_shorts(ModelRc::new(VecModel::from(specs.iter().map(|r| SharedString::from(short(&r.row.s))).collect::<Vec<_>>())));
@@ -194,7 +205,15 @@ fn show(ui: &AppWindow, st: &mut State) {
     let has = |k: &str| st.specs.iter().any(|r| r.row.kind == "panel" && r.row.panel == k);
     let (animated, live) = (has("animated"), has("gallery"));
     let (on_updates, on_focus) = (has("shellUpdates"), has("focus") || has("notifApps"));
-    if has("monitors") {
+    let (on_fp, on_mon) = (has("flatpak"), has("monitors"));
+    if on_fp && !st.fp_shown {
+        run_flatpak(st, None);
+    }
+    st.fp_shown = on_fp;
+    if on_fp {
+        st.fp.publish(ui);
+    }
+    if on_mon {
         let sel = if st.c.ui.display_pick.is_empty() { monmap::monitors().first().map(|m| m.name.clone()).unwrap_or_default() } else { st.c.ui.display_pick.clone() };
         monmap::publish(ui, &st.c, &sel);
     }
@@ -388,6 +407,11 @@ fn main() {
         }
         return;
     }
+    // A sentence turned into a shortcut, printed and not kept (shortcuts.rs).
+    if args.first().map(String::as_str) == Some("--describe") {
+        shortcuts::describe_cli(&args[1..].join(" "));
+        return;
+    }
     // Every setting's name and where it lives, as JSON, for the launcher's
     // search: [{ "pane", "n", "s", "section", "page" }].
     if args.first().map(String::as_str) == Some("--index") {
@@ -420,7 +444,7 @@ fn main() {
         .unwrap_or_else(|| "cat:Personalization".into());
 
     let st = Rc::new(RefCell::new(State {
-        c: Ctx { p: prefs::Prefs::read(), ui: Ui { pane: first, ..Default::default() } },
+        c: Ctx { p: prefs::Prefs::read(), ui: Ui { pane: first, sections: rows::load_sections(), ..Default::default() } },
         specs: vec![],
         index: None,
         hits: vec![],
@@ -434,6 +458,8 @@ fn main() {
         videos: gallery::Videos::default(),
         icons: focus::Icons::default(),
         upd: updates::Updates::default(),
+        fp: flatpak::Flatpak::default(),
+        fp_shown: false,
         face: face::Face::default(),
         face_started: false,
         keyring: keyring::Keyring::default(),
@@ -578,6 +604,34 @@ fn main() {
         let run = run.clone();
         let st = st.clone();
         let settle = settle.clone();
+        // A section header folds or opens its rows; "Expand all" does every one.
+        let (st2, settle2) = (st.clone(), settle.clone());
+        g.on_toggle_section(move |i| {
+            {
+                let mut s = st2.borrow_mut();
+                let Some(r) = s.specs.get(i as usize) else { return };
+                if r.row.pick < 0 {
+                    return;
+                }
+                let (key, was) = (rows::fold_key(&s.c.ui.pane, &r.row.n), r.row.pick == 1);
+                s.c.ui.sections.insert(key, !was);
+                rows::save_sections(&s.c.ui.sections);
+            }
+            settle2();
+        });
+        let (st2, settle2) = (st.clone(), settle.clone());
+        g.on_fold_all(move |open| {
+            {
+                let mut s = st2.borrow_mut();
+                let pane = s.c.ui.pane.clone();
+                let keys: Vec<String> = s.specs.iter().filter(|r| r.row.kind == "header" && r.row.pick >= 0).map(|r| rows::fold_key(&pane, &r.row.n)).collect();
+                for k in keys {
+                    s.c.ui.sections.insert(k, open);
+                }
+                rows::save_sections(&s.c.ui.sections);
+            }
+            settle2();
+        });
         g.on_press(move |i, k| {
             let (press, panel) = {
                 let s = st.borrow();
@@ -1642,6 +1696,41 @@ fn check_updates(st: &mut State) {
     });
 }
 
+/// Draw the pane again from a thread that has finished something (a shortcut
+/// being made): it asks the window's own thread to.
+pub fn refresh_pane_later() {
+    let _ = slint::invoke_from_event_loop(|| {
+        STATE.with(|s| {
+            let Some(st) = s.borrow().as_ref().and_then(|w| w.upgrade()) else { return };
+            let mut st = st.borrow_mut();
+            if let Some(ui) = st.weak.upgrade() {
+                show(&ui, &mut st);
+            }
+        });
+    });
+}
+
+/// Settings → Flatpak access: an optional change, then every app read
+/// again, off the window's thread (it runs `flatpak` once per app).
+fn run_flatpak(st: &mut State, op: Option<flatpak::Op>) {
+    if st.fp.loading && op.is_none() {
+        return;
+    }
+    st.fp.loading = true;
+    let weak = st.weak.clone();
+    std::thread::spawn(move || {
+        let d = flatpak::run(op);
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            STATE.with(|s| {
+                let Some(st) = s.borrow().as_ref().and_then(|w| w.upgrade()) else { return };
+                let mut st = st.borrow_mut();
+                st.fp.take(d);
+                st.fp.publish(&ui);
+            });
+        });
+    });
+}
+
 /// The galleries' own clicks.
 fn wire_galleries(ui: &AppWindow, st: &Rc<RefCell<State>>, settle: Rc<dyn Fn()>) {
     STATE.with(|s| *s.borrow_mut() = Some(Rc::downgrade(st)));
@@ -1807,6 +1896,33 @@ fn wire_galleries(ui: &AppWindow, st: &Rc<RefCell<State>>, settle: Rc<dyn Fn()>)
             }
             if let Some(ui) = weak.upgrade() {
                 s.upd.publish(&ui);
+            }
+        });
+    }
+
+    // Flatpak access.
+    let f = ui.global::<Fp>();
+    {
+        let st = st.clone();
+        f.on_set(move |app, key, mode| run_flatpak(&mut st.borrow_mut(), Some(flatpak::Op::Set(app.to_string(), key.to_string(), mode))));
+    }
+    {
+        let st = st.clone();
+        f.on_reset(move |app| run_flatpak(&mut st.borrow_mut(), Some(flatpak::Op::Reset(app.to_string()))));
+    }
+    {
+        let st = st.clone();
+        f.on_refresh(move || run_flatpak(&mut st.borrow_mut(), None));
+    }
+    {
+        let (st, weak) = (st.clone(), ui.as_weak());
+        f.on_toggle(move |id| {
+            let mut s = st.borrow_mut();
+            if !s.fp.open.remove(id.as_str()) {
+                s.fp.open.insert(id.to_string());
+            }
+            if let Some(ui) = weak.upgrade() {
+                s.fp.publish(&ui);
             }
         });
     }

@@ -205,6 +205,15 @@ for a in "${LIST[@]}"; do
     if ! install -m 755 "$SRC/target/release/hyprshell-$k" "$exe.new" || ! mv -f "$exe.new" "$exe"; then
         bad "$name" "could not write $exe"; continue
     fi
+    # The Rust shell is started with its own folder first on the PATH
+    # (start-shell.sh), so a second copy of Settings there would be the one
+    # the shell opens, whatever this installed: one file, linked there.
+    if [ "$k" = settings ]; then
+        rb="${XDG_DATA_HOME:-$HOME/.local/share}/hyprshell/rust/bin/hyprshell-settings"
+        if [ -d "$(dirname "$rb")" ] && [ ! "$rb" -ef "$exe" ]; then
+            ln -sfn "$exe" "$rb.new" && mv -Tf "$rb.new" "$rb" && ok "$name" "the shell's copy (rust/bin) is this one"
+        fi
+    fi
     # Its own icon (icons/, made by kit/tools/gen-app-icons.py); the
     # theme's generic one if that's missing.
     if [ -f "$SRC/icons/hyprshell-$k.svg" ] && install -m 644 "$SRC/icons/hyprshell-$k.svg" "$ICONS/hyprshell-$k.svg"; then

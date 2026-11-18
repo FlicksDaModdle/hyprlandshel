@@ -1,0 +1,142 @@
+// Settings → Flatpak access: for every Flatpak app, which folders it can
+// reach — none, read only, or read and write — and the same for every app
+// at once. What it shows comes from src/flatpak.rs; changes go to
+// `flatpak override --user`, and apps pick them up when restarted.
+
+import { Theme, Icon } from "@kit";
+import { PillButton, Segmented } from "common.slint";
+
+export struct FpFolder { key: string, label: string, mode: int }
+export struct FpApp { id: string, name: string, sub: string, note: string, other: string, open: bool, folders: [FpFolder] }
+
+export global Fp {
+    in property <bool> loading;
+    in property <string> error;
+    in property <[FpFolder]> global-folders;
+    in property <[FpApp]> apps;
+    // app ("" for every app), folder, 0 none / 1 read / 2 read & write
+    callback set(string, string, int);
+    callback reset(string);
+    callback toggle(string);
+    callback refresh();
+}
+
+component FolderRow inherits HorizontalLayout {
+    in property <FpFolder> f;
+    in property <string> app;
+    height: 40px;
+    spacing: 12px;
+    Text { horizontal-stretch: 1; vertical-alignment: center; text: root.f.label; font-size: Theme.fs(12.5); color: Theme.ink; }
+    VerticalLayout {
+        alignment: center;
+        Segmented {
+            options: ["None", "Read only", "Read & write"];
+            current: root.f.mode;
+            picked(i) => { Fp.set(root.app, root.f.key, i); }
+        }
+    }
+}
+
+export component FlatpakPanel inherits VerticalLayout {
+    spacing: 12px;
+
+    Text {
+        x: 4px;
+        wrap: word-wrap;
+        text: "Flatpak apps run in a sandbox and see only the folders they are given. Choose what each one can reach. A change applies the next time the app is started.";
+        font-size: Theme.fs(11.5);
+        color: Theme.ink3;
+    }
+
+    if Fp.error != "": Text {
+        x: 4px;
+        wrap: word-wrap;
+        text: Fp.error;
+        font-size: Theme.fs(11.5);
+        color: Theme.accent;
+    }
+
+    // ── every app ─────────────────────────────────────────────────────
+    Rectangle {
+        border-radius: Theme.r;
+        background: Theme.hover;
+        height: allCol.preferred-height + 24px;
+        allCol := VerticalLayout {
+            x: 18px;
+            y: 12px;
+            width: parent.width - 36px;
+            spacing: 0px;
+            HorizontalLayout {
+                height: 40px;
+                spacing: 8px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: "Every app"; font-size: Theme.fs(13.5); font-weight: 600; color: Theme.ink; }
+                    Text { text: "Applies to all Flatpak apps, including ones installed later. An app's own setting wins."; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
+                }
+                VerticalLayout { alignment: center; PillButton { label: "Reset"; clicked => { Fp.reset(""); } } }
+            }
+            for f in Fp.global-folders: FolderRow { f: f; app: ""; }
+        }
+    }
+
+    // ── each app ──────────────────────────────────────────────────────
+    if Fp.apps.length > 0: Rectangle {
+        border-radius: Theme.r;
+        background: Theme.hover;
+        height: appCol.preferred-height;
+        appCol := VerticalLayout {
+            for p[i] in Fp.apps: Rectangle {
+                height: head.height + (p.open ? body.preferred-height + 14px : 0px);
+                clip: true;
+                animate height { duration: 180ms; easing: cubic-bezier(0.33, 1, 0.68, 1); }
+                if i > 0: Rectangle { x: 16px; y: 0; width: parent.width - 32px; height: 1px; background: Theme.rule; }
+                head := HorizontalLayout {
+                    y: 0;
+                    height: 60px;
+                    padding-left: 18px;
+                    padding-right: 12px;
+                    spacing: 14px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text { text: p.name; overflow: elide; font-size: Theme.fs(13); font-weight: 500; color: Theme.ink; }
+                        Text { text: p.sub; overflow: elide; font-size: Theme.fs(11); color: Theme.ink3; }
+                    }
+                    VerticalLayout { alignment: center; Icon { name: p.open ? "chevronUp" : "chevronDown"; size: 16px; ink: Theme.ink3; acc: Theme.accent; } }
+                    TouchArea { mouse-cursor: pointer; clicked => { Fp.toggle(p.id); } }
+                }
+                body := VerticalLayout {
+                    x: 18px;
+                    y: head.height;
+                    width: parent.width - 36px;
+                    height: self.preferred-height;
+                    spacing: 0px;
+                    if p.note != "": Text { wrap: word-wrap; text: p.note; font-size: Theme.fs(11); color: Theme.ink3; }
+                    for f in p.folders: FolderRow { f: f; app: p.id; }
+                    if p.other != "": Text {
+                        wrap: word-wrap;
+                        text: "Also: " + p.other;
+                        font-size: Theme.fs(11);
+                        color: Theme.ink3;
+                    }
+                    HorizontalLayout {
+                        height: 42px;
+                        alignment: end;
+                        VerticalLayout { alignment: center; PillButton { label: "Reset to what the app came with"; clicked => { Fp.reset(p.id); } } }
+                    }
+                }
+            }
+        }
+    }
+
+    if Fp.apps.length == 0 && !Fp.loading: Text {
+        x: 4px;
+        text: "No Flatpak apps are installed.";
+        font-size: Theme.fs(12);
+        color: Theme.ink3;
+    }
+}
